@@ -7,9 +7,12 @@
     "node": ">=22.19.0"
   },
   "scripts": {
+    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/solver/docker",
     "test": "vitest run",
+    "test:runner": "vitest run packages/solver/test/runner/contest-runner.test.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "example:mock": "pnpm --filter @ctf-agent/example-mock-ctf solve"
   },
   "devDependencies": {
     "@earendil-works/pi-agent-core": "^0.82.1",

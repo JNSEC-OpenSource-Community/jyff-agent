@@ -3,9 +3,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Agent, type AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
-import { mockPlatform } from "../../platform-mock/src/index.js"
-import { Project } from "../src/project.js"
-import type { CommandResult, DockerSandboxOptions, Sandbox } from "../src/sandbox.js"
+import { mockPlatform } from "../../../platform-mock/src/index.js"
+import { Project } from "../../src/project/project.js"
+import type { CommandResult, DockerSandboxOptions, Sandbox } from "../../src/sandbox/docker-sandbox.js"
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
@@ -65,11 +65,18 @@ describe("Project", () => {
 
     await solver.close()
     expect(sandbox.closed).toBe(true)
-    const state = JSON.parse(await readFile(join(root, ".ctf-agent", "state.json"), "utf8"))
-    expect(state.runs[0]).toMatchObject({ challengeId: "warmup-flag", status: "closed", closedReason: "manual" })
+    expect(project.runs()).toEqual([
+      expect.objectContaining({ challengeId: "warmup-flag", attempt: 1, status: "closed", closeReason: "manual" }),
+    ])
     const run = JSON.parse(await readFile(join(root, ".ctf-agent", "runs", solver.runId, "run.json"), "utf8"))
     expect(run.workspace).toContain("workspace")
     await expect(access(run.workspace)).resolves.toBeUndefined()
     await expect(access(join(run.workspace, ".skills", "skill-1", "SKILL.md"))).resolves.toBeUndefined()
+    expect(project.runEvents(solver.runId).map((event) => event.type)).toEqual([
+      "run_created",
+      "run_started",
+      "run_finished",
+    ])
+    await project.close()
   })
 })

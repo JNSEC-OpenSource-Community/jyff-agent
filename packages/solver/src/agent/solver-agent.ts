@@ -1,9 +1,9 @@
 import { Agent, type AgentMessage, type AgentOptions } from "@earendil-works/pi-agent-core"
-import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "./platform.ts"
-import type { Sandbox } from "./sandbox.ts"
+import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "../platform/types.ts"
+import type { Sandbox } from "../sandbox/docker-sandbox.ts"
 import { compactMessages, convertSolverMessages, shouldCompact, type CompactionOptions } from "./compaction.ts"
-import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "./skills.ts"
-import { createSolverTools } from "./tools.ts"
+import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "../skills/project-skills.ts"
+import { createSolverTools } from "../sandbox/tools.ts"
 
 export interface SolverIdentity {
   projectId: string
@@ -21,7 +21,15 @@ export interface CreateCtfSolverAgentOptions {
     skills?: readonly AgentSkill[]
     compaction?: false | CompactionOptions
   }
-  onClosed?: (reason: "submitted" | "manual") => Promise<void> | void
+  onClosed?: (details: SolverCloseDetails) => Promise<void> | void
+}
+
+export type SolverCloseReason = "submitted" | "manual" | "failed" | "timed_out" | "cancelled"
+
+export interface SolverCloseDetails {
+  reason: SolverCloseReason
+  error?: string
+  cleanupErrors: string[]
 }
 
 /**
@@ -34,10 +42,12 @@ export class CtfSolverAgent extends Agent {
   readonly workspace: string
   readonly challenge: ChallengeInfo
   private readonly sandbox: Sandbox
-  private readonly onClosed?: (reason: "submitted" | "manual") => Promise<void> | void
-  private closeReason: "submitted" | "manual" = "manual"
+  private readonly capability: ChallengeCapability
+  private readonly onClosed?: (details: SolverCloseDetails) => Promise<void> | void
+  private closeReason: SolverCloseReason = "manual"
   private closed = false
-  private terminalSubmission = false
+  private finalSubmission?: FlagSubmission
+  private closing?: Promise<void>
   private readonly compaction: CompactionOptions | false
   private compacting?: Promise<AgentMessage[] | undefined>
 
@@ -79,11 +89,12 @@ export class CtfSolverAgent extends Agent {
     this.runId = options.identity.runId
     this.workspace = options.identity.workspace
     this.challenge = options.identity.challenge
+    this.capability = options.capability
     this.sandbox = options.sandbox
     this.onClosed = options.onClosed
     this.compaction = options.features?.compaction === false ? false : (options.features?.compaction ?? {})
-    markTerminal = () => {
-      this.terminalSubmission = true
+    markTerminal = (submission) => {
+      this.finalSubmission = submission
       this.closeReason = "submitted"
     }
     autoCompact = async (messages, signal) => {
@@ -102,7 +113,7 @@ export class CtfSolverAgent extends Agent {
 
     this.subscribe(async (event) => {
       // accepted / already_solved 后在本轮工具都完成后清理容器，workspace 保留。
-      if (event.type === "agent_end" && this.terminalSubmission) await this.close()
+      if (event.type === "agent_end" && this.finalSubmission) await this.close("submitted")
     })
   }
 
@@ -112,6 +123,14 @@ export class CtfSolverAgent extends Agent {
 
   get isClosed(): boolean {
     return this.closed
+  }
+
+  get submission(): FlagSubmission | undefined {
+    return this.finalSubmission
+  }
+
+  get closedReason(): SolverCloseReason | undefined {
+    return this.closed ? this.closeReason : undefined
   }
 
   /** 手动压缩会先中断当前推理，确保不会在进行中的 tool turn 中改写 transcript。 */
@@ -126,10 +145,47 @@ export class CtfSolverAgent extends Agent {
     return compacted
   }
 
-  async close(): Promise<void> {
-    if (this.closed) return
+  /**
+   * 所有终止路径都先销毁题目远程实例，再删除本地 sandbox。
+   * 清理步骤互相独立；某一步失败不会阻止后续步骤或 Run 状态持久化。
+   */
+  async close(reason: SolverCloseReason = this.closeReason, error?: string): Promise<void> {
+    if (this.closing) return this.closing
+    if (this.finalSubmission) reason = "submitted"
     this.closed = true
-    await this.sandbox.close()
-    await this.onClosed?.(this.closeReason)
+    this.closeReason = reason
+    if (this.state.isStreaming) this.abort()
+    this.closing = this.performClose(reason, error)
+    return this.closing
+  }
+
+  private async performClose(reason: SolverCloseReason, error?: string): Promise<void> {
+    const cleanupErrors: string[] = []
+    if (this.capability.instance) {
+      try {
+        await this.capability.instance.destroy()
+      } catch (cleanupError) {
+        cleanupErrors.push(`远程实例销毁失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`)
+      }
+    }
+    try {
+      await this.sandbox.close()
+    } catch (cleanupError) {
+      cleanupErrors.push(`Sandbox 关闭失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`)
+    }
+
+    let persistenceError: unknown
+    try {
+      await this.onClosed?.({ reason, error, cleanupErrors })
+    } catch (closeError) {
+      persistenceError = closeError
+    }
+
+    if (persistenceError || cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [...cleanupErrors.map((message) => new Error(message)), ...(persistenceError ? [persistenceError] : [])],
+        `Solver ${this.runId} 关闭时发生错误`,
+      )
+    }
   }
 }

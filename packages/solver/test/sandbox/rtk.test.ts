@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { RtkRewriter } from "../src/rtk.js"
-import type { CommandResult, Sandbox } from "../src/sandbox.js"
+import { RtkRewriter } from "../../src/sandbox/rtk.js"
+import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
 
 class UnavailableSandbox implements Sandbox {
   readonly id = "unavailable"

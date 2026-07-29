@@ -15,7 +15,7 @@
   },
   "sandbox": {
     "image": "ctf-agent-solver:latest",
-    "privileged": true,
+    "privileged": false,
     "networkMode": "bridge"
   }
 }

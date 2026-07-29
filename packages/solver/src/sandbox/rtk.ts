@@ -1,4 +1,4 @@
-import type { Sandbox } from "./sandbox.ts"
+import type { Sandbox } from "./docker-sandbox.ts"
 
 export type RtkStatus = "unknown" | "enabled" | "unavailable" | "disabled"
 
