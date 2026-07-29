@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { ChallengeCapability, FlagSubmission } from "../src/platform.js"
-import type { CommandResult, Sandbox } from "../src/sandbox.js"
-import { createSolverTools } from "../src/tools.js"
+import type { ChallengeCapability, FlagSubmission } from "../../src/platform/types.js"
+import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import { createSolverTools } from "../../src/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {
   readonly id = "sandbox"

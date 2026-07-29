@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentState } from "@earendil-works/pi-agent-core"
 import { describe, expect, it } from "vitest"
-import { compactMessages, findCompactionCut, serializeForCompaction, shouldCompact } from "../src/compaction.js"
+import { compactMessages, findCompactionCut, serializeForCompaction, shouldCompact } from "../../src/agent/compaction.js"
 
 const timestamp = 1
 const user = (text: string) => ({ role: "user", content: text, timestamp }) as AgentMessage

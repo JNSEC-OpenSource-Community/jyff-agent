@@ -70,6 +70,7 @@ async function execute(
 export class DockerSandbox implements Sandbox {
   readonly id: string
   private closed = false
+  private closing?: Promise<void>
 
   private constructor(id: string) {
     this.id = id
@@ -111,8 +112,20 @@ export class DockerSandbox implements Sandbox {
 
   async close(): Promise<void> {
     if (this.closed) return
-    this.closed = true
-    await execute(["rm", "-f", this.id]).catch(() => undefined)
+    if (this.closing) return this.closing
+    const operation = (async () => {
+      const result = await execute(["rm", "-f", this.id])
+      if (result.code !== 0) {
+        throw new Error(`无法删除 Docker sandbox: ${result.stderr.trim() || result.stdout.trim() || `退出码 ${result.code}`}`)
+      }
+      this.closed = true
+    })()
+    this.closing = operation
+    try {
+      await operation
+    } finally {
+      if (this.closing === operation) this.closing = undefined
+    }
   }
 }
 

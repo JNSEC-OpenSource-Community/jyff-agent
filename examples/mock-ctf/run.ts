@@ -1,28 +1,52 @@
 import { access } from "node:fs/promises"
 import { join, resolve } from "node:path"
-import { getModel, streamSimple, type Model } from "@earendil-works/pi-ai/compat"
+import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
+import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { Project } from "@ctf-agent/solver"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 
-const modelId = process.env.OPENROUTER_MODEL ?? "cohere/north-mini-code:free"
-const apiKey = process.env.OPENROUTER_API_KEY
-if (!apiKey) throw new Error("请设置 OPENROUTER_API_KEY；此脚本不会读取或保存任何凭据文件")
+const provider = process.env.CTF_MODEL_PROVIDER ?? "openrouter"
+const modelId = process.env.CTF_MODEL_ID ?? process.env.OPENROUTER_MODEL ?? "cohere/north-mini-code:free"
+const baseUrl = process.env.CTF_MODEL_BASE_URL
+const apiKey = process.env.CTF_MODEL_API_KEY ?? process.env.OPENROUTER_API_KEY
+if (!apiKey) throw new Error("请设置 CTF_MODEL_API_KEY（或 OPENROUTER_API_KEY）；此脚本不会读取或保存任何凭据文件")
 
-const builtin = getModel("openrouter", modelId as never) as Model<any> | undefined
-if (!builtin) throw new Error(`Pi 未内置 OpenRouter 模型: ${modelId}`)
-
-// 免费模型会报告过大的窗口；显式上限避免 OpenRouter 按巨量 max_tokens 拒绝请求。
-const model = {
-  ...builtin,
-  contextWindow: 16_000,
-  maxTokens: 4_096,
+const model: Model<"openai-completions"> = baseUrl ? {
+  id: modelId,
+  name: modelId,
+  api: "openai-completions",
+  provider,
+  baseUrl: baseUrl.replace(/\/+$/, ""),
   reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: Number(process.env.CTF_MODEL_CONTEXT_WINDOW ?? 64_000),
+  maxTokens: Number(process.env.CTF_MODEL_MAX_TOKENS ?? 4_096),
   compat: {
-    ...builtin.compat,
+    supportsStore: false,
     supportsDeveloperRole: false,
     supportsReasoningEffort: false,
+    supportsUsageInStreaming: false,
+    supportsStrictMode: false,
+    supportsLongCacheRetention: false,
+    maxTokensField: "max_tokens",
   },
-}
+} : (() => {
+  const builtin = getModel(provider as never, modelId as never) as Model<"openai-completions"> | undefined
+  if (!builtin) throw new Error(`Pi 未内置模型: ${provider}/${modelId}；自定义模型请设置 CTF_MODEL_BASE_URL`)
+  return {
+    ...builtin,
+    contextWindow: Math.min(builtin.contextWindow, Number(process.env.CTF_MODEL_CONTEXT_WINDOW ?? 16_000)),
+    maxTokens: Math.min(builtin.maxTokens, Number(process.env.CTF_MODEL_MAX_TOKENS ?? 4_096)),
+    reasoning: false,
+    compat: {
+      ...builtin.compat,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+    },
+  }
+})()
 
 const root = resolve(import.meta.dirname)
 let project: Project | undefined
@@ -35,12 +59,16 @@ try {
   console.log("[2/4] 创建 warmup-flag 的独立 Docker Solver")
   solver = await project.createSolver("warmup-flag", {
     agent: {
-      streamFn: streamSimple,
-      getApiKey: (provider) => provider === "openrouter" ? apiKey : undefined,
+      streamFn: streamSimple as AgentOptions["streamFn"],
+      getApiKey: (requestedProvider) => requestedProvider === provider ? apiKey : undefined,
       initialState: {
         model,
         thinkingLevel: "off",
-        systemPrompt: "你是 CTF Solver；所有命令和文件操作必须使用 Docker sandbox tools。",
+        systemPrompt: [
+          "你是 CTF Solver；所有命令和文件操作必须使用 Docker sandbox tools。",
+          "必须先调用 ctf_challenge_info，使用 ctf_download_attachment 下载附件，使用 read 读取附件。",
+          "如需解码或分析，使用 bash；得到 Flag 后必须调用 ctf_submit_flag。",
+        ].join("\n"),
       },
     },
     compaction: { reserveTokens: 3_000, keepRecentTokens: 8_000 },
@@ -54,9 +82,9 @@ try {
     }
   })
 
-  console.log("[3/4] 交给 OpenRouter Agent 解题\n")
+  console.log(`[3/4] 交给 ${provider}/${modelId} Agent 解题\n`)
   await solver.prompt([
-    "解决当前 CTF 题目。"
+    "解决当前 CTF 题目。严格完成题目信息、附件下载、read 读取、分析和 Flag 提交的完整工具链。"
   ].join("\n"))
   await solver.waitForIdle()
 

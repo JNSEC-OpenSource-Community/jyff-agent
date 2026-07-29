@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseProjectConfig } from "../src/config.js"
+import { parseProjectConfig } from "../../src/project/config.js"
 
 describe("Project 配置", () => {
   it("补全并验证 sandbox 配置", () => {
