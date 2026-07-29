@@ -1,0 +1,121 @@
+import { spawn } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import type { SpawnOptionsWithoutStdio } from "node:child_process"
+
+export interface CommandResult {
+  code: number
+  stdout: string
+  stderr: string
+}
+
+export interface Sandbox {
+  readonly id: string
+  exec(args: string[], options?: { input?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<CommandResult>
+  close(): Promise<void>
+}
+
+export interface DockerSandboxOptions {
+  projectId: string
+  runId: string
+  image: string
+  workspace: string
+  privileged: boolean
+  networkMode: "none" | "bridge" | "host"
+}
+
+const OUTPUT_LIMIT = 1_000_000
+
+/** 不经宿主 shell 执行 Docker；参数始终以数组传递。 */
+async function execute(
+  args: string[],
+  options: { input?: string; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<CommandResult> {
+  return new Promise((resolve, reject) => {
+    const spawnOptions: SpawnOptionsWithoutStdio = { stdio: ["pipe", "pipe", "pipe"] }
+    const child = spawn("docker", args, spawnOptions)
+    let stdout = ""
+    let stderr = ""
+    let timedOut = false
+    let finished = false
+    const timeout = options.timeoutMs === undefined ? undefined : setTimeout(() => {
+      timedOut = true
+      child.kill("SIGKILL")
+    }, options.timeoutMs)
+    const abort = () => child.kill("SIGKILL")
+    options.signal?.addEventListener("abort", abort, { once: true })
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (stdout.length < OUTPUT_LIMIT) stdout += chunk.toString()
+    })
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < OUTPUT_LIMIT) stderr += chunk.toString()
+    })
+    child.on("error", (error) => finish(() => reject(error)))
+    child.on("close", (code) => finish(() => {
+      if (timedOut) return reject(new Error("Docker 命令超时"))
+      resolve({ code: code ?? 1, stdout, stderr })
+    }))
+    child.stdin.end(options.input)
+
+    function finish(done: () => void) {
+      if (finished) return
+      finished = true
+      if (timeout) clearTimeout(timeout)
+      options.signal?.removeEventListener("abort", abort)
+      done()
+    }
+  })
+}
+
+export class DockerSandbox implements Sandbox {
+  readonly id: string
+  private closed = false
+
+  private constructor(id: string) {
+    this.id = id
+  }
+
+  static async create(options: DockerSandboxOptions): Promise<DockerSandbox> {
+    const name = `ctf-solver-${options.runId}`
+    const args = [
+      "create",
+      "--name", name,
+      "--label", "ctf-solver.managed=true",
+      "--label", `ctf-solver.project=${options.projectId}`,
+      "--label", `ctf-solver.run=${options.runId}`,
+      "--network", options.networkMode,
+      // 唯一允许的宿主机挂载是当前 Run 的 workspace。
+      "--mount", `type=bind,src=${options.workspace},dst=/workspace`,
+    ]
+    if (options.privileged) args.push("--privileged")
+    args.push(options.image, "sleep", "infinity")
+
+    const created = await execute(args)
+    if (created.code !== 0) throw new Error(`无法创建 Docker sandbox: ${created.stderr || created.stdout}`)
+    const id = created.stdout.trim()
+    const started = await execute(["start", id])
+    if (started.code !== 0) {
+      await execute(["rm", "-f", id]).catch(() => undefined)
+      throw new Error(`无法启动 Docker sandbox: ${started.stderr || started.stdout}`)
+    }
+    return new DockerSandbox(id)
+  }
+
+  async exec(args: string[], options?: { input?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<CommandResult> {
+    if (this.closed) throw new Error("Docker sandbox 已关闭")
+    if (args.length === 0) throw new Error("Docker exec 参数不能为空")
+    const result = await execute(["exec", "-i", this.id, ...args], options)
+    if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || `容器命令退出码 ${result.code}`)
+    return result
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true
+    await execute(["rm", "-f", this.id]).catch(() => undefined)
+  }
+}
+
+export function newRunId(): string {
+  return randomUUID()
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@ctf-agent/example-mock-ctf",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe:openrouter": "./test-openrouter.sh",
+    "solve": "node --experimental-transform-types run.ts",
+    "run:all": "pnpm run probe:openrouter && pnpm run solve"
+  },
+  "dependencies": {
+    "@ctf-agent/platform-mock": "workspace:*",
+    "@ctf-agent/solver": "workspace:*",
+    "@earendil-works/pi-ai": "^0.82.1"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "project": {
+    "id": "example-mock-ctf-2026",
+    "name": "Mock CTF 2026"
+  },
+  "contest": {
+    "platform": "mock",
+    "eventId": "mock-ctf-2026"
+  },
+  "platform": {
+    "config": {
+      "name": "Mock CTF 2026"
+    }
+  },
+  "sandbox": {
+    "image": "ctf-agent-solver:latest",
+    "privileged": true,
+    "networkMode": "bridge"
+  }
+}
