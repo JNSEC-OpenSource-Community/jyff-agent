@@ -1,6 +1,7 @@
 import { Agent, type AgentMessage, type AgentOptions } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "../sandbox/docker-sandbox.ts"
+import type { RunStore } from "../project/run-store.ts"
 import { compactMessages, convertSolverMessages, shouldCompact, type CompactionOptions } from "./compaction.ts"
 import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "../skills/project-skills.ts"
 import { createSolverTools } from "../sandbox/tools.ts"
@@ -20,6 +21,11 @@ export interface CreateCtfSolverAgentOptions {
   features?: {
     skills?: readonly AgentSkill[]
     compaction?: false | CompactionOptions
+  }
+  blackboard?: {
+    runStore: RunStore
+    challengeId: string
+    runId: string
   }
   onClosed?: (details: SolverCloseDetails) => Promise<void> | void
 }
@@ -64,6 +70,7 @@ export class CtfSolverAgent extends Agent {
         capability: options.capability,
         sandbox: options.sandbox,
         onTerminalSubmission: (submission) => markTerminal(submission),
+        blackboard: options.blackboard,
       }),
       ...(loadSkill ? [loadSkill] : []),
     ]

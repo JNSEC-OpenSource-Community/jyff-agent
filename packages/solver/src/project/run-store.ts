@@ -59,6 +59,71 @@ export interface RunFilter {
   status?: RunStatus | readonly RunStatus[]
 }
 
+export interface EvidenceRecord {
+  id: number
+  challengeId: string
+  description: string
+  runId: string
+  createdAt: string
+}
+
+export type OpportunityStatus = "open" | "concluded"
+
+export interface OpportunityRecord {
+  id: number
+  challengeId: string
+  description: string
+  status: OpportunityStatus
+  runId: string
+  sourceEvidenceIds: number[]
+  targetEvidenceId: number | null
+  createdAt: string
+  concludedAt: string | null
+}
+
+export interface BlackboardSummary {
+  evidence: { id: number; description: string; runId: string }[]
+  opportunities: {
+    id: number
+    description: string
+    status: OpportunityStatus
+    sourceEvidenceIds: number[]
+    targetEvidenceId: number | null
+  }[]
+}
+
+export interface ChallengeInfoForOrigin {
+  title: string
+  category: string
+  score: number
+  description: string
+  attachments: { name: string; size: number }[]
+}
+
+interface EvidenceRow {
+  id: number
+  challenge_id: string
+  description: string
+  run_id: string
+  created_at: string
+}
+
+interface OpportunityRow {
+  id: number
+  challenge_id: string
+  description: string
+  status: string
+  run_id: string
+  target_evidence_id: number | null
+  created_at: string
+  concluded_at: string | null
+}
+
+interface OpportunitySourceRow {
+  opportunity_id: number
+  evidence_id: number
+}
+
 interface RunRow {
   id: string
   challenge_id: string
@@ -80,6 +145,27 @@ interface EventRow {
   type: string
   data_json: string | null
   created_at: string
+}
+
+function opportunityFromRow(
+  row: OpportunityRow,
+  sourceEvidenceIds: number[],
+): OpportunityRecord {
+  return {
+    id: row.id,
+    challengeId: row.challenge_id,
+    description: row.description,
+    status: row.status as OpportunityStatus,
+    runId: row.run_id,
+    sourceEvidenceIds,
+    targetEvidenceId: row.target_evidence_id,
+    createdAt: row.created_at,
+    concludedAt: row.concluded_at,
+  }
+}
+
+function evidenceToSummary(row: EvidenceRow): BlackboardSummary["evidence"][number] {
+  return { id: row.id, description: row.description, runId: row.run_id }
 }
 
 function runFromRow(row: RunRow): RunRecord {
@@ -153,6 +239,38 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS run_events_run_id
         ON run_events(run_id, id);
+
+      CREATE TABLE IF NOT EXISTS challenge_evidence (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        challenge_id   TEXT NOT NULL,
+        description    TEXT NOT NULL,
+        run_id         TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        created_at     TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS idx_evidence_challenge
+        ON challenge_evidence(challenge_id, id);
+
+      CREATE TABLE IF NOT EXISTS challenge_opportunities (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        challenge_id        TEXT NOT NULL,
+        description         TEXT NOT NULL,
+        status              TEXT NOT NULL DEFAULT 'open'
+                            CHECK (status IN ('open', 'concluded')),
+        run_id              TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        target_evidence_id  INTEGER REFERENCES challenge_evidence(id) ON DELETE SET NULL,
+        created_at          TEXT NOT NULL,
+        concluded_at        TEXT
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS idx_opportunities_challenge
+        ON challenge_opportunities(challenge_id, status);
+
+      CREATE TABLE IF NOT EXISTS challenge_opportunity_sources (
+        opportunity_id  INTEGER NOT NULL REFERENCES challenge_opportunities(id) ON DELETE CASCADE,
+        evidence_id     INTEGER NOT NULL REFERENCES challenge_evidence(id) ON DELETE CASCADE,
+        PRIMARY KEY (opportunity_id, evidence_id)
+      );
     `)
     return new RunStore(path, database)
   }
@@ -278,6 +396,195 @@ export class RunStore {
       ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
       createdAt: row.created_at,
     }))
+  }
+
+  recordEvidence(challengeId: string, runId: string, description: string): EvidenceRecord {
+    this.assertOpen()
+    const timestamp = new Date().toISOString()
+    const result = this.database.prepare(`
+      INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(challengeId, description, runId, timestamp)
+    return {
+      id: Number(result.lastInsertRowid),
+      challengeId,
+      description,
+      runId,
+      createdAt: timestamp,
+    }
+  }
+
+  ensureOrigin(
+    challengeId: string,
+    runId: string,
+    challengeInfo: ChallengeInfoForOrigin,
+  ): EvidenceRecord {
+    this.assertOpen()
+    const attachments = challengeInfo.attachments.length > 0
+      ? challengeInfo.attachments
+          .map((a) => `  - ${a.name} (${a.size} bytes)`)
+          .join("\n")
+      : "  (none)"
+    const description = [
+      `Title: ${challengeInfo.title}`,
+      `Category: ${challengeInfo.category}`,
+      `Score: ${challengeInfo.score}`,
+      `Description: ${challengeInfo.description}`,
+      `Attachments:`,
+      attachments,
+    ].join("\n")
+    const timestamp = new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const existing = this.database.prepare(`
+        SELECT * FROM challenge_evidence WHERE challenge_id = ? ORDER BY id ASC LIMIT 1
+      `).get(challengeId) as unknown as EvidenceRow | undefined
+      if (existing) {
+        this.database.exec("ROLLBACK")
+        return {
+          id: existing.id,
+          challengeId: existing.challenge_id,
+          description: existing.description,
+          runId: existing.run_id,
+          createdAt: existing.created_at,
+        }
+      }
+      const result = this.database.prepare(`
+        INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(challengeId, description, runId, timestamp)
+      this.database.exec("COMMIT")
+      return {
+        id: Number(result.lastInsertRowid),
+        challengeId,
+        description,
+        runId,
+        createdAt: timestamp,
+      }
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  recordOpportunity(
+    challengeId: string,
+    runId: string,
+    description: string,
+    sourceEvidenceIds: number[],
+  ): OpportunityRecord {
+    this.assertOpen()
+    if (sourceEvidenceIds.length === 0) {
+      throw new Error("sourceEvidenceIds must not be empty")
+    }
+    const timestamp = new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const result = this.database.prepare(`
+        INSERT INTO challenge_opportunities (challenge_id, description, status, run_id, created_at)
+        VALUES (?, ?, 'open', ?, ?)
+      `).run(challengeId, description, runId, timestamp)
+      const opportunityId = Number(result.lastInsertRowid)
+      const insertSource = this.database.prepare(`
+        INSERT INTO challenge_opportunity_sources (opportunity_id, evidence_id) VALUES (?, ?)
+      `)
+      for (const evidenceId of sourceEvidenceIds) {
+        insertSource.run(opportunityId, evidenceId)
+      }
+      this.database.exec("COMMIT")
+      return {
+        id: opportunityId,
+        challengeId,
+        description,
+        status: "open",
+        runId,
+        sourceEvidenceIds,
+        targetEvidenceId: null,
+        createdAt: timestamp,
+        concludedAt: null,
+      }
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  concludeOpportunity(
+    opportunityId: number,
+    resultDescription: string,
+    runId: string,
+  ): { evidence: EvidenceRecord; opportunity: OpportunityRecord } {
+    this.assertOpen()
+    const row = this.database.prepare(`
+      SELECT * FROM challenge_opportunities WHERE id = ?
+    `).get(opportunityId) as unknown as OpportunityRow | undefined
+    if (!row) throw new Error(`Opportunity ${opportunityId} not found`)
+    if (row.status !== "open") throw new Error(`Opportunity ${opportunityId} is already ${row.status}`)
+    const timestamp = new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const evidenceResult = this.database.prepare(`
+        INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(row.challenge_id, resultDescription, runId, timestamp)
+      const evidenceId = Number(evidenceResult.lastInsertRowid)
+      this.database.prepare(`
+        UPDATE challenge_opportunities
+        SET status = 'concluded', target_evidence_id = ?, concluded_at = ?
+        WHERE id = ?
+      `).run(evidenceId, timestamp, opportunityId)
+      this.database.exec("COMMIT")
+      const evidenceRow = this.database.prepare(
+        "SELECT * FROM challenge_evidence WHERE id = ?",
+      ).get(evidenceId) as unknown as EvidenceRow
+      const oppRow = this.database.prepare(
+        "SELECT * FROM challenge_opportunities WHERE id = ?",
+      ).get(opportunityId) as unknown as OpportunityRow
+      const sourceRows = this.database.prepare(`
+        SELECT evidence_id FROM challenge_opportunity_sources WHERE opportunity_id = ?
+      `).all(opportunityId) as unknown as OpportunitySourceRow[]
+      return {
+        evidence: {
+          id: evidenceRow.id,
+          challengeId: evidenceRow.challenge_id,
+          description: evidenceRow.description,
+          runId: evidenceRow.run_id,
+          createdAt: evidenceRow.created_at,
+        },
+        opportunity: opportunityFromRow(oppRow, sourceRows.map((s) => s.evidence_id)),
+      }
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  getBlackboardSummary(challengeId: string): BlackboardSummary {
+    this.assertOpen()
+    const evidenceRows = this.database.prepare(`
+      SELECT * FROM challenge_evidence WHERE challenge_id = ? ORDER BY id ASC
+    `).all(challengeId) as unknown as EvidenceRow[]
+    const opportunityRows = this.database.prepare(`
+      SELECT * FROM challenge_opportunities WHERE challenge_id = ? ORDER BY id ASC
+    `).all(challengeId) as unknown as OpportunityRow[]
+    const allSourceRows = this.database.prepare(`
+      SELECT os.* FROM challenge_opportunity_sources os
+      JOIN challenge_opportunities o ON o.id = os.opportunity_id
+      WHERE o.challenge_id = ?
+      ORDER BY os.opportunity_id, os.evidence_id
+    `).all(challengeId) as unknown as OpportunitySourceRow[]
+    const sourcesByOpp = new Map<number, number[]>()
+    for (const row of allSourceRows) {
+      const list = sourcesByOpp.get(row.opportunity_id)
+      if (list) list.push(row.evidence_id)
+      else sourcesByOpp.set(row.opportunity_id, [row.evidence_id])
+    }
+    return {
+      evidence: evidenceRows.map(evidenceToSummary),
+      opportunities: opportunityRows.map((row) =>
+        opportunityFromRow(row, sourcesByOpp.get(row.id) ?? []),
+      ),
+    }
   }
 
   close(): void {

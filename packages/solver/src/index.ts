@@ -1,5 +1,6 @@
 export * from "./agent/compaction.ts"
 export * from "./agent/solver-agent.ts"
+export * from "./blackboard/index.ts"
 export * from "./platform/types.ts"
 export * from "./project/config.ts"
 export * from "./project/project.ts"
