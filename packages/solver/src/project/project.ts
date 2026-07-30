@@ -8,6 +8,7 @@ import { discoverProjectSkills, materializeSkills, type AgentSkill } from "../sk
 import type { CompactionOptions } from "../agent/compaction.ts"
 import type { Announcement, ChallengeSummary, ContestOverview, PlatformPlugin, PlatformProject, RemoteEnvironment } from "../platform/types.ts"
 import { RunStore, type RunEvent, type RunFilter, type RunRecord, type RunStatus } from "./run-store.ts"
+import { serializeBlackboard } from "../blackboard/index.ts"
 
 export interface OpenProjectOptions {
   root?: string
@@ -102,6 +103,17 @@ export class Project {
     try {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
+
+      // 确保黑板 origin 存在，并准备自动注入内容
+      this.runStore.ensureOrigin(challengeId, runId, {
+        title: challenge.title,
+        category: challenge.category,
+        score: challenge.score,
+        description: challenge.description,
+        attachments: challenge.attachments.map((a) => ({ name: a.name, size: a.size })),
+      })
+      const blackboardInject = injectBlackboard(this.runStore, challengeId)
+
       // skills 的脚本/参考资料必须在容器内可见，不能把宿主机路径注入给 Agent。
       const skills = await materializeSkills(this.skills, workspace)
       sandbox = await this.sandboxFactory({
@@ -118,8 +130,15 @@ export class Project {
         identity: { projectId: this.config.project.id, runId, workspace, challenge },
         capability,
         sandbox,
-        agent: options.agent,
+        agent: {
+          ...options.agent,
+          initialState: {
+            ...options.agent.initialState,
+            systemPrompt: [options.agent.initialState?.systemPrompt, blackboardInject].filter(Boolean).join("\n\n"),
+          },
+        },
         features: { skills, compaction: options.compaction },
+        blackboard: { runStore: this.runStore, challengeId, runId },
         onClosed: async (details) => {
           this.solvers.delete(solver)
           const updated = this.runStore.updateRun(runId, {
@@ -209,4 +228,15 @@ function runStatus(details: SolverCloseDetails): RunStatus {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function injectBlackboard(runStore: RunStore, challengeId: string): string {
+  try {
+    const summary = runStore.getBlackboardSummary(challengeId)
+    const text = serializeBlackboard(summary)
+    if (!text) return ""
+    return `<challenge_blackboard>\n${text}\n</challenge_blackboard>`
+  } catch {
+    return ""
+  }
 }
