@@ -3,6 +3,8 @@ import { Type } from "typebox"
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "./docker-sandbox.ts"
+import type { RunStore } from "../project/run-store.ts"
+import { createBlackboardTools } from "../blackboard/index.ts"
 import { RtkRewriter } from "./rtk.ts"
 
 function result(details: object): AgentToolResult<Record<string, unknown>> {
@@ -120,6 +122,11 @@ export interface SolverToolOptions {
   capability: ChallengeCapability
   sandbox: Sandbox
   onTerminalSubmission(submission: FlagSubmission): void
+  blackboard?: {
+    runStore: RunStore
+    challengeId: string
+    runId: string
+  }
 }
 
 /** 每个 tool closure 都捕获当前题 capability，调用方无法通过参数越题。 */
@@ -239,6 +246,16 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       },
     )
   }
+
+  // 黑板工具（读写 Evidence 和 Opportunity）
+  if (options.blackboard) {
+    tools.push(...createBlackboardTools({
+      runStore: options.blackboard.runStore,
+      challengeId: options.blackboard.challengeId,
+      runId: options.blackboard.runId,
+    }))
+  }
+
   return tools
 }
 

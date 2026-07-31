@@ -1,4 +1,5 @@
 import { access } from "node:fs/promises"
+import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
@@ -6,11 +7,49 @@ import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { Project } from "@ctf-agent/solver"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 
-const provider = process.env.CTF_MODEL_PROVIDER ?? "openrouter"
-const modelId = process.env.CTF_MODEL_ID ?? process.env.OPENROUTER_MODEL ?? "cohere/north-mini-code:free"
-const baseUrl = process.env.CTF_MODEL_BASE_URL
+// 从项目根目录的 .env 文件加载环境变量（不依赖 dotenv 包）
+function loadEnvFile(): void {
+  const candidates = [
+    join(resolve(import.meta.dirname), "..", "..", ".env"),
+    join(process.cwd(), ".env"),
+  ]
+  for (const path of candidates) {
+    if (!existsSync(path)) continue
+    const content = readFileSync(path, "utf-8")
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith("#")) continue
+      const match = /^([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*"?([^"#]*?)"?\s*(?:#.*)?$/.exec(trimmed)
+      if (!match) continue
+      const key = match[1]!
+      if (process.env[key]) continue // 不覆盖已有的环境变量
+      process.env[key] = match[2]!
+    }
+    return
+  }
+}
+loadEnvFile()
+
 const apiKey = process.env.CTF_MODEL_API_KEY ?? process.env.OPENROUTER_API_KEY
-if (!apiKey) throw new Error("请设置 CTF_MODEL_API_KEY（或 OPENROUTER_API_KEY）；此脚本不会读取或保存任何凭据文件")
+const modelId = process.env.CTF_MODEL_ID ?? process.env.OPENROUTER_MODEL
+const provider = process.env.CTF_MODEL_PROVIDER ?? "openrouter"
+const baseUrl = process.env.CTF_MODEL_BASE_URL
+
+if (!apiKey) {
+  throw new Error(
+    "未设置 API Key。请在项目根目录创建 .env 文件（参考 .env.example）：\n" +
+    "  CTF_MODEL_API_KEY = \"sk-...\"\n" +
+    "  CTF_MODEL_ID = \"deepseek-chat\"\n" +
+    "或设置环境变量 CTF_MODEL_API_KEY / OPENROUTER_API_KEY"
+  )
+}
+if (!modelId) {
+  throw new Error(
+    "未设置 MODEL。请在项目根目录创建 .env 文件（参考 .env.example）：\n" +
+    "  CTF_MODEL_ID = \"deepseek-chat\"\n" +
+    "或设置环境变量 CTF_MODEL_ID / OPENROUTER_MODEL"
+  )
+}
 
 const model: Model<"openai-completions"> = baseUrl ? {
   id: modelId,
@@ -34,7 +73,7 @@ const model: Model<"openai-completions"> = baseUrl ? {
   },
 } : (() => {
   const builtin = getModel(provider as never, modelId as never) as Model<"openai-completions"> | undefined
-  if (!builtin) throw new Error(`Pi 未内置模型: ${provider}/${modelId}；自定义模型请设置 CTF_MODEL_BASE_URL`)
+  if (!builtin) throw new Error(`Pi 未内置模型: ${provider}/${modelId}。自定义 API 请设置 .env 中的 API-KEY 和 MODEL，脚本会自动使用 ${provider} 的 API endpoint（当前推断: ${baseUrl ?? "未知"}）`)
   return {
     ...builtin,
     contextWindow: Math.min(builtin.contextWindow, Number(process.env.CTF_MODEL_CONTEXT_WINDOW ?? 16_000)),
@@ -68,6 +107,7 @@ try {
           "你是 CTF Solver；所有命令和文件操作必须使用 Docker sandbox tools。",
           "必须先调用 ctf_challenge_info，使用 ctf_download_attachment 下载附件，使用 read 读取附件。",
           "如需解码或分析，使用 bash；得到 Flag 后必须调用 ctf_submit_flag。",
+          "解题过程中使用 ctf_blackboard_record 记录关键发现，使用 ctf_blackboard_read 查看已有知识。",
         ].join("\n"),
       },
     },
