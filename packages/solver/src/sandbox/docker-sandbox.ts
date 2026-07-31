@@ -19,9 +19,14 @@ export interface DockerSandboxOptions {
   runId: string
   image: string
   workspace: string
+  workspaceMount?: DockerWorkspaceMount
   privileged: boolean
   networkMode: "none" | "bridge" | "host"
 }
+
+export type DockerWorkspaceMount =
+  | { type: "bind"; source: string }
+  | { type: "volume"; source: string; subpath?: string }
 
 const OUTPUT_LIMIT = 1_000_000
 
@@ -78,6 +83,10 @@ export class DockerSandbox implements Sandbox {
 
   static async create(options: DockerSandboxOptions): Promise<DockerSandbox> {
     const name = `ctf-solver-${options.runId}`
+    const workspaceMount = dockerMount(options.workspaceMount ?? {
+      type: "bind",
+      source: options.workspace,
+    })
     const args = [
       "create",
       "--name", name,
@@ -86,7 +95,7 @@ export class DockerSandbox implements Sandbox {
       "--label", `ctf-solver.run=${options.runId}`,
       "--network", options.networkMode,
       // 唯一允许的宿主机挂载是当前 Run 的 workspace。
-      "--mount", `type=bind,src=${options.workspace},dst=/workspace`,
+      "--mount", workspaceMount,
     ]
     if (options.privileged) args.push("--privileged")
     args.push(options.image, "sleep", "infinity")
@@ -131,4 +140,28 @@ export class DockerSandbox implements Sandbox {
 
 export function newRunId(): string {
   return randomUUID()
+}
+
+function dockerMount(mount: DockerWorkspaceMount): string {
+  if (mount.type === "bind") {
+    if (!mount.source || mount.source.includes(",")) {
+      throw new Error("Docker bind workspace 路径无效")
+    }
+    return `type=bind,src=${mount.source},dst=/workspace`
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(mount.source)) {
+    throw new Error("Docker workspace volume 名称无效")
+  }
+  const fields = [`type=volume`, `src=${mount.source}`, "dst=/workspace"]
+  if (mount.subpath) {
+    const normalized = mount.subpath.replaceAll("\\", "/")
+    if (
+      normalized.startsWith("/") ||
+      normalized.split("/").some((segment) => !segment || segment === "." || segment === ".." || segment.includes(","))
+    ) {
+      throw new Error("Docker workspace volume subpath 无效")
+    }
+    fields.push(`volume-subpath=${normalized}`)
+  }
+  return fields.join(",")
 }

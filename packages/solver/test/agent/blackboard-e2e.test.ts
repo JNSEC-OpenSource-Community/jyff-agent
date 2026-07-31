@@ -14,26 +14,27 @@ afterAll(async () => {
 })
 
 function loadEnv(): { apiKey: string; model: string; provider: string; baseUrl?: string } {
+  const map = new Map<string, string>()
   try {
     const content = readFileSync(join(import.meta.dirname, "../../../../.env"), "utf-8")
-    const map = new Map<string, string>()
     for (const line of content.split(/\r?\n/)) {
       const trimmed = line.trim()
       if (!trimmed || trimmed.startsWith("#")) continue
       const m = /^([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*"?([^"#]*?)"?\s*(?:#.*)?$/.exec(trimmed)
       if (m) map.set(m[1]!, m[2]!)
     }
-    const get = (key: string, fallback?: string) => map.get(key) ?? fallback ?? ""
-    const apiKey = get("CTF_MODEL_API_KEY") || get("OPENROUTER_API_KEY")
-    const model = get("CTF_MODEL_ID") || get("OPENROUTER_MODEL")
-    if (!apiKey || !model) throw new Error("Missing CTF_MODEL_API_KEY or CTF_MODEL_ID in .env")
-    const provider = get("CTF_MODEL_PROVIDER", "openrouter")
-    const rawBaseUrl = get("CTF_MODEL_BASE_URL")
-    return { apiKey, model, provider, baseUrl: rawBaseUrl || undefined }
-  } catch {
-    return { apiKey: "", model: "", provider: "openrouter", baseUrl: undefined }
-  }
+  } catch {}
+  const get = (key: string, fallback?: string) =>
+    process.env[key] ?? map.get(key) ?? fallback ?? ""
+  const apiKey = get("CTF_MODEL_API_KEY") || get("OPENROUTER_API_KEY")
+  const model = get("CTF_MODEL_ID") || get("OPENROUTER_MODEL")
+  const provider = get("CTF_MODEL_PROVIDER", "openrouter")
+  const rawBaseUrl = get("CTF_MODEL_BASE_URL")
+  return { apiKey, model, provider, baseUrl: rawBaseUrl || undefined }
 }
+
+const e2eEnv = loadEnv()
+const runModelE2E = process.env.CTF_RUN_MODEL_E2E === "1"
 
 class FakeSandbox {
   readonly id = "fake"
@@ -64,13 +65,11 @@ async function setupProject(): Promise<{ project: Project; root: string }> {
 }
 
 describe("E2E: Blackboard with real model", () => {
-  it("Agent can call ctf_blackboard_read and ctf_blackboard_record", { timeout: 120_000 }, async () => {
-    const env = loadEnv()
-    if (!env.apiKey) {
-      console.warn("Skipping E2E: missing API-KEY or MODEL in .env")
-      return
-    }
-
+  it.skipIf(!runModelE2E || !e2eEnv.apiKey || !e2eEnv.model)(
+    "Agent can call ctf_blackboard_read and ctf_blackboard_record",
+    { timeout: 120_000 },
+    async () => {
+    const env = e2eEnv
     const { project } = await setupProject()
     const solver = await project.createSolver("warmup-flag", {
       agent: {
@@ -136,6 +135,16 @@ describe("E2E: Blackboard with real model", () => {
 
       expect(toolCalls).toContain("ctf_blackboard_read")
       expect(toolCalls).toContain("ctf_blackboard_record")
+      expect(toolCalls.filter((name) => name === "ctf_blackboard_read").length).toBeGreaterThanOrEqual(2)
+      expect(project.blackboard("warmup-flag").evidence).toEqual(expect.arrayContaining([
+        expect.objectContaining({ description: "Test evidence from e2e" }),
+      ]))
+      const finalText = solver.state.messages
+        .flatMap((message) => message.role === "assistant" ? message.content : [])
+        .filter((content) => content.type === "text")
+        .map((content) => (content as { text: string }).text)
+        .join("\n")
+      expect(finalText).toContain("TEST_COMPLETE")
     } finally {
       await solver.close().catch(() => {})
       await project.close().catch(() => {})

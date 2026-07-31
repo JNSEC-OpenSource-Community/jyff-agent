@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
 import { RunStore } from "../../src/project/run-store.js"
 
@@ -50,5 +51,58 @@ describe("RunStore", () => {
     expect(store.listRuns().map((run) => run.status)).toEqual(["interrupted", "interrupted"])
     expect(store.listRuns().every((run) => run.closeReason === "interrupted" && run.error === "测试恢复")).toBe(true)
     store.close()
+  })
+
+  it("只把调度来源计入重试预算，并为直接运行保留兼容默认值", async () => {
+    const { store } = await storeFixture()
+    store.createRun({ id: "direct", challengeId: "rev-1", workspace: "a", attempt: 1 })
+    store.createRun({
+      id: "test",
+      challengeId: "rev-1",
+      workspace: "b",
+      attempt: 2,
+      source: "test",
+    })
+    store.createRun({
+      id: "manual",
+      challengeId: "rev-1",
+      workspace: "c",
+      attempt: 3,
+      source: "manual",
+    })
+    store.createRun({
+      id: "retry",
+      challengeId: "rev-1",
+      workspace: "d",
+      attempt: 4,
+      source: "retry",
+    })
+
+    expect(store.getRun("direct")?.source).toBe("direct")
+    expect(store.schedulerAttemptCount("rev-1")).toBe(2)
+    store.close()
+  })
+
+  it("打开旧数据库时自动补充 run source 字段", async () => {
+    const { path, store } = await storeFixture()
+    store.close()
+    const legacy = new DatabaseSync(path)
+    legacy.exec("ALTER TABLE runs DROP COLUMN source")
+    legacy.exec(`
+      INSERT INTO runs (
+        id, challenge_id, workspace, attempt, status, created_at, updated_at
+      ) VALUES (
+        'legacy', 'misc-1', 'workspace', 1, 'closed',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      )
+    `)
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    expect(migrated.getRun("legacy")).toMatchObject({
+      id: "legacy",
+      source: "direct",
+    })
+    migrated.close()
   })
 })

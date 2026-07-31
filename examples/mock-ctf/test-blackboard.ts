@@ -85,6 +85,7 @@ async function main() {
   console.log("\n[阶段 1] 创建 Solver（含黑板 origin 自动创建）")
 
   solver = await project.createSolver("warmup-flag", {
+    source: "test",
     agent: {
       streamFn: streamSimple as AgentOptions["streamFn"],
       getApiKey: () => apiKey!,
@@ -178,10 +179,19 @@ async function main() {
   check("Agent 输出包含 ALL_BLACKBOARD_TESTS_PASSED", finalText.includes("ALL_BLACKBOARD_TESTS_PASSED"))
   check("至少调用了 5 次工具", toolCount >= 5)
 
-  // 验证持久化
-  const summary = project.runs()
-  const solvedRun = summary.find((r) => r.challengeId === "warmup-flag")
-  check("黑板测试 Run 已持久化", solvedRun !== undefined)
+  // 验证实际持久化内容，而不只检查工具是否被调用。
+  const runs = project.runs()
+  const blackboard = project.blackboard("warmup-flag")
+  check("黑板测试 Run 已持久化", runs.some((r) => r.challengeId === "warmup-flag"))
+  check(
+    "两条 Agent Evidence 已持久化",
+    blackboard.evidence.some((e) => e.description === "附件 flag.txt 是 base64 编码的文本文件") &&
+      blackboard.evidence.some((e) => e.description === "解码后内容为 MOCK{platform-plugin-works}"),
+  )
+  check(
+    "Opportunity 已结论并关联结果 Evidence",
+    blackboard.opportunities.some((o) => o.status === "concluded" && o.targetEvidenceId !== null),
+  )
 
   console.log(`\n  通过: ${passed}  失败: ${failed}`)
   if (failed > 0) {

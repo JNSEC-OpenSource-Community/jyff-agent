@@ -97,6 +97,7 @@ try {
 
   console.log("[2/4] 创建 warmup-flag 的独立 Docker Solver")
   solver = await project.createSolver("warmup-flag", {
+    source: "test",
     agent: {
       streamFn: streamSimple as AgentOptions["streamFn"],
       getApiKey: (requestedProvider) => requestedProvider === provider ? apiKey : undefined,
@@ -105,9 +106,9 @@ try {
         thinkingLevel: "off",
         systemPrompt: [
           "你是 CTF Solver；所有命令和文件操作必须使用 Docker sandbox tools。",
+          "开始时必须调用 ctf_blackboard_read 查看共享知识。",
           "必须先调用 ctf_challenge_info，使用 ctf_download_attachment 下载附件，使用 read 读取附件。",
-          "如需解码或分析，使用 bash；得到 Flag 后必须调用 ctf_submit_flag。",
-          "解题过程中使用 ctf_blackboard_record 记录关键发现，使用 ctf_blackboard_read 查看已有知识。",
+          "必须使用 bash 解码附件，使用 ctf_blackboard_record 记录解码结果，最后调用 ctf_submit_flag。",
         ].join("\n"),
       },
     },
@@ -124,7 +125,7 @@ try {
 
   console.log(`[3/4] 交给 ${provider}/${modelId} Agent 解题\n`)
   await solver.prompt([
-    "解决当前 CTF 题目。严格完成题目信息、附件下载、read 读取、分析和 Flag 提交的完整工具链。"
+    "解决当前 CTF 题目。严格完成黑板读取、题目信息、附件下载、read 读取、bash 分析、黑板记录和 Flag 提交的完整工具链。"
   ].join("\n"))
   await solver.waitForIdle()
 
@@ -139,13 +140,31 @@ try {
     .flatMap((message) => message.content)
     .filter((content) => content.type === "toolCall")
     .map((content) => (content as { name: string }).name)
-  const requiredTools = ["ctf_challenge_info", "ctf_download_attachment", "read", "ctf_submit_flag"]
+  const requiredTools = [
+    "ctf_blackboard_read",
+    "ctf_challenge_info",
+    "ctf_download_attachment",
+    "read",
+    "bash",
+    "ctf_blackboard_record",
+    "ctf_submit_flag",
+  ]
   const missing = requiredTools.filter((name) => !toolCalls.includes(name))
   if (missing.length > 0) throw new Error(`Agent 未完成要求的工具调用: ${missing.join(", ")}`)
 
-  const submissions = solver.state.messages
-    .filter((message) => message.role === "toolResult" && message.toolName === "ctf_submit_flag")
-    .map((message) => JSON.stringify(message))
+  const accepted = solver.state.messages.some((message) => {
+      if (message.role !== "toolResult" || message.toolName !== "ctf_submit_flag") return false
+      const status = ("details" in message
+        ? message.details
+        : undefined) as { status?: string } | undefined
+      return status?.status === "accepted" || status?.status === "already_solved"
+    })
+  if (!accepted) throw new Error("Agent 未成功提交 Flag")
+
+  const blackboard = project.blackboard("warmup-flag")
+  if (blackboard.evidence.length < 2) {
+    throw new Error("Agent 未将解题结果持久化到黑板")
+  }
   await access(join(solver.workspace, "attachments", "flag.txt"))
 
   console.log("\n[4/4] 成功：附件已保留在 workspace，Flag 已被接受。")
