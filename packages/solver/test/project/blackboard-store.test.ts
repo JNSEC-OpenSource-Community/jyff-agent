@@ -2,7 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { RunStore } from "../../src/project/run-store.js"
+import {
+  BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+  BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
+  BLACKBOARD_SOURCE_MAX_ITEMS,
+  RunStore,
+} from "../../src/project/run-store.js"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -59,6 +64,7 @@ describe("RunStore blackboard", () => {
     expect(origin1.description).toContain("libc.so")
 
     // 幂等调用
+    store.createRun({ id: "run-2", challengeId: "chal-1", workspace: "/tmp/b", attempt: 2 })
     const origin2 = store.ensureOrigin("chal-1", "run-2", {
       ...challenge,
       title: "Different Title",
@@ -120,6 +126,37 @@ describe("RunStore blackboard", () => {
     store.close()
   })
 
+  it("限制描述长度和 opportunity source 数量", async () => {
+    const { store } = await storeFixture()
+    store.createRun({ id: "run-1", challengeId: "chal-1", workspace: "/tmp/a", attempt: 1 })
+    const evidence = store.recordEvidence("chal-1", "run-1", "source")
+
+    expect(() =>
+      store.recordEvidence("chal-1", "run-1", "A".repeat(BLACKBOARD_DESCRIPTION_MAX_LENGTH + 1)),
+    ).toThrow("must not exceed")
+    expect(() =>
+      store.recordOpportunity(
+        "chal-1",
+        "run-1",
+        "too many sources",
+        Array.from({ length: BLACKBOARD_SOURCE_MAX_ITEMS + 1 }, () => evidence.id),
+      ),
+    ).toThrow("must not contain more than")
+    store.close()
+  })
+
+  it("限制单题黑板条目总量", async () => {
+    const { store } = await storeFixture()
+    store.createRun({ id: "run-1", challengeId: "chal-1", workspace: "/tmp/a", attempt: 1 })
+    for (let index = 0; index < BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE; index++) {
+      store.recordEvidence("chal-1", "run-1", `evidence-${index}`)
+    }
+    expect(() => store.recordEvidence("chal-1", "run-1", "overflow")).toThrow(
+      `per-challenge limit of ${BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE}`,
+    )
+    store.close()
+  })
+
   it("concludeOpportunity 同时创建 evidence 并更新 opportunity", async () => {
     const { store } = await storeFixture()
     store.createRun({ id: "run-1", challengeId: "chal-1", workspace: "/tmp/a", attempt: 1 })
@@ -128,7 +165,7 @@ describe("RunStore blackboard", () => {
     const origin = store.getBlackboardSummary("chal-1").evidence[0]!
     const opp = store.recordOpportunity("chal-1", "run-1", "测试探索", [origin.id])
 
-    const result = store.concludeOpportunity(opp.id, "探索成功，获得 shell", "run-1")
+    const result = store.concludeOpportunity("chal-1", opp.id, "探索成功，获得 shell", "run-1")
     expect(result.evidence.description).toBe("探索成功，获得 shell")
     expect(result.opportunity.status).toBe("concluded")
     expect(result.opportunity.targetEvidenceId).toBe(result.evidence.id)
@@ -147,9 +184,46 @@ describe("RunStore blackboard", () => {
 
     const origin = store.getBlackboardSummary("chal-1").evidence[0]!
     const opp = store.recordOpportunity("chal-1", "run-1", "test", [origin.id])
-    store.concludeOpportunity(opp.id, "done", "run-1")
+    store.concludeOpportunity("chal-1", opp.id, "done", "run-1")
 
-    expect(() => store.concludeOpportunity(opp.id, "double", "run-1")).toThrow("already concluded")
+    expect(() => store.concludeOpportunity("chal-1", opp.id, "double", "run-1")).toThrow("already concluded")
+    store.close()
+  })
+
+  it("concludeOpportunity 拒绝跨 challenge 的 opportunity 和 run", async () => {
+    const { store } = await storeFixture()
+    store.createRun({ id: "run-1", challengeId: "chal-1", workspace: "/tmp/a", attempt: 1 })
+    store.createRun({ id: "run-2", challengeId: "chal-2", workspace: "/tmp/b", attempt: 1 })
+    const evidence = store.recordEvidence("chal-1", "run-1", "chal-1 evidence")
+    const opportunity = store.recordOpportunity("chal-1", "run-1", "chal-1 opportunity", [evidence.id])
+
+    expect(() =>
+      store.concludeOpportunity("chal-2", opportunity.id, "cross challenge", "run-2"),
+    ).toThrow("not found for challenge chal-2")
+    expect(() =>
+      store.concludeOpportunity("chal-1", opportunity.id, "wrong run", "run-2"),
+    ).toThrow("does not belong to challenge chal-1")
+
+    const summary = store.getBlackboardSummary("chal-1")
+    expect(summary.evidence).toHaveLength(1)
+    expect(summary.opportunities[0]!.status).toBe("open")
+    store.close()
+  })
+
+  it("写入方法拒绝 challenge 与 run 不一致", async () => {
+    const { store } = await storeFixture()
+    store.createRun({ id: "run-1", challengeId: "chal-1", workspace: "/tmp/a", attempt: 1 })
+
+    expect(() => store.recordEvidence("chal-2", "run-1", "invalid")).toThrow(
+      "does not belong to challenge chal-2",
+    )
+    expect(() => store.ensureOrigin("chal-2", "run-1", fakeChallenge())).toThrow(
+      "does not belong to challenge chal-2",
+    )
+    const evidence = store.recordEvidence("chal-1", "run-1", "valid")
+    expect(() =>
+      store.recordOpportunity("chal-2", "run-1", "invalid", [evidence.id]),
+    ).toThrow("does not belong to challenge chal-2")
     store.close()
   })
 

@@ -76,6 +76,7 @@ function copyInfo(challenge: MockChallenge): ChallengeInfo {
 export class MockContest implements PlatformProject {
   private readonly challenges: MockChallenge[]
   private readonly announcements: Announcement[]
+  private readonly name: string
   private readonly environments = new Map<string, RemoteEnvironment>()
   private readonly solved = new Set<string>()
   private readonly remainingFailures = new Map<string, Record<FailureKind, number>>()
@@ -88,6 +89,7 @@ export class MockContest implements PlatformProject {
   constructor(private readonly eventId: string, config: MockPlatformConfig) {
     this.challenges = config.challenges ?? defaults
     this.announcements = config.announcements ?? []
+    this.name = config.name ?? "Mock CTF"
     for (const challenge of this.challenges) {
       this.remainingFailures.set(challenge.id, {
         bind: challenge.failures?.bind ?? 0,
@@ -102,7 +104,7 @@ export class MockContest implements PlatformProject {
   async refresh(): Promise<ContestOverview> { return this.getOverview() }
 
   async getOverview(): Promise<ContestOverview> {
-    return { id: this.eventId, name: "Mock CTF", challenges: this.challenges.length, announcements: this.announcements.length }
+    return { id: this.eventId, name: this.name, challenges: this.challenges.length, announcements: this.announcements.length }
   }
 
   async listChallenges(): Promise<ChallengeSummary[]> {

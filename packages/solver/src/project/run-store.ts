@@ -12,6 +12,8 @@ export type RunStatus =
   | "closed"
   | "interrupted"
 
+export type RunSource = "direct" | "auto" | "manual" | "retry" | "test"
+
 export type RunCloseReason = "submitted" | "manual" | "failed" | "timed_out" | "cancelled" | "interrupted"
 
 export interface RunRecord {
@@ -19,6 +21,7 @@ export interface RunRecord {
   challengeId: string
   workspace: string
   attempt: number
+  source: RunSource
   status: RunStatus
   closeReason?: RunCloseReason
   error?: string
@@ -42,6 +45,7 @@ export interface CreateRunRecord {
   challengeId: string
   workspace: string
   attempt: number
+  source?: RunSource
   createdAt?: string
 }
 
@@ -92,6 +96,13 @@ export interface BlackboardSummary {
   }[]
 }
 
+export interface BlackboardStats {
+  challengeId: string
+  evidence: number
+  openOpportunities: number
+  concludedOpportunities: number
+}
+
 export interface ChallengeInfoForOrigin {
   title: string
   category: string
@@ -99,6 +110,12 @@ export interface ChallengeInfoForOrigin {
   description: string
   attachments: { name: string; size: number }[]
 }
+
+export const BLACKBOARD_DESCRIPTION_MAX_LENGTH = 4_000
+export const BLACKBOARD_ORIGIN_MAX_LENGTH = 8_000
+export const BLACKBOARD_SOURCE_MAX_ITEMS = 32
+export const BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE = 256
+export const BLACKBOARD_MAX_OPPORTUNITIES_PER_CHALLENGE = 256
 
 interface EvidenceRow {
   id: number
@@ -129,6 +146,7 @@ interface RunRow {
   challenge_id: string
   workspace: string
   attempt: number
+  source: RunSource
   status: RunStatus
   close_reason: RunCloseReason | null
   error: string | null
@@ -145,6 +163,13 @@ interface EventRow {
   type: string
   data_json: string | null
   created_at: string
+}
+
+interface BlackboardStatsRow {
+  challenge_id: string
+  evidence_count: number
+  open_count: number
+  concluded_count: number
 }
 
 function opportunityFromRow(
@@ -168,12 +193,28 @@ function evidenceToSummary(row: EvidenceRow): BlackboardSummary["evidence"][numb
   return { id: row.id, description: row.description, runId: row.run_id }
 }
 
+function normalizedDescription(value: string, field: string): string {
+  const normalized = value.trim()
+  if (!normalized) throw new Error(`${field} must not be empty`)
+  if (normalized.length > BLACKBOARD_DESCRIPTION_MAX_LENGTH) {
+    throw new Error(`${field} must not exceed ${BLACKBOARD_DESCRIPTION_MAX_LENGTH} characters`)
+  }
+  return normalized
+}
+
+function truncateOrigin(value: string): string {
+  if (value.length <= BLACKBOARD_ORIGIN_MAX_LENGTH) return value
+  const suffix = "\n[Origin truncated; use ctf_challenge_info for the complete challenge description.]"
+  return value.slice(0, BLACKBOARD_ORIGIN_MAX_LENGTH - suffix.length) + suffix
+}
+
 function runFromRow(row: RunRow): RunRecord {
   return {
     id: row.id,
     challengeId: row.challenge_id,
     workspace: row.workspace,
     attempt: row.attempt,
+    source: row.source,
     status: row.status,
     ...(row.close_reason ? { closeReason: row.close_reason } : {}),
     ...(row.error ? { error: row.error } : {}),
@@ -214,6 +255,7 @@ export class RunStore {
         challenge_id TEXT NOT NULL,
         workspace TEXT NOT NULL,
         attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        source TEXT NOT NULL DEFAULT 'direct',
         status TEXT NOT NULL,
         close_reason TEXT,
         error TEXT,
@@ -272,6 +314,10 @@ export class RunStore {
         PRIMARY KEY (opportunity_id, evidence_id)
       );
     `)
+    const runColumns = database.prepare("PRAGMA table_info(runs)").all() as unknown as Array<{ name: string }>
+    if (!runColumns.some((column) => column.name === "source")) {
+      database.exec("ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT 'direct'")
+    }
     return new RunStore(path, database)
   }
 
@@ -282,10 +328,21 @@ export class RunStore {
     try {
       this.database.prepare(`
         INSERT INTO runs (
-          id, challenge_id, workspace, attempt, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'preparing', ?, ?)
-      `).run(input.id, input.challengeId, input.workspace, input.attempt, timestamp, timestamp)
-      this.insertEvent(input.id, "run_created", { attempt: input.attempt }, timestamp)
+          id, challenge_id, workspace, attempt, source, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'preparing', ?, ?)
+      `).run(
+        input.id,
+        input.challengeId,
+        input.workspace,
+        input.attempt,
+        input.source ?? "direct",
+        timestamp,
+        timestamp,
+      )
+      this.insertEvent(input.id, "run_created", {
+        attempt: input.attempt,
+        source: input.source ?? "direct",
+      }, timestamp)
       this.database.exec("COMMIT")
     } catch (error) {
       this.database.exec("ROLLBACK")
@@ -371,6 +428,16 @@ export class RunStore {
     return row.attempt + 1
   }
 
+  schedulerAttemptCount(challengeId: string): number {
+    this.assertOpen()
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS attempts
+      FROM runs
+      WHERE challenge_id = ? AND source IN ('auto', 'manual', 'retry')
+    `).get(challengeId) as { attempts: number }
+    return row.attempts
+  }
+
   isSolved(challengeId: string): boolean {
     this.assertOpen()
     const row = this.database.prepare(`
@@ -398,19 +465,53 @@ export class RunStore {
     }))
   }
 
-  recordEvidence(challengeId: string, runId: string, description: string): EvidenceRecord {
+  appendEvent(runId: string, type: string, data?: unknown): RunEvent {
     this.assertOpen()
     const timestamp = new Date().toISOString()
-    const result = this.database.prepare(`
-      INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `).run(challengeId, description, runId, timestamp)
-    return {
-      id: Number(result.lastInsertRowid),
-      challengeId,
-      description,
-      runId,
-      createdAt: timestamp,
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const id = this.insertEvent(runId, type, data, timestamp)
+      this.database.exec("COMMIT")
+      return {
+        id,
+        runId,
+        type,
+        ...(data === undefined ? {} : { data }),
+        createdAt: timestamp,
+      }
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  recordEvidence(challengeId: string, runId: string, description: string): EvidenceRecord {
+    this.assertOpen()
+    const normalized = normalizedDescription(description, "description")
+    const timestamp = new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      this.assertRunBelongsToChallenge(runId, challengeId)
+      this.assertChallengeEntryCapacity(
+        "challenge_evidence",
+        challengeId,
+        BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
+      )
+      const result = this.database.prepare(`
+        INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(challengeId, normalized, runId, timestamp)
+      this.database.exec("COMMIT")
+      return {
+        id: Number(result.lastInsertRowid),
+        challengeId,
+        description: normalized,
+        runId,
+        createdAt: timestamp,
+      }
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
     }
   }
 
@@ -425,22 +526,23 @@ export class RunStore {
           .map((a) => `  - ${a.name} (${a.size} bytes)`)
           .join("\n")
       : "  (none)"
-    const description = [
+    const description = truncateOrigin([
       `Title: ${challengeInfo.title}`,
       `Category: ${challengeInfo.category}`,
       `Score: ${challengeInfo.score}`,
       `Description: ${challengeInfo.description}`,
       `Attachments:`,
       attachments,
-    ].join("\n")
+    ].join("\n"))
     const timestamp = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
+      this.assertRunBelongsToChallenge(runId, challengeId)
       const existing = this.database.prepare(`
         SELECT * FROM challenge_evidence WHERE challenge_id = ? ORDER BY id ASC LIMIT 1
       `).get(challengeId) as unknown as EvidenceRow | undefined
       if (existing) {
-        this.database.exec("ROLLBACK")
+        this.database.exec("COMMIT")
         return {
           id: existing.id,
           challengeId: existing.challenge_id,
@@ -449,6 +551,11 @@ export class RunStore {
           createdAt: existing.created_at,
         }
       }
+      this.assertChallengeEntryCapacity(
+        "challenge_evidence",
+        challengeId,
+        BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
+      )
       const result = this.database.prepare(`
         INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
         VALUES (?, ?, ?, ?)
@@ -474,13 +581,23 @@ export class RunStore {
     sourceEvidenceIds: number[],
   ): OpportunityRecord {
     this.assertOpen()
+    const normalized = normalizedDescription(description, "description")
     if (sourceEvidenceIds.length === 0) {
       throw new Error("sourceEvidenceIds must not be empty")
+    }
+    if (sourceEvidenceIds.length > BLACKBOARD_SOURCE_MAX_ITEMS) {
+      throw new Error(`sourceEvidenceIds must not contain more than ${BLACKBOARD_SOURCE_MAX_ITEMS} items`)
     }
     const deduped = [...new Set(sourceEvidenceIds)]
     const timestamp = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
+      this.assertRunBelongsToChallenge(runId, challengeId)
+      this.assertChallengeEntryCapacity(
+        "challenge_opportunities",
+        challengeId,
+        BLACKBOARD_MAX_OPPORTUNITIES_PER_CHALLENGE,
+      )
       // 校验所有 source evidence 属于同一个 challenge，防止跨题知识串联
       const placeholders = deduped.map(() => "?").join(", ")
       const rows = this.database.prepare(`
@@ -494,7 +611,7 @@ export class RunStore {
       const result = this.database.prepare(`
         INSERT INTO challenge_opportunities (challenge_id, description, status, run_id, created_at)
         VALUES (?, ?, 'open', ?, ?)
-      `).run(challengeId, description, runId, timestamp)
+      `).run(challengeId, normalized, runId, timestamp)
       const opportunityId = Number(result.lastInsertRowid)
       const insertSource = this.database.prepare(`
         INSERT INTO challenge_opportunity_sources (opportunity_id, evidence_id) VALUES (?, ?)
@@ -506,7 +623,7 @@ export class RunStore {
       return {
         id: opportunityId,
         challengeId,
-        description,
+        description: normalized,
         status: "open",
         runId,
         sourceEvidenceIds: deduped,
@@ -521,30 +638,42 @@ export class RunStore {
   }
 
   concludeOpportunity(
+    challengeId: string,
     opportunityId: number,
     resultDescription: string,
     runId: string,
   ): { evidence: EvidenceRecord; opportunity: OpportunityRecord } {
     this.assertOpen()
-    const row = this.database.prepare(`
-      SELECT * FROM challenge_opportunities WHERE id = ?
-    `).get(opportunityId) as unknown as OpportunityRow | undefined
-    if (!row) throw new Error(`Opportunity ${opportunityId} not found`)
-    if (row.status !== "open") throw new Error(`Opportunity ${opportunityId} is already ${row.status}`)
+    const normalized = normalizedDescription(resultDescription, "resultDescription")
     const timestamp = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
+      this.assertRunBelongsToChallenge(runId, challengeId)
+      const row = this.database.prepare(`
+        SELECT * FROM challenge_opportunities
+        WHERE id = ? AND challenge_id = ?
+      `).get(opportunityId, challengeId) as unknown as OpportunityRow | undefined
+      if (!row) throw new Error(`Opportunity ${opportunityId} not found for challenge ${challengeId}`)
+      if (row.status !== "open") throw new Error(`Opportunity ${opportunityId} is already ${row.status}`)
+      this.assertChallengeEntryCapacity(
+        "challenge_evidence",
+        challengeId,
+        BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
+      )
+
       const evidenceResult = this.database.prepare(`
         INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
         VALUES (?, ?, ?, ?)
-      `).run(row.challenge_id, resultDescription, runId, timestamp)
+      `).run(challengeId, normalized, runId, timestamp)
       const evidenceId = Number(evidenceResult.lastInsertRowid)
-      this.database.prepare(`
+      const update = this.database.prepare(`
         UPDATE challenge_opportunities
         SET status = 'concluded', target_evidence_id = ?, concluded_at = ?
-        WHERE id = ?
-      `).run(evidenceId, timestamp, opportunityId)
-      this.database.exec("COMMIT")
+        WHERE id = ? AND challenge_id = ? AND status = 'open'
+      `).run(evidenceId, timestamp, opportunityId, challengeId)
+      if (Number(update.changes) !== 1) {
+        throw new Error(`Opportunity ${opportunityId} could not be concluded`)
+      }
       const evidenceRow = this.database.prepare(
         "SELECT * FROM challenge_evidence WHERE id = ?",
       ).get(evidenceId) as unknown as EvidenceRow
@@ -554,7 +683,7 @@ export class RunStore {
       const sourceRows = this.database.prepare(`
         SELECT evidence_id FROM challenge_opportunity_sources WHERE opportunity_id = ?
       `).all(opportunityId) as unknown as OpportunitySourceRow[]
-      return {
+      const concluded = {
         evidence: {
           id: evidenceRow.id,
           challengeId: evidenceRow.challenge_id,
@@ -564,6 +693,8 @@ export class RunStore {
         },
         opportunity: opportunityFromRow(oppRow, sourceRows.map((s) => s.evidence_id)),
       }
+      this.database.exec("COMMIT")
+      return concluded
     } catch (error) {
       this.database.exec("ROLLBACK")
       throw error
@@ -598,6 +729,42 @@ export class RunStore {
     }
   }
 
+  getBlackboardStats(): BlackboardStats[] {
+    this.assertOpen()
+    const rows = this.database.prepare(`
+      SELECT
+        ids.challenge_id,
+        COALESCE(e.evidence_count, 0) AS evidence_count,
+        COALESCE(o.open_count, 0) AS open_count,
+        COALESCE(o.concluded_count, 0) AS concluded_count
+      FROM (
+        SELECT challenge_id FROM challenge_evidence
+        UNION
+        SELECT challenge_id FROM challenge_opportunities
+      ) ids
+      LEFT JOIN (
+        SELECT challenge_id, COUNT(*) AS evidence_count
+        FROM challenge_evidence
+        GROUP BY challenge_id
+      ) e ON e.challenge_id = ids.challenge_id
+      LEFT JOIN (
+        SELECT
+          challenge_id,
+          SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_count,
+          SUM(CASE WHEN status = 'concluded' THEN 1 ELSE 0 END) AS concluded_count
+        FROM challenge_opportunities
+        GROUP BY challenge_id
+      ) o ON o.challenge_id = ids.challenge_id
+      ORDER BY ids.challenge_id ASC
+    `).all() as unknown as BlackboardStatsRow[]
+    return rows.map((row) => ({
+      challengeId: row.challenge_id,
+      evidence: row.evidence_count,
+      openOpportunities: row.open_count,
+      concludedOpportunities: row.concluded_count,
+    }))
+  }
+
   close(): void {
     if (this.closed) return
     this.closed = true
@@ -610,14 +777,38 @@ export class RunStore {
     return run
   }
 
-  private insertEvent(runId: string, type: string, data: unknown, timestamp: string): void {
-    this.database.prepare(`
+  private insertEvent(runId: string, type: string, data: unknown, timestamp: string): number {
+    const result = this.database.prepare(`
       INSERT INTO run_events (run_id, type, data_json, created_at)
       VALUES (?, ?, ?, ?)
     `).run(runId, type, data === undefined ? null : JSON.stringify(data), timestamp)
+    return Number(result.lastInsertRowid)
   }
 
   private assertOpen(): void {
     if (this.closed) throw new Error("RunStore 已关闭")
+  }
+
+  private assertRunBelongsToChallenge(runId: string, challengeId: string): void {
+    const row = this.database.prepare(`
+      SELECT challenge_id FROM runs WHERE id = ?
+    `).get(runId) as { challenge_id: string } | undefined
+    if (!row) throw new Error(`RunStore 中不存在 Run: ${runId}`)
+    if (row.challenge_id !== challengeId) {
+      throw new Error(`Run ${runId} does not belong to challenge ${challengeId}`)
+    }
+  }
+
+  private assertChallengeEntryCapacity(
+    table: "challenge_evidence" | "challenge_opportunities",
+    challengeId: string,
+    maximum: number,
+  ): void {
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS count FROM ${table} WHERE challenge_id = ?
+    `).get(challengeId) as { count: number }
+    if (row.count >= maximum) {
+      throw new Error(`${table} has reached the per-challenge limit of ${maximum}`)
+    }
   }
 }

@@ -1,6 +1,14 @@
 import { Type } from "typebox"
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
-import type { RunStore } from "../project/run-store.ts"
+import {
+  BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+  BLACKBOARD_SOURCE_MAX_ITEMS,
+  type BlackboardSummary,
+  type RunStore,
+} from "../project/run-store.ts"
+
+export const BLACKBOARD_TOOL_MAX_CHARACTERS = 64_000
+export const BLACKBOARD_INJECTION_MAX_CHARACTERS = 16_000
 
 function result(details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
   return { content: [{ type: "text", text: JSON.stringify(details, null, 2) }], details }
@@ -19,16 +27,16 @@ function errorText(error: unknown): string {
  * Future: if the graph grows to hundreds of entries, this function can be replaced
  * with an LLM-based summarizer without changing the data model or tool interface.
  */
-export function serializeBlackboard(summary: {
-  evidence: { id: number; description: string; runId: string }[]
-  opportunities: { id: number; description: string; status: string; sourceEvidenceIds: number[]; targetEvidenceId: number | null }[]
-}): string {
+export function serializeBlackboard(
+  summary: BlackboardSummary,
+  options: { maxCharacters?: number } = {},
+): string {
   const lines: string[] = []
 
   if (summary.evidence.length > 0) {
     lines.push("## Confirmed Evidence")
     for (const e of summary.evidence) {
-      lines.push(`- [e${e.id}] ${e.description}`)
+      lines.push(`- [e${e.id}] ${JSON.stringify(e.description)}`)
     }
     lines.push("")
   }
@@ -40,7 +48,7 @@ export function serializeBlackboard(summary: {
     lines.push("## Open Opportunities")
     for (const o of openOpportunities) {
       const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ")
-      lines.push(`- [o${o.id}] from ${sources}: ${o.description}`)
+      lines.push(`- [o${o.id}] from ${sources}: ${JSON.stringify(o.description)}`)
     }
     lines.push("")
   }
@@ -50,7 +58,7 @@ export function serializeBlackboard(summary: {
     for (const o of concludedOpportunities) {
       const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ")
       const target = o.targetEvidenceId ? ` → e${o.targetEvidenceId}` : ""
-      lines.push(`- [o${o.id}] from ${sources}${target}: ${o.description}`)
+      lines.push(`- [o${o.id}] from ${sources}${target}: ${JSON.stringify(o.description)}`)
     }
     lines.push("")
   }
@@ -58,7 +66,19 @@ export function serializeBlackboard(summary: {
   lines.push(
     "Use ctf_blackboard_record to add new evidence or opportunities as you discover them.",
   )
-  return lines.join("\n")
+  const text = lines.join("\n")
+  const maxCharacters = Math.max(
+    0,
+    Math.floor(options.maxCharacters ?? BLACKBOARD_TOOL_MAX_CHARACTERS),
+  )
+  if (text.length <= maxCharacters) return text
+
+  const suffix = [
+    "",
+    "[Blackboard snapshot truncated. Call ctf_blackboard_read for the latest bounded snapshot.]",
+  ].join("\n")
+  if (suffix.length >= maxCharacters) return suffix.slice(0, maxCharacters)
+  return text.slice(0, maxCharacters - suffix.length) + suffix
 }
 
 export interface BlackboardToolOptions {
@@ -93,15 +113,18 @@ export function createBlackboardTools(options: BlackboardToolOptions): AgentTool
         "(record the result of exploring an opportunity), or any combination of these.",
       parameters: Type.Object({
         evidence: Type.Optional(Type.Object({
-          description: Type.String({ minLength: 1 }),
+          description: Type.String({ minLength: 1, maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH }),
         })),
         opportunity: Type.Optional(Type.Object({
-          description: Type.String({ minLength: 1 }),
-          sourceEvidenceIds: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 }),
+          description: Type.String({ minLength: 1, maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH }),
+          sourceEvidenceIds: Type.Array(
+            Type.Integer({ minimum: 1 }),
+            { minItems: 1, maxItems: BLACKBOARD_SOURCE_MAX_ITEMS },
+          ),
         })),
         concludeOpportunity: Type.Optional(Type.Object({
           opportunityId: Type.Integer({ minimum: 1 }),
-          resultDescription: Type.String({ minLength: 1 }),
+          resultDescription: Type.String({ minLength: 1, maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH }),
         })),
       }),
       executionMode: "sequential",
@@ -144,6 +167,7 @@ export function createBlackboardTools(options: BlackboardToolOptions): AgentTool
         if (input.concludeOpportunity) {
           try {
             const concluded = runStore.concludeOpportunity(
+              challengeId,
               input.concludeOpportunity.opportunityId,
               input.concludeOpportunity.resultDescription,
               runId,
