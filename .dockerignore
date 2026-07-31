@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+node_modules
+**/node_modules
+**/.ctf-agent
+coverage
+dist
+*.log

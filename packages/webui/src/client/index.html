@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a0d0c">
+    <meta name="description" content="CTF Agent 实时控制台">
+    <title>CTF Agent · Contest Console</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#challenge-board">跳到题目列表</a>
+    <div class="ambient-grid" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="CTF Agent 控制台首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="img">
+            <path d="M4 7.5h8.5L16 4l3.5 3.5H28V16l-3.5 3.5V28H16l-3.5-3.5H4V16l3.5-3.5L4 7.5Z"></path>
+            <path class="brand-mark-core" d="m11 12 4 4-4 4m6 0h5"></path>
+          </svg>
+        </span>
+        <span>
+          <strong>CTF<span>/</span>AGENT</strong>
+          <small>CONTEST CONTROL</small>
+        </span>
+      </a>
+
+      <div class="topbar-actions">
+        <div class="connection" id="connection-indicator" role="status" aria-live="polite">
+          <span class="connection-dot"></span>
+          <span id="connection-label">正在连接</span>
+        </div>
+        <span class="last-updated" id="last-updated">尚未同步</span>
+        <button
+          class="icon-button"
+          id="settings-button"
+          type="button"
+          aria-label="模型连接设置"
+          aria-haspopup="dialog"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h10M18 6h2M4 12h3M11 12h9M4 18h8M16 18h4"></path>
+            <path d="M14 3v6M7 9v6M12 15v6"></path>
+          </svg>
+        </button>
+        <button class="icon-button" id="refresh-button" type="button" aria-label="立即刷新平台数据">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 6v5h-5M4 18v-5h5"></path>
+            <path d="M6.1 9A7 7 0 0 1 18.6 6L20 8m-2.1 7A7 7 0 0 1 5.4 18L4 16"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="hero" aria-labelledby="contest-name">
+        <div>
+          <p class="eyebrow"><span>LIVE</span> OPERATION OVERVIEW</p>
+          <h1 id="contest-name">正在载入比赛…</h1>
+          <p class="hero-copy" id="contest-meta">连接平台并整理 Agent 运行状态</p>
+        </div>
+        <div class="hero-signal" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </section>
+
+      <section class="scheduler-console" id="scheduler-console" aria-labelledby="scheduler-title">
+        <div class="scheduler-identity">
+          <span class="scheduler-state-dot" id="scheduler-state-dot" aria-hidden="true"></span>
+          <div>
+            <span class="strip-label">SCHEDULER</span>
+            <strong id="scheduler-title">正在读取调度器…</strong>
+            <small id="scheduler-description">控制面状态尚未同步</small>
+          </div>
+        </div>
+        <div class="scheduler-metrics" aria-label="调度队列状态">
+          <div><span>队列</span><strong id="scheduler-queued">—</strong></div>
+          <div><span>活跃</span><strong id="scheduler-active">—</strong></div>
+          <div><span>并发</span><strong id="scheduler-capacity">—</strong></div>
+          <div><span>重试上限</span><strong id="scheduler-attempt-limit">—</strong></div>
+        </div>
+        <div class="scheduler-actions">
+          <button class="control-button" id="auto-toggle" type="button" disabled>
+            <span class="control-button-icon" aria-hidden="true">▶</span>
+            <span id="auto-toggle-label">开启自主调度</span>
+          </button>
+        </div>
+        <p class="scheduler-warning" id="scheduler-warning" hidden></p>
+      </section>
+
+      <section class="stats-grid" id="stats-grid" aria-label="比赛统计">
+        <article class="stat-card stat-primary">
+          <span class="stat-label">已解出</span>
+          <strong class="stat-value" data-stat="solved">—</strong>
+          <span class="stat-note" data-stat-note="solved">等待数据</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">执行中</span>
+          <strong class="stat-value" data-stat="active">—</strong>
+          <span class="stat-note">正在工作的 Agent</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">队列中</span>
+          <strong class="stat-value" data-stat="queued">—</strong>
+          <span class="stat-note">等待可用 worker</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">待调度</span>
+          <strong class="stat-value" data-stat="pending">—</strong>
+          <span class="stat-note">尚未进入队列</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">总尝试</span>
+          <strong class="stat-value" data-stat="attempts">—</strong>
+          <span class="stat-note" data-stat-note="attempts">跨全部题目</span>
+        </article>
+        <article class="stat-card stat-alert">
+          <span class="stat-label">异常</span>
+          <strong class="stat-value" data-stat="failed">—</strong>
+          <span class="stat-note">失败 / 超时 / 中断</span>
+        </article>
+      </section>
+
+      <section class="operations-strip" aria-label="运行概况">
+        <div>
+          <span class="strip-label">完成率</span>
+          <strong id="completion-rate">0%</strong>
+          <div class="progress-track" aria-hidden="true"><span id="completion-bar"></span></div>
+        </div>
+        <div>
+          <span class="strip-label">远程环境</span>
+          <strong id="environment-count">0</strong>
+          <small>个正在运行</small>
+        </div>
+        <details class="announcements">
+          <summary>
+            <span class="strip-label">平台公告</span>
+            <strong id="announcement-count">0</strong>
+            <small>条更新</small>
+          </summary>
+          <div class="announcement-popover" id="announcement-list">
+            <p class="muted">暂无公告</p>
+          </div>
+        </details>
+      </section>
+
+      <section class="board" id="challenge-board" aria-labelledby="board-title">
+        <div class="board-heading">
+          <div>
+            <p class="section-index">01 / CHALLENGES</p>
+            <h2 id="board-title">题目作战面板</h2>
+          </div>
+          <span class="result-count" id="result-count">载入中</span>
+        </div>
+
+        <form class="filters" id="filter-form" role="search">
+          <label class="search-control">
+            <span class="sr-only">搜索题目</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m16 16 4 4"></path>
+            </svg>
+            <input id="search-input" type="search" autocomplete="off" placeholder="搜索题目名称或 ID">
+            <kbd>/</kbd>
+          </label>
+          <label>
+            <span>状态</span>
+            <select id="status-filter">
+              <option value="all">全部状态</option>
+              <option value="active">执行中</option>
+              <option value="queued">队列中</option>
+              <option value="pending">未调度</option>
+              <option value="solved">已解出</option>
+              <option value="failed">异常</option>
+            </select>
+          </label>
+          <label>
+            <span>分类</span>
+            <select id="category-filter">
+              <option value="all">全部分类</option>
+            </select>
+          </label>
+          <label>
+            <span>分值</span>
+            <select id="score-filter">
+              <option value="all">全部分值</option>
+              <option value="high">400+</option>
+              <option value="medium">200–399</option>
+              <option value="low">&lt; 200</option>
+            </select>
+          </label>
+          <label>
+            <span>排序</span>
+            <select id="sort-filter">
+              <option value="activity">最近活动</option>
+              <option value="status">状态优先</option>
+              <option value="score-desc">分值从高到低</option>
+              <option value="score-asc">分值从低到高</option>
+              <option value="title">题目名称</option>
+            </select>
+          </label>
+          <button class="text-button" id="reset-filters" type="reset">重置</button>
+        </form>
+
+        <div class="challenge-table" role="table" aria-label="CTF 题目与 Agent 状态">
+          <div class="challenge-head" role="row">
+            <span role="columnheader">题目</span>
+            <span role="columnheader">分类 / 分值</span>
+            <span role="columnheader">状态</span>
+            <span role="columnheader">当前进度</span>
+            <span role="columnheader">知识</span>
+            <span role="columnheader">活动时间</span>
+            <span aria-hidden="true"></span>
+          </div>
+          <div id="challenge-list" role="rowgroup" aria-live="polite">
+            <div class="loading-row"><span></span><span></span><span></span><span></span></div>
+            <div class="loading-row"><span></span><span></span><span></span><span></span></div>
+            <div class="loading-row"><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+
+        <div class="empty-state" id="empty-state" hidden>
+          <span>∅</span>
+          <h3>没有匹配的题目</h3>
+          <p>调整筛选条件，或清空搜索关键词。</p>
+          <button class="outline-button" id="empty-reset" type="button">清除筛选</button>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="detail-dialog" id="detail-dialog" aria-labelledby="detail-title">
+      <div class="detail-shell">
+        <header class="detail-header">
+          <div>
+            <p class="section-index" id="detail-category">CHALLENGE DETAIL</p>
+            <h2 id="detail-title">题目详情</h2>
+          </div>
+          <div class="detail-header-actions">
+            <button class="control-button detail-action" id="detail-action" type="button" hidden>
+              <span id="detail-action-label">调度</span>
+            </button>
+            <button class="icon-button" id="close-detail" type="button" aria-label="关闭题目详情">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+            </button>
+          </div>
+        </header>
+        <div class="detail-content" id="detail-content">
+          <div class="detail-loading">
+            <span></span><span></span><span></span>
+            <p>正在读取运行记录…</p>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="model-dialog" id="model-dialog" aria-labelledby="model-dialog-title">
+      <div class="model-shell">
+        <header class="model-header">
+          <div>
+            <p class="section-index">MODEL UPLINK / LOCAL CONTROL</p>
+            <h2 id="model-dialog-title">模型连接设置</h2>
+            <p>配置 Solver 使用的 OpenAI-compatible 模型端点。</p>
+          </div>
+          <button class="icon-button" id="close-model-settings" type="button" aria-label="关闭模型连接设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+          </button>
+        </header>
+
+        <div class="model-status" id="model-status" role="status">
+          <span class="model-status-dot" aria-hidden="true"></span>
+          <div>
+            <strong id="model-status-title">正在读取配置…</strong>
+            <small id="model-status-description">等待本地控制面响应</small>
+          </div>
+        </div>
+
+        <form class="model-form" id="model-form">
+          <div class="model-form-grid">
+            <label class="model-field">
+              <span>Provider</span>
+              <input
+                id="model-provider"
+                name="provider"
+                list="model-provider-options"
+                maxlength="128"
+                autocomplete="off"
+                placeholder="openrouter"
+                required
+              >
+              <small>模型提供方标识，用于匹配请求凭证。</small>
+            </label>
+            <datalist id="model-provider-options">
+              <option value="openrouter"></option>
+              <option value="openai"></option>
+              <option value="anthropic"></option>
+              <option value="custom-openai"></option>
+            </datalist>
+
+            <label class="model-field">
+              <span>Model ID</span>
+              <input
+                id="model-id"
+                name="modelId"
+                maxlength="256"
+                autocomplete="off"
+                placeholder="openai/gpt-5"
+                required
+              >
+              <small>填写端点实际接受的模型名称。</small>
+            </label>
+
+            <label class="model-field model-field-wide">
+              <span>Base URL <em>可选</em></span>
+              <input
+                id="model-base-url"
+                name="baseUrl"
+                type="url"
+                maxlength="2048"
+                autocomplete="off"
+                placeholder="https://api.example.com/v1"
+              >
+              <small>留空时使用 Pi 内置 Provider；自建或代理端点请填写完整 API 根地址。</small>
+            </label>
+
+            <div class="model-field model-field-wide">
+              <label for="model-api-key">
+                <span>API Key</span>
+              </label>
+              <div class="secret-control">
+                <input
+                  id="model-api-key"
+                  name="apiKey"
+                  type="password"
+                  maxlength="8192"
+                  autocomplete="new-password"
+                  placeholder="输入新的 API Key"
+                >
+                <button class="secret-toggle" id="model-api-key-toggle" type="button" aria-label="显示 API Key">
+                  SHOW
+                </button>
+              </div>
+              <div class="secret-meta">
+                <small id="model-api-key-state">尚未配置密钥</small>
+                <label class="clear-secret" id="clear-api-key-label" hidden>
+                  <input id="clear-api-key" type="checkbox">
+                  <span>移除现有密钥</span>
+                </label>
+              </div>
+            </div>
+
+            <label class="model-field">
+              <span>Context Window</span>
+              <input
+                id="model-context-window"
+                name="contextWindow"
+                type="number"
+                min="1"
+                max="2000000"
+                step="1"
+                inputmode="numeric"
+                required
+              >
+              <small>Agent 可使用的上下文 token 上限。</small>
+            </label>
+
+            <label class="model-field">
+              <span>Max Tokens</span>
+              <input
+                id="model-max-tokens"
+                name="maxTokens"
+                type="number"
+                min="1"
+                max="1000000"
+                step="1"
+                inputmode="numeric"
+                required
+              >
+              <small>单次模型输出的 token 上限。</small>
+            </label>
+          </div>
+
+          <aside class="model-security-note">
+            <span aria-hidden="true">LOCAL SECRET</span>
+            <p>API Key 仅写入本机 CTF 数据卷，权限设为仅服务进程可读；读取配置时不会向浏览器回传密钥明文。</p>
+          </aside>
+
+          <p class="model-form-error" id="model-form-error" role="alert" hidden></p>
+
+          <footer class="model-form-actions">
+            <button class="outline-button" id="cancel-model-settings" type="button">取消</button>
+            <button class="control-button model-save" id="save-model-settings" type="submit">
+              <span class="save-indicator" aria-hidden="true"></span>
+              <span id="save-model-settings-label">保存并应用</span>
+            </button>
+          </footer>
+        </form>
+      </div>
+    </dialog>
+
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  </body>
+</html>

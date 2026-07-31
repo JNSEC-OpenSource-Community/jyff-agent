@@ -42,7 +42,8 @@ CTF_MODEL_PROVIDER = "deepseek"
 同时兼容 `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`（旧变量名）。
 
 脚本和测试使用 `loadEnvFile()` 从 `.env` 加载，环境变量直接设置优先级更高。
-`.env` 未配置时 E2E 测试自动跳过。
+`.env` 未配置时 E2E 测试自动标记为 skipped。即使已配置凭据，真实模型测试也只在显式设置
+`CTF_RUN_MODEL_E2E=1` 时运行，避免普通 `pnpm test` 意外产生外部请求和费用。
 
 ### 2. 构建 Docker 沙箱（可选）
 
@@ -58,17 +59,38 @@ pnpm example:mock
 
 # 黑板系统专项测试
 pnpm example:blackboard
+
+# 启动本地实时 WebUI（http://127.0.0.1:3000）
+pnpm webui:mock
 ```
 
-### 4. 常用命令
+### 4. 用 Docker 启动 WebUI
+
+```bash
+docker compose -f compose.webui.yaml up --build
+```
+
+控制台默认仅发布到 `127.0.0.1:3000`。通过 `CTF_WEBUI_PORT=8080` 可修改宿主机端口。
+Docker 模式使用命名卷 `ctf-agent-data` 保存 SQLite、附件和各次尝试的 workspace；
+WebUI 容器与它启动的 Solver 容器共享该卷，因此容器重启后仍可查看历史状态。
+
+默认 `CTF_SCHEDULER_AUTO_START=false`，打开页面后可人工调度单题，或显式点击“开启自主调度”。
+要使用调度功能，需配置 `CTF_MODEL_API_KEY` 和 `CTF_MODEL_ID`；未配置时页面仍可只读查看历史。
+
+> `compose.webui.yaml` 将 Docker socket 挂入 WebUI，以便它创建和销毁 Solver 容器。能够访问
+> 该控制面的进程实际上拥有宿主机级 Docker 权限。请只在可信主机使用，不要向公网直接暴露端口，
+> 生产环境应改用受限的容器执行服务或 socket proxy。
+
+### 5. 常用命令
 
 ```bash
 pnpm build:sandbox      # 构建 Docker 沙箱镜像（需要 Docker）
-pnpm test               # 全部测试（含 E2E，需要 .env）
+pnpm test               # 确定性测试；真实模型 E2E 默认 skipped
 pnpm test:runner        # ContestRunner 并发测试
 pnpm typecheck          # TypeScript 类型检查
 pnpm example:mock       # 运行解题示例
 pnpm example:blackboard # 运行黑板专项测试
+pnpm webui:mock         # 启动实时控制台
 ```
 
 ---
@@ -80,11 +102,13 @@ pnpm example:blackboard # 运行黑板专项测试
 - `ChallengeCapability`：由平台为单题创建的最小能力面；没有 `challengeId` 参数，因此 Solver 无法越题操作。
 - `CtfSolverAgent`：直接继承 `@earendil-works/pi-agent-core` 的 `Agent`，保留其原生 API。
 - `RunStore`：SQLite/WAL 持久化每次题目尝试、状态转换、错误与清理结果；Project 重开时会把遗留活跃 Run 标为 `interrupted`。
-- `ContestRunner`：比赛级 worker pool，负责未解题筛选、同题去重、并发上限、总 attempt 上限、硬超时、重试与取消。
+- `ContestRunner`：一次性批量执行器，适合脚本和测试。
+- `ContestScheduler`：长驻的混合调度器，负责自主队列、人工派发、同题去重、并发上限、调度 attempt 上限、硬超时、重试与取消。
+- `WebUI`：Project 与 ContestScheduler 的实时控制面；聚合平台题目、队列、RunStore 事件、远程环境与黑板数据，通过 SSE 推送变化，并提供受控的调度 API。
 - `DockerSandbox`：每个 Solver 一个容器。`bash`、`read`、`write`、`edit`、`list` 和 RTK 都在容器内执行；宿主机仅保留挂载的 workspace 与 Run 元数据。
 - Skills：发现 `.pi/skills/` 与 `.agents/skills/` 中 Pi-compatible `SKILL.md`，复制到容器可见的 `/workspace/.skills/`，以 `<available_skills>` catalog 和 `load_skill` 工具按需提供。
 - Compaction：自动在上下文接近 model window 时生成摘要；也可调用 `await solver.compact()` 手动压缩。
-- **Blackboard（黑板）**：跨 attempt 共享的 Evidence-Opportunity 知识图。Agent 通过 `ctf_blackboard_read` 和 `ctf_blackboard_record` 工具读写；每次 attempt 自动将既有知识注入 systemPrompt。详见 [`docs/blackboard-spec.md`](docs/blackboard-spec.md)。
+- **Blackboard（黑板）**：跨 attempt 共享的 Evidence-Opportunity 知识图。Agent 通过 `ctf_blackboard_read` 和 `ctf_blackboard_record` 工具读写；每次 attempt 自动获得有界、JSON 编码且明确标记为不可信数据的既有知识快照。详见 [`docs/blackboard-spec.md`](docs/blackboard-spec.md)。
 - 强制清理：Solver 无论成功、失败、超时或取消，都会先销毁当前题远程实例，再删除 Docker sandbox，最后持久化终态。
 
 ### 目录结构
@@ -97,12 +121,78 @@ packages/solver/
 │   ├── blackboard/          # 黑板系统（跨 attempt 知识共享）
 │   ├── platform/            # 平台能力契约
 │   ├── project/             # Project、配置与 RunStore
-│   ├── runner/              # ContestRunner 调度
+│   ├── runner/              # ContestRunner 批处理与 ContestScheduler 长驻调度
 │   ├── sandbox/             # Docker、命令和文件工具
 │   ├── skills/              # Skill 发现与物化
 │   └── index.ts             # 稳定公共 API
 └── test/                    # 与 src 领域结构镜像
+
+packages/webui/
+├── src/
+│   ├── client/              # 无框架响应式前端
+│   ├── model.ts             # 平台、Run、黑板的聚合模型
+│   └── server.ts            # HTTP API、静态资源与 SSE
+├── test/                    # 聚合模型与 HTTP/SSE 测试
+└── Dockerfile               # 控制面 WebUI 容器
 ```
+
+---
+
+## 实时 WebUI
+
+控制台提供题目全文搜索、状态/分类/分值筛选和多种排序；题目详情显示当前进度、
+每次 Agent 尝试的工具时间线、运行错误、远程环境及 Evidence-Opportunity 协作黑板。
+页面带断线重连、平台手动刷新、公告、完成率、深链接和移动端布局。题目列表明确区分：
+
+- `未调度`：尚未进入任何队列；
+- `队列中`：已入队，等待可用并发槽位；
+- `执行中`：Agent 正在准备或运行；
+- `已解出`：平台或本地 RunStore 已确认完成。
+
+自主调度暂停时，已经排入的自主任务会保留但不再派发；人工调度仍然可用。列表行和详情页均提供
+“调度 / 重试 / 取消 / 重新验证”操作。已经解出的题目只允许显式重新验证，避免误耗模型额度。
+
+顶部的模型设置面板可配置 Provider、Model ID、OpenAI-compatible Base URL、API Key、
+Context Window 和 Max Tokens。保存后配置立即应用，无需重启 WebUI；API Key 明文不会通过
+读取接口回传浏览器。示例控制面把配置以仅服务进程可读的权限保存到
+`.ctf-agent/model-config.json`，该目录由 `ctf-agent-data` 数据卷持久化。清除 API Key 会同时
+暂停自主调度，但不会中断已经运行的 Agent。
+
+每次 Run 都记录来源：`auto`、`manual`、`retry`、`direct` 或 `test`。只有前三者消耗调度器的
+重试预算，因此开发测试和旧的直接运行不会让题目莫名达到调度上限。历史中出现多次 attempt，
+代表确实创建过多次独立 Solver；关闭原因 `submitted` 表示 Flag 已被平台接受，`manual`
+表示旧调用方主动关闭，`cancelled` 表示由当前控制面取消。
+
+WebUI 应嵌入持有 `Project` 的控制面进程，不应为每个 Solver 沙箱启动一份，也不要让
+另一个进程再次对同一项目执行 `Project.open()`；后者会按恢复规则把遗留的活跃 Run
+标记为 `interrupted`。`examples/mock-ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
+
+```ts
+import { ContestScheduler } from "@ctf-agent/solver"
+import { startWebUi } from "@ctf-agent/webui"
+
+const scheduler = new ContestScheduler(project, {
+  maxConcurrent: 4,
+  maxAttempts: 2,
+  createAgentOptions: ({ challenge, attempt }) =>
+    createAgentOptions(challenge, attempt),
+})
+
+const webui = await startWebUi({
+  project,
+  scheduler,
+  host: "127.0.0.1",
+  port: 3000,
+  pollIntervalMs: 1000,
+})
+```
+
+`CTF_TELEMETRY_LEVEL=full` 会把完整工具参数、工具结果和提交的 Flag 保存到 RunStore，并在详情页
+展示；凭据类字段仍会脱敏。该模式便于 CTF 复盘，但 SQLite 中会包含敏感比赛数据。
+设置为 `safe` 可恢复命令/Flag 脱敏。修改只影响新事件，不会改写既有历史。
+
+HTTP 服务默认只监听本机且当前不内置身份认证。需要跨主机访问时，应在反向代理层增加
+TLS 与认证，不要直接把端口暴露到公网。
 
 ---
 
@@ -191,20 +281,20 @@ const solver = await project.createSolver("warmup-flag", {
 | `ctf_blackboard_read` | 读取当前题目的全部 Evidence 和 Opportunity（Markdown） |
 | `ctf_blackboard_record` | 记录 Evidence / 声明 Opportunity / 结论 Opportunity |
 
-### 自动注入
+### 安全快照注入
 
-每次创建 Solver 时，黑板内容自动注入到 systemPrompt 末尾：
+每次创建 Solver 时，system prompt 只加入固定的安全说明；动态黑板内容作为独立的初始 user
+数据消息注入，不会被提升为系统指令。快照经过 JSON 编码并限制为 16000 字符：
 
 ```xml
-<challenge_blackboard>
-## Confirmed Evidence
-- [e1] Title: Warmup Flag / Category: misc / Score: 100
-...
-
-## Open Opportunities
-- [o1] from e2: 尝试分析附件中的编码
-</challenge_blackboard>
+<untrusted_challenge_blackboard encoding="json">
+{"snapshot":"## Confirmed Evidence\n- [e1] \"Title: Warmup Flag...\""}
+</untrusted_challenge_blackboard>
 ```
+
+Evidence、Opportunity 描述最多 4000 字符，单个 Opportunity 最多关联 32 条 Evidence；
+每道题最多保存 256 条 Evidence 和 256 条 Opportunity；`ctf_blackboard_read` 的文本结果
+最多 64000 字符。
 
 ### 测试与文档
 

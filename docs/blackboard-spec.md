@@ -20,7 +20,7 @@
 | Origin Evidence | 首次创建 Solver 时自动建立，包含题目结构化摘要 |
 | 持久化 Evidence 与 Opportunity | SQLite，与 runs 同库 |
 | Agent 可读写黑板 | 两个工具：`ctf_blackboard_read` + `ctf_blackboard_record` |
-| 自动注入既有知识 | 每次创建 Solver 时自动将黑板内容注入 systemPrompt |
+| 自动注入既有知识 | 每次创建 Solver 时将有界快照作为不可信初始数据消息注入 |
 | 超边关联 | Opportunity 可从多个 Evidence 出发 |
 | 结论即产出 Evidence | conclude 时必须同时创建一条新 Evidence |
 
@@ -141,8 +141,8 @@ interface BlackboardSummary {
 
 ```
 recordEvidence(challengeId, runId, description) → EvidenceRecord
-  行为: INSERT challenge_evidence，返回完整记录
-  异常: 不校验 description 内容（由 Agent 保证质量）
+  行为: 在 BEGIN IMMEDIATE 事务中校验 runId 属于 challengeId，再写入并返回完整记录
+  异常: description 为空、超过 4000 字符，或 run/challenge 不匹配时抛出
 
 ensureOrigin(challengeId, runId, challengeInfo) → EvidenceRecord
   行为: 如果该 challenge 尚无任何 evidence，则创建一条 origin evidence。
@@ -158,7 +158,7 @@ ensureOrigin(challengeId, runId, challengeInfo) → EvidenceRecord
   返回: origin evidence（新创建的或已存在的）
 
 recordOpportunity(challengeId, runId, description, sourceEvidenceIds[]) → OpportunityRecord
-  前置条件: sourceEvidenceIds 必须非空
+  前置条件: sourceEvidenceIds 必须非空且不超过 32 项，description 不超过 4000 字符
   行为: 一个事务内完成:
         1. 去重 sourceEvidenceIds（防止主键冲突）
         2. 校验所有 source evidence 均属于同一 challengeId（防止跨题串联）
@@ -166,12 +166,12 @@ recordOpportunity(challengeId, runId, description, sourceEvidenceIds[]) → Oppo
         4. 对每个有效 evidenceId: INSERT challenge_opportunity_sources
   异常: sourceEvidenceIds 为空时抛出；含不属于当前 challenge 的 ID 时抛出
 
-concludeOpportunity(opportunityId, resultDescription, runId) → { evidence, opportunity }
-  前置条件: opportunity 必须存在且 status='open'
+concludeOpportunity(challengeId, opportunityId, resultDescription, runId) → { evidence, opportunity }
+  前置条件: runId 属于 challengeId，opportunity 属于 challengeId 且 status='open'
   行为: 事务内先加锁再校验（防止并发重复 conclude），校验通过后在一个事务内完成:
-        1. SELECT opportunity → 校验存在 + status='open'
+        1. BEGIN IMMEDIATE 后 SELECT opportunity → 校验题目归属 + status='open'
         2. INSERT challenge_evidence（challenge_id 从 opportunity 继承）
-        3. UPDATE challenge_opportunities SET status='concluded', target_evidence_id=<新id>, concluded_at=now
+        3. 使用 `WHERE challenge_id=? AND status='open'` 条件更新并校验 changes=1
   返回: 新创建的 Evidence 和更新后的 Opportunity
   线程安全: SELECT 和写入在同一 BEGIN IMMEDIATE 事务内，防止 TOCTOU 竞态
 
@@ -185,7 +185,7 @@ getBlackboardSummary(challengeId) → BlackboardSummary
 
 | 方法 | 事务 |
 |---|---|
-| `recordEvidence` | 单行 INSERT，隐式事务即可 |
+| `recordEvidence` | BEGIN IMMEDIATE → 校验 run/challenge → INSERT → COMMIT |
 | `ensureOrigin` | SELECT + INSERT 在同一 BEGIN IMMEDIATE 内，先查后写保证幂等 |
 | `recordOpportunity` | BEGIN IMMEDIATE → 多条 INSERT → COMMIT |
 | `concludeOpportunity` | BEGIN IMMEDIATE → INSERT + UPDATE → COMMIT |
@@ -223,7 +223,7 @@ Type.Object({})
 
 **行为：**
 1. 调用 `runStore.getBlackboardSummary(challengeId)`
-2. `serializeBlackboard(summary)` 转为文本
+2. `serializeBlackboard(summary)` 转为 JSON 字符串描述的 Markdown 文本，并限制为 64000 字符
 3. 返回 `{ content: [{ type: "text", text }] }`
 
 **序列化格式（精确规范）：**
@@ -239,7 +239,7 @@ Type.Object({})
 
 ```
 ## Confirmed Evidence
-{each: "- [e{id}] {description}\n"}
+{each: "- [e{id}] {JSON.stringify(description)}\n"}
 （若无额外 evidence 则省略此段，但 origin 至少保证有一条）
 （若所有段均为空——即黑板中无任何记录，仅返回尾部的使用提示）
 
@@ -263,15 +263,15 @@ Use ctf_blackboard_record to add new evidence or opportunities as you discover t
 ```typescript
 Type.Object({
   evidence: Type.Optional(Type.Object({
-    description: Type.String({ minLength: 1 }),
+    description: Type.String({ minLength: 1, maxLength: 4000 }),
   })),
   opportunity: Type.Optional(Type.Object({
-    description: Type.String({ minLength: 1 }),
-    sourceEvidenceIds: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 }),
+    description: Type.String({ minLength: 1, maxLength: 4000 }),
+    sourceEvidenceIds: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1, maxItems: 32 }),
   })),
   concludeOpportunity: Type.Optional(Type.Object({
     opportunityId: Type.Integer({ minimum: 1 }),
-    resultDescription: Type.String({ minLength: 1 }),
+    resultDescription: Type.String({ minLength: 1, maxLength: 4000 }),
   })),
 })
 ```
@@ -331,21 +331,26 @@ this.runStore.ensureOrigin(challengeId, runId, {
 
 ```typescript
 const summary = this.runStore.getBlackboardSummary(challengeId)
-const text = serializeBlackboard(summary)
-options.agent.initialState!.systemPrompt +=
-  `\n\n<challenge_blackboard>\n${text}\n</challenge_blackboard>`
+const text = serializeBlackboard(summary, { maxCharacters: 16_000 })
+options.agent.initialState!.systemPrompt += BLACKBOARD_SYSTEM_GUIDANCE
+options.agent.initialState!.messages.push({
+  role: "user",
+  content: encodeAsUntrustedBlackboardJson(text),
+  timestamp: Date.now(),
+})
 ```
 
-由于 origin 始终存在，**每次 attempt（包括 attempt=1）都注入**。origin 内容即为题目的结构化摘要，对 Agent 始终可见。
+由于 origin 始终存在，**每次 attempt（包括 attempt=1）都注入**。动态内容不得直接拼入
+system prompt；system prompt 只包含固定安全说明，声明黑板内容是需要独立验证的不可信观察。
 
 ### 4.3 注入格式
 
-使用 XML 标签包裹，与现有的 `<available_skills>` 格式一致：
+使用 XML 标签标识数据边界，内部为转义 `<`、`>`、`&` 后的 JSON：
 
 ```
-<challenge_blackboard>
-{serializeBlackboard() 的输出}
-</challenge_blackboard>
+<untrusted_challenge_blackboard encoding="json">
+{"snapshot":"{serializeBlackboard() 的输出}"}
+</untrusted_challenge_blackboard>
 ```
 
 ### 4.4 边界情况
@@ -355,11 +360,14 @@ options.agent.initialState!.systemPrompt +=
 | origin 已存在（后续 attempt） | `ensureOrigin` 幂等，不重复创建 |
 | `getBlackboardSummary()` 抛异常 | 静默吞掉，不注入（避免阻断解题） |
 | `serializeBlackboard()` 返回空字符串 | 不注入 |
-| systemPrompt 原本为空 | 从 `\n\n<challenge_blackboard>...` 开始拼接 |
+| systemPrompt 原本为空 | 仍加入固定安全说明；动态快照只进入初始 user 数据消息 |
 
 ### 4.5 Token 预算考量
 
-不做额外处理。黑板内容（含 origin 摘要）不计入 compaction 的 reserve 计算，由现有的 compaction 机制统一管理。
+origin 最多 8000 字符；Evidence/Opportunity 描述最多 4000 字符；每题最多保存
+256 条 Evidence 和 256 条 Opportunity；自动注入快照最多 16000 字符；
+`ctf_blackboard_read` 文本最多 64000 字符。达到上限时追加截断提示，Agent 可再次读取
+最新的有界快照。
 
 ---
 
@@ -404,7 +412,7 @@ packages/solver/src/
 createSolver(challengeId):
   1. capability.getInfo()  →  challenge 元数据
   2. ensureOrigin()        →  challenge_evidence (origin 记录)
-  3. getBlackboardSummary() → serializeBlackboard() → 注入 systemPrompt
+  3. getBlackboardSummary() → serializeBlackboard() → 编码为不可信初始数据消息
   4. 创建 Agent（tools 中包含 ctf_blackboard_read / ctf_blackboard_record）
 
 Agent 运行时:
