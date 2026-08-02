@@ -1,0 +1,20 @@
+CTF SOLVER TOOL REFERENCE
+=========================
+
+Core: bash, curl, wget, git, jq, sqlite3, ripgrep
+Network: nc, socat, openssl
+Binary: file, strings, xxd, objdump, readelf, nm, gdb, ltrace, strace, patchelf
+Build: gcc, g++, make, nasm
+Steganography: exiftool, steghide, pngcheck
+Image and OCR: identify, convert, tesseract
+Audio: ffmpeg, sox
+Archives: tar, zip, unzip, 7z
+
+Python libraries:
+  PIL/Pillow, numpy, scipy, soundfile
+  pwn/pwntools, ropper, pefile
+  Crypto/pycryptodome, sympy, gmpy2, z3
+  scapy, requests, bs4, lxml
+  construct, bitstring
+
+Use installed primitives first. Add challenge-specific packages only when the task requires them.
