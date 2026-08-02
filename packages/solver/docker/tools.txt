@@ -7,7 +7,7 @@ Binary: file, strings, xxd, objdump, readelf, nm, gdb, ltrace, strace, patchelf
 Build: gcc, g++, make, nasm
 Steganography: exiftool, steghide, pngcheck
 Image and OCR: identify, convert, tesseract
-Audio and radio: ffmpeg, sox, multimon-ng, sstv
+Audio: ffmpeg, sox
 Archives: tar, zip, unzip, 7z
 
 Python libraries:
@@ -16,8 +16,5 @@ Python libraries:
   Crypto/pycryptodome, sympy, gmpy2, z3
   scapy, requests, bs4, lxml
   construct, bitstring
-
-SSTV decode example:
-  sstv -d input.wav -o output.png
 
 Use installed primitives first. Add challenge-specific packages only when the task requires them.
