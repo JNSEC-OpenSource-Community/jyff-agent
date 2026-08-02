@@ -5,6 +5,16 @@ Core: bash, curl, wget, git, jq, sqlite3, ripgrep
 Network: nc, socat, openssl
 Binary: file, strings, xxd, objdump, readelf, nm, gdb, ltrace, strace, patchelf
 Build: gcc, g++, make, nasm
+Go: /usr/local/go/bin/go (1.26.5), gofmt (add to PATH: export PATH=/usr/local/go/bin:$PATH)
+Java (use absolute paths; no java on PATH by default):
+  /opt/jdks/8/bin/java     (Zulu 8u65, 2015, old/vulnerable)
+  /opt/jdks/17/bin/java    (Temurin 17.0.2)
+  /opt/jdks/21/bin/java    (Temurin 21.0.1)
+  javac/jar/javap/keytool live in the same bin/ dirs; JAVA_HOME=/opt/jdks/<8|17|21>
+  note: old JDK cacerts may reject modern TLS sites; use curl/wget for HTTPS
+  decompile (wrappers already on PATH):
+    vineflower <input.jar|class> <output-dir>   # modern, prefer first (runs on JDK 21)
+    cfr <input.class|jar>                        # fallback, old jars (runs on JDK 8)
 Steganography: exiftool, steghide, pngcheck
 Image and OCR: identify, convert, tesseract
 Audio: ffmpeg, sox
