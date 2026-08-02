@@ -137,7 +137,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
     {
       name: "bash",
       label: "Sandbox Bash",
-      description: "在当前题目的 Docker sandbox 中执行 shell 命令。",
+      description: "在当前题目的 Docker sandbox 中执行 shell 命令；已安装工具索引见 /tools.txt。",
       parameters: Type.Object({ command: Type.String() }),
       executionMode: "sequential",
       async execute(_id, params, signal) {
