@@ -1,0 +1,4 @@
+angr==9.3.1.post1
+frida-tools==14.10.4
+qiling==1.4.6
+unicorn==2.1.4
