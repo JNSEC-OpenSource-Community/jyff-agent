@@ -1,18 +1,18 @@
 {
   "version": 1,
   "project": {
-    "id": "moectf-local",
-    "name": "MoeCTF 2025 (Remote)"
+    "id": "myctf-local",
+    "name": "MyCTF 2025 (Remote)"
   },
   "contest": {
     "platform": "mock",
-    "eventId": "moectf-2026"
+    "eventId": "myctf-2026"
   },
   "platform": {
     "config": {
       "baseUrl": "http://127.0.0.1:25001",
       "token": "__PLACEHOLDER__",
-      "name": "MoeCTF 2025"
+      "name": "MyCTF 2025"
     }
   },
   "sandbox": {

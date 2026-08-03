@@ -192,7 +192,7 @@ export class MockContest implements PlatformProject {
           let environment: RemoteEnvironment
           if (challenge.container) {
             // 真实容器:动态 FLAG 注入
-            const flag = `moectf{${randomBytes(6).toString("hex")}}`
+            const flag = `myctf{${randomBytes(6).toString("hex")}}`
             const provider = new DockerInstanceProvider(
               { image: challenge.container.image, port: challenge.container.port, network: DockerInstanceProvider.networkName, flag },
               containerName,

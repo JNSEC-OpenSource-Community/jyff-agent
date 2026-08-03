@@ -1,4 +1,4 @@
-// examples/mock-ctf/run-moe.ts —— 8 路并发批量解题(MoeCTF 平台管道第五步)
+// examples/mock-ctf/run-myctf.ts —— 8 路并发批量解题(MyCTF 平台管道第五步)
 // 复用 run.ts 的 loadEnvFile 与模型构造样板(复制,不重写)。
 // CLI: --only <id> 只跑单题(便于冒烟);不传则跑全部未解决题目。
 import { execFile } from "node:child_process"

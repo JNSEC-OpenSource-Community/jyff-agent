@@ -245,7 +245,7 @@ class PersistentModelEnvironment implements ModelEnvironment {
  * pi 内置 deepseek.json 元数据把 low 标为 null(与官方文档不一致,会把 low 钳到 high),
  * 且自定义 baseUrl 场景没有内置 map(无 map 时 max/xhigh 档被排除,max 会钳到 high)。
  * 自定义 baseUrl 的 DeepSeek 场景按官方文档补 map,保证 max 档位真实生效。
- * (导出供 run.ts / run-moe.ts / test-blackboard.ts 的模型构造复用。)
+ * (导出供 run.ts / run-myctf.ts / test-blackboard.ts 的模型构造复用。)
  */
 export function deepseekThinkingLevelMap(modelId: string): Record<string, string | null> {
   const isPro = modelId.includes("v4-pro")

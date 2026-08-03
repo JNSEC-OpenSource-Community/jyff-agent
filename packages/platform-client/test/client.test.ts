@@ -18,7 +18,7 @@ const INFO: Record<string, {
     description: "xinetd 服务", attachments: [], environmentGuide: "申请后连接 endpoint,flag 在 /flag.txt" },
 }
 const ATTACH_BYTES = new Uint8Array([0x68, 0x65, 0x6c, 0x6c, 0x6f]) // "hello"
-const flags = new Map<string, string>([["misc-ez-png", "moectf{stub_exact}"]])
+const flags = new Map<string, string>([["misc-ez-png", "myctf{stub_exact}"]])
 let instances = new Map<string, { id: string; challengeId: string; status: string; endpoint: string }>()
 let nextId = 1
 let destroy404s = 0 // 计数:destroy 路由 404 响应次数(锁定客户端幂等吞 404 分支真实执行)
@@ -141,8 +141,8 @@ describe("RemotePlatformPlugin 契约", () => {
   it("submitFlag:正确 accepted / 错误 rejected", async () => {
     const project = await connect()
     const cap = await project.bindChallenge("misc-ez-png")
-    await expect(cap.submitFlag("moectf{stub_exact}")).resolves.toMatchObject({ status: "accepted" })
-    await expect(cap.submitFlag("moectf{wrong}")).resolves.toMatchObject({ status: "rejected" })
+    await expect(cap.submitFlag("myctf{stub_exact}")).resolves.toMatchObject({ status: "accepted" })
+    await expect(cap.submitFlag("myctf{wrong}")).resolves.toMatchObject({ status: "rejected" })
   })
 
   it("instance.start 返回 RemoteEnvironment(endpoint 透传,expiresAt 丢弃)", async () => {

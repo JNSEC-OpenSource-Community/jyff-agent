@@ -12,7 +12,7 @@ export interface SessionExportOptions {
 const REDACTED_TRUNCATE = 500
 
 /** 常见 flag 包裹格式(大小写不敏感),文档级脱敏用。 */
-const FLAG_PATTERN = /\b(?:moectf|flag|ctf|ltctf|mock|gctf)\{[^}\n]{1,400}\}/gi
+const FLAG_PATTERN = /\b(?:myctf|flag|ctf|ltctf|mock|gctf)\{[^}\n]{1,400}\}/gi
 
 /**
  * 构建某题会话复盘 Markdown:元信息 + token 汇总 + 按事件序的时间线。

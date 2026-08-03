@@ -30,8 +30,8 @@ describe("resolvePlatformConfig", () => {
     expect(resolvePlatformConfig({
       baseUrl: "http://file.example:25001",
       token: "__PLACEHOLDER__",
-      name: "MoeCTF",
-    })).toEqual({ baseUrl: "http://env.example:9999", token: "env-token", name: "MoeCTF" })
+      name: "MyCTF",
+    })).toEqual({ baseUrl: "http://env.example:9999", token: "env-token", name: "MyCTF" })
 
     setEnv("CTF_PLATFORM_BASE_URL", undefined)
     setEnv("CTF_PLATFORM_TOKEN", undefined)
@@ -76,7 +76,7 @@ describe("withPlatformConfigOverride", () => {
     const original = JSON.stringify({
       version: 1,
       contest: { platform: "remote" },
-      platform: { config: { baseUrl: "http://file.example:25001", token: "__PLACEHOLDER__", name: "MoeCTF" } },
+      platform: { config: { baseUrl: "http://file.example:25001", token: "__PLACEHOLDER__", name: "MyCTF" } },
     }, null, 2)
     await writeFile(configPath, original)
     setEnv("CTF_PLATFORM_TOKEN", "env-token")
@@ -90,7 +90,7 @@ describe("withPlatformConfigOverride", () => {
     expect(result).toBe(42)
     expect(seenDuringRun).toMatchObject({
       contest: { platform: "remote" },
-      platform: { config: { token: "env-token", name: "MoeCTF" } },
+      platform: { config: { token: "env-token", name: "MyCTF" } },
     })
     expect(await readFile(configPath, "utf8")).toBe(original)
   })
@@ -118,7 +118,7 @@ describe("withPlatformConfigOverride", () => {
     const original = JSON.stringify({
       version: 1,
       contest: { platform: "remote" },
-      platform: { config: { baseUrl: "http://file.example:25001", token: "__PLACEHOLDER__", name: "MoeCTF" } },
+      platform: { config: { baseUrl: "http://file.example:25001", token: "__PLACEHOLDER__", name: "MyCTF" } },
     }, null, 2)
     await writeFile(configPath, original)
     setEnv("CTF_PLATFORM_TOKEN", "env-token")

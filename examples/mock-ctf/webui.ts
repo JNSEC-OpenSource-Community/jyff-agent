@@ -12,7 +12,7 @@ import { startWebUi } from "@ctf-agent/webui"
 import { loadModelEnvironment } from "./agent-config.ts"
 import { withPlatformConfigOverride } from "./platform-env.ts"
 
-// 与 run-moe.ts 同款 .env 加载器(webui 此前不读 .env,导致 CTF_SCHEDULER_* 等配置不生效)
+// 与 run-myctf.ts 同款 .env 加载器(webui 此前不读 .env,导致 CTF_SCHEDULER_* 等配置不生效)
 function loadEnvFile(): void {
   const candidates = [
     join(resolve(import.meta.dirname), "..", "..", ".env"),

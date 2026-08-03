@@ -49,7 +49,7 @@ function fixture(): FakeDashboardProject {
         event(7, "run-with-usage", "tool_finished", {
           toolName: "bash",
           isError: false,
-          result: "moectf{secret-flag-here}\nUser-agent: *",
+          result: "myctf{secret-flag-here}\nUser-agent: *",
         }),
         event(8, "run-with-usage", "agent_usage", {
           input: 1200,
@@ -70,7 +70,7 @@ function fixture(): FakeDashboardProject {
           cost: { input: 0.001, output: 0.002, cacheRead: 0.0001, cacheWrite: 0.0002, total: 0.0033 },
         }),
         event(10, "run-with-usage", "flag_submitted", {
-          flag: "moectf{secret-flag-here}",
+          flag: "myctf{secret-flag-here}",
           status: "accepted",
           message: "accepted",
         }),
@@ -116,7 +116,7 @@ describe("buildSessionMarkdown(会话复盘导出)", () => {
 
   it("默认脱敏:flag 被替换、明文不在文档中", () => {
     const markdown = buildSessionMarkdown(fixture(), "web-1", { runId: "run-with-usage" })
-    expect(markdown).not.toContain("moectf{secret-flag-here}")
+    expect(markdown).not.toContain("myctf{secret-flag-here}")
     expect(markdown).toContain("[redacted]")
     // flag_submitted 行仍可见(内容已脱敏)
     expect(markdown).toContain("提交 Flag")
@@ -124,7 +124,7 @@ describe("buildSessionMarkdown(会话复盘导出)", () => {
 
   it("full=true 保留明文 flag", () => {
     const markdown = buildSessionMarkdown(fixture(), "web-1", { runId: "run-with-usage", full: true })
-    expect(markdown).toContain("moectf{secret-flag-here}")
+    expect(markdown).toContain("myctf{secret-flag-here}")
     expect(markdown).toContain("（accepted）")
   })
 

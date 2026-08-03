@@ -5,7 +5,7 @@ describe("DockerInstanceProvider(需要本地 Docker)", () => {
   beforeAll(async () => { await DockerInstanceProvider.ensureNetwork() })
 
   it("启动容器、注入 FLAG、endpoint 指向宿主发布端口", async () => {
-    const flag = `moectf{test-${Date.now()}}`
+    const flag = `myctf{test-${Date.now()}}`
     const provider = new DockerInstanceProvider(
       { image: "alpine:3.21", port: 80, network: "ctf-net", flag },
       "mock-test-basic",
@@ -22,7 +22,7 @@ describe("DockerInstanceProvider(需要本地 Docker)", () => {
 
   it("destroy 幂等且容器真实删除", async () => {
     const provider = new DockerInstanceProvider(
-      { image: "alpine:3.21", port: 80, network: "ctf-net", flag: "moectf{x}" },
+      { image: "alpine:3.21", port: 80, network: "ctf-net", flag: "myctf{x}" },
       "mock-test-destroy",
     )
     await provider.start()
@@ -34,7 +34,7 @@ describe("DockerInstanceProvider(需要本地 Docker)", () => {
 
   it("static destroyByName 幂等删除(集成路径使用的 API)", async () => {
     const provider = new DockerInstanceProvider(
-      { image: "alpine:3.21", port: 80, network: "ctf-net", flag: "moectf{x}" },
+      { image: "alpine:3.21", port: 80, network: "ctf-net", flag: "myctf{x}" },
       "mock-test-static-destroy",
     )
     await provider.start()
@@ -70,7 +70,7 @@ describe("DockerInstanceProvider(需要本地 Docker)", () => {
     expect(await capability.submitFlag("MOCK{static}")).toMatchObject({ status: "rejected" })
     const containerName = listDynFlag().find((name) => !before.has(name))!
     const dynamic = execFileSync("docker", ["exec", containerName, "sh", "-c", 'echo -n "$FLAG"']).toString()
-    expect(dynamic).toMatch(/^moectf\{[0-9a-f]{12}\}$/)
+    expect(dynamic).toMatch(/^myctf\{[0-9a-f]{12}\}$/)
     expect(await capability.submitFlag(dynamic)).toMatchObject({ status: "accepted" })
     await capability.instance!.destroy()
     expect(await capability.submitFlag(dynamic)).toMatchObject({ status: "already_solved" })

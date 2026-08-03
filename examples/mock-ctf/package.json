@@ -5,7 +5,7 @@
   "scripts": {
     "probe:openrouter": "./test-openrouter.sh",
     "solve": "node --experimental-transform-types run.ts",
-    "solve:moe": "node --experimental-transform-types run-moe.ts",
+    "solve:myctf": "node --experimental-transform-types run-myctf.ts",
     "webui": "node --experimental-transform-types webui.ts",
     "test:blackboard": "node --experimental-transform-types test-blackboard.ts",
     "run:all": "pnpm run probe:openrouter && pnpm run solve"
