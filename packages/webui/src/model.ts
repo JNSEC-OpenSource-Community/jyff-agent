@@ -174,10 +174,6 @@ function progressLabel(
   if (event?.type === "agent_usage") return "已记录本轮用量"
   if (event?.type === "thinking_level_update") return "已切换思考强度"
   if (event?.type === "human_message") return "已发送人工消息"
-  if (event?.type === "tool_need_reported") {
-    const tool = eventField(event, "tool")
-    return `缺少工具${tool ? `：${tool}` : ""}`
-  }
   switch (status) {
     case "queued": return "已进入调度队列"
     case "pending": return "尚未入队"
@@ -212,7 +208,6 @@ function humanToolName(tool: string): string {
     ctf_instance_destroy: "关闭远程环境",
     ctf_blackboard_read: "读取黑板",
     ctf_blackboard_record: "更新黑板",
-    ctf_report_tool_need: "上报缺失工具",
   }
   return labels[tool] ?? tool
 }

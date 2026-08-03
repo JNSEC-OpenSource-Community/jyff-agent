@@ -4,7 +4,6 @@ import {
   FakeDashboardProject,
   FakeDashboardScheduler,
   FakeModelConfiguration,
-  FakeToolsNeed,
 } from "./fake-project.ts"
 
 const servers: WebUiServer[] = []
@@ -294,58 +293,6 @@ describe("WebUI HTTP server", () => {
     // message 路由不落入 dispatch|cancel 正则(不要求 scheduler)
     const withoutScheduler = await post("/api/challenges/pwn-1/dispatch", {})
     expect(withoutScheduler.status).toBe(503)
-  })
-
-  it("工具需求:未装配 404;装配后 view/download/clear 可用", async () => {
-    const plain = await startWebUi({
-      project: new FakeDashboardProject(),
-      host: "127.0.0.1",
-      port: 0,
-      pollIntervalMs: 60_000,
-    })
-    expect((await fetch(`${plain.url}/api/toolsneed`)).status).toBe(404)
-    expect((await fetch(`${plain.url}/api/toolsneed/download`)).status).toBe(404)
-    const clearUnavailable = await fetch(`${plain.url}/api/toolsneed/clear`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    })
-    expect(clearUnavailable.status).toBe(404)
-    await plain.close()
-
-    const toolsNeed = new FakeToolsNeed()
-    const server = await startWebUi({
-      project: new FakeDashboardProject(),
-      toolsNeed,
-      host: "127.0.0.1",
-      port: 0,
-      pollIntervalMs: 60_000,
-    })
-    servers.push(server)
-
-    const view = await fetch(`${server.url}/api/toolsneed`)
-    expect(view.status).toBe(200)
-    expect(await view.json()).toMatchObject({
-      totalReports: 1,
-      entries: [{ tool: "sqlmap", category: "web" }],
-    })
-
-    const download = await fetch(`${server.url}/api/toolsneed/download`)
-    expect(download.status).toBe(200)
-    expect(download.headers.get("content-type")).toContain("text/markdown")
-    expect(download.headers.get("content-disposition")).toMatch(
-      /^attachment; filename="toolsneed-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.md"$/,
-    )
-    expect(await download.text()).toContain("| 工具 |")
-
-    const cleared = await fetch(`${server.url}/api/toolsneed/clear`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    })
-    expect(cleared.status).toBe(200)
-    expect(await cleared.json()).toEqual({ cleared: true })
-    expect(toolsNeed.clearCalls).toBe(1)
   })
 
   it("会话复盘导出:无 run 404;指定不存在 run 404;200 返回 Markdown 与附件头", async () => {

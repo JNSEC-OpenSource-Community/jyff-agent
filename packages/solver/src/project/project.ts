@@ -22,7 +22,6 @@ import {
   type RunStatus,
 } from "./run-store.ts"
 import { extractAssistantText } from "../agent/thinking.ts"
-import type { ToolNeedReport } from "../sandbox/tools.ts"
 import {
   BLACKBOARD_INJECTION_MAX_CHARACTERS,
   serializeBlackboard,
@@ -46,30 +45,12 @@ export interface OpenProjectOptions {
     relativeWorkspace: string
   }) => DockerWorkspaceMount
   telemetry?: ProjectTelemetryOptions
-  /**
-   * 工具需求收集器(运行时注入):solver 上报缺失工具时回调,返回值进入
-   * tool_need_reported 事件。收集/去重/持久化由注入方负责,solver 只负责上报。
-   */
-  toolsNeed?: ToolsNeedHandler
 }
 
 export interface ProjectTelemetryOptions {
   level?: "safe" | "full"
   maxTextLength?: number
 }
-
-/** 工具需求上报的题目上下文(Project 在回调时提供)。 */
-export interface ToolNeedReportContext {
-  challengeId: string
-  title: string
-  category: string
-}
-
-/** 工具需求收集器回调:返回 "recorded"/"duplicate",或 void(视为 recorded)。 */
-export type ToolsNeedHandler = (
-  report: ToolNeedReport,
-  context: ToolNeedReportContext,
-) => "recorded" | "duplicate" | void
 
 export interface CreateSolverOptions {
   agent: AgentOptions
@@ -94,7 +75,6 @@ export class Project {
     private readonly sandboxFactory: (options: DockerSandboxOptions) => Promise<Sandbox>,
     private readonly skills: readonly AgentSkill[],
     private readonly runStore: RunStore,
-    private readonly toolsNeedHandler: ToolsNeedHandler | undefined,
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly telemetry: Required<ProjectTelemetryOptions>,
   ) {
@@ -123,7 +103,6 @@ export class Project {
         options.sandboxFactory ?? DockerSandbox.create,
         skills,
         runStore,
-        options.toolsNeed,
         options.workspaceMount,
         {
           level: options.telemetry?.level ?? "safe",
@@ -286,26 +265,6 @@ export class Project {
         },
         features: { skills, compaction: options.compaction },
         blackboard: { runStore: this.runStore, challengeId, runId },
-        toolsNeed: {
-          onReport: (report) => {
-            try {
-              // 收集器由运行时注入(OpenProjectOptions.toolsNeed);未注入时事件 status 默认 recorded。
-              const status = this.toolsNeedHandler?.(report, {
-                challengeId,
-                title: challenge.title,
-                category: challenge.category,
-              }) ?? "recorded"
-              this.runStore.appendEvent(runId, "tool_need_reported", {
-                tool: report.tool,
-                reason: report.reason,
-                status,
-                ts: new Date().toISOString(),
-              })
-            } catch {
-              // 收集链路失败不得影响 Agent 生命周期(与进度遥测同策略)
-            }
-          },
-        },
         onClosed: async (details) => {
           this.solvers.delete(solver)
           const updated = this.runStore.updateRun(runId, {

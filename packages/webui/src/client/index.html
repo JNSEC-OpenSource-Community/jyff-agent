@@ -35,19 +35,6 @@
         <span class="last-updated" id="last-updated">尚未同步</span>
         <button
           class="icon-button"
-          id="tools-need-button"
-          type="button"
-          aria-label="工具需求清单"
-          aria-haspopup="dialog"
-          hidden
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 10h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8Z"></path>
-            <path d="M8 6h8l1 4H7l1-4Z"></path>
-          </svg>
-        </button>
-        <button
-          class="icon-button"
           id="settings-button"
           type="button"
           aria-label="模型连接设置"
@@ -485,32 +472,6 @@
             </button>
           </footer>
         </form>
-      </div>
-    </dialog>
-
-    <dialog class="tools-need-dialog" id="tools-need-dialog" aria-labelledby="tools-need-dialog-title">
-      <div class="tools-need-shell">
-        <header class="tools-need-header">
-          <div>
-            <p class="section-index">TOOL NEED / RECEIVER</p>
-            <h2 id="tools-need-dialog-title">工具需求清单</h2>
-            <p>Agent 上报的缺失工具汇总（接收 agent 收集），可下载 Markdown 或清空。</p>
-          </div>
-          <button class="icon-button" id="close-tools-need" type="button" aria-label="关闭工具需求清单">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
-          </button>
-        </header>
-
-        <p class="tools-need-meta" id="tools-need-meta" role="status">正在读取…</p>
-        <div class="tools-need-list" id="tools-need-list">
-          <div class="detail-empty">正在读取工具需求…</div>
-        </div>
-
-        <footer class="tools-need-actions">
-          <a class="outline-button" id="tools-need-download" href="/api/toolsneed/download">下载 Markdown</a>
-          <button class="control-button tools-need-clear" id="tools-need-clear" type="button">清空清单</button>
-          <button class="outline-button" id="cancel-tools-need" type="button">关闭</button>
-        </footer>
       </div>
     </dialog>
 

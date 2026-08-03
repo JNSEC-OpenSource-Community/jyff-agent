@@ -20,7 +20,6 @@ const EVENT_LABELS = {
   thinking_level_update: "已切换思考强度",
   agent_message: "Agent 回复",
   human_message: "人工消息",
-  tool_need_reported: "工具需求上报",
   tool_started: "开始执行工具",
   tool_finished: "工具执行完成",
   flag_submitted: "Flag 提交结果",
@@ -42,7 +41,6 @@ const TOOL_LABELS = {
   ctf_instance_destroy: "关闭远程环境",
   ctf_blackboard_read: "读取协作黑板",
   ctf_blackboard_record: "更新协作黑板",
-  ctf_report_tool_need: "上报缺失工具",
 }
 
 const SOURCE_LABELS = {
@@ -71,7 +69,6 @@ const elements = {
   lastUpdated: document.querySelector("#last-updated"),
   settingsButton: document.querySelector("#settings-button"),
   refreshButton: document.querySelector("#refresh-button"),
-  toolsNeedButton: document.querySelector("#tools-need-button"),
   contestName: document.querySelector("#contest-name"),
   contestMeta: document.querySelector("#contest-meta"),
   resultCount: document.querySelector("#result-count"),
@@ -115,13 +112,6 @@ const elements = {
   interventionInput: document.querySelector("#intervention-input"),
   interventionSend: document.querySelector("#intervention-send"),
   interventionHint: document.querySelector("#intervention-hint"),
-  toolsNeedDialog: document.querySelector("#tools-need-dialog"),
-  toolsNeedMeta: document.querySelector("#tools-need-meta"),
-  toolsNeedList: document.querySelector("#tools-need-list"),
-  toolsNeedDownload: document.querySelector("#tools-need-download"),
-  toolsNeedClear: document.querySelector("#tools-need-clear"),
-  closeToolsNeed: document.querySelector("#close-tools-need"),
-  cancelToolsNeed: document.querySelector("#cancel-tools-need"),
   modelDialog: document.querySelector("#model-dialog"),
   modelForm: document.querySelector("#model-form"),
   modelStatus: document.querySelector("#model-status"),
@@ -160,7 +150,6 @@ start()
 async function start() {
   bindEvents()
   connectEvents()
-  syncToolsNeedAvailability()
   try {
     applySnapshot(await getJson("/api/snapshot"))
     void syncModelSettingsSummary()
@@ -212,13 +201,6 @@ function bindEvents() {
     if (location.hash.startsWith("#challenge=")) {
       history.replaceState(null, "", `${location.pathname}${location.search}`)
     }
-  })
-  elements.toolsNeedButton.addEventListener("click", openToolsNeedDialog)
-  elements.closeToolsNeed.addEventListener("click", closeToolsNeedDialog)
-  elements.cancelToolsNeed.addEventListener("click", closeToolsNeedDialog)
-  elements.toolsNeedClear.addEventListener("click", clearToolsNeed)
-  elements.toolsNeedDialog.addEventListener("click", (event) => {
-    if (event.target === elements.toolsNeedDialog) closeToolsNeedDialog()
   })
   elements.modelForm.addEventListener("submit", saveModelSettings)
   elements.closeModelSettings.addEventListener("click", closeModelSettings)
@@ -1151,88 +1133,6 @@ async function sendIntervention() {
   }
 }
 
-function openToolsNeedDialog() {
-  elements.toolsNeedDialog.showModal()
-  elements.toolsNeedMeta.textContent = "正在读取…"
-  elements.toolsNeedList.replaceChildren(el("div", "detail-empty", "正在读取工具需求…"))
-  void getJson("/api/toolsneed")
-    .then(renderToolsNeed)
-    .catch((error) => {
-      elements.toolsNeedList.replaceChildren(
-        el("div", "detail-empty", `读取失败：${errorMessage(error)}`),
-      )
-    })
-}
-
-function renderToolsNeed(view) {
-  const entries = Array.isArray(view?.entries) ? view.entries : []
-  const updatedAt = typeof view?.updatedAt === "string" ? view.updatedAt : ""
-  elements.toolsNeedMeta.textContent =
-    `更新于 ${updatedAt ? relativeTime(updatedAt) : "—"} · ` +
-    `累计上报 ${view?.totalReports ?? 0} 次 · ${entries.length} 个工具`
-  if (entries.length === 0) {
-    elements.toolsNeedList.replaceChildren(el("div", "detail-empty", "暂无工具需求上报。"))
-    return
-  }
-  const table = document.createElement("table")
-  table.className = "tools-need-table"
-  const head = document.createElement("thead")
-  const headerRow = document.createElement("tr")
-  for (const label of ["工具", "分类", "次数", "首次上报", "最近上报", "涉及题目", "需求原因"]) {
-    const th = document.createElement("th")
-    th.textContent = label
-    headerRow.append(th)
-  }
-  head.append(headerRow)
-  table.append(head)
-  const body = document.createElement("tbody")
-  for (const entry of entries) {
-    const row = document.createElement("tr")
-    for (const value of [
-      entry.tool,
-      entry.category,
-      String(entry.reportCount),
-      relativeTime(entry.firstReportedAt),
-      relativeTime(entry.lastReportedAt),
-      `${entry.challenges?.length ?? 0} 题`,
-      (entry.reasons ?? []).join("；"),
-    ]) {
-      const cell = document.createElement("td")
-      cell.textContent = value
-      row.append(cell)
-    }
-    body.append(row)
-  }
-  table.append(body)
-  elements.toolsNeedList.replaceChildren(table)
-}
-
-function closeToolsNeedDialog() {
-  elements.toolsNeedDialog.close()
-}
-
-async function clearToolsNeed() {
-  if (!window.confirm("确认清空全部工具需求记录？此操作不可恢复。")) return
-  try {
-    await controlPost("/api/toolsneed/clear")
-    toast("工具需求清单已清空")
-    renderToolsNeed({ updatedAt: new Date().toISOString(), totalReports: 0, entries: [] })
-  } catch (error) {
-    toast(errorMessage(error), true)
-  }
-}
-
-// 控制面未装配收集器时隐藏入口(仿模型设置按钮的容错模式)
-function syncToolsNeedAvailability() {
-  void getJson("/api/toolsneed")
-    .then(() => {
-      elements.toolsNeedButton.hidden = false
-    })
-    .catch(() => {
-      elements.toolsNeedButton.hidden = true
-    })
-}
-
 function acceptedSubmission(runs) {
   for (const run of runs) {
     for (let index = run.events.length - 1; index >= 0; index--) {
@@ -1371,7 +1271,6 @@ function eventItem(event) {
   if (event.type === "agent_thinking") item.classList.add("is-thinking")
   if (event.type === "human_message") item.classList.add("is-human")
   if (event.type === "agent_message") item.classList.add("is-agent")
-  if (event.type === "tool_need_reported") item.classList.add("is-warn")
   if (event.type === "flag_submitted" &&
     ["accepted", "already_solved"].includes(data.status)) {
     item.classList.add("is-success")
@@ -1414,13 +1313,6 @@ function eventDetail(type, data) {
   }
   if (type === "agent_thinking" || type === "agent_message" || type === "human_message") {
     return String(data.text ?? "").slice(0, 2000)
-  }
-  if (type === "tool_need_reported") {
-    return [
-      data.tool ? `工具：${data.tool}` : "",
-      data.status ? `状态：${data.status === "recorded" ? "已记录" : "重复上报"}` : "",
-      data.reason ? `原因：${data.reason}` : "",
-    ].filter(Boolean).join("\n")
   }
   if (type === "tool_started" && data.args && Object.keys(data.args).length > 0) {
     if (data.toolName === "bash" && typeof data.args.command === "string") {

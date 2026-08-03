@@ -9,7 +9,6 @@ import type {
   DashboardProject,
   DashboardScheduler,
   DashboardSnapshot,
-  DashboardToolsNeed,
   ModelConfigurationUpdate,
 } from "./types.ts"
 
@@ -21,7 +20,6 @@ export interface WebUiOptions {
   scheduler?: DashboardScheduler
   schedulerReconcileIntervalMs?: number
   modelConfiguration?: DashboardModelConfiguration
-  toolsNeed?: DashboardToolsNeed
 }
 
 export interface WebUiServer {
@@ -235,34 +233,6 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/toolsneed") {
-      requireToolsNeed(options.toolsNeed)
-      sendJson(response, 200, await options.toolsNeed.view())
-      return
-    }
-
-    if (method === "GET" && url.pathname === "/api/toolsneed/download") {
-      requireToolsNeed(options.toolsNeed)
-      const markdown = await options.toolsNeed.markdown()
-      const filename = `toolsneed-${timestampForFilename()}.md`
-      const body = Buffer.from(markdown, "utf8")
-      response.writeHead(200, {
-        "Content-Type": "text/markdown; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store",
-        "Content-Length": body.byteLength,
-      })
-      response.end(body)
-      return
-    }
-
-    if (method === "POST" && url.pathname === "/api/toolsneed/clear") {
-      requireToolsNeed(options.toolsNeed)
-      await options.toolsNeed.clear()
-      sendJson(response, 200, { cleared: true })
-      return
-    }
-
     // 会话复盘导出:必须在 /api/challenges/ 详情分支(startsWith)之前,否则路径被吞。
     const exportMatch = /^\/api\/challenges\/([^/]+)\/export$/.exec(url.pathname)
     if (method === "GET" && exportMatch) {
@@ -461,18 +431,6 @@ function requireModelConfiguration(
       404,
       "model_configuration_unavailable",
       "当前控制面不支持模型配置",
-    )
-  }
-}
-
-function requireToolsNeed(
-  toolsNeed: DashboardToolsNeed | undefined,
-): asserts toolsNeed is DashboardToolsNeed {
-  if (!toolsNeed) {
-    throw new HttpRequestError(
-      404,
-      "toolsneed_unavailable",
-      "当前控制面未装配工具需求收集器",
     )
   }
 }

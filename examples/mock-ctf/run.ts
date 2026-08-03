@@ -7,7 +7,6 @@ import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { Project } from "@ctf-agent/solver"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
-import { openToolsNeed } from "./toolsneed.ts"
 
 // 从项目根目录的 .env 文件加载环境变量（不依赖 dotenv 包）
 function loadEnvFile(): void {
@@ -96,13 +95,7 @@ let solver: Awaited<ReturnType<Project["createSolver"]>> | undefined
 
 try {
   console.log("\n[1/4] 打开 Mock CTF Project")
-  // 工具需求收集器由运行时装配(与 webui 同款持久化 toolsneed.json)。
-  const toolsNeed = await openToolsNeed(root)
-  project = await Project.open({
-    root,
-    platforms: [mockPlatform],
-    toolsNeed: (report, context) => toolsNeed.record(report, context),
-  })
+  project = await Project.open({ root, platforms: [mockPlatform] })
 
   console.log("[2/4] 创建 warmup-flag 的独立 Docker Solver")
   solver = await project.createSolver("warmup-flag", {
@@ -119,7 +112,6 @@ try {
           "开始时必须调用 ctf_blackboard_read 查看共享知识。",
           "必须先调用 ctf_challenge_info，使用 ctf_download_attachment 下载附件，使用 read 读取附件。",
           "必须使用 bash 解码附件，使用 ctf_blackboard_record 记录解码结果，最后调用 ctf_submit_flag。",
-          "发现环境缺少某个工具或命令（即使认为可以绕过）时，必须第一时间调用 ctf_report_tool_need 上报（附工具名与原因），然后再继续尝试替代思路；不要自行判断是否必要，不要优先尝试下载或安装新工具，不要等待工具安装。",
         ].join("\n"),
       },
     },

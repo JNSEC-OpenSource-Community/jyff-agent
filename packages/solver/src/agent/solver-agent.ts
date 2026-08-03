@@ -2,7 +2,6 @@ import { Agent, type AgentMessage, type AgentOptions, type ThinkingLevel } from 
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "../sandbox/docker-sandbox.ts"
 import type { RunStore } from "../project/run-store.ts"
-import type { ToolNeedReport } from "../sandbox/tools.ts"
 import { compactMessages, convertSolverMessages, shouldCompact, type CompactionOptions } from "./compaction.ts"
 import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "../skills/project-skills.ts"
 import { createSolverTools } from "../sandbox/tools.ts"
@@ -27,10 +26,6 @@ export interface CreateCtfSolverAgentOptions {
     runStore: RunStore
     challengeId: string
     runId: string
-  }
-  /** 工具需求收集器;提供时向 solver 注册 ctf_report_tool_need 上报工具。 */
-  toolsNeed?: {
-    onReport(report: ToolNeedReport): void
   }
   onClosed?: (details: SolverCloseDetails) => Promise<void> | void
 }
@@ -76,7 +71,6 @@ export class CtfSolverAgent extends Agent {
         sandbox: options.sandbox,
         onTerminalSubmission: (submission) => markTerminal(submission),
         blackboard: options.blackboard,
-        onToolNeedReport: options.toolsNeed?.onReport,
       }),
       ...(loadSkill ? [loadSkill] : []),
     ]

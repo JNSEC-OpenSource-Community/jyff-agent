@@ -14,10 +14,8 @@ import type {
   DashboardModelConfiguration,
   DashboardProject,
   DashboardScheduler,
-  DashboardToolsNeed,
   ModelConfigurationUpdate,
   ModelConfigurationView,
-  ToolsNeedView,
 } from "../src/types.ts"
 
 const now = "2026-07-29T12:00:00.000Z"
@@ -189,41 +187,6 @@ export class FakeDashboardScheduler implements DashboardScheduler {
       .filter((item) => item.challengeId !== challengeId)
       .map((item, index) => ({ ...item, position: index + 1 }))
     return this.snapshot()
-  }
-}
-
-export class FakeToolsNeed implements DashboardToolsNeed {
-  value: ToolsNeedView = {
-    updatedAt: now,
-    totalReports: 1,
-    entries: [{
-      tool: "sqlmap",
-      category: "web",
-      firstReportedAt: now,
-      lastReportedAt: now,
-      reportCount: 1,
-      reasons: ["需要 SQL 注入检测"],
-      challenges: [{ challengeId: "web-1", title: "Cookie Jar", reportedAt: now }],
-    }],
-  }
-  clearCalls = 0
-
-  async view(): Promise<ToolsNeedView> { return structuredClone(this.value) }
-
-  async markdown(): Promise<string> {
-    return [
-      "# 工具需求清单 (toolsneed)",
-      "",
-      "| 工具 | 分类 | 上报次数 | 涉及题目 | 需求原因 |",
-      "|---|---|---|---|---|",
-      "| sqlmap | web | 1 | Cookie Jar(web-1) | 需要 SQL 注入检测 |",
-      "",
-    ].join("\n")
-  }
-
-  async clear(): Promise<void> {
-    this.clearCalls++
-    this.value = { updatedAt: new Date().toISOString(), totalReports: 0, entries: [] }
   }
 }
 

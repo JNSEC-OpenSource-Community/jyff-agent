@@ -62,7 +62,7 @@ describe("WebUI dashboard model", () => {
       })
   })
 
-  it("最后事件为 human_message/agent_message/tool_need_reported 时映射进度文案", async () => {
+  it("最后事件为 human_message/agent_message/agent_usage 时映射进度文案", async () => {
     const project = new FakeDashboardProject()
     project.eventValues.get("run-pwn-1")!.push({
       id: 2,
@@ -89,17 +89,6 @@ describe("WebUI dashboard model", () => {
     project.eventValues.get("run-pwn-1")!.push({
       id: 4,
       runId: "run-pwn-1",
-      type: "tool_need_reported",
-      data: { tool: "sqlmap", status: "recorded", ts: "2026-07-29T12:01:20.000Z" },
-      createdAt: "2026-07-29T12:01:20.000Z",
-    })
-    const toolNeed = await buildDashboardSnapshot(project)
-    expect(toolNeed.challenges.find((challenge) => challenge.id === "pwn-1")?.progress)
-      .toBe("缺少工具：sqlmap")
-
-    project.eventValues.get("run-pwn-1")!.push({
-      id: 5,
-      runId: "run-pwn-1",
       type: "agent_usage",
       data: { input: 100, output: 50, totalTokens: 150, ts: "2026-07-29T12:01:30.000Z" },
       createdAt: "2026-07-29T12:01:30.000Z",
@@ -114,7 +103,6 @@ describe("WebUI dashboard model", () => {
       "tool_started",
       "human_message",
       "agent_message",
-      "tool_need_reported",
       "agent_usage",
     ])
   })

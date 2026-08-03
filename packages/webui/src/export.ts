@@ -159,14 +159,6 @@ function timelineSection(events: RunEvent[], full: boolean): string[] {
         out.push(`- 🏁 **提交 Flag**：\`${flag}\` — ${status}${message}`, "")
         break
       }
-      case "tool_need_reported": {
-        flushThinking()
-        const tool = typeof data?.tool === "string" ? data.tool : "?"
-        const reason = typeof data?.reason === "string" ? data.reason : ""
-        const status = typeof data?.status === "string" ? data.status : ""
-        out.push(`- ⚠️ **缺工具**：\`${tool}\`${reason ? ` — ${reason}` : ""}${status ? `（${status}）` : ""}`, "")
-        break
-      }
       case "agent_usage": {
         flushThinking()
         const usage = data as UsageData | undefined

@@ -52,7 +52,6 @@ export type RunEventType =
   | "thinking_level_update"
   | "human_message"
   | "agent_message"
-  | "tool_need_reported"
   | (string & {})
 
 export interface RunEvent {

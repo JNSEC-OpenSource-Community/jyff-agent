@@ -13,7 +13,6 @@ import { remotePlatform } from "@ctf-agent/platform-client"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 import { withPlatformConfigOverride } from "./platform-env.ts"
-import { openToolsNeed } from "./toolsneed.ts"
 
 const exec = promisify(execFile)
 
@@ -156,7 +155,6 @@ function buildSystemPrompt(challengeId: string): string {
     "开始时必须调用 ctf_blackboard_read 查看共享知识。",
     "必须先调用 ctf_challenge_info,使用 ctf_download_attachment 下载附件,使用 read 读取附件。",
     "必须使用 bash 解码附件,使用 ctf_blackboard_record 记录解码结果,最后调用 ctf_submit_flag。",
-    "发现环境缺少某个工具或命令(即使认为可以绕过)时,必须第一时间调用 ctf_report_tool_need 上报(附工具名与原因),然后再继续尝试替代思路;不要自行判断是否必要,不要优先尝试下载或安装新工具,不要等待工具安装。",
   ]
   if (remoteIds.has(challengeId)) {
     lines.push(
@@ -203,14 +201,8 @@ let project: Project | undefined
 try {
   console.log(`\n[1/3] 打开 CTF Project(平台: ${activePlatform})`)
   // 双模式:config 的 contest.platform 决定插件(mock/remote);remote 模式经 env 覆盖临时写回配置。
-  // 工具需求收集器由运行时装配(与 webui 同款持久化 toolsneed.json)。
-  const toolsNeed = await openToolsNeed(root)
   project = await withPlatformConfigOverride(configPath, () =>
-    Project.open({
-      root,
-      platforms: [mockPlatform, remotePlatform],
-      toolsNeed: (report, context) => toolsNeed.record(report, context),
-    }),
+    Project.open({ root, platforms: [mockPlatform, remotePlatform] }),
   )
 
   console.log(`[2/3] 创建 ContestRunner(8 路并发 / maxAttempts 2 / 30min 超时 / retryDelay 2s)${onlyId ? `,仅跑 --only ${onlyId}` : ""}\n`)
