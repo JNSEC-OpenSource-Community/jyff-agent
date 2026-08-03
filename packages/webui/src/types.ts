@@ -9,7 +9,6 @@ import type {
   RunEvent,
   RunFilter,
   RunRecord,
-  ToolsNeedView,
 } from "@ctf-agent/solver"
 
 export type DashboardChallengeStatus =
@@ -157,4 +156,30 @@ export interface DashboardToolsNeed {
   view(): ToolsNeedView | Promise<ToolsNeedView>
   markdown(): string | Promise<string>
   clear(): Promise<void>
+}
+
+/** 工具需求涉及的题目引用(运行时收集器按 challengeId 去重)。 */
+export interface ToolsNeedChallengeRef {
+  challengeId: string
+  title: string
+  reportedAt: string
+}
+
+/** 工具需求条目(去重键=规范化工具名)。 */
+export interface ToolsNeedEntry {
+  tool: string
+  category: string
+  firstReportedAt: string
+  lastReportedAt: string
+  reportCount: number
+  /** 需求原因(按内容去重,最多 10 条)。 */
+  reasons: string[]
+  challenges: ToolsNeedChallengeRef[]
+}
+
+/** 工具需求文档视图(WebUI /api/toolsneed 的响应形状)。 */
+export interface ToolsNeedView {
+  updatedAt: string
+  totalReports: number
+  entries: ToolsNeedEntry[]
 }

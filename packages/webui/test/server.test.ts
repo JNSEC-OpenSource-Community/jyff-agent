@@ -282,6 +282,15 @@ describe("WebUI HTTP server", () => {
     expect(noActive.status).toBe(409)
     expect(await noActive.json()).toMatchObject({ error: "no_active_run" })
 
+    // project 抛 invalid_message 时保留其原始文案(不统一改写为"消息不能为空")
+    project.sendMessageResult = { error: "invalid_message" }
+    const invalidMessage = await post("/api/challenges/pwn-1/message", { text: "x" })
+    expect(invalidMessage.status).toBe(400)
+    expect(await invalidMessage.json()).toMatchObject({
+      error: "invalid_message",
+      message: "消息内容不合法(测试)",
+    })
+
     // message 路由不落入 dispatch|cancel 正则(不要求 scheduler)
     const withoutScheduler = await post("/api/challenges/pwn-1/dispatch", {})
     expect(withoutScheduler.status).toBe(503)
@@ -377,5 +386,36 @@ describe("WebUI HTTP server", () => {
       /filename="session-pwn-1-[a-z0-9-]+-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.md"/,
     )
     expect(await single.text()).toContain("Run 数：1（指定 run-pwn-1）")
+  })
+
+  it("导出文件名对平台数据做白名单消毒(防 header 注入)", async () => {
+    const project = new FakeDashboardProject()
+    project.runValues.push({
+      id: "run-evil-1",
+      challengeId: 'pwn"1;../evil',
+      workspace: "/workspace/run-evil-1",
+      attempt: 1,
+      source: "manual",
+      status: "running",
+      createdAt: "2026-07-29T12:06:00.000Z",
+      updatedAt: "2026-07-29T12:06:00.000Z",
+    })
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    const response = await fetch(
+      `${server.url}/api/challenges/${encodeURIComponent('pwn"1;../evil')}/export`,
+    )
+    expect(response.status).toBe(200)
+    const filename = /filename="([^"]+)"/.exec(response.headers.get("content-disposition")!)![1]!
+    expect(filename).toContain("session-pwn_1_.._evil-all-")
+    expect(filename).not.toContain('"')
+    expect(filename).not.toContain(";")
+    expect(filename).not.toContain("/")
   })
 })

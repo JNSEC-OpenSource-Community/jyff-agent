@@ -14,4 +14,7 @@ export type {
   DashboardToolsNeed,
   ModelConfigurationUpdate,
   ModelConfigurationView,
+  ToolsNeedChallengeRef,
+  ToolsNeedEntry,
+  ToolsNeedView,
 } from "./types.ts"

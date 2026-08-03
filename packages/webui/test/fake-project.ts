@@ -10,7 +10,6 @@ import type {
   RunFilter,
   RunRecord,
 } from "@ctf-agent/solver"
-import type { ToolsNeedView } from "@ctf-agent/solver"
 import type {
   DashboardModelConfiguration,
   DashboardProject,
@@ -18,6 +17,7 @@ import type {
   DashboardToolsNeed,
   ModelConfigurationUpdate,
   ModelConfigurationView,
+  ToolsNeedView,
 } from "../src/types.ts"
 
 const now = "2026-07-29T12:00:00.000Z"
@@ -88,14 +88,18 @@ export class FakeDashboardProject implements DashboardProject {
     concludedOpportunities: 0,
   }]
   sendMessageCalls: Array<{ challengeId: string; text: string }> = []
-  sendMessageResult: { runId: string } | { error: "no_active_run" } = { runId: "run-pwn-1" }
+  sendMessageResult: { runId: string } | { error: "no_active_run" } | { error: "invalid_message" } =
+    { runId: "run-pwn-1" }
   thinkingLevelCalls: Array<{ challengeId: string; level: string }> = []
   thinkingLevelResult: { runId: string } | { error: "no_active_run" } = { runId: "run-pwn-1" }
 
   async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
     this.sendMessageCalls.push({ challengeId, text })
     if ("error" in this.sendMessageResult) {
-      throw Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+      if (this.sendMessageResult.error === "no_active_run") {
+        throw Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+      }
+      throw Object.assign(new Error("消息内容不合法(测试)"), { code: "invalid_message" })
     }
     return this.sendMessageResult
   }

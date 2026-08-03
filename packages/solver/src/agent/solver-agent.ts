@@ -2,7 +2,7 @@ import { Agent, type AgentMessage, type AgentOptions, type ThinkingLevel } from 
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "../sandbox/docker-sandbox.ts"
 import type { RunStore } from "../project/run-store.ts"
-import type { ToolNeedReport } from "../project/toolsneed.ts"
+import type { ToolNeedReport } from "../sandbox/tools.ts"
 import { compactMessages, convertSolverMessages, shouldCompact, type CompactionOptions } from "./compaction.ts"
 import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "../skills/project-skills.ts"
 import { createSolverTools } from "../sandbox/tools.ts"

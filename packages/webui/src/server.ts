@@ -195,7 +195,12 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
           throw new HttpRequestError(409, "no_active_run", "该题当前没有运行中的 Agent")
         }
         if (hasCode(error, "invalid_message")) {
-          throw new HttpRequestError(400, "invalid_message", "消息不能为空")
+          // 保留 project 侧原始错误文案,不掩盖真实校验错误(requiredString 已在上游拦截)
+          throw new HttpRequestError(
+            400,
+            "invalid_message",
+            error instanceof Error && error.message ? error.message : "invalid_message",
+          )
         }
         throw error
       }
@@ -277,9 +282,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         runId,
         full: url.searchParams.get("full") === "1",
       })
+      const safeChallenge = filenameSafe(challengeId)
       const filename = runId
-        ? `session-${challengeId}-${runId.slice(0, 8)}-${timestampForFilename()}.md`
-        : `session-${challengeId}-all-${timestampForFilename()}.md`
+        ? `session-${safeChallenge}-${filenameSafe(runId.slice(0, 8))}-${timestampForFilename()}.md`
+        : `session-${safeChallenge}-all-${timestampForFilename()}.md`
       const body = Buffer.from(markdown, "utf8")
       response.writeHead(200, {
         "Content-Type": "text/markdown; charset=utf-8",
@@ -475,6 +481,11 @@ function requireToolsNeed(
 function hasCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null &&
     (error as { code?: unknown }).code === code
+}
+
+/** Content-Disposition filename 段白名单清洗:平台/run 数据不可信,防 header 注入。 */
+function filenameSafe(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
 }
 
 function timestampForFilename(): string {

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { ToolsNeedRegistry } from "../../src/project/toolsneed.js"
+import { ToolsNeedRegistry } from "./toolsneed.ts"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -19,7 +19,7 @@ async function registry(): Promise<{ path: string; instance: ToolsNeedRegistry }
 const context = (challengeId: string, title: string, category: string) =>
   ({ challengeId, title, category })
 
-describe("ToolsNeedRegistry(确定性接收 agent)", () => {
+describe("ToolsNeedRegistry(运行时收集器,确定性接收 agent)", () => {
   it("首次上报新建条目,字段完整、reportCount=1", async () => {
     const { instance, path } = await registry()
     const status = instance.record(
@@ -107,7 +107,7 @@ describe("ToolsNeedRegistry(确定性接收 agent)", () => {
     expect(missing.view().entries).toHaveLength(0)
   })
 
-  it("markdown 渲染表格且转义竖线/换行", async () => {
+  it("markdown 渲染表格,行首尾带管道符且转义竖线/换行", async () => {
     const { instance } = await registry()
     instance.record({ tool: "sqlmap|pro", reason: "需求 A\n第二行" }, context("web-1", "Cookie Jar", "Web"))
     await instance.flush()
@@ -115,6 +115,14 @@ describe("ToolsNeedRegistry(确定性接收 agent)", () => {
     expect(markdown).toContain("| 工具 | 分类 | 上报次数 |")
     expect(markdown).toContain("sqlmap\\|pro")
     expect(markdown).toContain("需求 A 第二行")
+    // 表头与数据行必须带首尾 |(分隔行 --- 结尾无空格,不参与断言;缺失管道符会导致表格渲染错误)
+    const rows = markdown.split("\n").filter((line) => line.startsWith("|") && !line.includes("---"))
+    for (const row of rows) {
+      expect(row.endsWith(" |")).toBe(true)
+    }
+    const dataRow = markdown.split("\n").find((line) => line.includes("sqlmap"))
+    expect(dataRow?.startsWith("| ")).toBe(true)
+    expect(dataRow?.endsWith(" |")).toBe(true)
   })
 
   it("clear 清空全部条目并落盘", async () => {

@@ -13,6 +13,7 @@ import { remotePlatform } from "@ctf-agent/platform-client"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 import { withPlatformConfigOverride } from "./platform-env.ts"
+import { openToolsNeed } from "./toolsneed.ts"
 
 const exec = promisify(execFile)
 
@@ -202,8 +203,14 @@ let project: Project | undefined
 try {
   console.log(`\n[1/3] 打开 CTF Project(平台: ${activePlatform})`)
   // 双模式:config 的 contest.platform 决定插件(mock/remote);remote 模式经 env 覆盖临时写回配置。
+  // 工具需求收集器由运行时装配(与 webui 同款持久化 toolsneed.json)。
+  const toolsNeed = await openToolsNeed(root)
   project = await withPlatformConfigOverride(configPath, () =>
-    Project.open({ root, platforms: [mockPlatform, remotePlatform] }),
+    Project.open({
+      root,
+      platforms: [mockPlatform, remotePlatform],
+      toolsNeed: (report, context) => toolsNeed.record(report, context),
+    }),
   )
 
   console.log(`[2/3] 创建 ContestRunner(8 路并发 / maxAttempts 2 / 30min 超时 / retryDelay 2s)${onlyId ? `,仅跑 --only ${onlyId}` : ""}\n`)

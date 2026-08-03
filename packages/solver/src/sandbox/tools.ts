@@ -4,7 +4,6 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "./docker-sandbox.ts"
 import type { RunStore } from "../project/run-store.ts"
-import type { ToolNeedReport } from "../project/toolsneed.ts"
 import { createBlackboardTools } from "../blackboard/index.ts"
 import { RtkRewriter } from "./rtk.ts"
 
@@ -117,6 +116,12 @@ class ContainerFiles {
   edit(path: string, oldText: string, newText: string, signal?: AbortSignal) {
     return this.run({ op: "edit", path, oldText, newText }, signal)
   }
+}
+
+/** ctf_report_tool_need 的上报载荷(工具契约,随工具定义)。 */
+export interface ToolNeedReport {
+  tool: string
+  reason: string
 }
 
 export interface SolverToolOptions {

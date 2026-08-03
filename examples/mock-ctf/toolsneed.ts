@@ -1,5 +1,7 @@
-// 工具需求收集器(确定性接收 agent):汇总 solver 上报的缺失工具,去重合并后
-// 持久化为 .ctf-agent/toolsneed.json,供 WebUI 查看/下载 Markdown/清空。
+// examples/mock-ctf/toolsneed.ts —— 工具需求收集器(运行时实现,按上游审查移出 solver 包)
+// 实现 webui 的 DashboardToolsNeed 接口(查看/下载/清空),并经 Project.open 的
+// toolsNeed 注入点接收 solver 上报(collector 仅负责汇总,不参与 solver 生命周期)。
+// 持久化为 .ctf-agent/toolsneed.json;未装配时 webui 的 toolsneed 路由返回 404。
 //
 // 设计约束:
 // - 无 LLM 调用:record 同步更新内存态并立即返回状态,模型感知零延迟;
@@ -7,43 +9,20 @@
 //   tmp+rename 会互相覆盖丢失更新;内存态是唯一事实源,磁盘写只负责落盘;
 // - 落盘失败静默(与 thinking/进度遥测同策略),不得影响 agent 生命周期。
 
-import { readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import type { ToolNeedReport } from "@ctf-agent/solver"
+import type {
+  DashboardToolsNeed,
+  ToolsNeedEntry,
+  ToolsNeedView,
+} from "@ctf-agent/webui"
 
-export interface ToolNeedReport {
-  tool: string
-  reason: string
-}
-
-export interface ToolNeedContext {
+/** 上报时的题目上下文(Project 注入)。 */
+export interface ToolsNeedRecordContext {
   challengeId: string
   title: string
   category: string
-}
-
-export interface ToolsNeedChallengeRef {
-  challengeId: string
-  title: string
-  reportedAt: string
-}
-
-export interface ToolsNeedEntry {
-  /** 规范化后的工具名(trim + 小写),同时是去重键。 */
-  tool: string
-  /** 首次上报该工具的题目分类(平台原始值,不规范化)。 */
-  category: string
-  firstReportedAt: string
-  lastReportedAt: string
-  reportCount: number
-  /** 需求原因(按内容去重,最多保留 MAX_REASONS 条)。 */
-  reasons: string[]
-  /** 涉及题目(按 challengeId 去重)。 */
-  challenges: ToolsNeedChallengeRef[]
-}
-
-export interface ToolsNeedView {
-  updatedAt: string
-  totalReports: number
-  entries: ToolsNeedEntry[]
 }
 
 const MAX_REASONS = 10
@@ -56,7 +35,7 @@ interface ToolsNeedFile {
   entries?: unknown
 }
 
-export class ToolsNeedRegistry {
+export class ToolsNeedRegistry implements DashboardToolsNeed {
   private readonly path: string
   private entries: ToolsNeedEntry[] = []
   private updatedAt = ""
@@ -90,7 +69,7 @@ export class ToolsNeedRegistry {
    * 记录一次上报。同题同工具重复上报返回 "duplicate" 且不产生任何更新;
    * 同工具跨题上报合并进同一条目。
    */
-  record(report: ToolNeedReport, context: ToolNeedContext): "recorded" | "duplicate" {
+  record(report: ToolNeedReport, context: ToolsNeedRecordContext): "recorded" | "duplicate" {
     const tool = normalizeTool(report.tool)
     if (!tool) return "duplicate"
     const reason = normalizeReason(report.reason)
@@ -135,7 +114,7 @@ export class ToolsNeedRegistry {
     }
   }
 
-  /** 渲染为人类可读 Markdown 表格(下载/查看用)。 */
+  /** 渲染为人类可读 Markdown 表格(下载/查看用)。每行必须有首尾 | 才能正确渲染。 */
   markdown(): string {
     const lines = [
       "# 工具需求清单 (toolsneed)",
@@ -149,7 +128,7 @@ export class ToolsNeedRegistry {
       const challenges = entry.challenges
         .map((ref) => `${ref.title}(${ref.challengeId})`)
         .join("、")
-      lines.push([
+      lines.push("| " + [
         escapeCell(entry.tool),
         escapeCell(entry.category),
         String(entry.reportCount),
@@ -157,7 +136,7 @@ export class ToolsNeedRegistry {
         shortTime(entry.lastReportedAt),
         escapeCell(challenges),
         escapeCell(entry.reasons.join("；")),
-      ].join(" | "))
+      ].join(" | ") + " |")
     }
     if (this.entries.length === 0) {
       lines.push("暂无工具需求上报。", "")
@@ -197,6 +176,13 @@ export class ToolsNeedRegistry {
   }
 }
 
+/** 运行时装配:确保 .ctf-agent 目录存在后打开收集器(与 Project 共用持久化目录)。 */
+export async function openToolsNeed(root: string): Promise<ToolsNeedRegistry> {
+  const directory = join(root, ".ctf-agent")
+  await mkdir(directory, { recursive: true })
+  return ToolsNeedRegistry.open(join(directory, "toolsneed.json"))
+}
+
 function normalizeTool(tool: string): string {
   return tool.trim().toLowerCase().replace(/\s+/g, " ")
 }
@@ -224,8 +210,8 @@ function normalizeEntry(value: unknown): ToolsNeedEntry | null {
       : [],
     challenges: Array.isArray(entry.challenges)
       ? entry.challenges
-          .filter((ref): ref is ToolsNeedChallengeRef =>
-            Boolean(ref && typeof ref === "object" && typeof (ref as ToolsNeedChallengeRef).challengeId === "string"))
+          .filter((ref): ref is ToolsNeedEntry["challenges"][number] =>
+            Boolean(ref && typeof ref === "object" && typeof (ref as { challengeId?: unknown }).challengeId === "string"))
           .map((ref) => ({
             challengeId: ref.challengeId,
             title: typeof ref.title === "string" ? ref.title : "",

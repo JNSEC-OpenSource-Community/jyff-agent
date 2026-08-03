@@ -11,6 +11,7 @@ import {
 import { startWebUi } from "@ctf-agent/webui"
 import { loadModelEnvironment } from "./agent-config.ts"
 import { withPlatformConfigOverride } from "./platform-env.ts"
+import { openToolsNeed } from "./toolsneed.ts"
 
 // 与 run-myctf.ts 同款 .env 加载器(webui 此前不读 .env,导致 CTF_SCHEDULER_* 等配置不生效)
 function loadEnvFile(): void {
@@ -59,6 +60,10 @@ try {
 }
 const activePlatform = parsedConfig.contest.platform
 
+// 工具需求收集器由运行时装配(Project 不再内置,上游审查意见):收集器经 Project.open
+// 的 toolsNeed 注入点接收上报,再以 DashboardToolsNeed 接口交给 WebUI。
+const toolsNeed = await openToolsNeed(root)
+
 // 接线方式 B:Project.open 内部从 .pi/ctf-config.json 读取 platform.config,不支持注入;
 // 双模式:config 的 contest.platform 决定实际插件(mock/remote);remote 模式把 env 覆盖后的配置临时写回文件,open 完成即恢复。
 const project = await withPlatformConfigOverride(configPath, () =>
@@ -69,6 +74,7 @@ const project = await withPlatformConfigOverride(configPath, () =>
       level: process.env.CTF_TELEMETRY_LEVEL === "safe" ? "safe" : "full",
       maxTextLength: Number(process.env.CTF_TELEMETRY_MAX_TEXT_LENGTH ?? 8_000),
     },
+    toolsNeed: (report, context) => toolsNeed.record(report, context),
     ...(workspaceVolume
       ? {
           workspaceMount: ({ relativeWorkspace }: { relativeWorkspace: string }) => ({
@@ -111,7 +117,7 @@ const webui = await startWebUi({
   project,
   scheduler,
   modelConfiguration: model,
-  toolsNeed: project.toolsNeedRegistry,
+  toolsNeed,
   host,
   port,
   pollIntervalMs,

@@ -7,6 +7,7 @@ import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { Project } from "@ctf-agent/solver"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
+import { openToolsNeed } from "./toolsneed.ts"
 
 // 从项目根目录的 .env 文件加载环境变量（不依赖 dotenv 包）
 function loadEnvFile(): void {
@@ -95,7 +96,13 @@ let solver: Awaited<ReturnType<Project["createSolver"]>> | undefined
 
 try {
   console.log("\n[1/4] 打开 Mock CTF Project")
-  project = await Project.open({ root, platforms: [mockPlatform] })
+  // 工具需求收集器由运行时装配(与 webui 同款持久化 toolsneed.json)。
+  const toolsNeed = await openToolsNeed(root)
+  project = await Project.open({
+    root,
+    platforms: [mockPlatform],
+    toolsNeed: (report, context) => toolsNeed.record(report, context),
+  })
 
   console.log("[2/4] 创建 warmup-flag 的独立 Docker Solver")
   solver = await project.createSolver("warmup-flag", {

@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { Agent, type AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
 import { mockPlatform } from "../../../platform-mock/src/index.js"
-import { Project } from "../../src/project/project.js"
+import { Project, type ToolNeedReportContext } from "../../src/project/project.js"
+import type { ToolNeedReport } from "../../src/sandbox/tools.js"
 import type { CommandResult, DockerSandboxOptions, Sandbox } from "../../src/sandbox/docker-sandbox.js"
 
 const roots: string[] = []
@@ -228,8 +229,52 @@ describe("Project.setThinkingLevel(运行中切换思考强度)", () => {
   })
 })
 
-describe("工具需求上报链路(Project → ToolsNeedRegistry)", () => {
-  it("solver 持有 ctf_report_tool_need;执行后落 tool_need_reported 事件并写入 toolsneed.json", async () => {
+describe("工具需求上报链路(Project → 运行时注入的收集器)", () => {
+  it("solver 持有 ctf_report_tool_need;执行后回调注入的收集器并落 tool_need_reported 事件", async () => {
+    const root = await fixture()
+    const reports: Array<{ report: ToolNeedReport; context: ToolNeedReportContext }> = []
+    let status: "recorded" | "duplicate" = "recorded"
+    const project = await Project.open({
+      root,
+      platforms: [mockPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      toolsNeed: (report, context) => {
+        reports.push({ report, context })
+        return status
+      },
+    })
+    const solver = await project.createSolver("warmup-flag", { agent: agentOptions })
+    try {
+      const reportTool = solver.state.tools.find((tool) => tool.name === "ctf_report_tool_need")
+      expect(reportTool).toBeDefined()
+      await reportTool!.execute("report", { tool: "sqlmap", reason: "需要 SQL 注入检测" })
+
+      // 收集器收到上报载荷与题目上下文
+      expect(reports).toHaveLength(1)
+      expect(reports[0]!.report).toEqual({ tool: "sqlmap", reason: "需要 SQL 注入检测" })
+      expect(reports[0]!.context.challengeId).toBe("warmup-flag")
+      expect(typeof reports[0]!.context.title).toBe("string")
+      expect(typeof reports[0]!.context.category).toBe("string")
+
+      // 事件携带收集器返回值
+      const event = project.runEvents(solver.runId).find((item) => item.type === "tool_need_reported")
+      expect(event).toBeDefined()
+      expect(event!.data).toMatchObject({ tool: "sqlmap", reason: "需要 SQL 注入检测", status: "recorded" })
+
+      // 收集器返回 duplicate → 事件 status=duplicate
+      status = "duplicate"
+      await reportTool!.execute("report", { tool: "sqlmap", reason: "再次需要" })
+      const duplicate = project.runEvents(solver.runId)
+        .filter((item) => item.type === "tool_need_reported")[1]
+      expect(duplicate).toBeDefined()
+      expect(duplicate!.data).toMatchObject({ status: "duplicate" })
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+
+  it("未注入收集器时事件 status 默认 recorded(收集链是可选注入)", async () => {
     const root = await fixture()
     const project = await Project.open({
       root,
@@ -240,24 +285,11 @@ describe("工具需求上报链路(Project → ToolsNeedRegistry)", () => {
     try {
       const reportTool = solver.state.tools.find((tool) => tool.name === "ctf_report_tool_need")
       expect(reportTool).toBeDefined()
-      await reportTool!.execute("report", { tool: "sqlmap", reason: "需要 SQL 注入检测" })
-      await project.toolsNeedRegistry.flush()
+      await reportTool!.execute("report", { tool: "gdb", reason: "需要调试器" })
 
       const event = project.runEvents(solver.runId).find((item) => item.type === "tool_need_reported")
       expect(event).toBeDefined()
-      expect(event!.data).toMatchObject({ tool: "sqlmap", reason: "需要 SQL 注入检测", status: "recorded" })
-
-      const view = project.toolsNeedRegistry.view()
-      expect(view.entries).toHaveLength(1)
-      expect(view.entries[0]).toMatchObject({ tool: "sqlmap", reportCount: 1 })
-
-      const file = JSON.parse(await readFile(join(root, ".ctf-agent", "toolsneed.json"), "utf8"))
-      expect(file.entries).toHaveLength(1)
-
-      // 同题同工具重复上报 → duplicate,不新增条目
-      await reportTool!.execute("report", { tool: "sqlmap", reason: "再次需要" })
-      await project.toolsNeedRegistry.flush()
-      expect(project.toolsNeedRegistry.view().entries[0]!.reportCount).toBe(1)
+      expect(event!.data).toMatchObject({ tool: "gdb", status: "recorded" })
     } finally {
       await solver.close()
       await project.close()
