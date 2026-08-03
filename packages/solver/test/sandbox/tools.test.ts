@@ -73,4 +73,22 @@ describe("Solver tools", () => {
     await submit.execute("submit", { flag: "FLAG" })
     expect(submission).toMatchObject({ status: "accepted" })
   })
+
+  it("未提供 onToolNeedReport 回调时不注册 ctf_report_tool_need", () => {
+    const tools = createSolverTools({ capability: capability(), sandbox: new FakeSandbox(), onTerminalSubmission: () => {} })
+    expect(tools.map((item) => item.name)).not.toContain("ctf_report_tool_need")
+  })
+
+  it("提供回调时注册 ctf_report_tool_need,execute 触发回调并返回 recorded", async () => {
+    let received: unknown
+    const report = tool("ctf_report_tool_need", createSolverTools({
+      capability: capability(),
+      sandbox: new FakeSandbox(),
+      onTerminalSubmission: () => {},
+      onToolNeedReport: (value) => { received = value },
+    }))
+    const outcome = await report.execute("report", { tool: "sqlmap", reason: "需要 SQL 注入检测" })
+    expect(received).toEqual({ tool: "sqlmap", reason: "需要 SQL 注入检测" })
+    expect(outcome.details).toEqual({ status: "recorded" })
+  })
 })

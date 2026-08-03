@@ -6,6 +6,7 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { Project } from "@ctf-agent/solver"
 import { mockPlatform } from "@ctf-agent/platform-mock"
+import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 
 // 从项目根目录的 .env 文件加载环境变量（不依赖 dotenv 包）
 function loadEnvFile(): void {
@@ -57,7 +58,10 @@ const model: Model<"openai-completions"> = baseUrl ? {
   api: "openai-completions",
   provider,
   baseUrl: baseUrl.replace(/\/+$/, ""),
-  reasoning: false,
+  reasoning: thinkingEnabledFromEnv(),
+  thinkingLevelMap: provider === "deepseek" || baseUrl.includes("deepseek.com")
+    ? deepseekThinkingLevelMap(modelId)
+    : undefined,
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   contextWindow: Number(process.env.CTF_MODEL_CONTEXT_WINDOW ?? 64_000),
@@ -65,7 +69,6 @@ const model: Model<"openai-completions"> = baseUrl ? {
   compat: {
     supportsStore: false,
     supportsDeveloperRole: false,
-    supportsReasoningEffort: false,
     supportsUsageInStreaming: false,
     supportsStrictMode: false,
     supportsLongCacheRetention: false,
@@ -78,11 +81,10 @@ const model: Model<"openai-completions"> = baseUrl ? {
     ...builtin,
     contextWindow: Math.min(builtin.contextWindow, Number(process.env.CTF_MODEL_CONTEXT_WINDOW ?? 16_000)),
     maxTokens: Math.min(builtin.maxTokens, Number(process.env.CTF_MODEL_MAX_TOKENS ?? 4_096)),
-    reasoning: false,
+    reasoning: thinkingEnabledFromEnv(),
     compat: {
       ...builtin.compat,
       supportsDeveloperRole: false,
-      supportsReasoningEffort: false,
     },
   }
 })()
@@ -103,12 +105,14 @@ try {
       getApiKey: (requestedProvider) => requestedProvider === provider ? apiKey : undefined,
       initialState: {
         model,
-        thinkingLevel: "off",
+        thinkingLevel: thinkingLevelFromEnv(),
         systemPrompt: [
           "你是 CTF Solver；所有命令和文件操作必须使用 Docker sandbox tools。",
+          "请始终使用中文进行思考和推理（reasoning 输出中文）。",
           "开始时必须调用 ctf_blackboard_read 查看共享知识。",
           "必须先调用 ctf_challenge_info，使用 ctf_download_attachment 下载附件，使用 read 读取附件。",
           "必须使用 bash 解码附件，使用 ctf_blackboard_record 记录解码结果，最后调用 ctf_submit_flag。",
+          "发现环境缺少某个工具或命令（即使认为可以绕过）时，必须第一时间调用 ctf_report_tool_need 上报（附工具名与原因），然后再继续尝试替代思路；不要自行判断是否必要，不要优先尝试下载或安装新工具，不要等待工具安装。",
         ].join("\n"),
       },
     },

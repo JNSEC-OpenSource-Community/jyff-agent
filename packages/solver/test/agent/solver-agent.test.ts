@@ -87,4 +87,26 @@ describe("CtfSolverAgent 强制清理", () => {
     expect(log).toEqual(["instance", "sandbox", "persist"])
     expect(details?.cleanupErrors).toEqual(["远程实例销毁失败: API unavailable"])
   })
+
+  it("setThinkingLevel 更新 state.thinkingLevel(下一 turn 生效的注入源)", async () => {
+    const log: string[] = []
+    const solver = await CtfSolverAgent.create({
+      identity: {
+        projectId: "project",
+        runId: "run",
+        workspace: "workspace",
+        challenge: await challengeCapability(log).getInfo(),
+      },
+      capability: challengeCapability(log),
+      sandbox: new OrderedSandbox(log),
+      agent: { ...agent, initialState: { thinkingLevel: "high" } },
+    })
+
+    expect(solver.state.thinkingLevel).toBe("high")
+    solver.setThinkingLevel("max")
+    expect(solver.state.thinkingLevel).toBe("max")
+    solver.setThinkingLevel("off")
+    expect(solver.state.thinkingLevel).toBe("off")
+    await solver.close("manual")
+  })
 })

@@ -32,10 +32,33 @@ export interface RunRecord {
   finishedAt?: string
 }
 
+/**
+ * RunEvent.type 已知 kind 集合。
+ * 保留 string 逃逸口：run_events 表按透传持久化任意 kind（见 appendEvent），
+ * 已知集合仅用于窄化与文档化。
+ */
+export type RunEventType =
+  | "run_created"
+  | "run_started"
+  | "run_updated"
+  | "run_finished"
+  | "run_interrupted"
+  | "agent_started"
+  | "tool_started"
+  | "tool_finished"
+  | "flag_submitted"
+  | "agent_thinking"
+  | "agent_usage"
+  | "thinking_level_update"
+  | "human_message"
+  | "agent_message"
+  | "tool_need_reported"
+  | (string & {})
+
 export interface RunEvent {
   id: number
   runId: string
-  type: string
+  type: RunEventType
   data?: unknown
   createdAt: string
 }

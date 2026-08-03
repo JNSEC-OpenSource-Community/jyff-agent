@@ -15,6 +15,12 @@ const EVENT_LABELS = {
   run_created: "已创建本次尝试",
   run_started: "Agent 开始工作",
   agent_started: "模型开始推理",
+  agent_thinking: "💭 思考",
+  agent_usage: "本轮用量",
+  thinking_level_update: "已切换思考强度",
+  agent_message: "Agent 回复",
+  human_message: "人工消息",
+  tool_need_reported: "工具需求上报",
   tool_started: "开始执行工具",
   tool_finished: "工具执行完成",
   flag_submitted: "Flag 提交结果",
@@ -36,6 +42,7 @@ const TOOL_LABELS = {
   ctf_instance_destroy: "关闭远程环境",
   ctf_blackboard_read: "读取协作黑板",
   ctf_blackboard_record: "更新协作黑板",
+  ctf_report_tool_need: "上报缺失工具",
 }
 
 const SOURCE_LABELS = {
@@ -64,6 +71,7 @@ const elements = {
   lastUpdated: document.querySelector("#last-updated"),
   settingsButton: document.querySelector("#settings-button"),
   refreshButton: document.querySelector("#refresh-button"),
+  toolsNeedButton: document.querySelector("#tools-need-button"),
   contestName: document.querySelector("#contest-name"),
   contestMeta: document.querySelector("#contest-meta"),
   resultCount: document.querySelector("#result-count"),
@@ -98,7 +106,22 @@ const elements = {
   detailContent: document.querySelector("#detail-content"),
   detailAction: document.querySelector("#detail-action"),
   detailActionLabel: document.querySelector("#detail-action-label"),
+  exportWrap: document.querySelector("#export-wrap"),
+  exportLink: document.querySelector("#export-link"),
+  exportFull: document.querySelector("#export-full"),
+  thinkingLevelWrap: document.querySelector("#thinking-level-wrap"),
+  thinkingLevelSelect: document.querySelector("#thinking-level-select"),
   closeDetail: document.querySelector("#close-detail"),
+  interventionInput: document.querySelector("#intervention-input"),
+  interventionSend: document.querySelector("#intervention-send"),
+  interventionHint: document.querySelector("#intervention-hint"),
+  toolsNeedDialog: document.querySelector("#tools-need-dialog"),
+  toolsNeedMeta: document.querySelector("#tools-need-meta"),
+  toolsNeedList: document.querySelector("#tools-need-list"),
+  toolsNeedDownload: document.querySelector("#tools-need-download"),
+  toolsNeedClear: document.querySelector("#tools-need-clear"),
+  closeToolsNeed: document.querySelector("#close-tools-need"),
+  cancelToolsNeed: document.querySelector("#cancel-tools-need"),
   modelDialog: document.querySelector("#model-dialog"),
   modelForm: document.querySelector("#model-form"),
   modelStatus: document.querySelector("#model-status"),
@@ -114,6 +137,16 @@ const elements = {
   clearApiKeyLabel: document.querySelector("#clear-api-key-label"),
   modelContextWindow: document.querySelector("#model-context-window"),
   modelMaxTokens: document.querySelector("#model-max-tokens"),
+  modelThinkingEnabled: document.querySelector("#model-thinking-enabled"),
+  modelReasoningEffort: document.querySelector("#model-reasoning-effort"),
+  modelReasoningHint: document.querySelector("#model-reasoning-hint"),
+  modelPassthroughThinking: document.querySelector("#model-passthrough-thinking"),
+  modelPassthroughHint: document.querySelector("#model-passthrough-hint"),
+  modelPlatformToken: document.querySelector("#model-platform-token"),
+  modelPlatformTokenToggle: document.querySelector("#model-platform-token-toggle"),
+  modelPlatformTokenState: document.querySelector("#model-platform-token-state"),
+  clearPlatformToken: document.querySelector("#clear-platform-token"),
+  clearPlatformTokenLabel: document.querySelector("#clear-platform-token-label"),
   modelFormError: document.querySelector("#model-form-error"),
   saveModelSettings: document.querySelector("#save-model-settings"),
   saveModelSettingsLabel: document.querySelector("#save-model-settings-label"),
@@ -127,6 +160,7 @@ start()
 async function start() {
   bindEvents()
   connectEvents()
+  syncToolsNeedAvailability()
   try {
     applySnapshot(await getJson("/api/snapshot"))
     void syncModelSettingsSummary()
@@ -158,6 +192,15 @@ function bindEvents() {
   elements.autoToggle.addEventListener("click", toggleAutoScheduler)
   elements.detailAction.addEventListener("click", runDetailAction)
   elements.closeDetail.addEventListener("click", closeDetail)
+  elements.exportFull.addEventListener("change", () => {
+    // 详情可能未打开(无 currentDetails 时按钮本就隐藏),更新链接只做兜底
+    if (state.currentDetails) configureExport(state.currentDetails)
+  })
+  elements.thinkingLevelSelect.addEventListener("change", changeThinkingLevel)
+  elements.interventionSend.addEventListener("click", sendIntervention)
+  elements.interventionInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendIntervention()
+  })
   elements.detailDialog.addEventListener("click", (event) => {
     if (event.target === elements.detailDialog) closeDetail()
   })
@@ -165,9 +208,17 @@ function bindEvents() {
     state.selectedChallengeId = null
     state.currentDetails = null
     state.currentDetailsFingerprint = null
+    elements.interventionInput.value = ""
     if (location.hash.startsWith("#challenge=")) {
       history.replaceState(null, "", `${location.pathname}${location.search}`)
     }
+  })
+  elements.toolsNeedButton.addEventListener("click", openToolsNeedDialog)
+  elements.closeToolsNeed.addEventListener("click", closeToolsNeedDialog)
+  elements.cancelToolsNeed.addEventListener("click", closeToolsNeedDialog)
+  elements.toolsNeedClear.addEventListener("click", clearToolsNeed)
+  elements.toolsNeedDialog.addEventListener("click", (event) => {
+    if (event.target === elements.toolsNeedDialog) closeToolsNeedDialog()
   })
   elements.modelForm.addEventListener("submit", saveModelSettings)
   elements.closeModelSettings.addEventListener("click", closeModelSettings)
@@ -182,6 +233,21 @@ function bindEvents() {
     if (elements.modelApiKey.value) {
       elements.clearApiKey.checked = false
       syncClearApiKey()
+    }
+  })
+  elements.modelPlatformTokenToggle.addEventListener("click", toggleModelPlatformTokenVisibility)
+  elements.clearPlatformToken.addEventListener("change", syncClearPlatformToken)
+  elements.modelPlatformToken.addEventListener("input", () => {
+    if (elements.modelPlatformToken.value) {
+      elements.clearPlatformToken.checked = false
+      syncClearPlatformToken()
+    }
+  })
+  elements.modelThinkingEnabled.addEventListener("change", () => {
+    if (!elements.modelThinkingEnabled.checked) return
+    // 开启思考时若尚未选档位,回落到当前支持档位的第一个
+    if (!elements.modelReasoningEffort.value && !elements.modelReasoningEffort.disabled) {
+      elements.modelReasoningEffort.selectedIndex = 0
     }
   })
   window.addEventListener("hashchange", openFromHash)
@@ -468,6 +534,7 @@ function challengeRow(challenge, index, action = challengeControl(challenge)) {
     el("span", "category-tag", challenge.category),
     el("span", "score", `${challenge.score} pt`),
   )
+  if (challenge.needsEnv) category.append(el("span", "env-tag", "环境"))
 
   const status = el("span", `status-chip status-${challenge.status}`,
     STATUS_LABELS[challenge.status] ?? challenge.status)
@@ -561,11 +628,19 @@ async function saveModelSettings(event) {
     baseUrl: elements.modelBaseUrl.value.trim(),
     contextWindow: Number(elements.modelContextWindow.value),
     maxTokens: Number(elements.modelMaxTokens.value),
+    thinkingEnabled: elements.modelThinkingEnabled.checked,
+    reasoningEffort: elements.modelReasoningEffort.value,
+    passthroughThinking: elements.modelPassthroughThinking.checked,
   }
   if (elements.clearApiKey.checked) {
     body.clearApiKey = true
   } else if (elements.modelApiKey.value.trim()) {
     body.apiKey = elements.modelApiKey.value.trim()
+  }
+  if (elements.clearPlatformToken.checked) {
+    body.clearPlatformToken = true
+  } else if (elements.modelPlatformToken.value.trim()) {
+    body.platformToken = elements.modelPlatformToken.value.trim()
   }
 
   setModelSettingsBusy(true, "正在应用…")
@@ -607,6 +682,21 @@ function renderModelSettings(configuration) {
   elements.clearApiKeyLabel.hidden = !configuration.apiKeyConfigured
   elements.clearApiKey.checked = false
   syncClearApiKey()
+  renderThinkingSettings(configuration)
+  elements.modelPlatformToken.value = ""
+  elements.modelPlatformToken.placeholder = configuration.platformTokenConfigured
+    ? "已配置；留空则保持现有 token"
+    : "输入新的平台 token"
+  elements.modelPlatformTokenState.textContent = configuration.platformTokenConfigured
+    ? `Platform Token 已配置 · ${apiKeySourceLabel(configuration.platformTokenSource)}`
+    : "尚未配置平台 token"
+  elements.modelPlatformTokenState.classList.toggle(
+    "is-configured",
+    configuration.platformTokenConfigured,
+  )
+  elements.clearPlatformTokenLabel.hidden = !configuration.platformTokenConfigured
+  elements.clearPlatformToken.checked = false
+  syncClearPlatformToken()
   elements.settingsButton.classList.toggle("is-configured", configuration.configured)
   if (configuration.configured) {
     setModelSettingsStatus(
@@ -637,12 +727,18 @@ function setModelSettingsBusy(busy, label) {
     elements.modelBaseUrl,
     elements.modelContextWindow,
     elements.modelMaxTokens,
+    elements.modelThinkingEnabled,
+    elements.modelReasoningEffort,
+    elements.modelPassthroughThinking,
     elements.clearApiKey,
+    elements.clearPlatformToken,
   ]) {
     input.disabled = busy
   }
   elements.modelApiKey.disabled = busy || elements.clearApiKey.checked
   elements.modelApiKeyToggle.disabled = busy
+  elements.modelPlatformToken.disabled = busy || elements.clearPlatformToken.checked
+  elements.modelPlatformTokenToggle.disabled = busy
   elements.saveModelSettings.disabled = busy
   elements.saveModelSettings.classList.toggle("is-loading", busy)
   elements.saveModelSettingsLabel.textContent = label
@@ -656,6 +752,13 @@ function syncClearApiKey() {
   if (clearing) elements.modelApiKey.value = ""
 }
 
+function syncClearPlatformToken() {
+  const clearing = elements.clearPlatformToken.checked
+  elements.modelPlatformToken.disabled = clearing ||
+    elements.modelForm.getAttribute("aria-busy") === "true"
+  if (clearing) elements.modelPlatformToken.value = ""
+}
+
 function toggleModelApiKeyVisibility() {
   const visible = elements.modelApiKey.type === "text"
   elements.modelApiKey.type = visible ? "password" : "text"
@@ -666,6 +769,57 @@ function toggleModelApiKeyVisibility() {
   )
 }
 
+function toggleModelPlatformTokenVisibility() {
+  const visible = elements.modelPlatformToken.type === "text"
+  elements.modelPlatformToken.type = visible ? "password" : "text"
+  elements.modelPlatformTokenToggle.textContent = visible ? "SHOW" : "HIDE"
+  elements.modelPlatformTokenToggle.setAttribute(
+    "aria-label",
+    visible ? "显示 Platform Token" : "隐藏 Platform Token",
+  )
+}
+
+/** 思考开关与档位选择:档位来自 supportedThinkingLevels(pi 按模型动态计算)。 */
+function renderThinkingSettings(configuration) {
+  elements.modelThinkingEnabled.checked = configuration.thinkingEnabled
+  // 透传模式仅自定义 Base URL 有意义:无 baseUrl 时禁用并提示
+  elements.modelPassthroughThinking.checked = configuration.passthroughThinking
+  elements.modelPassthroughThinking.disabled =
+    !configuration.baseUrl || elements.modelForm.getAttribute("aria-busy") === "true"
+  elements.modelPassthroughHint.textContent = configuration.baseUrl
+    ? "勾选后自定义 Base URL 场景全档位同名直通（xhigh/max 真实透传），适用于支持 reasoning_effort 的中转站。"
+    : "仅填写自定义 Base URL 时有效（当前使用 Pi 内置模型，档位已按模型映射自动生效）。"
+  const levels = configuration.supportedThinkingLevels ?? []
+  const select = elements.modelReasoningEffort
+  const previous = select.value
+  select.replaceChildren()
+  if (levels.length === 0 || levels.includes("off")) {
+    select.append(new Option("—", ""))
+    select.disabled = true
+    elements.modelReasoningHint.textContent =
+      levels.length === 0
+        ? "配置不完整，无法计算档位；先保存 Provider/Model ID 再调整。"
+        : "当前模型仅支持关闭思考（off）。"
+  } else {
+    for (const level of levels) select.append(new Option(level, level))
+    select.disabled = false
+    elements.modelReasoningHint.textContent =
+      "档位随模型动态计算（pi 按模型的 thinkingLevelMap 推导）；运行中的 Agent 可在题目详情页单独切换。"
+  }
+  if (levels.includes(configuration.reasoningEffort)) {
+    select.value = configuration.reasoningEffort
+  } else if (previous && levels.includes(previous)) {
+    select.value = previous
+  } else {
+    select.value = ""
+  }
+  // 模型不支持当前档位时提示将钳制到哪档
+  if (configuration.reasoningEffort && !levels.includes(configuration.reasoningEffort)) {
+    elements.modelReasoningHint.textContent =
+      `当前档位 ${configuration.reasoningEffort} 该模型不支持，将按 pi 钳制规则生效（建议在下方档位中选择）。`
+  }
+}
+
 function resetModelSecretControls() {
   state.modelSettingsRequest++
   elements.modelApiKey.type = "password"
@@ -673,6 +827,11 @@ function resetModelSecretControls() {
   elements.modelApiKeyToggle.textContent = "SHOW"
   elements.modelApiKeyToggle.setAttribute("aria-label", "显示 API Key")
   elements.clearApiKey.checked = false
+  elements.modelPlatformToken.type = "password"
+  elements.modelPlatformToken.value = ""
+  elements.modelPlatformTokenToggle.textContent = "SHOW"
+  elements.modelPlatformTokenToggle.setAttribute("aria-label", "显示 Platform Token")
+  elements.clearPlatformToken.checked = false
   clearModelSettingsError()
 }
 
@@ -796,6 +955,9 @@ async function openDetails(challengeId, updateHash = true, preserveView = false)
     state.currentDetails = details
     if (refreshingOpenDetail && fingerprint === state.currentDetailsFingerprint) {
       configureDetailAction(details.challenge)
+      configureExport(details)
+      configureThinkingLevel(details.challenge)
+      configureIntervention(details.challenge)
       return
     }
     state.currentDetailsFingerprint = fingerprint
@@ -827,11 +989,15 @@ function renderDetails(details, viewState = null) {
   elements.detailCategory.textContent =
     `${challenge.category.toUpperCase()} / ${challenge.id}`
   configureDetailAction(challenge)
+  configureExport(details)
+  configureThinkingLevel(challenge)
+  configureIntervention(challenge)
 
   const overview = el("div", "detail-overview")
   overview.append(
     metric("状态", STATUS_LABELS[challenge.status] ?? challenge.status),
     metric("分值", `${challenge.score} PT`),
+    metric("环境", challenge.needsEnv ? "需申请" : "无需"),
     metric("尝试", String(challenge.attempts)),
     metric("证据 / 机会", `${challenge.evidence} / ${challenge.openOpportunities}`),
   )
@@ -906,6 +1072,167 @@ function configureDetailAction(challenge) {
           : "立即调度"
 }
 
+// 运行中思考强度切换:仅活跃 run 时可用;档位来自模型配置的 supportedThinkingLevels。
+// 切换走 POST /api/challenges/:id/thinking-level,下一 turn 边界生效(服务端权威判定 409)。
+function configureThinkingLevel(challenge) {
+  const levels = state.modelSettings?.supportedThinkingLevels ?? []
+  const active = ["running", "preparing"].includes(challenge.status)
+  elements.thinkingLevelWrap.hidden = !active || levels.length === 0
+  if (elements.thinkingLevelWrap.hidden) return
+  const select = elements.thinkingLevelSelect
+  const previous = select.value
+  select.replaceChildren(new Option("—", ""))
+  for (const level of levels) {
+    if (level === "off") continue
+    select.append(new Option(level, level))
+  }
+  select.disabled = state.operationPending
+  select.value = previous
+}
+
+async function changeThinkingLevel(event) {
+  const level = event.target.value
+  if (!level) return
+  const challengeId = state.selectedChallengeId
+  if (!challengeId) return
+  event.target.value = ""
+  try {
+    await controlPost(
+      `/api/challenges/${encodeURIComponent(challengeId)}/thinking-level`,
+      { level },
+    )
+    toast(`思考强度已切换为 ${level}，下一轮推理生效`)
+    void openDetails(challengeId, false, true)
+  } catch (error) {
+    event.target.value = ""
+    toast(`切换思考强度失败：${errorMessage(error)}`, true)
+  }
+}
+
+// 会话复盘导出:有 run 记录才显示;「明文」勾选切换 full=1 参数。
+function configureExport(details) {
+  const hasRuns = details.runs.length > 0
+  elements.exportWrap.hidden = !hasRuns
+  if (!hasRuns) return
+  const id = encodeURIComponent(details.challenge.id)
+  elements.exportLink.href = `/api/challenges/${id}/export` +
+    (elements.exportFull.checked ? "?full=1" : "")
+}
+
+// 干涉栏只更新禁用态与提示文案,不重建输入框(#detail-content 每 snapshot 重建,
+// 输入框位于 #detail-shell 内,焦点/输入值不受影响;权威判定在服务端 409)。
+function configureIntervention(challenge) {
+  const active = Boolean(challenge) && ["running", "preparing"].includes(challenge.status)
+  const blocked = !active || state.operationPending
+  elements.interventionInput.disabled = blocked
+  elements.interventionSend.disabled = blocked
+  elements.interventionHint.textContent = active
+    ? "消息将发送给该题当前运行的 Agent，并在下一轮推理时注入"
+    : "该题当前没有运行中的 Agent，消息暂不可用"
+}
+
+async function sendIntervention() {
+  const challengeId = state.selectedChallengeId
+  const text = elements.interventionInput.value.trim()
+  if (!challengeId || !text || elements.interventionSend.disabled) return
+  elements.interventionSend.disabled = true
+  elements.interventionInput.disabled = true
+  try {
+    await controlPost(`/api/challenges/${encodeURIComponent(challengeId)}/message`, { text })
+    elements.interventionInput.value = ""
+    toast("已发送，将在下一轮推理时注入")
+    // 立即重取详情,不依赖 1s 轮询
+    void openDetails(challengeId, false, true)
+  } catch (error) {
+    toast(errorMessage(error), true)
+  } finally {
+    elements.interventionSend.disabled = false
+    configureIntervention(state.currentDetails?.challenge)
+  }
+}
+
+function openToolsNeedDialog() {
+  elements.toolsNeedDialog.showModal()
+  elements.toolsNeedMeta.textContent = "正在读取…"
+  elements.toolsNeedList.replaceChildren(el("div", "detail-empty", "正在读取工具需求…"))
+  void getJson("/api/toolsneed")
+    .then(renderToolsNeed)
+    .catch((error) => {
+      elements.toolsNeedList.replaceChildren(
+        el("div", "detail-empty", `读取失败：${errorMessage(error)}`),
+      )
+    })
+}
+
+function renderToolsNeed(view) {
+  const entries = Array.isArray(view?.entries) ? view.entries : []
+  const updatedAt = typeof view?.updatedAt === "string" ? view.updatedAt : ""
+  elements.toolsNeedMeta.textContent =
+    `更新于 ${updatedAt ? relativeTime(updatedAt) : "—"} · ` +
+    `累计上报 ${view?.totalReports ?? 0} 次 · ${entries.length} 个工具`
+  if (entries.length === 0) {
+    elements.toolsNeedList.replaceChildren(el("div", "detail-empty", "暂无工具需求上报。"))
+    return
+  }
+  const table = document.createElement("table")
+  table.className = "tools-need-table"
+  const head = document.createElement("thead")
+  const headerRow = document.createElement("tr")
+  for (const label of ["工具", "分类", "次数", "首次上报", "最近上报", "涉及题目", "需求原因"]) {
+    const th = document.createElement("th")
+    th.textContent = label
+    headerRow.append(th)
+  }
+  head.append(headerRow)
+  table.append(head)
+  const body = document.createElement("tbody")
+  for (const entry of entries) {
+    const row = document.createElement("tr")
+    for (const value of [
+      entry.tool,
+      entry.category,
+      String(entry.reportCount),
+      relativeTime(entry.firstReportedAt),
+      relativeTime(entry.lastReportedAt),
+      `${entry.challenges?.length ?? 0} 题`,
+      (entry.reasons ?? []).join("；"),
+    ]) {
+      const cell = document.createElement("td")
+      cell.textContent = value
+      row.append(cell)
+    }
+    body.append(row)
+  }
+  table.append(body)
+  elements.toolsNeedList.replaceChildren(table)
+}
+
+function closeToolsNeedDialog() {
+  elements.toolsNeedDialog.close()
+}
+
+async function clearToolsNeed() {
+  if (!window.confirm("确认清空全部工具需求记录？此操作不可恢复。")) return
+  try {
+    await controlPost("/api/toolsneed/clear")
+    toast("工具需求清单已清空")
+    renderToolsNeed({ updatedAt: new Date().toISOString(), totalReports: 0, entries: [] })
+  } catch (error) {
+    toast(errorMessage(error), true)
+  }
+}
+
+// 控制面未装配收集器时隐藏入口(仿模型设置按钮的容错模式)
+function syncToolsNeedAvailability() {
+  void getJson("/api/toolsneed")
+    .then(() => {
+      elements.toolsNeedButton.hidden = false
+    })
+    .catch(() => {
+      elements.toolsNeedButton.hidden = true
+    })
+}
+
 function acceptedSubmission(runs) {
   for (const run of runs) {
     for (let index = run.events.length - 1; index >= 0; index--) {
@@ -969,13 +1296,44 @@ function runsSection(runs, openRunIds) {
       title,
       el("span", `status-chip status-${run.status}`, STATUS_LABELS[run.status] ?? run.status),
     )
+    // 单次会话导出:点击不触发 details toggle(stopPropagation 拦截冒泡)。
+    const exportLink = document.createElement("a")
+    exportLink.className = "run-export-link"
+    exportLink.download = true
+    exportLink.textContent = "导出本次"
+    exportLink.href =
+      `/api/challenges/${encodeURIComponent(run.challengeId)}/export` +
+      `?run=${encodeURIComponent(run.id)}`
+    exportLink.addEventListener("click", (event) => event.stopPropagation())
+    summary.append(exportLink)
     card.append(summary)
 
     const timeline = el("div", "timeline")
     if (run.events.length === 0) {
       timeline.append(el("div", "detail-empty", "没有持久化事件。"))
     } else {
-      for (const event of run.events) timeline.append(eventItem(event))
+      // 流式思维链:agent_thinking 是逐词片事件,连续词片聚合为一个思考块展示
+      let thinkingText = ""
+      let thinkingAt = ""
+      const flushThinking = () => {
+        if (!thinkingText) return
+        timeline.append(thinkingItem(thinkingText, thinkingAt))
+        thinkingText = ""
+        thinkingAt = ""
+      }
+      for (const event of run.events) {
+        if (event.type === "agent_thinking") {
+          const data = objectData(event.data)
+          if (typeof data?.text === "string") {
+            if (!thinkingAt) thinkingAt = event.createdAt
+            thinkingText += data.text
+          }
+          continue
+        }
+        flushThinking()
+        timeline.append(eventItem(event))
+      }
+      flushThinking()
     }
     card.append(timeline)
     if (run.error || run.cleanupError) {
@@ -990,10 +1348,30 @@ function runsSection(runs, openRunIds) {
   return area.root
 }
 
+/** 聚合的流式思维链块(一轮思考 = 若干 agent_thinking 词片拼接)。 */
+function thinkingItem(text, createdAt) {
+  const item = el("div", "timeline-item is-thinking")
+  item.append(
+    el("strong", "", "💭 思考"),
+    timeElement(createdAt ?? new Date().toISOString(), { absolute: true }),
+  )
+  const thinking = document.createElement("details")
+  thinking.className = "thinking-details"
+  const summary = document.createElement("summary")
+  summary.textContent = "思考过程"
+  thinking.append(summary, el("p", "thinking-text", text))
+  item.append(thinking)
+  return item
+}
+
 function eventItem(event) {
   const data = objectData(event.data)
   const item = el("div", "timeline-item")
   if (event.type.startsWith("tool_")) item.classList.add("is-tool")
+  if (event.type === "agent_thinking") item.classList.add("is-thinking")
+  if (event.type === "human_message") item.classList.add("is-human")
+  if (event.type === "agent_message") item.classList.add("is-agent")
+  if (event.type === "tool_need_reported") item.classList.add("is-warn")
   if (event.type === "flag_submitted" &&
     ["accepted", "already_solved"].includes(data.status)) {
     item.classList.add("is-success")
@@ -1011,11 +1389,20 @@ function eventItem(event) {
   item.append(el("strong", "", label), timeElement(event.createdAt, { absolute: true }))
   const detail = eventDetail(event.type, data)
   if (detail) {
-    const detailNode = el("p", "", detail)
-    if (event.type.startsWith("tool_") || event.type === "flag_submitted") {
-      detailNode.classList.add("trace-output")
+    if (event.type === "agent_thinking") {
+      const thinking = document.createElement("details")
+      thinking.className = "thinking-details"
+      const summary = document.createElement("summary")
+      summary.textContent = "思考过程"
+      thinking.append(summary, el("p", "thinking-text", detail))
+      item.append(thinking)
+    } else {
+      const detailNode = el("p", "", detail)
+      if (event.type.startsWith("tool_") || event.type === "flag_submitted") {
+        detailNode.classList.add("trace-output")
+      }
+      item.append(detailNode)
     }
-    item.append(detailNode)
   }
   return item
 }
@@ -1024,6 +1411,16 @@ function eventDetail(type, data) {
   if (type === "run_created" && data.attempt !== undefined) {
     const source = SOURCE_LABELS[data.source] ?? data.source ?? "未知来源"
     return `第 ${data.attempt} 次尝试已创建 · ${source}`
+  }
+  if (type === "agent_thinking" || type === "agent_message" || type === "human_message") {
+    return String(data.text ?? "").slice(0, 2000)
+  }
+  if (type === "tool_need_reported") {
+    return [
+      data.tool ? `工具：${data.tool}` : "",
+      data.status ? `状态：${data.status === "recorded" ? "已记录" : "重复上报"}` : "",
+      data.reason ? `原因：${data.reason}` : "",
+    ].filter(Boolean).join("\n")
   }
   if (type === "tool_started" && data.args && Object.keys(data.args).length > 0) {
     if (data.toolName === "bash" && typeof data.args.command === "string") {

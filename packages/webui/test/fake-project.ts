@@ -10,10 +10,12 @@ import type {
   RunFilter,
   RunRecord,
 } from "@ctf-agent/solver"
+import type { ToolsNeedView } from "@ctf-agent/solver"
 import type {
   DashboardModelConfiguration,
   DashboardProject,
   DashboardScheduler,
+  DashboardToolsNeed,
   ModelConfigurationUpdate,
   ModelConfigurationView,
 } from "../src/types.ts"
@@ -85,6 +87,26 @@ export class FakeDashboardProject implements DashboardProject {
     openOpportunities: 1,
     concludedOpportunities: 0,
   }]
+  sendMessageCalls: Array<{ challengeId: string; text: string }> = []
+  sendMessageResult: { runId: string } | { error: "no_active_run" } = { runId: "run-pwn-1" }
+  thinkingLevelCalls: Array<{ challengeId: string; level: string }> = []
+  thinkingLevelResult: { runId: string } | { error: "no_active_run" } = { runId: "run-pwn-1" }
+
+  async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
+    this.sendMessageCalls.push({ challengeId, text })
+    if ("error" in this.sendMessageResult) {
+      throw Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+    }
+    return this.sendMessageResult
+  }
+
+  async setThinkingLevel(challengeId: string, level: string): Promise<{ runId: string }> {
+    this.thinkingLevelCalls.push({ challengeId, level })
+    if ("error" in this.thinkingLevelResult) {
+      throw Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+    }
+    return this.thinkingLevelResult
+  }
 
   async refresh(): Promise<ContestOverview> {
     this.refreshCalls++
@@ -166,6 +188,41 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   }
 }
 
+export class FakeToolsNeed implements DashboardToolsNeed {
+  value: ToolsNeedView = {
+    updatedAt: now,
+    totalReports: 1,
+    entries: [{
+      tool: "sqlmap",
+      category: "web",
+      firstReportedAt: now,
+      lastReportedAt: now,
+      reportCount: 1,
+      reasons: ["需要 SQL 注入检测"],
+      challenges: [{ challengeId: "web-1", title: "Cookie Jar", reportedAt: now }],
+    }],
+  }
+  clearCalls = 0
+
+  async view(): Promise<ToolsNeedView> { return structuredClone(this.value) }
+
+  async markdown(): Promise<string> {
+    return [
+      "# 工具需求清单 (toolsneed)",
+      "",
+      "| 工具 | 分类 | 上报次数 | 涉及题目 | 需求原因 |",
+      "|---|---|---|---|---|",
+      "| sqlmap | web | 1 | Cookie Jar(web-1) | 需要 SQL 注入检测 |",
+      "",
+    ].join("\n")
+  }
+
+  async clear(): Promise<void> {
+    this.clearCalls++
+    this.value = { updatedAt: new Date().toISOString(), totalReports: 0, entries: [] }
+  }
+}
+
 export class FakeModelConfiguration implements DashboardModelConfiguration {
   value: ModelConfigurationView = {
     provider: "openrouter",
@@ -175,10 +232,17 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     maxTokens: 4_096,
     apiKeyConfigured: false,
     apiKeySource: "none",
+    thinkingEnabled: false,
+    reasoningEffort: "max",
+    passthroughThinking: false,
+    supportedThinkingLevels: ["low", "medium", "high", "max"],
+    platformTokenConfigured: false,
+    platformTokenSource: "none",
     configured: false,
     unavailableReason: "missing model configuration",
   }
   lastApiKey: string | undefined
+  lastPlatformToken: string | undefined
 
   snapshot(): ModelConfigurationView {
     return structuredClone(this.value)
@@ -187,6 +251,8 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
   async update(configuration: ModelConfigurationUpdate): Promise<ModelConfigurationView> {
     if (configuration.apiKey) this.lastApiKey = configuration.apiKey
     if (configuration.clearApiKey) this.lastApiKey = undefined
+    if (configuration.platformToken) this.lastPlatformToken = configuration.platformToken
+    if (configuration.clearPlatformToken) this.lastPlatformToken = undefined
     const apiKeyConfigured = Boolean(this.lastApiKey)
     this.value = {
       provider: configuration.provider,
@@ -196,6 +262,12 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       maxTokens: configuration.maxTokens,
       apiKeyConfigured,
       apiKeySource: apiKeyConfigured ? "webui" : "none",
+      thinkingEnabled: configuration.thinkingEnabled,
+      reasoningEffort: configuration.reasoningEffort,
+      passthroughThinking: configuration.passthroughThinking,
+      supportedThinkingLevels: this.value.supportedThinkingLevels,
+      platformTokenConfigured: Boolean(this.lastPlatformToken),
+      platformTokenSource: this.lastPlatformToken ? "webui" : "none",
       configured: apiKeyConfigured && Boolean(configuration.modelId),
       ...(!apiKeyConfigured || !configuration.modelId
         ? { unavailableReason: "missing model configuration" }

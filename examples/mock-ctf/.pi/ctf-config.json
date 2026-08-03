@@ -1,136 +1,23 @@
 {
   "version": 1,
   "project": {
-    "id": "example-mock-ctf-2026",
-    "name": "Mock CTF 2026"
+    "id": "moectf-local",
+    "name": "MoeCTF 2025 (Remote)"
   },
   "contest": {
     "platform": "mock",
-    "eventId": "mock-ctf-2026"
+    "eventId": "moectf-2026"
   },
   "platform": {
     "config": {
-      "name": "Mock CTF 2026",
-      "announcements": [
-        {
-          "id": "opening",
-          "title": "比赛环境已开放",
-          "content": "所有题目与远程环境均已上线，解题 Agent 可以开始调度。",
-          "publishedAt": "2026-07-29T09:00:00.000Z"
-        },
-        {
-          "id": "pwn-update",
-          "title": "Pwn 环境工具链更新",
-          "content": "沙箱已经补充多架构调试、Ghidra headless 与常用 ROP 工具。",
-          "publishedAt": "2026-07-29T11:30:00.000Z"
-        }
-      ],
-      "challenges": [
-        {
-          "id": "warmup-flag",
-          "title": "Warmup Flag",
-          "category": "misc",
-          "score": 100,
-          "description": "附件中藏着本题 Flag。下载附件并读取它。",
-          "attachments": [
-            {
-              "id": "flag.txt",
-              "name": "flag.txt",
-              "content": "TU9DS3twbGF0Zm9ybS1wbHVnaW4td29ya3N9Cg==\n"
-            }
-          ],
-          "flag": "MOCK{platform-plugin-works}"
-        },
-        {
-          "id": "heap-oracle",
-          "title": "Heap Oracle",
-          "category": "pwn",
-          "score": 500,
-          "description": "分析自定义堆分配器并利用其状态混淆。",
-          "attachments": [],
-          "flag": "MOCK{heap-oracle}",
-          "remote": true
-        },
-        {
-          "id": "clockwork-vm",
-          "title": "Clockwork VM",
-          "category": "reverse",
-          "score": 450,
-          "description": "还原指令集并理解虚拟机中的校验逻辑。",
-          "attachments": [],
-          "flag": "MOCK{clockwork-vm}"
-        },
-        {
-          "id": "lattice-radio",
-          "title": "Lattice Radio",
-          "category": "crypto",
-          "score": 400,
-          "description": "从带噪格密码样本中恢复短秘密。",
-          "attachments": [],
-          "flag": "MOCK{lattice-radio}"
-        },
-        {
-          "id": "jwt-garden",
-          "title": "JWT Garden",
-          "category": "web",
-          "score": 350,
-          "description": "检查身份链路中的密钥选择与声明校验。",
-          "attachments": [],
-          "flag": "MOCK{jwt-garden}",
-          "remote": true
-        },
-        {
-          "id": "trace-dust",
-          "title": "Trace Dust",
-          "category": "forensics",
-          "score": 300,
-          "description": "从不完整的进程踪迹中恢复攻击链。",
-          "attachments": [],
-          "flag": "MOCK{trace-dust}"
-        },
-        {
-          "id": "packet-radio",
-          "title": "Packet Radio",
-          "category": "misc",
-          "score": 250,
-          "description": "重组交错的数据帧并识别隐藏载荷。",
-          "attachments": [],
-          "flag": "MOCK{packet-radio}"
-        },
-        {
-          "id": "tiny-linker",
-          "title": "Tiny Linker",
-          "category": "reverse",
-          "score": 200,
-          "description": "理解一个最小动态链接器的符号解析过程。",
-          "attachments": [],
-          "flag": "MOCK{tiny-linker}"
-        },
-        {
-          "id": "cache-poison",
-          "title": "Cache Poison",
-          "category": "web",
-          "score": 180,
-          "description": "寻找代理缓存键与后端规范化之间的差异。",
-          "attachments": [],
-          "flag": "MOCK{cache-poison}",
-          "remote": true
-        },
-        {
-          "id": "xor-postcard",
-          "title": "XOR Postcard",
-          "category": "crypto",
-          "score": 120,
-          "description": "分析重复密钥与已知明文造成的信息泄漏。",
-          "attachments": [],
-          "flag": "MOCK{xor-postcard}"
-        }
-      ]
+      "baseUrl": "http://127.0.0.1:25001",
+      "token": "__PLACEHOLDER__",
+      "name": "MoeCTF 2025"
     }
   },
   "sandbox": {
     "image": "ctf-agent-solver:latest",
     "privileged": false,
-    "networkMode": "bridge"
+    "networkMode": "host"
   }
 }

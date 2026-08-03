@@ -3,3 +3,10 @@ node_modules
 !.env.example
 .ctf-agent/
 dev-log.md
+
+# Trellis runtime(会话状态,不入库)
+.trellis/
+
+# 任意层级的 .pi/ 下仅保留被跟踪的 ctf-config*.json,其余运行时文件(如 pi sessions)一律不入库
+**/.pi/*
+!**/.pi/ctf-config*.json

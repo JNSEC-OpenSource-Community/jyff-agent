@@ -11,6 +11,7 @@ export type {
   DashboardRun,
   DashboardSnapshot,
   DashboardStats,
+  DashboardToolsNeed,
   ModelConfigurationUpdate,
   ModelConfigurationView,
 } from "./types.ts"

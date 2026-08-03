@@ -123,3 +123,144 @@ describe("Project", () => {
     await project.close()
   })
 })
+
+async function projectWithSolver() {
+  const root = await fixture()
+  const project = await Project.open({
+    root,
+    platforms: [mockPlatform],
+    sandboxFactory: async () => new FakeSandbox(),
+  })
+  const solver = await project.createSolver("warmup-flag", { agent: agentOptions })
+  return { root, project, solver }
+}
+
+describe("Project.sendMessage(题目级人工干涉对话框)", () => {
+  it("向活跃 solver 发送消息:返回 runId、落 human_message 事件并进入 steer 队列", async () => {
+    const { project, solver } = await projectWithSolver()
+    try {
+      const delivered = await project.sendMessage("warmup-flag", "先检查文件头")
+      expect(delivered).toEqual({ runId: solver.runId })
+      expect(solver.hasQueuedMessages()).toBe(true)
+
+      const human = project.runEvents(solver.runId).find((event) => event.type === "human_message")
+      expect(human).toBeDefined()
+      expect(human!.data).toMatchObject({ text: "先检查文件头" })
+      expect(typeof (human!.data as { ts: string }).ts).toBe("string")
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+
+  it("空文本被拒绝(code=invalid_message)", async () => {
+    const { project, solver } = await projectWithSolver()
+    try {
+      await expect(project.sendMessage("warmup-flag", "   ")).rejects.toMatchObject({
+        code: "invalid_message",
+      })
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+
+  it("solver 关闭后发送被拒绝(code=no_active_run)", async () => {
+    const { project, solver } = await projectWithSolver()
+    await solver.close()
+    await expect(project.sendMessage("warmup-flag", "继续")).rejects.toMatchObject({
+      code: "no_active_run",
+    })
+    await project.close()
+  })
+
+  it("未知题目 ID 发送被拒绝(code=no_active_run)", async () => {
+    const { project, solver } = await projectWithSolver()
+    try {
+      await expect(project.sendMessage("missing-id", "继续")).rejects.toMatchObject({
+        code: "no_active_run",
+      })
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+})
+
+describe("Project.setThinkingLevel(运行中切换思考强度)", () => {
+  it("切换活跃 solver 的思考强度并落 thinking_level_update 事件", async () => {
+    const { project, solver } = await projectWithSolver()
+    try {
+      const delivered = await project.setThinkingLevel("warmup-flag", "max")
+      expect(delivered).toEqual({ runId: solver.runId })
+      expect(solver.state.thinkingLevel).toBe("max")
+
+      const event = project.runEvents(solver.runId).find(
+        (event) => event.type === "thinking_level_update",
+      )
+      expect(event).toBeDefined()
+      expect(event!.data).toMatchObject({ level: "max" })
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+
+  it("非法档位被拒绝(code=invalid_level)", async () => {
+    const { project, solver } = await projectWithSolver()
+    try {
+      await expect(project.setThinkingLevel("warmup-flag", "ultra" as never)).rejects.toMatchObject({
+        code: "invalid_level",
+      })
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+
+  it("solver 关闭后切换被拒绝(code=no_active_run)", async () => {
+    const { project, solver } = await projectWithSolver()
+    await solver.close()
+    await expect(project.setThinkingLevel("warmup-flag", "low")).rejects.toMatchObject({
+      code: "no_active_run",
+    })
+    await project.close()
+  })
+})
+
+describe("工具需求上报链路(Project → ToolsNeedRegistry)", () => {
+  it("solver 持有 ctf_report_tool_need;执行后落 tool_need_reported 事件并写入 toolsneed.json", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [mockPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    const solver = await project.createSolver("warmup-flag", { agent: agentOptions })
+    try {
+      const reportTool = solver.state.tools.find((tool) => tool.name === "ctf_report_tool_need")
+      expect(reportTool).toBeDefined()
+      await reportTool!.execute("report", { tool: "sqlmap", reason: "需要 SQL 注入检测" })
+      await project.toolsNeedRegistry.flush()
+
+      const event = project.runEvents(solver.runId).find((item) => item.type === "tool_need_reported")
+      expect(event).toBeDefined()
+      expect(event!.data).toMatchObject({ tool: "sqlmap", reason: "需要 SQL 注入检测", status: "recorded" })
+
+      const view = project.toolsNeedRegistry.view()
+      expect(view.entries).toHaveLength(1)
+      expect(view.entries[0]).toMatchObject({ tool: "sqlmap", reportCount: 1 })
+
+      const file = JSON.parse(await readFile(join(root, ".ctf-agent", "toolsneed.json"), "utf8"))
+      expect(file.entries).toHaveLength(1)
+
+      // 同题同工具重复上报 → duplicate,不新增条目
+      await reportTool!.execute("report", { tool: "sqlmap", reason: "再次需要" })
+      await project.toolsNeedRegistry.flush()
+      expect(project.toolsNeedRegistry.view().entries[0]!.reportCount).toBe(1)
+    } finally {
+      await solver.close()
+      await project.close()
+    }
+  })
+})

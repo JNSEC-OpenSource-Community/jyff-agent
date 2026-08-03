@@ -4,6 +4,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "./docker-sandbox.ts"
 import type { RunStore } from "../project/run-store.ts"
+import type { ToolNeedReport } from "../project/toolsneed.ts"
 import { createBlackboardTools } from "../blackboard/index.ts"
 import { RtkRewriter } from "./rtk.ts"
 
@@ -127,6 +128,8 @@ export interface SolverToolOptions {
     challengeId: string
     runId: string
   }
+  /** 工具需求收集器回调;提供时才注册 ctf_report_tool_need(条件工具)。 */
+  onToolNeedReport?: (report: ToolNeedReport) => void
 }
 
 /** 每个 tool closure 都捕获当前题 capability，调用方无法通过参数越题。 */
@@ -254,6 +257,24 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       challengeId: options.blackboard.challengeId,
       runId: options.blackboard.runId,
     }))
+  }
+
+  // 工具需求上报(未接入收集器的调用方不向模型暴露该工具)
+  if (options.onToolNeedReport) {
+    tools.push({
+      name: "ctf_report_tool_need",
+      label: "Report Tool Need",
+      description: "上报当前环境缺失的工具或命令。发现任何缺失工具（即使认为可以绕过）都必须第一时间调用本工具上报（附工具名与原因），不要自行判断是否必要；上报不会安装任何工具，随后可继续尝试替代思路。",
+      parameters: Type.Object({
+        tool: Type.String({ minLength: 1, maxLength: 128 }),
+        reason: Type.String({ minLength: 1, maxLength: 2_000 }),
+      }),
+      executionMode: "sequential",
+      async execute(_id, params) {
+        options.onToolNeedReport!(params as ToolNeedReport)
+        return result({ status: "recorded" })
+      },
+    })
   }
 
   return tools

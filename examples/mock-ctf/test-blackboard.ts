@@ -19,6 +19,7 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { Project, serializeBlackboard } from "@ctf-agent/solver"
 import { mockPlatform } from "@ctf-agent/platform-mock"
+import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 
 // ── 加载 .env ──
 function loadEnvFile(): void {
@@ -54,19 +55,22 @@ if (!apiKey || !modelId) {
 
 const model: Model<"openai-completions"> = baseUrl ? {
   id: modelId, name: modelId, api: "openai-completions", provider,
-  baseUrl: baseUrl.replace(/\/+$/, ""), reasoning: false, input: ["text"],
+  baseUrl: baseUrl.replace(/\/+$/, ""), reasoning: thinkingEnabledFromEnv(), input: ["text"],
+  thinkingLevelMap: provider === "deepseek" || baseUrl.includes("deepseek.com")
+    ? deepseekThinkingLevelMap(modelId)
+    : undefined,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   contextWindow: Number(process.env.CTF_MODEL_CONTEXT_WINDOW ?? 64_000),
   maxTokens: Number(process.env.CTF_MODEL_MAX_TOKENS ?? 4_096),
   compat: {
-    supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false,
+    supportsStore: false, supportsDeveloperRole: false,
     supportsUsageInStreaming: false, supportsStrictMode: false, supportsLongCacheRetention: false,
     maxTokensField: "max_tokens",
   },
 } : (() => {
   const builtin = getModel(provider as never, modelId as never) as Model<"openai-completions"> | undefined
   if (!builtin) throw new Error(`模型 ${provider}/${modelId} 未在 Pi 中找到`)
-  return { ...builtin, ...(Number(process.env.CTF_MODEL_CONTEXT_WINDOW) ? { contextWindow: Number(process.env.CTF_MODEL_CONTEXT_WINDOW) } : {}), reasoning: false }
+  return { ...builtin, ...(Number(process.env.CTF_MODEL_CONTEXT_WINDOW) ? { contextWindow: Number(process.env.CTF_MODEL_CONTEXT_WINDOW) } : {}), reasoning: thinkingEnabledFromEnv() }
 })()
 
 // ── 测试 ──
@@ -91,7 +95,7 @@ async function main() {
       getApiKey: () => apiKey!,
       initialState: {
         model,
-        thinkingLevel: "off",
+        thinkingLevel: thinkingLevelFromEnv(),
         systemPrompt: [
           "You are testing the CTF blackboard system.",
           "",
