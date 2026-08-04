@@ -5,7 +5,7 @@ import { CTFdApiError, CTFdClient, CTFdPlatformPlugin, ctfdConfig } from "../src
 const TOKEN = "test-token"
 let server: Server
 let baseUrl: string
-const requests: Array<{ method: string; url: string; authorization?: string; body: string }> = []
+const requests: Array<{ method: string; url: string; authorization?: string; contentType?: string; body: string }> = []
 
 beforeAll(async () => {
   server = createServer((request, response) => {
@@ -17,9 +17,12 @@ beforeAll(async () => {
         method: request.method ?? "GET",
         url: request.url ?? "/",
         ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
+        ...(request.headers["content-type"] ? { contentType: request.headers["content-type"] } : {}),
         body,
       })
-      if (request.headers.authorization !== `Token ${TOKEN}`) {
+      if (request.headers.authorization !== `Token ${TOKEN}` || (
+        request.url?.startsWith("/api/") && request.headers["content-type"] !== "application/json"
+      )) {
         json(response, 403, { success: false, errors: ["unauthorized"] })
         return
       }
@@ -110,7 +113,7 @@ describe("CTFd platform plugin", () => {
     expect(await capability.submitFlag("wrong")).toEqual({ status: "rejected", message: "Incorrect" })
     expect(await capability.submitFlag("FLAG")).toEqual({ status: "accepted", message: "Correct" })
     expect(requests).toEqual(expect.arrayContaining([
-      expect.objectContaining({ authorization: "Token test-token" }),
+      expect.objectContaining({ authorization: "Token test-token", contentType: "application/json" }),
       expect.objectContaining({
         method: "POST",
         url: "/api/v1/challenges/attempt",

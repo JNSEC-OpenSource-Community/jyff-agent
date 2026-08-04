@@ -64,7 +64,9 @@ export class CTFdClient {
       headers: {
         Accept: "application/json",
         Authorization: `Token ${this.token}`,
-        ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+        // CTFd's token middleware only inspects Authorization when Flask
+        // considers the request JSON, including bodyless GET requests.
+        "Content-Type": "application/json",
         ...init.headers,
       },
     })
