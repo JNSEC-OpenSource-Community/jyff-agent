@@ -1,12 +1,15 @@
 {
-	"name": "@ctf-agent/webui",
-	"version": "0.1.0",
-	"private": true,
-	"type": "module",
-	"exports": {
-		".": "./src/index.ts"
-	},
-	"dependencies": {
-		"@ctf-agent/core": "workspace:*"
-	}
+  "name": "@ctf-agent/webui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ctf-agent/core": "workspace:*",
+    "@ctf-agent/platform": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.82.1",
+    "@earendil-works/pi-ai": "0.82.1"
+  }
 }
