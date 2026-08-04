@@ -91,3 +91,6 @@ export interface PlatformPlugin {
   readonly config: PlatformConfig
   connect(options: PlatformConnectOptions): Promise<PlatformProject>
 }
+
+export * from "./ctfd.ts"
+export * from "./gzctf.ts"
