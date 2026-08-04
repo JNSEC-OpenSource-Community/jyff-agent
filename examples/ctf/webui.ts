@@ -1,11 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-	ContestScheduler,
-	Project,
-	type ProjectConfig,
-	parseProjectConfig,
-} from "@ctf-agent/core";
+import { ContestScheduler, ControlPlane } from "@ctf-agent/core";
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform";
 import { startWebUi } from "@ctf-agent/webui";
 import { loadModelEnvironment } from "./agent-config.ts";
@@ -49,77 +44,46 @@ const model = loadModelEnvironment({
 	storagePath: resolve(root, ".ctf-agent", "model-config.json"),
 });
 
-// 平台模式由 .pi/ctf-config.json 的 platform.plugin 决定；
-// 与 Project.open 共用 parseProjectConfig 统一 schema 校验。
-const configPath = join(root, ".pi", "ctf-config.json");
-let parsedConfig: ProjectConfig;
-try {
-	parsedConfig = parseProjectConfig(
-		JSON.parse(readFileSync(configPath, "utf-8")),
-	);
-} catch (error) {
-	console.error(
-		`无法读取 ctf-config.json:${error instanceof Error ? error.message : String(error)}`,
-	);
-	process.exit(1);
-}
-const activePlatform = parsedConfig.platform.plugin;
-
-const project = await Project.open({
+const controlPlane = await ControlPlane.create({
 	root,
 	platforms: [ctfdPlatform, gzctfPlatform],
-	resolveSecret: (name) =>
-		name === "CTFD_TOKEN"
-			? (model.platformToken() ?? process.env[name])
-			: process.env[name],
-	telemetry: {
-		level: process.env.CTF_TELEMETRY_LEVEL === "safe" ? "safe" : "full",
-		maxTextLength: Number(process.env.CTF_TELEMETRY_MAX_TEXT_LENGTH ?? 8_000),
-	},
-	...(workspaceVolume
-		? {
-				workspaceMount: ({
-					relativeWorkspace,
-				}: {
-					relativeWorkspace: string;
-				}) => ({
-					type: "volume" as const,
-					source: workspaceVolume,
-					subpath: relativeWorkspace,
-				}),
-			}
-		: {}),
-});
-const scheduler = new ContestScheduler(project, {
-	maxConcurrent,
-	maxAttempts,
-	challengeTimeoutMs: Number(
-		process.env.CTF_SCHEDULER_TIMEOUT_MS ?? 30 * 60_000,
-	),
-	retryDelayMs: Number(process.env.CTF_SCHEDULER_RETRY_DELAY_MS ?? 2_000),
-	availability: () => ({
-		available: model.configured,
-		...(model.unavailableReason
-			? { unavailableReason: model.unavailableReason }
+	resolveSecret: (name) => process.env[name],
+	project: {
+		telemetry: {
+			level: process.env.CTF_TELEMETRY_LEVEL === "safe" ? "safe" : "full",
+			maxTextLength: Number(process.env.CTF_TELEMETRY_MAX_TEXT_LENGTH ?? 8_000),
+		},
+		...(workspaceVolume
+			? {
+					workspaceMount: ({ relativeWorkspace }) => ({
+						type: "volume" as const,
+						source: workspaceVolume,
+						subpath: relativeWorkspace,
+					}),
+				}
 			: {}),
-	}),
-	createAgentOptions: () => model.createAgentOptions(),
-	compaction: true,
+	},
+	createScheduler: (project) =>
+		new ContestScheduler(project, {
+			maxConcurrent,
+			maxAttempts,
+			challengeTimeoutMs: Number(
+				process.env.CTF_SCHEDULER_TIMEOUT_MS ?? 30 * 60_000,
+			),
+			retryDelayMs: Number(process.env.CTF_SCHEDULER_RETRY_DELAY_MS ?? 2_000),
+			availability: () => ({
+				available: model.configured,
+				...(model.unavailableReason
+					? { unavailableReason: model.unavailableReason }
+					: {}),
+			}),
+			createAgentOptions: () => model.createAgentOptions(),
+			compaction: true,
+		}),
 });
-// 停止调度(暂停自主/关闭)时自动销毁全部运行实例
-async function destroyAllInstances(): Promise<void> {
-	for (const env of await project.environments()) {
-		if (env.status === "running") await project.destroyEnvironment(env.id);
-	}
-}
-const originalPauseAuto = scheduler.pauseAuto.bind(scheduler);
-scheduler.pauseAuto = () => {
-	void destroyAllInstances();
-	return originalPauseAuto();
-};
+await controlPlane.start();
 const webui = await startWebUi({
-	project,
-	scheduler,
+	controlPlane,
 	modelConfiguration: model,
 	host,
 	port,
@@ -127,16 +91,20 @@ const webui = await startWebUi({
 });
 let closing = false;
 
+const initialState = controlPlane.snapshot();
+console.log(`CTF Agent WebUI 已启动：${webui.url}`);
 console.log(
-	`CTF Agent WebUI 已启动：${webui.url}(平台模式: ${activePlatform})`,
+	initialState.phase === "ready"
+		? `比赛平台：${initialState.platformId} / ${initialState.projectName}`
+		: "比赛平台尚未连接，请在 WebUI 中完成配置",
 );
 console.log(
 	model.configured
 		? `调度模型：${model.provider}/${model.modelId}`
 		: `调度器已暂停：${model.unavailableReason}`,
 );
-if (autoStart && model.configured) {
-	await scheduler.startAuto();
+if (autoStart && model.configured && controlPlane.currentScheduler()) {
+	await controlPlane.currentScheduler()?.startAuto();
 	console.log("自主调度已自动开启");
 }
 
@@ -146,9 +114,7 @@ async function shutdown(signal: string): Promise<void> {
 	console.log(`\n收到 ${signal}，正在关闭 WebUI…`);
 	try {
 		await webui.close();
-		await destroyAllInstances();
-		await scheduler.shutdown();
-		await project.close();
+		await controlPlane.close();
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : String(error));
 		process.exitCode = 1;

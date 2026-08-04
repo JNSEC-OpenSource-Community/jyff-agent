@@ -339,7 +339,6 @@ describe("model configuration", () => {
 			reasoningEffort: "high",
 			passthroughThinking: true,
 			apiKey: "secret-key",
-			platformToken: "platform-secret",
 		});
 
 		expect(view).toMatchObject({
@@ -348,14 +347,9 @@ describe("model configuration", () => {
 			apiKeySource: "webui",
 			thinkingEnabled: true,
 			reasoningEffort: "high",
-			platformTokenConfigured: true,
-			platformTokenSource: "webui",
 		});
 		expect(JSON.stringify(view)).not.toContain("secret-key");
-		expect(JSON.stringify(view)).not.toContain("platform-secret");
 		expect(await readFile(storagePath, "utf8")).toContain("secret-key");
-		expect(await readFile(storagePath, "utf8")).toContain("platform-secret");
-		expect(configuration.platformToken()).toBe("platform-secret");
 
 		const reloaded = loadModelEnvironment({ storagePath });
 		expect(reloaded.snapshot()).toEqual(view);

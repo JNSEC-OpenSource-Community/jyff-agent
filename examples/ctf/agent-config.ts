@@ -48,8 +48,6 @@ interface StoredModelConfiguration {
 	reasoningEffort?: ThinkingLevel;
 	/** 透传模式开关(自定义 baseUrl 场景有效)。 */
 	passthroughThinking?: boolean;
-	/** 平台访问 token(remote 平台鉴权),不回传浏览器明文。 */
-	platformToken?: string;
 }
 
 const EFFORTS = new Set(["low", "medium", "high", "max"]);
@@ -98,8 +96,6 @@ export interface ModelEnvironment extends DashboardModelConfiguration {
 	readonly modelId: string;
 	readonly unavailableReason?: string;
 	createAgentOptions(): AgentOptions;
-	/** 当前生效的平台 token(webui 配置 > env > ctf-config.json),供 remote 平台装配。 */
-	platformToken(): string | undefined;
 }
 
 export interface ModelEnvironmentOptions {
@@ -147,7 +143,6 @@ class PersistentModelEnvironment implements ModelEnvironment {
 
 	snapshot(): ModelConfigurationView {
 		const storedApiKey = Object.hasOwn(this.stored, "apiKey");
-		const storedToken = Object.hasOwn(this.stored, "platformToken");
 		return {
 			provider: this.values.provider,
 			modelId: this.values.modelId,
@@ -164,12 +159,6 @@ class PersistentModelEnvironment implements ModelEnvironment {
 			reasoningEffort: this.values.reasoningEffort,
 			passthroughThinking: this.values.passthroughThinking,
 			supportedThinkingLevels: this.supportedLevels(),
-			platformTokenConfigured: Boolean(this.platformToken()),
-			platformTokenSource: !this.platformToken()
-				? "none"
-				: storedToken
-					? "webui"
-					: "environment",
 			configured: this.configured,
 			...(this.unavailableReason
 				? { unavailableReason: this.unavailableReason }
@@ -194,24 +183,11 @@ class PersistentModelEnvironment implements ModelEnvironment {
 		if (configuration.clearApiKey) nextStored.apiKey = "";
 		else if (configuration.apiKey !== undefined)
 			nextStored.apiKey = configuration.apiKey;
-		if (configuration.clearPlatformToken) nextStored.platformToken = "";
-		else if (configuration.platformToken !== undefined) {
-			nextStored.platformToken = configuration.platformToken;
-		}
-
 		const nextValues = mergeConfiguration(this.environment, nextStored);
 		persistConfiguration(this.storagePath, nextStored);
 		this.stored = nextStored;
 		this.values = nextValues;
 		return this.snapshot();
-	}
-
-	platformToken(): string | undefined {
-		const stored =
-			Object.hasOwn(this.stored, "platformToken") && this.stored.platformToken
-				? this.stored.platformToken
-				: undefined;
-		return stored ?? process.env.CTFD_TOKEN;
 	}
 
 	/**
@@ -413,9 +389,6 @@ function readStoredConfiguration(path: string): StoredModelConfiguration {
 				: {}),
 			...(typeof value.passthroughThinking === "boolean"
 				? { passthroughThinking: value.passthroughThinking }
-				: {}),
-			...(typeof value.platformToken === "string"
-				? { platformToken: value.platformToken }
 				: {}),
 		};
 	} catch (error) {
