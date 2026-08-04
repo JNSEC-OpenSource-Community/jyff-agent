@@ -10,6 +10,7 @@ import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { ContestRunner, Project, parseProjectConfig, type ProjectConfig } from "@ctf-agent/project"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 import { ctfdPlatform } from "@ctf-agent/platform-ctfd"
+import { gzctfPlatform } from "@ctf-agent/platform-gzctf"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 
@@ -199,7 +200,7 @@ async function auditLeaks(): Promise<void> {
 let project: Project | undefined
 try {
   console.log(`\n[1/3] 打开 CTF Project(平台: ${activePlatform})`)
-  project = await Project.open({ root, platforms: [mockPlatform, ctfdPlatform] })
+  project = await Project.open({ root, platforms: [mockPlatform, ctfdPlatform, gzctfPlatform] })
 
   console.log(`[2/3] 创建 ContestRunner(8 路并发 / maxAttempts 2 / 30min 超时 / retryDelay 2s)${onlyId ? `,仅跑 --only ${onlyId}` : ""}\n`)
   const runner = new ContestRunner(project, {
