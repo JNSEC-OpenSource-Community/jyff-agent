@@ -11,6 +11,7 @@ import type {
 	PlatformConnectOptions,
 	PlatformPlugin,
 	PlatformProject,
+	PlatformSetupDescriptor,
 	RemoteEnvironment,
 } from "./index.ts";
 
@@ -92,6 +93,82 @@ export const gzctfConfig: PlatformConfig<GZCTFPlatformConfig> = {
 			...(typeof raw.name === "string" ? { name: raw.name.trim() } : {}),
 		};
 	},
+};
+
+export const gzctfSetup: PlatformSetupDescriptor = {
+	label: "GZCTF",
+	description: "使用玩家账号或 GZCTF_Token Cookie 参与指定比赛。",
+	defaultConfig: {
+		baseUrl: "https://gz.imxbt.cn",
+		gameId: 1,
+		auth: {
+			type: "password",
+			usernameSecret: "GZCTF_USERNAME",
+			passwordSecret: "GZCTF_PASSWORD",
+		},
+	},
+	fields: [
+		{
+			key: "baseUrl",
+			label: "Base URL",
+			type: "url",
+			required: true,
+			placeholder: "https://gz.imxbt.cn",
+		},
+		{
+			key: "gameId",
+			label: "Game ID",
+			type: "integer",
+			required: true,
+			minimum: 1,
+		},
+		{
+			key: "name",
+			label: "比赛显示名称",
+			type: "text",
+			required: false,
+		},
+	],
+	authStrategies: [
+		{
+			id: "password",
+			label: "用户名和密码",
+			config: {
+				auth: {
+					type: "password",
+					usernameSecret: "GZCTF_USERNAME",
+					passwordSecret: "GZCTF_PASSWORD",
+				},
+			},
+			secrets: [
+				{
+					name: "GZCTF_USERNAME",
+					label: "用户名",
+					type: "text",
+					required: true,
+				},
+				{
+					name: "GZCTF_PASSWORD",
+					label: "密码",
+					type: "password",
+					required: true,
+				},
+			],
+		},
+		{
+			id: "cookie",
+			label: "浏览器 Cookie",
+			config: { auth: { type: "cookie", cookieSecret: "GZCTF_COOKIE" } },
+			secrets: [
+				{
+					name: "GZCTF_COOKIE",
+					label: "GZCTF_Token Cookie",
+					type: "cookie",
+					required: true,
+				},
+			],
+		},
+	],
 };
 
 function parseAuth(value: unknown): GZCTFAuthConfig {
@@ -852,6 +929,7 @@ class GZCTFProject implements PlatformProject {
 export class GZCTFPlatformPlugin implements PlatformPlugin {
 	readonly id = "gzctf";
 	readonly config = gzctfConfig;
+	readonly setup = gzctfSetup;
 
 	async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
 		const config = this.config.parse(options.config);

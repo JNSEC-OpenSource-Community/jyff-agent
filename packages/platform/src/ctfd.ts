@@ -10,6 +10,7 @@ import type {
 	PlatformConnectOptions,
 	PlatformPlugin,
 	PlatformProject,
+	PlatformSetupDescriptor,
 	RemoteEnvironment,
 } from "./index.ts";
 
@@ -68,6 +69,45 @@ export const ctfdConfig: PlatformConfig<CTFdPlatformConfig> = {
 			...(typeof raw.name === "string" ? { name: raw.name.trim() } : {}),
 		};
 	},
+};
+
+export const ctfdSetup: PlatformSetupDescriptor = {
+	label: "CTFd",
+	description: "使用 CTFd 用户 Access Token 读取题目、附件、公告并提交 Flag。",
+	defaultConfig: {
+		baseUrl: "https://demo.ctfd.io",
+		tokenSecret: "CTFD_TOKEN",
+	},
+	fields: [
+		{
+			key: "baseUrl",
+			label: "Base URL",
+			type: "url",
+			required: true,
+			placeholder: "https://demo.ctfd.io",
+		},
+		{
+			key: "name",
+			label: "比赛显示名称",
+			type: "text",
+			required: false,
+		},
+	],
+	authStrategies: [
+		{
+			id: "token",
+			label: "Access Token",
+			config: { tokenSecret: "CTFD_TOKEN" },
+			secrets: [
+				{
+					name: "CTFD_TOKEN",
+					label: "CTFd Access Token",
+					type: "token",
+					required: true,
+				},
+			],
+		},
+	],
 };
 
 function requiredText(value: unknown, name: string): string {
@@ -414,6 +454,7 @@ class CTFdProject implements PlatformProject {
 export class CTFdPlatformPlugin implements PlatformPlugin {
 	readonly id = "ctfd";
 	readonly config = ctfdConfig;
+	readonly setup = ctfdSetup;
 
 	async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
 		const config = this.config.parse(options.config);

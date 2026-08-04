@@ -78,6 +78,38 @@ export interface PlatformConfig<T = unknown> {
 	parse(value: unknown): T;
 }
 
+export interface PlatformSetupField {
+	key: string;
+	label: string;
+	type: "text" | "url" | "integer";
+	required: boolean;
+	placeholder?: string;
+	minimum?: number;
+	maximum?: number;
+}
+
+export interface PlatformSecretField {
+	name: string;
+	label: string;
+	type: "text" | "password" | "token" | "cookie";
+	required: boolean;
+}
+
+export interface PlatformAuthStrategy {
+	id: string;
+	label: string;
+	config: Record<string, unknown>;
+	secrets: readonly PlatformSecretField[];
+}
+
+export interface PlatformSetupDescriptor {
+	label: string;
+	description: string;
+	defaultConfig: Record<string, unknown>;
+	fields: readonly PlatformSetupField[];
+	authStrategies: readonly PlatformAuthStrategy[];
+}
+
 export interface PlatformConnectOptions<T = unknown> {
 	project: { id: string; name: string };
 	config: T;
@@ -91,6 +123,7 @@ export interface PlatformConnectOptions<T = unknown> {
 export interface PlatformPlugin {
 	readonly id: string;
 	readonly config: PlatformConfig;
+	readonly setup?: PlatformSetupDescriptor;
 	connect(options: PlatformConnectOptions): Promise<PlatformProject>;
 }
 
