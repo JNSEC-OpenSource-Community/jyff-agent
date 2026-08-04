@@ -1,68 +1,108 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { FileSecretStore } from "@ctf-agent/core";
-import { afterEach, describe, expect, it } from "vitest";
-import { createFileModelConfiguration } from "../src/model-configuration.ts";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { FileSecretStore } from "@ctf-agent/core"
+import { afterEach, describe, expect, it } from "vitest"
+import { createFileModelConfiguration } from "../src/model-configuration.ts"
 
-const roots: string[] = [];
+const roots: string[] = []
 
 afterEach(async () => {
-	await Promise.all(
-		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-	);
-});
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  )
+})
 
 describe("file model configuration", () => {
-	it("只把 API Key 写入 Secret Store", async () => {
-		const root = await mkdtemp(join(tmpdir(), "ctf-model-config-"));
-		roots.push(root);
-		const storagePath = join(root, "model-config.json");
-		const secretsPath = join(root, "secrets.json");
-		const configuration = await createFileModelConfiguration({
-			storagePath,
-			secretStore: await FileSecretStore.open(secretsPath),
-		});
+  it("只把 API Key 写入 Secret Store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-config-"))
+    roots.push(root)
+    const storagePath = join(root, "model-config.json")
+    const secretsPath = join(root, "secrets.json")
+    const configuration = await createFileModelConfiguration({
+      storagePath,
+      secretStore: await FileSecretStore.open(secretsPath),
+    })
 
-		const view = await configuration.update({
-			provider: "custom-openai",
-			modelId: "solver-model",
-			baseUrl: "https://models.example.test/v1",
-			contextWindow: 64_000,
-			maxTokens: 4_096,
-			thinkingEnabled: true,
-			reasoningEffort: "high",
-			passthroughThinking: false,
-			apiKey: "secret-key",
-		});
+    const view = await configuration.update({
+      provider: "custom-openai",
+      modelId: "solver-model",
+      baseUrl: "https://models.example.test/v1",
+      contextWindow: 64_000,
+      maxTokens: 4_096,
+      thinkingEnabled: true,
+      reasoningEffort: "high",
+      passthroughThinking: false,
+      apiKey: "secret-key",
+    })
 
-		expect(view).toMatchObject({
-			configured: true,
-			apiKeyConfigured: true,
-			apiKeySource: "secret-store",
-		});
-		expect(JSON.stringify(view)).not.toContain("secret-key");
-		expect(await readFile(storagePath, "utf8")).not.toContain("secret-key");
-		expect(await readFile(secretsPath, "utf8")).toContain("secret-key");
-	});
+    expect(view).toMatchObject({
+      configured: true,
+      apiKeyConfigured: true,
+      apiKeySource: "secret-store",
+    })
+    expect(JSON.stringify(view)).not.toContain("secret-key")
+    expect(await readFile(storagePath, "utf8")).not.toContain("secret-key")
+    expect(await readFile(secretsPath, "utf8")).toContain("secret-key")
 
-	it("把旧模型配置中的明文 Key 迁移到 Secret Store", async () => {
-		const root = await mkdtemp(join(tmpdir(), "ctf-model-migration-"));
-		roots.push(root);
-		const storagePath = join(root, "model-config.json");
-		const secretsPath = join(root, "secrets.json");
-		await writeFile(
-			storagePath,
-			JSON.stringify({ modelId: "solver-model", apiKey: "legacy-key" }),
-		);
+    const agent = configuration.createAgentOptions()
+    expect(agent.initialState?.model).toMatchObject({
+      id: "solver-model",
+      provider: "custom-openai",
+      api: "openai-completions",
+      baseUrl: "https://models.example.test/v1",
+    })
+    expect(await agent.getApiKey?.("custom-openai")).toBe("secret-key")
+    expect(await agent.getApiKey?.("another-provider")).toBeUndefined()
 
-		const configuration = await createFileModelConfiguration({
-			storagePath,
-			secretStore: await FileSecretStore.open(secretsPath),
-		});
+    const disabledThinking = await configuration.update({
+      provider: "custom-openai",
+      modelId: "solver-model",
+      baseUrl: "https://models.example.test/v1",
+      contextWindow: 64_000,
+      maxTokens: 4_096,
+      thinkingEnabled: false,
+      reasoningEffort: "high",
+      passthroughThinking: false,
+    })
+    expect(disabledThinking.supportedThinkingLevels).toContain("high")
+  })
 
-		expect(configuration.snapshot().apiKeySource).toBe("secret-store");
-		expect(await readFile(storagePath, "utf8")).not.toContain("legacy-key");
-		expect(await readFile(secretsPath, "utf8")).toContain("legacy-key");
-	});
-});
+  it("把旧模型配置中的明文 Key 迁移到 Secret Store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-migration-"))
+    roots.push(root)
+    const storagePath = join(root, "model-config.json")
+    const secretsPath = join(root, "secrets.json")
+    await writeFile(
+      storagePath,
+      JSON.stringify({ modelId: "solver-model", apiKey: "legacy-key" }),
+    )
+
+    const configuration = await createFileModelConfiguration({
+      storagePath,
+      secretStore: await FileSecretStore.open(secretsPath),
+    })
+
+    expect(configuration.snapshot().apiKeySource).toBe("secret-store")
+    expect(await readFile(storagePath, "utf8")).not.toContain("legacy-key")
+    expect(await readFile(secretsPath, "utf8")).toContain("legacy-key")
+  })
+
+  it("配置不完整时保持可恢复状态且不创建 Agent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-incomplete-"))
+    roots.push(root)
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+    })
+
+    expect(configuration.snapshot()).toMatchObject({
+      configured: false,
+      apiKeyConfigured: false,
+      supportedThinkingLevels: [],
+    })
+    expect(() => configuration.createAgentOptions()).toThrow(
+      "未配置模型 API Key",
+    )
+  })
+})
