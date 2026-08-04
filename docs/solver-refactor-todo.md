@@ -23,7 +23,7 @@
       `@ctf-agent/sandbox`.
 - [x] Implement a Docker-backed Pi `ExecutionEnv` with normalized file,
       execution, abort, timeout, and cleanup errors.
-- [ ] Add `@ctf-agent/base-agent` using Pi `AgentHarness` and `Session`.
+- [x] Add `@ctf-agent/base-agent` using Pi `AgentHarness` and `Session`.
 - [ ] Create/open one native Pi JSONL session per run and verify restoration.
 - [ ] Migrate skills and compaction to Pi's exported implementations.
 - [x] Migrate bash/read/write/edit to Pi tools over the Docker environment.
