@@ -50,8 +50,7 @@ async function setupProject(): Promise<{ project: Project; root: string }> {
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "e2e-bb", name: "E2E BB" },
-    contest: { platform: "mock", eventId: "e2e" },
-    platform: { config: {} },
+    platform: { plugin: "mock", config: {} },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }))
   return {

@@ -192,7 +192,7 @@ class PersistentModelEnvironment implements ModelEnvironment {
     const stored = Object.hasOwn(this.stored, "platformToken") && this.stored.platformToken
       ? this.stored.platformToken
       : undefined
-    return stored ?? process.env.CTF_PLATFORM_TOKEN
+    return stored ?? process.env.CTFD_TOKEN
   }
 
   /**

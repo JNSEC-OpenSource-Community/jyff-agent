@@ -11,7 +11,7 @@
     "run:all": "pnpm run probe:openrouter && pnpm run solve"
   },
   "dependencies": {
-    "@ctf-agent/platform-client": "workspace:*",
+    "@ctf-agent/platform-ctfd": "workspace:*",
     "@ctf-agent/platform-mock": "workspace:*",
     "@ctf-agent/project": "workspace:*",
     "@ctf-agent/solver": "workspace:*",

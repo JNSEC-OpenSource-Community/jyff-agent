@@ -30,8 +30,7 @@ async function fixture(): Promise<string> {
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "test-project", name: "Test Project" },
-    contest: { platform: "mock", eventId: "event" },
-    platform: { config: {} },
+    platform: { plugin: "mock", config: {} },
     sandbox: { image: "test-image", privileged: true, networkMode: "none" },
   }))
   await mkdir(join(root, ".pi", "skills", "reverse"), { recursive: true })

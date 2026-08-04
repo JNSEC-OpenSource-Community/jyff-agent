@@ -58,8 +58,7 @@ async function fixture(challenges: MockChallenge[], tracker: SandboxTracker) {
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "scheduler-test", name: "Scheduler Test" },
-    contest: { platform: "mock", eventId: "event" },
-    platform: { config: { challenges } },
+    platform: { plugin: "mock", config: { challenges } },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }))
   const project = await Project.open({

@@ -45,8 +45,7 @@ async function projectFixture(challenges: MockChallenge[], tracker: SandboxTrack
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "runner-test", name: "Runner Test" },
-    contest: { platform: "mock", eventId: "event" },
-    platform: { config: { challenges } },
+    platform: { plugin: "mock", config: { challenges } },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }))
   const plugin = new MockPlatformPlugin()

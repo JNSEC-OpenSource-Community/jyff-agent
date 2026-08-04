@@ -130,7 +130,7 @@ export interface ChallengeInfoForOrigin {
   category: string
   score: number
   description: string
-  attachments: { name: string; size: number }[]
+  attachments: { name: string; size?: number }[]
 }
 
 export const BLACKBOARD_DESCRIPTION_MAX_LENGTH = 4_000

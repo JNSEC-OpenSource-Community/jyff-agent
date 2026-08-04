@@ -35,6 +35,8 @@ const BLACKBOARD_SYSTEM_GUIDANCE = [
 export interface OpenProjectOptions {
   root?: string
   platforms: readonly PlatformPlugin[]
+  /** Resolve a named secret without placing credentials in project config. */
+  resolveSecret?: (name: string) => string | undefined
   sandboxFactory?: (options: DockerSandboxOptions) => Promise<Sandbox>
   /** 在 .pi/skills 与 .agents/skills 外额外发现的 skill 目录。 */
   skillPaths?: readonly string[]
@@ -97,9 +99,14 @@ export class Project {
   static async open(options: OpenProjectOptions): Promise<Project> {
     const root = await findProjectRoot(options.root)
     const config = await loadProjectConfig(root)
-    const plugin = options.platforms.find((candidate) => candidate.id === config.contest.platform)
-    if (!plugin) throw new Error(`未注册平台插件: ${config.contest.platform}`)
-    const platform = await plugin.connect({ eventId: config.contest.eventId, config: config.platform.config })
+    const plugin = options.platforms.find((candidate) => candidate.id === config.platform.plugin)
+    if (!plugin) throw new Error(`未注册平台插件: ${config.platform.plugin}`)
+    const platformConfig = plugin.config.parse(config.platform.config)
+    const platform = await plugin.connect({
+      project: config.project,
+      config: platformConfig,
+      resolveSecret: options.resolveSecret ?? ((name) => process.env[name]),
+    })
     let runStore: RunStore | undefined
     try {
       const discovered = await discoverProjectSkillsWithDiagnostics(root, options.skillPaths)

@@ -8,6 +8,7 @@ import type {
   ContestOverview,
   FlagSubmission,
   PlatformPlugin,
+  PlatformConnectOptions,
   PlatformProject,
   RemoteEnvironment,
 } from "@ctf-agent/platform"
@@ -38,6 +39,24 @@ export interface MockPlatformConfig {
   name?: string
   challenges?: MockChallenge[]
   announcements?: Announcement[]
+}
+
+export function parseMockPlatformConfig(value: unknown): MockPlatformConfig {
+  if (value === undefined) return {}
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("mock 平台配置必须是对象")
+  }
+  const config = value as Record<string, unknown>
+  if (config.name !== undefined && typeof config.name !== "string") {
+    throw new Error("mock 平台配置 name 必须是字符串")
+  }
+  if (config.challenges !== undefined && !Array.isArray(config.challenges)) {
+    throw new Error("mock 平台配置 challenges 必须是数组")
+  }
+  if (config.announcements !== undefined && !Array.isArray(config.announcements)) {
+    throw new Error("mock 平台配置 announcements 必须是数组")
+  }
+  return value as MockPlatformConfig
 }
 
 export interface MockPlatformDiagnostics {
@@ -99,10 +118,10 @@ export class MockContest implements PlatformProject {
   private instanceDestroys = 0
   private maxActiveEnvironments = 0
 
-  constructor(private readonly eventId: string, config: MockPlatformConfig) {
+  constructor(private readonly project: { id: string; name: string }, config: MockPlatformConfig) {
     this.challenges = config.challenges ?? defaults
     this.announcements = config.announcements ?? []
-    this.name = config.name ?? "Mock CTF"
+    this.name = config.name ?? project.name
     for (const challenge of this.challenges) {
       this.remainingFailures.set(challenge.id, {
         bind: challenge.failures?.bind ?? 0,
@@ -117,7 +136,7 @@ export class MockContest implements PlatformProject {
   async refresh(): Promise<ContestOverview> { return this.getOverview() }
 
   async getOverview(): Promise<ContestOverview> {
-    return { id: this.eventId, name: this.name, challenges: this.challenges.length, announcements: this.announcements.length }
+    return { id: this.project.id, name: this.name, challenges: this.challenges.length, announcements: this.announcements.length }
   }
 
   async listChallenges(): Promise<ChallengeSummary[]> {
@@ -260,11 +279,12 @@ export class MockContest implements PlatformProject {
 
 export class MockPlatformPlugin implements PlatformPlugin {
   readonly id = "mock"
+  readonly config = { parse: parseMockPlatformConfig }
   private contest?: MockContest
 
-  async connect(options: { eventId: string; config: unknown }): Promise<PlatformProject> {
-    const config = options.config as MockPlatformConfig
-    this.contest = new MockContest(options.eventId, config ?? {})
+  async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
+    const config = this.config.parse(options.config)
+    this.contest = new MockContest(options.project, config)
     return this.contest
   }
 

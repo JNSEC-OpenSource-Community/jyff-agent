@@ -4,14 +4,9 @@
     "id": "myctf-local",
     "name": "MyCTF 2025 (Remote)"
   },
-  "contest": {
-    "platform": "mock",
-    "eventId": "myctf-2026"
-  },
   "platform": {
+    "plugin": "mock",
     "config": {
-      "baseUrl": "http://127.0.0.1:25001",
-      "token": "__PLACEHOLDER__",
       "name": "MyCTF 2025"
     }
   },

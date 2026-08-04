@@ -1,0 +1,12 @@
+{
+  "name": "@ctf-agent/platform-ctfd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ctf-agent/platform": "workspace:*"
+  }
+}

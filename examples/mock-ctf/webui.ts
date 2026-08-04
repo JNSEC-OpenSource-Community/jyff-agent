@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { mockPlatform } from "@ctf-agent/platform-mock"
-import { remotePlatform } from "@ctf-agent/platform-client"
+import { ctfdPlatform } from "@ctf-agent/platform-ctfd"
 import {
   ContestScheduler,
   Project,
@@ -10,7 +10,6 @@ import {
 } from "@ctf-agent/project"
 import { startWebUi } from "@ctf-agent/webui"
 import { loadModelEnvironment } from "./agent-config.ts"
-import { withPlatformConfigOverride } from "./platform-env.ts"
 
 // 与 run-myctf.ts 同款 .env 加载器(webui 此前不读 .env,导致 CTF_SCHEDULER_* 等配置不生效)
 function loadEnvFile(): void {
@@ -47,7 +46,7 @@ const model = loadModelEnvironment({
   storagePath: resolve(root, ".ctf-agent", "model-config.json"),
 })
 
-// 平台模式由 .pi/ctf-config.json 的 contest.platform 决定(SWITCH.md:默认 remote,可切 mock);
+// 平台模式由 .pi/ctf-config.json 的 platform.plugin 决定；
 // 与 Project.open 共用 parseProjectConfig 统一 schema 校验。
 const configPath = join(root, ".pi", "ctf-config.json")
 let parsedConfig: ProjectConfig
@@ -57,31 +56,28 @@ try {
   console.error(`无法读取 ctf-config.json:${error instanceof Error ? error.message : String(error)}`)
   process.exit(1)
 }
-const activePlatform = parsedConfig.contest.platform
+const activePlatform = parsedConfig.platform.plugin
 
-// 接线方式 B:Project.open 内部从 .pi/ctf-config.json 读取 platform.config,不支持注入;
-// 双模式:config 的 contest.platform 决定实际插件(mock/remote);remote 模式把 env 覆盖后的配置临时写回文件,open 完成即恢复。
-const project = await withPlatformConfigOverride(configPath, () =>
-  Project.open({
-    root,
-    platforms: [mockPlatform, remotePlatform],
-    telemetry: {
-      level: process.env.CTF_TELEMETRY_LEVEL === "safe" ? "safe" : "full",
-      maxTextLength: Number(process.env.CTF_TELEMETRY_MAX_TEXT_LENGTH ?? 8_000),
-    },
-    ...(workspaceVolume
-      ? {
-          workspaceMount: ({ relativeWorkspace }: { relativeWorkspace: string }) => ({
-            type: "volume" as const,
-            source: workspaceVolume,
-            subpath: relativeWorkspace,
-          }),
-        }
-      : {}),
-  }),
-  // 平台 token 从 WebUI 配置读取(env 兜底),支持用户删除 .env 后由 model dialog 管理。
-  { token: model.platformToken() },
-)
+const project = await Project.open({
+  root,
+  platforms: [mockPlatform, ctfdPlatform],
+  resolveSecret: (name) => name === "CTFD_TOKEN"
+    ? model.platformToken() ?? process.env[name]
+    : process.env[name],
+  telemetry: {
+    level: process.env.CTF_TELEMETRY_LEVEL === "safe" ? "safe" : "full",
+    maxTextLength: Number(process.env.CTF_TELEMETRY_MAX_TEXT_LENGTH ?? 8_000),
+  },
+  ...(workspaceVolume
+    ? {
+        workspaceMount: ({ relativeWorkspace }: { relativeWorkspace: string }) => ({
+          type: "volume" as const,
+          source: workspaceVolume,
+          subpath: relativeWorkspace,
+        }),
+      }
+    : {}),
+})
 const scheduler = new ContestScheduler(project, {
   maxConcurrent,
   maxAttempts,

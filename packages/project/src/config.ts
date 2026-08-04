@@ -4,8 +4,7 @@ import { dirname, join, resolve } from "node:path"
 export interface ProjectConfig {
   version: 1
   project: { id: string; name: string }
-  contest: { platform: string; eventId: string }
-  platform: { config: unknown }
+  platform: { plugin: string; config: unknown }
   sandbox: {
     image: string
     privileged: boolean
@@ -29,7 +28,6 @@ export function parseProjectConfig(value: unknown): ProjectConfig {
   const root = object(value, "CTF 配置")
   if (root.version !== 1) throw new Error("仅支持 version: 1 的 CTF 配置")
   const project = object(root.project, "project")
-  const contest = object(root.contest, "contest")
   const platform = object(root.platform, "platform")
   const sandbox = object(root.sandbox, "sandbox")
   const networkMode = sandbox.networkMode ?? "bridge"
@@ -40,8 +38,10 @@ export function parseProjectConfig(value: unknown): ProjectConfig {
   return {
     version: 1,
     project: { id: text(project.id, "project.id"), name: text(project.name, "project.name") },
-    contest: { platform: text(contest.platform, "contest.platform"), eventId: text(contest.eventId, "contest.eventId") },
-    platform: { config: platform.config ?? {} },
+    platform: {
+      plugin: text(platform.plugin, "platform.plugin"),
+      config: platform.config ?? {},
+    },
     sandbox: {
       image: text(sandbox.image, "sandbox.image"),
       privileged: sandbox.privileged === true,

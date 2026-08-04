@@ -47,7 +47,8 @@ describe("DockerInstanceProvider(需要本地 Docker)", () => {
   it("MockContest 接入:配 container 的远程题真实容器启动 + 动态 FLAG 判定", async () => {
     const { MockPlatformPlugin } = await import("../src/index.ts")
     const platform = await new MockPlatformPlugin().connect({
-      eventId: "event",
+      project: { id: "event", name: "Docker Test" },
+      resolveSecret: () => undefined,
       config: {
         challenges: [
           {

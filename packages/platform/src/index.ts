@@ -1,7 +1,8 @@
 export interface Attachment {
   id: string
   name: string
-  size: number
+  /** Some platforms only reveal the size after download. */
+  size?: number
 }
 
 export interface ChallengeSummary {
@@ -71,7 +72,22 @@ export interface PlatformProject {
   close(): Promise<void>
 }
 
+export interface PlatformConfig<T = unknown> {
+  parse(value: unknown): T
+}
+
+export interface PlatformConnectOptions<T = unknown> {
+  project: { id: string; name: string }
+  config: T
+  resolveSecret(name: string): string | undefined
+}
+
+/**
+ * Runtime-erased platform plugin contract. A plugin owns validation of its
+ * configuration; Project only selects the plugin and supplies secrets.
+ */
 export interface PlatformPlugin {
   readonly id: string
-  connect(options: { eventId: string; config: unknown }): Promise<PlatformProject>
+  readonly config: PlatformConfig
+  connect(options: PlatformConnectOptions): Promise<PlatformProject>
 }

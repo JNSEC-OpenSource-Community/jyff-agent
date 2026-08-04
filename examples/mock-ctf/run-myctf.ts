@@ -9,10 +9,9 @@ import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { ContestRunner, Project, parseProjectConfig, type ProjectConfig } from "@ctf-agent/project"
 import { mockPlatform } from "@ctf-agent/platform-mock"
-import { remotePlatform } from "@ctf-agent/platform-client"
+import { ctfdPlatform } from "@ctf-agent/platform-ctfd"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
-import { withPlatformConfigOverride } from "./platform-env.ts"
 
 const exec = promisify(execFile)
 
@@ -124,8 +123,8 @@ try {
 } catch (error) {
   fail(`无法读取 ctf-config.json:${error instanceof Error ? error.message : String(error)}`)
 }
-// 平台模式由 contest.platform 决定(SWITCH.md:默认 remote,可切 mock);题列表仅 mock 配置内置,remote 由服务器提供。
-const activePlatform = parsedConfig.contest.platform
+// 平台模式由 platform.plugin 决定；题列表仅 mock 配置内置，CTFd 由服务器提供。
+const activePlatform = parsedConfig.platform.plugin
 interface MockChallengeList { challenges?: Array<{ id: string; remote?: boolean }> }
 const mockChallenges = (parsedConfig.platform.config as MockChallengeList).challenges ?? []
 const allIds = mockChallenges.map((challenge) => challenge.id)
@@ -200,10 +199,7 @@ async function auditLeaks(): Promise<void> {
 let project: Project | undefined
 try {
   console.log(`\n[1/3] 打开 CTF Project(平台: ${activePlatform})`)
-  // 双模式:config 的 contest.platform 决定插件(mock/remote);remote 模式经 env 覆盖临时写回配置。
-  project = await withPlatformConfigOverride(configPath, () =>
-    Project.open({ root, platforms: [mockPlatform, remotePlatform] }),
-  )
+  project = await Project.open({ root, platforms: [mockPlatform, ctfdPlatform] })
 
   console.log(`[2/3] 创建 ContestRunner(8 路并发 / maxAttempts 2 / 30min 超时 / retryDelay 2s)${onlyId ? `,仅跑 --only ${onlyId}` : ""}\n`)
   const runner = new ContestRunner(project, {

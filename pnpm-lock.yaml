@@ -26,9 +26,9 @@ importers:
 
   examples/mock-ctf:
     dependencies:
-      '@ctf-agent/platform-client':
+      '@ctf-agent/platform-ctfd':
         specifier: workspace:*
-        version: link:../../packages/platform-client
+        version: link:../../packages/platform-ctfd
       '@ctf-agent/platform-mock':
         specifier: workspace:*
         version: link:../../packages/platform-mock
@@ -59,7 +59,7 @@ importers:
 
   packages/platform: {}
 
-  packages/platform-client:
+  packages/platform-ctfd:
     dependencies:
       '@ctf-agent/platform':
         specifier: workspace:*
