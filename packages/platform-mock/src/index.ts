@@ -10,7 +10,7 @@ import type {
   PlatformPlugin,
   PlatformProject,
   RemoteEnvironment,
-} from "@ctf-agent/solver"
+} from "@ctf-agent/platform"
 import { DockerInstanceProvider } from "./docker-instance.ts"
 
 export interface MockChallenge {

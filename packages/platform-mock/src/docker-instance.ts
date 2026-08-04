@@ -2,7 +2,7 @@
 // 真实容器实例提供者:远程题以 Docker 容器启动,FLAG 通过环境变量动态注入。
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import type { RemoteEnvironment } from "@ctf-agent/solver"
+import type { RemoteEnvironment } from "@ctf-agent/platform"
 
 const exec = promisify(execFile)
 

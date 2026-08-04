@@ -12,7 +12,7 @@ import {
 import { CtfSolverAgent, type SolverCloseDetails } from "../agent/solver-agent.ts"
 import { discoverProjectSkills, materializeSkills, type AgentSkill } from "../skills/project-skills.ts"
 import type { CompactionOptions } from "../agent/compaction.ts"
-import type { Announcement, ChallengeSummary, ContestOverview, PlatformPlugin, PlatformProject, RemoteEnvironment } from "../platform/types.ts"
+import type { Announcement, ChallengeSummary, ContestOverview, PlatformPlugin, PlatformProject, RemoteEnvironment } from "@ctf-agent/platform"
 import {
   RunStore,
   type RunEvent,

@@ -1,7 +1,7 @@
 import type {
   Announcement, Attachment, ChallengeCapability, ChallengeInfo, ChallengeSummary,
   ContestOverview, FlagSubmission, PlatformPlugin, PlatformProject, RemoteEnvironment,
-} from "@ctf-agent/solver"
+} from "@ctf-agent/platform"
 
 export interface PlatformClientOptions {
   baseUrl: string

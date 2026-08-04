@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer"
 import { Type } from "typebox"
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
-import type { ChallengeCapability, FlagSubmission } from "../platform/types.ts"
+import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
 import type { Sandbox } from "./docker-sandbox.ts"
 import type { RunStore } from "../project/run-store.ts"
 import { createBlackboardTools } from "../blackboard/index.ts"

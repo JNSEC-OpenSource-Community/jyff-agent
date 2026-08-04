@@ -1,5 +1,5 @@
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import type { ChallengeSummary } from "../platform/types.ts"
+import type { ChallengeSummary } from "@ctf-agent/platform"
 import { type CreateSolverOptions, Project } from "../project/project.ts"
 import { CtfSolverAgent, type SolverCloseReason } from "../agent/solver-agent.ts"
 

@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ctf-agent/platform": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.82.1",
     "@earendil-works/pi-ai": "^0.82.1",
     "typebox": "^1.1.38"
