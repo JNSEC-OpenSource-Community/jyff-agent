@@ -1,7 +1,8 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Agent, type AgentOptions } from "@earendil-works/pi-agent-core"
+import { BaseAgent } from "@ctf-agent/base-agent"
+import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
 import { mockPlatform } from "../../../platform-mock/src/index.js"
 import { Project } from "../../src/project/project.js"
@@ -53,12 +54,12 @@ describe("Project", () => {
     })
 
     const solver = await project.createSolver("warmup-flag", { agent: agentOptions })
-    expect(solver).toBeInstanceOf(Agent)
+    expect(solver).toBeInstanceOf(BaseAgent)
     expect(solver.challenge.id).toBe("warmup-flag")
     const toolNames = solver.state.tools.map((tool) => tool.name)
     expect(toolNames).toEqual(expect.arrayContaining(["read", "write", "edit", "list", "bash"]))
     expect(toolNames).not.toContain("ctf_instance_start")
-    expect(toolNames).toContain("load_skill")
+    expect(toolNames).not.toContain("load_skill")
     expect(toolNames).toEqual(expect.arrayContaining(["ctf_blackboard_read", "ctf_blackboard_record"]))
     expect(solver.state.systemPrompt).toContain("<available_skills>")
     expect(solver.state.systemPrompt).toContain("/workspace/.skills/skill-1/SKILL.md")

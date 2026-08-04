@@ -24,10 +24,10 @@
 - [x] Implement a Docker-backed Pi `ExecutionEnv` with normalized file,
       execution, abort, timeout, and cleanup errors.
 - [x] Add `@ctf-agent/base-agent` using Pi `AgentHarness` and `Session`.
-- [ ] Create/open one native Pi JSONL session per run and verify restoration.
+- [x] Create/open one native Pi JSONL session per run and verify restoration.
 - [ ] Migrate skills and compaction to Pi's exported implementations.
 - [x] Migrate bash/read/write/edit to Pi tools over the Docker environment.
-- [ ] Make `CtfSolverAgent` extend `BaseAgent` and remove duplicated runtime code.
+- [x] Make `CtfSolverAgent` extend `BaseAgent` and remove duplicated runtime code.
 - [ ] Extract Project, RunStore, runner, and scheduler into
       `@ctf-agent/project`.
 - [ ] Replace direct RunStore access in solver tools with a narrow blackboard

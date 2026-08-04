@@ -1,12 +1,24 @@
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability } from "@ctf-agent/platform"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
 import { CtfSolverAgent, type SolverCloseDetails } from "../../src/agent/solver-agent.js"
 
 const agent = {
   streamFn: (() => { throw new Error("本测试不调用模型") }) as AgentOptions["streamFn"],
 } satisfies AgentOptions
+
+const roots: string[] = []
+afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
+
+async function runDirectory(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "solver-agent-"))
+  roots.push(root)
+  return root
+}
 
 function challengeCapability(log: string[], destroyError?: Error): ChallengeCapability {
   return {
@@ -46,6 +58,7 @@ describe("CtfSolverAgent 强制清理", () => {
       identity: {
         projectId: "project",
         runId: "run",
+        runDirectory: await runDirectory(),
         workspace: "workspace",
         challenge: await challengeCapability(log).getInfo(),
       },
@@ -71,6 +84,7 @@ describe("CtfSolverAgent 强制清理", () => {
       identity: {
         projectId: "project",
         runId: "run",
+        runDirectory: await runDirectory(),
         workspace: "workspace",
         challenge: await capability.getInfo(),
       },
@@ -94,6 +108,7 @@ describe("CtfSolverAgent 强制清理", () => {
       identity: {
         projectId: "project",
         runId: "run",
+        runDirectory: await runDirectory(),
         workspace: "workspace",
         challenge: await challengeCapability(log).getInfo(),
       },
@@ -103,9 +118,9 @@ describe("CtfSolverAgent 强制清理", () => {
     })
 
     expect(solver.state.thinkingLevel).toBe("high")
-    solver.setThinkingLevel("max")
+    await solver.setThinkingLevel("max")
     expect(solver.state.thinkingLevel).toBe("max")
-    solver.setThinkingLevel("off")
+    await solver.setThinkingLevel("off")
     expect(solver.state.thinkingLevel).toBe("off")
     await solver.close("manual")
   })

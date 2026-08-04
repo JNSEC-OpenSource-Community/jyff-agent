@@ -350,7 +350,7 @@ export class ContestScheduler {
         await solver.close("submitted")
         return
       }
-      throw new Error(latestAgentError(solver) ?? "Agent 已结束，但没有提交正确 Flag")
+      throw new Error((await latestAgentError(solver)) ?? "Agent 已结束，但没有提交正确 Flag")
     } catch (error) {
       failureReason = active.cancelRequested
         ? "cancelled"
@@ -434,7 +434,7 @@ async function runPromptWithTimeout(
   if (timeout) clearTimeout(timeout)
   if (outcome.kind === "completed") return
   if (outcome.kind === "failed") throw outcome.error
-  solver.abort()
+  await solver.abort()
   await Promise.race([
     settled,
     new Promise((resolve) => setTimeout(resolve, abortGraceMs)),
@@ -442,9 +442,10 @@ async function runPromptWithTimeout(
   throw new SchedulerTimeoutError(timeoutMs)
 }
 
-function latestAgentError(solver: CtfSolverAgent): string | undefined {
-  for (let index = solver.state.messages.length - 1; index >= 0; index--) {
-    const message = solver.state.messages[index]
+async function latestAgentError(solver: CtfSolverAgent): Promise<string | undefined> {
+  const messages = await solver.transcript()
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
     if (
       message?.role === "assistant" &&
       (message.stopReason === "error" || message.stopReason === "aborted")

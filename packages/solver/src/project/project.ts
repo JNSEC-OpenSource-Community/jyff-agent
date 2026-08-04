@@ -1,6 +1,6 @@
 import { mkdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { AgentEvent, AgentMessage, AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
+import type { AgentHarnessEvent, AgentMessage, AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { findProjectRoot, loadProjectConfig, type ProjectConfig } from "./config.ts"
 import {
   DockerSandbox,
@@ -157,11 +157,7 @@ export class Project {
         // runStore 已关闭 ≈ Project 正在关闭,视同无活跃 solver
         throw noActiveRunError()
       }
-      solver.steer({
-        role: "user",
-        content: [{ type: "text", text: trimmed }],
-        timestamp: Date.now(),
-      })
+      await solver.queueUserMessage(trimmed)
       return { runId: solver.runId }
     }
     throw noActiveRunError()
@@ -187,7 +183,7 @@ export class Project {
       } catch {
         throw noActiveRunError()
       }
-      solver.setThinkingLevel(level)
+      await solver.setThinkingLevel(level)
       return { runId: solver.runId }
     }
     throw noActiveRunError()
@@ -246,7 +242,7 @@ export class Project {
 
       let solver!: CtfSolverAgent
       solver = await CtfSolverAgent.create({
-        identity: { projectId: this.config.project.id, runId, workspace, challenge },
+        identity: { projectId: this.config.project.id, runId, runDirectory, workspace, challenge },
         capability,
         sandbox,
         agent: {
@@ -281,12 +277,12 @@ export class Project {
       // 流式思维链:pi 把 thinking_delta(逐段 reasoning_content)包装为 message_update
       // 事件。每条 delta 实时落一条 agent_thinking 词片,WebUI 按轮聚合展示、导出端按 id
       // 拼接还原完整思考。DeepSeek 默认请求也会返回 reasoning_content(适配器无条件解析),
-      // 门控读 solver.state.thinkingLevel 实时值(setThinkingLevel 动态切换后立即生效)。
+      // 门控读取当前 thinkingLevel；BaseAgent 同时把变更写入 Pi session tree。
       solver.subscribe((event) => {
         if (
           event.type === "message_update" &&
           event.assistantMessageEvent.type === "thinking_delta" &&
-          solver.state.thinkingLevel !== "off"
+          solver.thinkingLevel !== "off"
         ) {
           try {
             const delta = event.assistantMessageEvent.delta
@@ -456,7 +452,7 @@ function injectBlackboard(runStore: RunStore, challengeId: string): string {
 }
 
 function progressEvents(
-  event: AgentEvent,
+  event: AgentHarnessEvent,
   telemetry: Required<ProjectTelemetryOptions>,
   calls: Map<string, { toolName: string; args: unknown }>,
 ): Array<{ type: string; data?: unknown }> {

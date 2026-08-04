@@ -169,7 +169,6 @@ export class ContestRunner {
 
   async stop(): Promise<void> {
     this.controller?.abort()
-    for (const solver of this.activeSolvers.values()) solver.abort()
     await this.closeActiveSolvers("cancelled", "ContestRunner 被停止")
   }
 
@@ -234,7 +233,7 @@ export class ContestRunner {
             await solver.close("submitted")
             return { challengeId: challenge.id, status: "solved", attempts, runIds }
           }
-          const agentError = latestAgentError(solver)
+          const agentError = await latestAgentError(solver)
           throw new Error(agentError ?? "Agent 已结束，但没有提交正确 Flag")
         } catch (error) {
           const reason = closeReason(error, signal)
@@ -269,7 +268,6 @@ export class ContestRunner {
 
   private async closeActiveSolvers(reason: SolverCloseReason, error: string): Promise<void> {
     const solvers = [...this.activeSolvers.values()]
-    for (const solver of solvers) solver.abort()
     const results = await Promise.allSettled(solvers.map((solver) => solver.close(reason, error)))
     this.activeSolvers.clear()
     const failures = results
@@ -306,15 +304,16 @@ async function runPromptWithDeadline(
   if (outcome.kind === "completed") return
   if (outcome.kind === "failed") throw outcome.error
 
-  solver.abort()
+  await solver.abort()
   await Promise.race([settled, abortableDelay(abortGraceMs)])
   if (outcome.kind === "cancelled") throw new ContestRunnerCancelledError()
   throw new ChallengeTimeoutError(timeoutMs)
 }
 
-function latestAgentError(solver: CtfSolverAgent): string | undefined {
-  for (let index = solver.state.messages.length - 1; index >= 0; index--) {
-    const message = solver.state.messages[index]
+async function latestAgentError(solver: CtfSolverAgent): Promise<string | undefined> {
+  const messages = await solver.transcript()
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
     if (message?.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")) {
       return message.errorMessage ?? `Agent ${message.stopReason}`
     }

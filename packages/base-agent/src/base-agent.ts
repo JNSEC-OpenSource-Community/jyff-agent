@@ -33,6 +33,7 @@ export interface PreparedBaseAgent {
   sessionPath: string
   restored: boolean
   systemPrompt: string
+  messages: AgentMessage[]
 }
 
 export async function prepareBaseAgent(options: BaseAgentOptions): Promise<PreparedBaseAgent> {
@@ -48,11 +49,13 @@ export async function prepareBaseAgent(options: BaseAgentOptions): Promise<Prepa
   })
   const skills = [...(options.skills ?? [])]
   const systemPrompt = [options.systemPrompt, formatSkillsForSystemPrompt(skills)].filter(Boolean).join("\n\n")
+  const messages = (await opened.session.buildContext()).messages
   return {
     session: opened.session,
     sessionPath: options.session.path,
     restored: opened.restored,
     systemPrompt,
+    messages,
     harness: new AgentHarness({
       session: opened.session,
       models: options.models,
@@ -73,7 +76,17 @@ export abstract class BaseAgent {
   readonly systemPrompt: string
   protected readonly harness: AgentHarness
   readonly session: PreparedBaseAgent["session"]
+  /** Read-only compatibility snapshot; persisted truth remains `session`. */
+  readonly state: {
+    systemPrompt: string
+    model: Model<any>
+    thinkingLevel: ThinkingLevel
+    tools: AgentTool[]
+    messages: AgentMessage[]
+    isStreaming: boolean
+  }
   private readonly autoCompaction: boolean
+  private queuedMessages = 0
 
   protected constructor(prepared: PreparedBaseAgent, options: { compaction?: boolean } = {}) {
     this.harness = prepared.harness
@@ -82,6 +95,25 @@ export abstract class BaseAgent {
     this.restored = prepared.restored
     this.systemPrompt = prepared.systemPrompt
     this.autoCompaction = options.compaction !== false
+    this.state = {
+      systemPrompt: prepared.systemPrompt,
+      model: prepared.harness.getModel(),
+      thinkingLevel: prepared.harness.getThinkingLevel(),
+      tools: prepared.harness.getTools() as unknown as AgentTool[],
+      messages: [...prepared.messages],
+      isStreaming: false,
+    }
+    this.harness.subscribe((event) => {
+      if (event.type === "agent_start") this.state.isStreaming = true
+      if (event.type === "message_end") this.state.messages.push(event.message)
+      if (event.type === "agent_end") this.state.isStreaming = false
+      if (event.type === "thinking_level_update") this.state.thinkingLevel = event.level
+      if (event.type === "model_update") this.state.model = event.model
+      if (event.type === "tools_update") this.state.tools = this.harness.getTools() as unknown as AgentTool[]
+      if (event.type === "queue_update") {
+        this.queuedMessages = event.steer.length + event.followUp.length + event.nextTurn.length
+      }
+    })
   }
 
   get model(): Model<any> { return this.harness.getModel() }
@@ -104,6 +136,10 @@ export abstract class BaseAgent {
   steer(text: string, options?: { images?: ImageContent[] }) { return this.harness.steer(text, options) }
   followUp(text: string, options?: { images?: ImageContent[] }) { return this.harness.followUp(text, options) }
   nextTurn(text: string, options?: { images?: ImageContent[] }) { return this.harness.nextTurn(text, options) }
+  /** Route human input according to Pi's queue contract. */
+  queueUserMessage(text: string, options?: { images?: ImageContent[] }) {
+    return this.state.isStreaming ? this.harness.steer(text, options) : this.harness.nextTurn(text, options)
+  }
   appendMessage(message: AgentMessage) { return this.harness.appendMessage(message) }
   subscribe(listener: (event: AgentHarnessEvent, signal?: AbortSignal) => Promise<void> | void) {
     return this.harness.subscribe(listener)
@@ -113,6 +149,7 @@ export abstract class BaseAgent {
   async compact(customInstructions?: string): Promise<CompactResult> { return this.harness.compact(customInstructions) }
   abort() { return this.harness.abort() }
   waitForIdle() { return this.harness.waitForIdle() }
+  hasQueuedMessages(): boolean { return this.queuedMessages > 0 }
 
   private async compactIfNeeded(): Promise<void> {
     if (!this.autoCompaction) return
