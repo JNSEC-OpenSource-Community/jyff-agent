@@ -1,5 +1,9 @@
 import { join, resolve } from "node:path";
-import type { PlatformPlugin, PlatformProject } from "@ctf-agent/platform";
+import type {
+	PlatformPlugin,
+	PlatformProject,
+	PlatformSetupDescriptor,
+} from "@ctf-agent/platform";
 import type { ContestScheduler } from "../orchestration/contest-scheduler.ts";
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts";
 import { type OpenProjectOptions, Project } from "../project/project.ts";
@@ -32,6 +36,16 @@ export interface PlatformConnectionTest {
 		challenges: number;
 		announcements: number;
 	};
+}
+
+export interface ControlPlaneSetupSnapshot {
+	state: ControlPlaneSnapshot;
+	config: ProjectConfig | null;
+	platforms: Array<{ id: string; setup: PlatformSetupDescriptor }>;
+	secrets: Record<
+		string,
+		{ configured: boolean; source: "store" | "environment" | "none" }
+	>;
 }
 
 export interface ApplyControlPlaneSetup {
@@ -101,6 +115,34 @@ export class ControlPlane {
 
 	configuration(): ProjectConfig | undefined {
 		return this.config ? structuredClone(this.config) : undefined;
+	}
+
+	setupSnapshot(): ControlPlaneSetupSnapshot {
+		const platforms = this.platforms.flatMap((plugin) =>
+			plugin.setup ? [{ id: plugin.id, setup: plugin.setup }] : [],
+		);
+		const names = new Set(
+			platforms.flatMap(({ setup }) =>
+				setup.authStrategies.flatMap((strategy) =>
+					strategy.secrets.map((secret) => secret.name),
+				),
+			),
+		);
+		return {
+			state: this.snapshot(),
+			config: this.configuration() ?? null,
+			platforms,
+			secrets: Object.fromEntries(
+				[...names].map((name) => {
+					const source = this.secretStore.has(name)
+						? "store"
+						: (this.options.resolveSecret?.(name) ?? process.env[name])
+							? "environment"
+							: "none";
+					return [name, { configured: source !== "none", source }];
+				}),
+			),
+		};
 	}
 
 	currentProject(): Project | undefined {
