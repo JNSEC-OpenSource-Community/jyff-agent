@@ -9,7 +9,7 @@ import type {
   RunEvent,
   RunFilter,
   RunRecord,
-} from "@ctf-agent/solver"
+} from "@ctf-agent/project"
 import type {
   DashboardModelConfiguration,
   DashboardProject,

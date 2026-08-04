@@ -1,8 +1,8 @@
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import type { CtfSolverAgent, SolverCloseReason } from "../agent/solver-agent.ts"
+import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/solver"
 import type { ChallengeSummary } from "@ctf-agent/platform"
-import type { CreateSolverOptions, Project } from "../project/project.ts"
-import type { RunSource } from "../project/run-store.ts"
+import type { CreateSolverOptions, Project } from "./project.ts"
+import type { RunSource } from "./run-store.ts"
 
 export type SchedulerQueueSource = Extract<RunSource, "auto" | "manual" | "retry">
 export type SchedulerPhase = "preparing" | "running" | "cancelling"

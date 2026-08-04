@@ -5,8 +5,8 @@ import { BaseAgent } from "@ctf-agent/base-agent"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
 import { mockPlatform } from "../../../platform-mock/src/index.js"
-import { Project } from "../../src/project/project.js"
-import type { CommandResult, DockerSandboxOptions, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import { Project } from "../../src/project.js"
+import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })

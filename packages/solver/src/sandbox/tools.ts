@@ -16,8 +16,6 @@ import {
   RtkRewriter,
   type Sandbox,
 } from "@ctf-agent/sandbox"
-import type { RunStore } from "../project/run-store.ts"
-import { createBlackboardTools } from "../blackboard/index.ts"
 
 function result(details: object): AgentToolResult<Record<string, unknown>> {
   const value = details as Record<string, unknown>
@@ -28,11 +26,6 @@ export interface SolverToolOptions {
   capability: ChallengeCapability
   sandbox: Sandbox
   onTerminalSubmission(submission: FlagSubmission): void
-  blackboard?: {
-    runStore: RunStore
-    challengeId: string
-    runId: string
-  }
 }
 
 /** Every capability closure is bound to one challenge and one Docker environment. */
@@ -115,14 +108,6 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
         async execute() { await instance.destroy(); return result({ destroyed: true }) },
       },
     )
-  }
-
-  if (options.blackboard) {
-    tools.push(...createBlackboardTools({
-      runStore: options.blackboard.runStore,
-      challengeId: options.blackboard.challengeId,
-      runId: options.blackboard.runId,
-    }))
   }
 
   return tools

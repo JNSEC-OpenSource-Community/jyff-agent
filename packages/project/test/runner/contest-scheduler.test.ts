@@ -5,9 +5,9 @@ import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vitest"
 import { MockPlatformPlugin, type MockChallenge } from "../../../platform-mock/src/index.ts"
-import { Project } from "../../src/project/project.ts"
-import { ContestScheduler, ContestSchedulerError } from "../../src/runner/contest-scheduler.ts"
-import type { CommandResult, DockerSandboxOptions, Sandbox } from "../../src/sandbox/docker-sandbox.ts"
+import { Project } from "../../src/project.ts"
+import { ContestScheduler, ContestSchedulerError } from "../../src/contest-scheduler.ts"
+import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 
 const roots: string[] = []
 

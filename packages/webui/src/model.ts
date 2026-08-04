@@ -1,4 +1,4 @@
-import type { RunEvent, RunRecord } from "@ctf-agent/solver"
+import type { RunEvent, RunRecord } from "@ctf-agent/project"
 import type {
   ChallengeDetails,
   DashboardChallenge,

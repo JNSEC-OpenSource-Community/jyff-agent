@@ -29,10 +29,9 @@
 - [x] Remove the legacy compaction implementation in favor of Pi sessions.
 - [x] Migrate bash/read/write/edit to Pi tools over the Docker environment.
 - [x] Make `CtfSolverAgent` extend `BaseAgent` and remove duplicated runtime code.
-- [ ] Extract Project, RunStore, runner, and scheduler into
+- [x] Extract Project, RunStore, runner, and scheduler into
       `@ctf-agent/project`.
-- [ ] Replace direct RunStore access in solver tools with a narrow blackboard
-      capability.
+- [x] Remove RunStore access from solver tools; Project injects blackboard tools.
 - [ ] Consolidate runner/scheduler attempt execution and lifecycle cleanup.
 - [ ] Classify validation, tool, abort, persistence, diagnostic, and cleanup
       errors; remove silent broad catches.

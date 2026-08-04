@@ -32,6 +32,9 @@ importers:
       '@ctf-agent/platform-mock':
         specifier: workspace:*
         version: link:../../packages/platform-mock
+      '@ctf-agent/project':
+        specifier: workspace:*
+        version: link:../../packages/project
       '@ctf-agent/solver':
         specifier: workspace:*
         version: link:../../packages/solver
@@ -68,6 +71,27 @@ importers:
         specifier: workspace:*
         version: link:../platform
 
+  packages/project:
+    dependencies:
+      '@ctf-agent/base-agent':
+        specifier: workspace:*
+        version: link:../base-agent
+      '@ctf-agent/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@ctf-agent/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ctf-agent/solver':
+        specifier: workspace:*
+        version: link:../solver
+      '@earendil-works/pi-agent-core':
+        specifier: ^0.82.1
+        version: 0.82.1(ws@8.21.1)(zod@4.4.3)
+      typebox:
+        specifier: ^1.1.38
+        version: 1.1.38
+
   packages/sandbox:
     dependencies:
       '@earendil-works/pi-agent-core':
@@ -97,6 +121,9 @@ importers:
 
   packages/webui:
     dependencies:
+      '@ctf-agent/project':
+        specifier: workspace:*
+        version: link:../project
       '@ctf-agent/solver':
         specifier: workspace:*
         version: link:../solver

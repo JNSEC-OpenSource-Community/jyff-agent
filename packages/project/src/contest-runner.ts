@@ -1,7 +1,7 @@
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { ChallengeSummary } from "@ctf-agent/platform"
-import { type CreateSolverOptions, Project } from "../project/project.ts"
-import { CtfSolverAgent, type SolverCloseReason } from "../agent/solver-agent.ts"
+import { type CreateSolverOptions, Project } from "./project.ts"
+import { CtfSolverAgent, type SolverCloseReason } from "@ctf-agent/solver"
 
 export interface ContestRunnerAttemptContext {
   challenge: ChallengeSummary

@@ -7,7 +7,7 @@ import {
   Project,
   parseProjectConfig,
   type ProjectConfig,
-} from "@ctf-agent/solver"
+} from "@ctf-agent/project"
 import { startWebUi } from "@ctf-agent/webui"
 import { loadModelEnvironment } from "./agent-config.ts"
 import { withPlatformConfigOverride } from "./platform-env.ts"

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability } from "@ctf-agent/platform"
 import { afterEach, describe, expect, it } from "vitest"
-import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
 import { CtfSolverAgent, type SolverCloseDetails } from "../../src/agent/solver-agent.js"
 
 const agent = {

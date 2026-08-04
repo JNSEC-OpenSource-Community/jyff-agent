@@ -9,7 +9,7 @@
   "scripts": {
     "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/solver/docker",
     "test": "vitest run",
-    "test:runner": "vitest run packages/solver/test/runner/contest-runner.test.ts",
+    "test:runner": "vitest run packages/project/test/runner/contest-runner.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "example:mock": "pnpm --filter @ctf-agent/example-mock-ctf solve",

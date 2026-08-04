@@ -3,14 +3,13 @@ import {
   BaseAgent,
   modelsFromAgentOptions,
   prepareBaseAgent,
+  type AgentSkill,
   type PreparedBaseAgent,
 } from "@ctf-agent/base-agent"
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "@ctf-agent/platform"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions, Skill } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import type { RunStore } from "../project/run-store.ts"
-import type { AgentSkill } from "../skills/project-skills.ts"
 import { createSolverTools } from "../sandbox/tools.ts"
 
 export interface SolverIdentity {
@@ -30,11 +29,6 @@ export interface CreateCtfSolverAgentOptions {
     skills?: readonly AgentSkill[]
     /** `false` disables BaseAgent's native Pi automatic compaction check. */
     compaction?: boolean
-  }
-  blackboard?: {
-    runStore: RunStore
-    challengeId: string
-    runId: string
   }
   onClosed?: (details: SolverCloseDetails) => Promise<void> | void
 }
@@ -128,7 +122,6 @@ export class CtfSolverAgent extends BaseAgent {
         capability: options.capability,
         sandbox: options.sandbox,
         onTerminalSubmission: (submission) => solver?.markTerminal(submission),
-        blackboard: options.blackboard,
       }),
     ]
     const model = options.agent.initialState?.model ?? FALLBACK_MODEL

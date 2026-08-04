@@ -4,7 +4,7 @@ import { join, resolve } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { getModel, type Model } from "@earendil-works/pi-ai/compat"
-import { Project } from "@ctf-agent/solver"
+import { Project } from "@ctf-agent/project"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 

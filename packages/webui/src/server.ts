@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import { ContestSchedulerError } from "@ctf-agent/solver"
+import { ContestSchedulerError } from "@ctf-agent/project"
 import { buildSessionMarkdown } from "./export.ts"
 import { buildChallengeDetails, buildDashboardSnapshot } from "./model.ts"
 import type {

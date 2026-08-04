@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { mockPlatform } from "../../../platform-mock/src/index.js"
-import { Project } from "../../src/project/project.js"
+import { Project } from "../../src/project.js"
 
 const cleanupRoots: string[] = []
 afterAll(async () => {

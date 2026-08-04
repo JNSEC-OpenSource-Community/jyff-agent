@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
-import type { CommandResult, Sandbox, SandboxExecOptions } from "../../src/sandbox/docker-sandbox.js"
+import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
 import { createSolverTools } from "../../src/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {

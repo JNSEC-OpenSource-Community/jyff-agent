@@ -5,9 +5,9 @@ import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vitest"
 import { MockPlatformPlugin, type MockChallenge } from "../../../platform-mock/src/index.js"
-import { ContestRunner } from "../../src/runner/contest-runner.js"
-import { Project } from "../../src/project/project.js"
-import type { CommandResult, DockerSandboxOptions, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import { ContestRunner } from "../../src/contest-runner.js"
+import { Project } from "../../src/project.js"
+import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 
 const roots: string[] = []
 afterEach(async () => {

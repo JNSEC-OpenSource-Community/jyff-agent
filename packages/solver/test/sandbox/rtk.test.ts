@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { DockerExecutionEnv, RtkRewriter } from "@ctf-agent/sandbox"
-import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
 
 class UnavailableSandbox implements Sandbox {
   readonly id = "unavailable"

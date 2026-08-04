@@ -1,4 +1,4 @@
-import type { RunEvent, RunRecord } from "@ctf-agent/solver"
+import type { RunEvent, RunRecord } from "@ctf-agent/project"
 import { describe, expect, it } from "vitest"
 import { buildSessionMarkdown } from "../src/export.ts"
 import { FakeDashboardProject } from "./fake-project.ts"
