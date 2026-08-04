@@ -32,7 +32,7 @@
 - [x] Migrate bash/read/write/edit to Pi tools over the Docker environment.
 - [x] Make `CtfSolverAgent` extend `BaseAgent` and remove duplicated runtime code.
 - [x] Extract Project, RunStore, runner, and scheduler into
-      `@ctf-agent/project`.
+      `@ctf-agent/core`.
 - [x] Remove RunStore access from solver tools; Project injects blackboard tools.
 - [x] Consolidate runner/scheduler prompt execution, timeout, and result checks.
 - [x] Preserve abort, persistence, diagnostic, primary, and cleanup failures;

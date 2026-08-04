@@ -9,7 +9,7 @@ import type {
 	RunEvent,
 	RunFilter,
 	RunRecord,
-} from "@ctf-agent/project";
+} from "@ctf-agent/core";
 
 export type DashboardChallengeStatus =
 	| "queued"

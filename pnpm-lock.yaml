@@ -29,12 +29,12 @@ importers:
 
   examples/ctf:
     dependencies:
+      '@ctf-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@ctf-agent/platform':
         specifier: workspace:*
         version: link:../../packages/platform
-      '@ctf-agent/project':
-        specifier: workspace:*
-        version: link:../../packages/project
       '@ctf-agent/webui':
         specifier: workspace:*
         version: link:../../packages/webui
@@ -60,9 +60,7 @@ importers:
         specifier: ^1.1.38
         version: 1.1.38
 
-  packages/platform: {}
-
-  packages/project:
+  packages/core:
     dependencies:
       '@ctf-agent/agents':
         specifier: workspace:*
@@ -80,6 +78,8 @@ importers:
         specifier: ^1.1.38
         version: 1.1.38
 
+  packages/platform: {}
+
   packages/sandbox:
     dependencies:
       '@earendil-works/pi-agent-core':
@@ -88,7 +88,7 @@ importers:
 
   packages/webui:
     dependencies:
-      '@ctf-agent/project':
+      '@ctf-agent/core':
         specifier: workspace:*
         version: link:../project
 

@@ -1,4 +1,4 @@
-import type { RunEvent, RunRecord } from "@ctf-agent/project";
+import type { RunEvent, RunRecord } from "@ctf-agent/core";
 import type {
 	ChallengeDetails,
 	DashboardChallenge,

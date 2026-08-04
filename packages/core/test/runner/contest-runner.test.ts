@@ -13,8 +13,8 @@ import {
 	fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
-import { ContestRunner } from "../../src/contest-runner.js";
-import { Project } from "../../src/project.js";
+import { ContestRunner } from "../../src/orchestration/contest-runner.js";
+import { Project } from "../../src/project/project.js";
 import { type TestChallenge, TestPlatformPlugin } from "../fake-platform.ts";
 
 const roots: string[] = [];

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { RunStore } from "../../src/run-store.js";
+import { RunStore } from "../../src/persistence/run-store.js";
 
 const roots: string[] = [];
 afterEach(async () => {

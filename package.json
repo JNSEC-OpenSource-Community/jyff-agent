@@ -10,7 +10,7 @@
 		"build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
 		"check": "biome check .",
 		"test": "vitest run",
-		"test:runner": "vitest run packages/project/test/runner/contest-runner.test.ts",
+		"test:runner": "vitest run packages/core/test/runner/contest-runner.test.ts",
 		"test:watch": "vitest",
 		"format": "biome format --write .",
 		"format:check": "biome format .",

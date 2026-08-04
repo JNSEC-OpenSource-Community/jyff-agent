@@ -7,7 +7,7 @@ import {
 	BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
 	BLACKBOARD_SOURCE_MAX_ITEMS,
 	RunStore,
-} from "../../src/run-store.js";
+} from "../../src/persistence/run-store.js";
 
 const roots: string[] = [];
 afterEach(async () => {

@@ -8,7 +8,7 @@
 	},
 	"dependencies": {
 		"@ctf-agent/platform": "workspace:*",
-		"@ctf-agent/project": "workspace:*",
+		"@ctf-agent/core": "workspace:*",
 		"@ctf-agent/webui": "workspace:*",
 		"@earendil-works/pi-ai": "^0.82.1"
 	}

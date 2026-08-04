@@ -1,5 +1,5 @@
 {
-	"name": "@ctf-agent/project",
+	"name": "@ctf-agent/core",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",

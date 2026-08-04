@@ -5,7 +5,7 @@ import {
 	BLACKBOARD_SOURCE_MAX_ITEMS,
 	type BlackboardSummary,
 	type RunStore,
-} from "./run-store.ts";
+} from "../persistence/run-store.ts";
 
 export const BLACKBOARD_TOOL_MAX_CHARACTERS = 64_000;
 export const BLACKBOARD_INJECTION_MAX_CHARACTERS = 16_000;

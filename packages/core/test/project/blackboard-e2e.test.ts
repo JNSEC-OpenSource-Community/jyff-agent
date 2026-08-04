@@ -6,7 +6,7 @@ import type { Sandbox } from "@ctf-agent/sandbox";
 import type { AgentOptions } from "@earendil-works/pi-agent-core";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { afterAll, describe, expect, it } from "vitest";
-import { Project } from "../../src/project.js";
+import { Project } from "../../src/project/project.js";
 import { testPlatform } from "../fake-platform.ts";
 
 const cleanupRoots: string[] = [];

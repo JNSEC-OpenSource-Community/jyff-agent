@@ -7,6 +7,6 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"@ctf-agent/project": "workspace:*"
+		"@ctf-agent/core": "workspace:*"
 	}
 }

@@ -2,13 +2,13 @@
 // CLI: --only <id> 只跑单题(便于冒烟);不传则跑全部未解决题目。
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform";
 import {
 	ContestRunner,
 	Project,
 	type ProjectConfig,
 	parseProjectConfig,
-} from "@ctf-agent/project";
+} from "@ctf-agent/core";
+import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform";
 import type { AgentOptions } from "@earendil-works/pi-agent-core";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { getModel, type Model } from "@earendil-works/pi-ai/compat";

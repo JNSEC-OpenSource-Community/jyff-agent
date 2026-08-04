@@ -1,8 +1,8 @@
 import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents";
 import type { ChallengeSummary } from "@ctf-agent/platform";
 import type { AgentOptions } from "@earendil-works/pi-agent-core";
-import type { CreateSolverOptions, Project } from "./project.ts";
-import type { RunSource } from "./run-store.ts";
+import type { RunSource } from "../persistence/run-store.ts";
+import type { CreateSolverOptions, Project } from "../project/project.ts";
 import {
 	ChallengeTimeoutError,
 	hasTerminalSubmission,

@@ -8,7 +8,7 @@ RUN corepack pnpm config set registry https://registry.npmmirror.com
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY packages/agents/package.json packages/agents/package.json
 COPY packages/platform/package.json packages/platform/package.json
-COPY packages/project/package.json packages/project/package.json
+COPY packages/core/package.json packages/core/package.json
 COPY packages/sandbox/package.json packages/sandbox/package.json
 COPY packages/webui/package.json packages/webui/package.json
 COPY examples/ctf/package.json examples/ctf/package.json
@@ -16,7 +16,7 @@ RUN corepack pnpm install --frozen-lockfile
 
 COPY packages/agents packages/agents
 COPY packages/platform packages/platform
-COPY packages/project packages/project
+COPY packages/core packages/core
 COPY packages/sandbox packages/sandbox
 COPY packages/webui packages/webui
 COPY examples/ctf examples/ctf

@@ -376,7 +376,7 @@ origin 最多 8000 字符；Evidence/Opportunity 描述最多 4000 字符；每�
 ### 5.1 文件变更清单
 
 ```
-packages/project/src/
+packages/core/src/
 ├── blackboard.ts             ← 黑板序列化与 Agent tools
 ├── run-store.ts              ← SQLite 表、记录类型与读写方法
 ├── project.ts                ← 创建 origin、注入快照和 tools
@@ -576,7 +576,7 @@ SubAgent 返回后，Main Agent 调用 `concludeOpportunity()`，将 finding 写
 
 ## 附录：类型导出清单
 
-`packages/project/src/index.ts` 导出：
+`packages/core/src/index.ts` 导出：
 
 ```
 EvidenceRecord
@@ -585,7 +585,7 @@ OpportunityStatus
 BlackboardSummary
 ```
 
-`packages/project/src/blackboard.ts` 导出：
+`packages/core/src/collaboration/blackboard.ts` 导出：
 
 ```
 serializeBlackboard()

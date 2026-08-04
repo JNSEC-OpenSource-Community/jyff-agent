@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform";
 import {
 	ContestScheduler,
 	Project,
 	type ProjectConfig,
 	parseProjectConfig,
-} from "@ctf-agent/project";
+} from "@ctf-agent/core";
+import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform";
 import { startWebUi } from "@ctf-agent/webui";
 import { loadModelEnvironment } from "./agent-config.ts";
 

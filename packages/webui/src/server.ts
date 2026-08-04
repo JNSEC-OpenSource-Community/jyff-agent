@@ -5,7 +5,7 @@ import {
 	type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
-import { ContestSchedulerError } from "@ctf-agent/project";
+import { ContestSchedulerError } from "@ctf-agent/core";
 import { buildSessionMarkdown } from "./export.ts";
 import { buildChallengeDetails, buildDashboardSnapshot } from "./model.ts";
 import type {

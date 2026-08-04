@@ -4,7 +4,7 @@ import {
 	extractThinkingText,
 	MAX_ASSISTANT_TEXT_CHARS,
 	MAX_REASONING_CHARS,
-} from "../../src/thinking.js";
+} from "../../src/agent/thinking.js";
 
 describe("extractThinkingText(从 message_end 消息提取整 turn 思考块)", () => {
 	it("多 thinking 块按 \\n 合并(整 turn 聚合,天然每 turn 一条)", () => {

@@ -10,7 +10,7 @@
 | `@ctf-agent/agents` | BaseAgent 的 Pi runtime/session/skills，以及继承它的 `CtfSolverAgent` 和单题 CTF 工具；不依赖 Project/SQLite |
 | `@ctf-agent/platform` | 平台插件、比赛、题目与单题 capability 契约 |
 | `@ctf-agent/sandbox` | Docker 生命周期、Docker-backed Pi `ExecutionEnv`、RTK |
-| `@ctf-agent/project` | Project、RunStore、blackboard、runner、scheduler 与遥测 |
+| `@ctf-agent/core` | Project、RunStore、blackboard、runner、scheduler 与遥测 |
 | `@ctf-agent/webui` | 控制面 HTTP/SSE 与 UI |
 
 依赖方向为 `project -> agents -> platform/sandbox`，不存在反向

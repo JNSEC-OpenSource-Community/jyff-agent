@@ -115,7 +115,7 @@ pnpm webui              # 启动实时控制台
 packages/agents/             # BaseAgent、Pi session/skills、CtfSolverAgent 与题目工具
 packages/platform/           # 平台契约及 CTFd/GZCTF 插件
 packages/sandbox/            # Docker sandbox 与 Pi ExecutionEnv
-packages/project/            # Project、SQLite、blackboard、runner、scheduler
+packages/core/            # Project、SQLite、blackboard、runner、scheduler
 
 packages/webui/
 ├── src/
@@ -161,7 +161,7 @@ WebUI 应嵌入持有 `Project` 的控制面进程，不应为每个 Solver 沙�
 标记为 `interrupted`。`examples/ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
 
 ```ts
-import { ContestScheduler } from "@ctf-agent/project"
+import { ContestScheduler } from "@ctf-agent/core"
 import { startWebUi } from "@ctf-agent/webui"
 
 const scheduler = new ContestScheduler(project, {
@@ -194,7 +194,7 @@ TLS 与认证，不要直接把端口暴露到公网。
 ### 单题解题
 
 ```ts
-import { Project } from "@ctf-agent/project"
+import { Project } from "@ctf-agent/core"
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 
 const project = await Project.open({
@@ -223,7 +223,7 @@ try {
 ### 批量并发
 
 ```ts
-import { ContestRunner } from "@ctf-agent/project"
+import { ContestRunner } from "@ctf-agent/core"
 
 const runner = new ContestRunner(project, {
   maxConcurrent: 4,

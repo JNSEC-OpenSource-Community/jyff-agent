@@ -16,7 +16,7 @@ import type {
 } from "@ctf-agent/sandbox";
 import type { AgentOptions } from "@earendil-works/pi-agent-core";
 import { afterEach, describe, expect, it } from "vitest";
-import { Project } from "../../src/project.js";
+import { Project } from "../../src/project/project.js";
 import { testPlatform } from "../fake-platform.ts";
 
 const roots: string[] = [];

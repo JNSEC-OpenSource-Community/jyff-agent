@@ -16,8 +16,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	ContestScheduler,
 	type ContestSchedulerError,
-} from "../../src/contest-scheduler.ts";
-import { Project } from "../../src/project.ts";
+} from "../../src/orchestration/contest-scheduler.ts";
+import { Project } from "../../src/project/project.ts";
 import { type TestChallenge, TestPlatformPlugin } from "../fake-platform.ts";
 
 const roots: string[] = [];

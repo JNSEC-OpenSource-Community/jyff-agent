@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createBlackboardTools,
 	serializeBlackboard,
-} from "../../src/blackboard.js";
-import type { RunStore } from "../../src/run-store.js";
+} from "../../src/collaboration/blackboard.js";
+import type { RunStore } from "../../src/persistence/run-store.js";
 
 describe("serializeBlackboard", () => {
 	it("正确的黑板输出包含所有段", () => {
