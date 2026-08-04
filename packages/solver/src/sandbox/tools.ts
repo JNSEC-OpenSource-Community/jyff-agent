@@ -20,8 +20,13 @@ const FILE_HELPER = String.raw`
 import json, sys
 from pathlib import Path, PurePosixPath
 
-root = Path('/workspace').resolve()
 payload = json.loads(sys.stdin.read())
+root = Path(payload.get('root', '/workspace')).resolve()
+workspace = Path('/workspace').resolve()
+try:
+    root.relative_to(workspace)
+except ValueError:
+    raise ValueError('文件工具根目录必须位于 /workspace')
 relative = payload.get('path', '')
 if not isinstance(relative, str) or not relative or relative.startswith('/') or '\\' in relative:
     raise ValueError('路径必须是 workspace 内的相对 POSIX 路径')
@@ -82,11 +87,16 @@ else:
 
 /** 文件操作通过 docker exec + Python 完成，宿主机只负责持有 bind mount。 */
 class ContainerFiles {
-  constructor(private readonly sandbox: Sandbox) { }
+  constructor(
+    private readonly sandbox: Sandbox,
+    private readonly root = "/workspace",
+  ) {
+    if (!validWorkspaceRoot(root)) throw new Error(`无效的 workspace 根目录: ${root}`)
+  }
 
   private async run(payload: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
     const execution = await this.sandbox.exec(["python3", "-c", FILE_HELPER], {
-      input: JSON.stringify(payload),
+      input: JSON.stringify({ ...payload, root: this.root }),
       signal,
       timeoutMs: 10_000,
     })
@@ -127,11 +137,20 @@ export interface SolverToolOptions {
     challengeId: string
     runId: string
   }
+  /** 文件工具的相对根目录以及 bash 默认目录。 */
+  workspaceRoot?: string
+  /** 只返回指定名称的工具，用于构造权限更小的辅助 Agent。 */
+  allowedTools?: readonly string[]
 }
 
 /** 每个 tool closure 都捕获当前题 capability，调用方无法通过参数越题。 */
 export function createSolverTools(options: SolverToolOptions): AgentTool[] {
-  const files = new ContainerFiles(options.sandbox)
+  const workspaceRoot = options.workspaceRoot ?? "/workspace"
+  if (!validWorkspaceRoot(workspaceRoot)) throw new Error(`无效的 workspace 根目录: ${workspaceRoot}`)
+  const files = new ContainerFiles(options.sandbox, workspaceRoot)
+  const sharedFiles = workspaceRoot === "/workspace"
+    ? files
+    : new ContainerFiles(options.sandbox)
   const rtk = new RtkRewriter(options.sandbox)
   const tools: AgentTool[] = [
     {
@@ -143,7 +162,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       async execute(_id, params, signal) {
         const input = params as { command: string }
         const command = await rtk.rewrite(input.command, signal)
-        const output = await options.sandbox.exec(["bash", "-lc", command], { signal })
+        const output = await options.sandbox.exec(["bash", "-lc", command], { signal, workdir: workspaceRoot })
         return result({ command, stdout: output.stdout, stderr: output.stderr })
       },
     },
@@ -209,7 +228,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
         const input = params as { attachmentId: string }
         const downloaded = await options.capability.downloadAttachment(input.attachmentId)
         // 附件名来自平台，但仍通过同一容器路径校验逻辑写入。
-        const saved = await files.writeBytes(`attachments/${downloaded.attachment.name}`, downloaded.content, signal)
+        const saved = await sharedFiles.writeBytes(`attachments/${downloaded.attachment.name}`, downloaded.content, signal)
         return result({ attachment: downloaded.attachment, ...saved })
       },
     },
@@ -256,7 +275,18 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
     }))
   }
 
-  return tools
+  if (!options.allowedTools) return tools
+  const allowed = new Set(options.allowedTools)
+  return tools.filter((tool) => allowed.has(tool.name))
 }
 
 export { ContainerFiles, errorText }
+
+function validWorkspaceRoot(path: string): boolean {
+  if (path === "/workspace") return true
+  if (!path.startsWith("/workspace/")) return false
+  return path
+    .slice("/workspace/".length)
+    .split("/")
+    .every((segment) => Boolean(segment) && segment !== "." && segment !== "..")
+}

@@ -5,6 +5,17 @@ import type { RunStore } from "../project/run-store.ts"
 import { compactMessages, convertSolverMessages, shouldCompact, type CompactionOptions } from "./compaction.ts"
 import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "../skills/project-skills.ts"
 import { createSolverTools } from "../sandbox/tools.ts"
+import {
+  createSubagentManagerTools,
+  SubagentManager,
+  type SubagentFeatureOptions,
+} from "./subagent.ts"
+
+const SUBAGENT_SYSTEM_GUIDANCE = [
+  "Use SubAgents for independent, parallel CTF investigations when multiple plausible paths exist.",
+  "Spawn bounded tasks, continue useful main-line work while they run, then wait for and independently verify their reports.",
+  "Only the main solver may integrate blackboard findings or submit a flag.",
+].join(" ")
 
 export interface SolverIdentity {
   projectId: string
@@ -21,6 +32,7 @@ export interface CreateCtfSolverAgentOptions {
   features?: {
     skills?: readonly AgentSkill[]
     compaction?: false | CompactionOptions
+    subagents?: false | SubagentFeatureOptions
   }
   blackboard?: {
     runStore: RunStore
@@ -56,6 +68,7 @@ export class CtfSolverAgent extends Agent {
   private closing?: Promise<void>
   private readonly compaction: CompactionOptions | false
   private compacting?: Promise<AgentMessage[] | undefined>
+  readonly subagents?: SubagentManager
 
   private constructor(options: CreateCtfSolverAgentOptions) {
     // 派生类在 super() 前不能访问 this；callback 会在构造结束后才可能被工具调用。
@@ -65,6 +78,17 @@ export class CtfSolverAgent extends Agent {
     let autoCompact: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]> = async (messages) => messages
     const skills = options.features?.skills ?? []
     const loadSkill = createLoadSkillTool(skills)
+    const subagents = options.features?.subagents
+      ? new SubagentManager({
+          runId: options.identity.runId,
+          challenge: options.identity.challenge,
+          capability: options.capability,
+          sandbox: options.sandbox,
+          parentAgent: options.agent,
+          skills,
+          feature: options.features.subagents,
+        })
+      : undefined
     const tools = [
       ...createSolverTools({
         capability: options.capability,
@@ -73,6 +97,7 @@ export class CtfSolverAgent extends Agent {
         blackboard: options.blackboard,
       }),
       ...(loadSkill ? [loadSkill] : []),
+      ...(subagents ? createSubagentManagerTools(subagents) : []),
     ]
     const {
       initialState,
@@ -100,7 +125,11 @@ export class CtfSolverAgent extends Agent {
       },
       initialState: {
         ...initialState,
-        systemPrompt: [initialState?.systemPrompt, catalog].filter(Boolean).join("\n\n"),
+        systemPrompt: [
+          initialState?.systemPrompt,
+          catalog,
+          subagents ? SUBAGENT_SYSTEM_GUIDANCE : "",
+        ].filter(Boolean).join("\n\n"),
         tools,
       },
     })
@@ -112,6 +141,7 @@ export class CtfSolverAgent extends Agent {
     this.sandbox = options.sandbox
     this.onClosed = options.onClosed
     this.compaction = options.features?.compaction === false ? false : (options.features?.compaction ?? {})
+    this.subagents = subagents
     markTerminal = (submission) => {
       this.finalSubmission = submission
       this.closeReason = "submitted"
@@ -188,6 +218,13 @@ export class CtfSolverAgent extends Agent {
 
   private async performClose(reason: SolverCloseReason, error?: string): Promise<void> {
     const cleanupErrors: string[] = []
+    if (this.subagents) {
+      try {
+        await this.subagents.close()
+      } catch (cleanupError) {
+        cleanupErrors.push(`SubAgent 关闭失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`)
+      }
+    }
     if (this.capability.instance) {
       try {
         await this.capability.instance.destroy()

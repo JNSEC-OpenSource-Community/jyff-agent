@@ -10,8 +10,16 @@ export interface CommandResult {
 
 export interface Sandbox {
   readonly id: string
-  exec(args: string[], options?: { input?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<CommandResult>
+  exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult>
   close(): Promise<void>
+}
+
+export interface SandboxExecOptions {
+  input?: string
+  signal?: AbortSignal
+  timeoutMs?: number
+  /** 容器内工作目录；仅接受调用方已经验证过的绝对容器路径。 */
+  workdir?: string
 }
 
 export interface DockerSandboxOptions {
@@ -111,10 +119,13 @@ export class DockerSandbox implements Sandbox {
     return new DockerSandbox(id)
   }
 
-  async exec(args: string[], options?: { input?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     if (this.closed) throw new Error("Docker sandbox 已关闭")
     if (args.length === 0) throw new Error("Docker exec 参数不能为空")
-    const result = await execute(["exec", "-i", this.id, ...args], options)
+    const dockerArgs = ["exec", "-i"]
+    if (options?.workdir) dockerArgs.push("--workdir", options.workdir)
+    dockerArgs.push(this.id, ...args)
+    const result = await execute(dockerArgs, options)
     if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || `容器命令退出码 ${result.code}`)
     return result
   }

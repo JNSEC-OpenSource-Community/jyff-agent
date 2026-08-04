@@ -12,6 +12,7 @@ import {
 import { CtfSolverAgent, type SolverCloseDetails } from "../agent/solver-agent.ts"
 import { discoverProjectSkills, materializeSkills, type AgentSkill } from "../skills/project-skills.ts"
 import type { CompactionOptions } from "../agent/compaction.ts"
+import type { SubagentFeatureOptions } from "../agent/subagent.ts"
 import type { Announcement, ChallengeSummary, ContestOverview, PlatformPlugin, PlatformProject, RemoteEnvironment } from "../platform/types.ts"
 import {
   RunStore,
@@ -55,6 +56,8 @@ export interface ProjectTelemetryOptions {
 export interface CreateSolverOptions {
   agent: AgentOptions
   compaction?: false | CompactionOptions
+  /** 显式启用同一 Sandbox 内的并行辅助 Agent；缺省保持单 Agent 行为。 */
+  subagents?: false | SubagentFeatureOptions
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource
@@ -263,7 +266,7 @@ export class Project {
             ],
           },
         },
-        features: { skills, compaction: options.compaction },
+        features: { skills, compaction: options.compaction, subagents: options.subagents },
         blackboard: { runStore: this.runStore, challengeId, runId },
         onClosed: async (details) => {
           this.solvers.delete(solver)

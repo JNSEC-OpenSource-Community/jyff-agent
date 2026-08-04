@@ -22,6 +22,7 @@ export interface ContestRunnerOptions {
   /** 为每个题目和 attempt 创建独立 AgentOptions。 */
   createAgentOptions(context: ContestRunnerAttemptContext): AgentOptions | Promise<AgentOptions>
   compaction?: CreateSolverOptions["compaction"]
+  subagents?: CreateSolverOptions["subagents"]
   prompt?: string | ((context: ContestRunnerAttemptContext) => string | Promise<string>)
   selectChallenge?: (challenge: ChallengeSummary) => boolean | Promise<boolean>
 }
@@ -216,6 +217,7 @@ export class ContestRunner {
           solver = await this.project.createSolver(challenge.id, {
             agent,
             compaction: this.options.compaction,
+            subagents: this.options.subagents,
             attempt,
           })
           runIds.push(solver.runId)

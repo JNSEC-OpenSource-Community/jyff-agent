@@ -15,6 +15,7 @@ export interface ContestSchedulerOptions {
   retryDelayMs?: number
   createAgentOptions(context: SchedulerAttemptContext): AgentOptions | Promise<AgentOptions>
   compaction?: CreateSolverOptions["compaction"]
+  subagents?: CreateSolverOptions["subagents"]
   prompt?: string | ((context: SchedulerAttemptContext) => string | Promise<string>)
   availability?: () => SchedulerAvailability
   available?: boolean
@@ -326,6 +327,7 @@ export class ContestScheduler {
       solver = await this.project.createSolver(active.challenge.id, {
         agent,
         compaction: this.options.compaction,
+        subagents: this.options.subagents,
         attempt: active.attempt,
         source: active.source,
       })

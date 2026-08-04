@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest"
 import type { ChallengeCapability, FlagSubmission } from "../../src/platform/types.js"
-import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import type { CommandResult, Sandbox, SandboxExecOptions } from "../../src/sandbox/docker-sandbox.js"
 import { createSolverTools } from "../../src/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {
   readonly id = "sandbox"
-  readonly calls: Array<{ args: string[]; input?: string }> = []
+  readonly calls: Array<{ args: string[]; input?: string; workdir?: string }> = []
   closed = false
 
-  async exec(args: string[], options?: { input?: string }): Promise<CommandResult> {
-    this.calls.push({ args, input: options?.input })
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
+    this.calls.push({ args, input: options?.input, workdir: options?.workdir })
     if (args[0] === "rtk" && args[1] === "--version") return { code: 0, stdout: "rtk 1", stderr: "" }
     if (args[0] === "rtk" && args[1] === "rewrite") return { code: 0, stdout: "rg MOCK", stderr: "" }
     if (args[0] === "bash") return { code: 0, stdout: "sandbox output", stderr: "" }
@@ -72,5 +72,20 @@ describe("Solver tools", () => {
     const submit = tool("ctf_submit_flag", createSolverTools({ capability: capability(), sandbox: new FakeSandbox(), onTerminalSubmission: (value) => { submission = value } }))
     await submit.execute("submit", { flag: "FLAG" })
     expect(submission).toMatchObject({ status: "accepted" })
+  })
+
+  it("allowedTools 和 workspaceRoot 为 Worker 提供最小工具集与默认目录", async () => {
+    const sandbox = new FakeSandbox()
+    const tools = createSolverTools({
+      capability: capability(true),
+      sandbox,
+      onTerminalSubmission: () => {},
+      workspaceRoot: "/workspace/subagents/worker-1",
+      allowedTools: ["bash", "read", "ctf_instance_status"],
+    })
+
+    expect(tools.map((item) => item.name)).toEqual(["bash", "read", "ctf_instance_status"])
+    await tool("bash", tools).execute("bash", { command: "pwd" })
+    expect(sandbox.calls.slice(-1)[0]).toMatchObject({ workdir: "/workspace/subagents/worker-1" })
   })
 })

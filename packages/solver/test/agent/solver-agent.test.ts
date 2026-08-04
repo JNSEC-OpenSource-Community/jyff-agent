@@ -109,4 +109,30 @@ describe("CtfSolverAgent 强制清理", () => {
     expect(solver.state.thinkingLevel).toBe("off")
     await solver.close("manual")
   })
+
+  it("仅在显式启用时向主 Agent 注入 SubAgent 管理工具", async () => {
+    const log: string[] = []
+    const capability = challengeCapability(log)
+    const solver = await CtfSolverAgent.create({
+      identity: {
+        projectId: "project",
+        runId: "run-subagents",
+        workspace: "workspace",
+        challenge: await capability.getInfo(),
+      },
+      capability,
+      sandbox: new OrderedSandbox(log),
+      agent,
+      features: { subagents: {} },
+    })
+
+    expect(solver.subagents).toBeDefined()
+    expect(solver.state.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
+      "ctf_subagent_spawn",
+      "ctf_subagent_list",
+      "ctf_subagent_wait",
+      "ctf_subagent_cancel",
+    ]))
+    await solver.close("manual")
+  })
 })
