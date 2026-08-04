@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0a0d0c">
     <meta name="description" content="CTF Agent 实时控制台">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0d0c'/%3E%3Cpath d='M8 9h16v4H12v6h12v4H8z' fill='%2348e08b'/%3E%3C/svg%3E">
     <title>CTF Agent · Contest Console</title>
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
@@ -34,6 +35,18 @@
           <span id="connection-label">正在连接</span>
         </div>
         <span class="last-updated" id="last-updated">尚未同步</span>
+        <button
+          class="icon-button"
+          id="platform-settings-button"
+          type="button"
+          aria-label="比赛平台设置"
+          aria-haspopup="dialog"
+          title="比赛平台设置"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v14H4zM8 9h8M8 13h5"></path>
+          </svg>
+        </button>
         <button
           class="icon-button"
           id="settings-button"
@@ -286,6 +299,94 @@
       </div>
     </dialog>
 
+    <dialog class="model-dialog" id="platform-dialog" aria-labelledby="platform-dialog-title">
+      <div class="model-shell">
+        <header class="model-header">
+          <div>
+            <p class="section-index">CONTEST UPLINK / PLUGIN SETUP</p>
+            <h2 id="platform-dialog-title">比赛平台设置</h2>
+            <p>选择平台插件，测试凭据后保存并建立比赛连接。</p>
+          </div>
+          <button class="icon-button" id="close-platform-settings" type="button" aria-label="关闭比赛平台设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+          </button>
+        </header>
+
+        <div class="model-status" id="platform-status" role="status">
+          <span class="model-status-dot" aria-hidden="true"></span>
+          <div>
+            <strong id="platform-status-title">正在读取配置…</strong>
+            <small id="platform-status-description">等待控制面响应</small>
+          </div>
+        </div>
+
+        <form class="model-form" id="platform-form">
+          <div class="model-form-grid">
+            <label class="model-field">
+              <span>项目 ID</span>
+              <input id="platform-project-id" maxlength="128" autocomplete="off" placeholder="summer-ctf-2026" required>
+              <small>用于本地工作区和运行记录归档。</small>
+            </label>
+            <label class="model-field">
+              <span>比赛名称</span>
+              <input id="platform-project-name" maxlength="256" autocomplete="off" placeholder="Summer CTF 2026" required>
+              <small>显示在控制台顶部，可与平台名称不同。</small>
+            </label>
+            <label class="model-field">
+              <span>平台插件</span>
+              <select id="platform-plugin" required></select>
+              <small id="platform-plugin-description">选择比赛平台。</small>
+            </label>
+            <label class="model-field">
+              <span>认证方式</span>
+              <select id="platform-auth" required></select>
+              <small>密钥单独保存在本地密钥文件，不写入比赛配置。</small>
+            </label>
+          </div>
+
+          <div class="model-form-grid" id="platform-fields"></div>
+          <div class="model-form-grid" id="platform-secrets"></div>
+
+          <div class="model-form-grid">
+            <label class="model-field model-field-wide">
+              <span>Solver Docker 镜像</span>
+              <input id="platform-sandbox-image" maxlength="512" autocomplete="off" value="ctf-agent-solver:latest" required>
+              <small>题目 Agent 的隔离执行环境；镜像内提供 Pi 文件工具和终端工具。</small>
+            </label>
+            <label class="model-field">
+              <span>网络模式</span>
+              <select id="platform-network-mode">
+                <option value="bridge">bridge</option>
+                <option value="none">none</option>
+                <option value="host">host</option>
+              </select>
+              <small>远程靶机通常需要 bridge；host 会降低隔离性。</small>
+            </label>
+            <label class="model-field">
+              <span>特权容器</span>
+              <input id="platform-privileged" type="checkbox" class="model-checkbox">
+              <small>仅题目确实需要底层系统能力时开启。</small>
+            </label>
+          </div>
+
+          <aside class="model-security-note">
+            <span aria-hidden="true">LOCAL SECRET</span>
+            <p>凭据不会回传到浏览器；界面只显示是否已配置。保存前会用临时平台连接验证配置。</p>
+          </aside>
+
+          <p class="model-form-error" id="platform-form-error" role="alert" hidden></p>
+
+          <footer class="model-form-actions">
+            <button class="outline-button" id="test-platform-settings" type="button">测试连接</button>
+            <button class="control-button model-save" id="save-platform-settings" type="submit">
+              <span class="save-indicator" aria-hidden="true"></span>
+              <span id="save-platform-settings-label">保存并连接</span>
+            </button>
+          </footer>
+        </form>
+      </div>
+    </dialog>
+
     <dialog class="model-dialog" id="model-dialog" aria-labelledby="model-dialog-title">
       <div class="model-shell">
         <header class="model-header">
@@ -431,31 +532,6 @@
               <small id="model-passthrough-hint">勾选后自定义 Base URL 场景全档位同名直通（xhigh/max 真实透传），适用于支持 reasoning_effort 的中转站；仅自定义 Base URL 时有效。</small>
             </label>
 
-            <div class="model-field model-field-wide">
-              <label for="model-platform-token">
-                <span>Platform Token <em>可选</em></span>
-              </label>
-              <div class="secret-control">
-                <input
-                  id="model-platform-token"
-                  name="platformToken"
-                  type="password"
-                  maxlength="8192"
-                  autocomplete="new-password"
-                  placeholder="输入新的平台 token"
-                >
-                <button class="secret-toggle" id="model-platform-token-toggle" type="button" aria-label="显示 Platform Token">
-                  SHOW
-                </button>
-              </div>
-              <div class="secret-meta">
-                <small id="model-platform-token-state">尚未配置平台 token</small>
-                <label class="clear-secret" id="clear-platform-token-label" hidden>
-                  <input id="clear-platform-token" type="checkbox">
-                  <span>移除现有 token</span>
-                </label>
-              </div>
-            </div>
           </div>
 
           <aside class="model-security-note">

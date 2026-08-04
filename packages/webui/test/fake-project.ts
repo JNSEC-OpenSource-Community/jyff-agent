@@ -262,13 +262,10 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
 		reasoningEffort: "max",
 		passthroughThinking: false,
 		supportedThinkingLevels: ["low", "medium", "high", "max"],
-		platformTokenConfigured: false,
-		platformTokenSource: "none",
 		configured: false,
 		unavailableReason: "missing model configuration",
 	};
 	lastApiKey: string | undefined;
-	lastPlatformToken: string | undefined;
 
 	snapshot(): ModelConfigurationView {
 		return structuredClone(this.value);
@@ -279,9 +276,6 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
 	): Promise<ModelConfigurationView> {
 		if (configuration.apiKey) this.lastApiKey = configuration.apiKey;
 		if (configuration.clearApiKey) this.lastApiKey = undefined;
-		if (configuration.platformToken)
-			this.lastPlatformToken = configuration.platformToken;
-		if (configuration.clearPlatformToken) this.lastPlatformToken = undefined;
 		const apiKeyConfigured = Boolean(this.lastApiKey);
 		this.value = {
 			provider: configuration.provider,
@@ -295,8 +289,6 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
 			reasoningEffort: configuration.reasoningEffort,
 			passthroughThinking: configuration.passthroughThinking,
 			supportedThinkingLevels: this.value.supportedThinkingLevels,
-			platformTokenConfigured: Boolean(this.lastPlatformToken),
-			platformTokenSource: this.lastPlatformToken ? "webui" : "none",
 			configured: apiKeyConfigured && Boolean(configuration.modelId),
 			...(!apiKeyConfigured || !configuration.modelId
 				? { unavailableReason: "missing model configuration" }

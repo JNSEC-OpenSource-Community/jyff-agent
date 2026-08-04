@@ -1,10 +1,15 @@
-export { buildChallengeDetails, buildDashboardSnapshot } from "./model.ts";
+export {
+	buildChallengeDetails,
+	buildDashboardSnapshot,
+	buildEmptyDashboardSnapshot,
+} from "./model.ts";
 export type { WebUiOptions, WebUiServer } from "./server.ts";
 export { startWebUi } from "./server.ts";
 export type {
 	ChallengeDetails,
 	DashboardChallenge,
 	DashboardChallengeStatus,
+	DashboardControlPlane,
 	DashboardModelConfiguration,
 	DashboardProject,
 	DashboardRun,

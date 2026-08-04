@@ -5,6 +5,10 @@ import type {
 	ChallengeSummary,
 	ContestOverview,
 	ContestSchedulerSnapshot,
+	ControlPlaneSetupSnapshot,
+	ControlPlaneSnapshot,
+	PlatformConnectionTest,
+	ProjectConfig,
 	RemoteEnvironment,
 	RunEvent,
 	RunFilter,
@@ -63,6 +67,7 @@ export interface DashboardSnapshot {
 	announcements: Announcement[];
 	environments: RemoteEnvironment[];
 	scheduler: ContestSchedulerSnapshot | null;
+	controlPlane: ControlPlaneSnapshot | null;
 }
 
 export interface DashboardRun extends RunRecord {
@@ -115,6 +120,22 @@ export interface DashboardScheduler {
 	cancel(challengeId: string): Promise<ContestSchedulerSnapshot>;
 }
 
+export interface DashboardControlPlane {
+	snapshot(): ControlPlaneSnapshot;
+	setupSnapshot(): ControlPlaneSetupSnapshot;
+	currentProject(): DashboardProject | undefined;
+	currentScheduler(): DashboardScheduler | undefined;
+	testConnection(input: {
+		config: ProjectConfig;
+		secrets?: Readonly<Record<string, string | undefined>>;
+	}): Promise<PlatformConnectionTest>;
+	applySetup(input: {
+		config: ProjectConfig;
+		secrets?: Readonly<Record<string, string | undefined>>;
+	}): Promise<ControlPlaneSnapshot>;
+	connect(): Promise<ControlPlaneSnapshot>;
+}
+
 export interface ModelConfigurationView {
 	provider: string;
 	modelId: string;
@@ -131,8 +152,6 @@ export interface ModelConfigurationView {
 	passthroughThinking: boolean;
 	/** 当前模型实际支持的档位(pi 动态计算;配置不完整时只有 ["off"])。 */
 	supportedThinkingLevels: string[];
-	platformTokenConfigured: boolean;
-	platformTokenSource: "environment" | "webui" | "none";
 	configured: boolean;
 	unavailableReason?: string;
 }
@@ -148,8 +167,6 @@ export interface ModelConfigurationUpdate {
 	passthroughThinking: boolean;
 	apiKey?: string;
 	clearApiKey?: boolean;
-	platformToken?: string;
-	clearPlatformToken?: boolean;
 }
 
 export interface DashboardModelConfiguration {

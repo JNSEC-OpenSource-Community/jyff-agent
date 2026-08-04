@@ -3,6 +3,7 @@ import type {
 	ChallengeDetails,
 	DashboardChallenge,
 	DashboardChallengeStatus,
+	DashboardControlPlane,
 	DashboardProject,
 	DashboardScheduler,
 	DashboardSnapshot,
@@ -20,6 +21,7 @@ const FAILED = new Set<DashboardChallengeStatus>([
 export async function buildDashboardSnapshot(
 	project: DashboardProject,
 	scheduler?: DashboardScheduler,
+	controlPlane?: DashboardControlPlane,
 ): Promise<DashboardSnapshot> {
 	const [overview, listed, announcements, environments] = await Promise.all([
 		project.overview(),
@@ -93,6 +95,39 @@ export async function buildDashboardSnapshot(
 		),
 		environments,
 		scheduler: schedulerSnapshot,
+		controlPlane: controlPlane?.snapshot() ?? null,
+	};
+}
+
+export function buildEmptyDashboardSnapshot(
+	controlPlane: DashboardControlPlane,
+): DashboardSnapshot {
+	const state = controlPlane.snapshot();
+	return {
+		generatedAt: new Date().toISOString(),
+		overview: {
+			id: state.projectId ?? "setup",
+			name:
+				state.projectName ??
+				(state.phase === "degraded" ? "平台连接失败" : "尚未配置比赛"),
+			challenges: 0,
+			announcements: 0,
+		},
+		stats: {
+			total: 0,
+			solved: 0,
+			active: 0,
+			failed: 0,
+			pending: 0,
+			attempts: 0,
+			queued: 0,
+		},
+		challenges: [],
+		categories: [],
+		announcements: [],
+		environments: [],
+		scheduler: null,
+		controlPlane: state,
 	};
 }
 

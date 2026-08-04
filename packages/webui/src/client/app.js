@@ -60,6 +60,8 @@ const state = {
 	currentDetailsFingerprint: null,
 	modelSettingsRequest: 0,
 	modelSettings: null,
+	platformSettingsRequest: 0,
+	platformSettings: null,
 	operationPending: false,
 };
 
@@ -68,6 +70,7 @@ const elements = {
 	connectionLabel: document.querySelector("#connection-label"),
 	lastUpdated: document.querySelector("#last-updated"),
 	settingsButton: document.querySelector("#settings-button"),
+	platformSettingsButton: document.querySelector("#platform-settings-button"),
 	refreshButton: document.querySelector("#refresh-button"),
 	contestName: document.querySelector("#contest-name"),
 	contestMeta: document.querySelector("#contest-meta"),
@@ -134,22 +137,37 @@ const elements = {
 		"#model-passthrough-thinking",
 	),
 	modelPassthroughHint: document.querySelector("#model-passthrough-hint"),
-	modelPlatformToken: document.querySelector("#model-platform-token"),
-	modelPlatformTokenToggle: document.querySelector(
-		"#model-platform-token-toggle",
-	),
-	modelPlatformTokenState: document.querySelector(
-		"#model-platform-token-state",
-	),
-	clearPlatformToken: document.querySelector("#clear-platform-token"),
-	clearPlatformTokenLabel: document.querySelector(
-		"#clear-platform-token-label",
-	),
 	modelFormError: document.querySelector("#model-form-error"),
 	saveModelSettings: document.querySelector("#save-model-settings"),
 	saveModelSettingsLabel: document.querySelector("#save-model-settings-label"),
 	closeModelSettings: document.querySelector("#close-model-settings"),
 	cancelModelSettings: document.querySelector("#cancel-model-settings"),
+	platformDialog: document.querySelector("#platform-dialog"),
+	platformForm: document.querySelector("#platform-form"),
+	platformStatus: document.querySelector("#platform-status"),
+	platformStatusTitle: document.querySelector("#platform-status-title"),
+	platformStatusDescription: document.querySelector(
+		"#platform-status-description",
+	),
+	platformProjectId: document.querySelector("#platform-project-id"),
+	platformProjectName: document.querySelector("#platform-project-name"),
+	platformPlugin: document.querySelector("#platform-plugin"),
+	platformPluginDescription: document.querySelector(
+		"#platform-plugin-description",
+	),
+	platformAuth: document.querySelector("#platform-auth"),
+	platformFields: document.querySelector("#platform-fields"),
+	platformSecrets: document.querySelector("#platform-secrets"),
+	platformSandboxImage: document.querySelector("#platform-sandbox-image"),
+	platformNetworkMode: document.querySelector("#platform-network-mode"),
+	platformPrivileged: document.querySelector("#platform-privileged"),
+	platformFormError: document.querySelector("#platform-form-error"),
+	testPlatformSettings: document.querySelector("#test-platform-settings"),
+	savePlatformSettings: document.querySelector("#save-platform-settings"),
+	savePlatformSettingsLabel: document.querySelector(
+		"#save-platform-settings-label",
+	),
+	closePlatformSettings: document.querySelector("#close-platform-settings"),
 	toastRegion: document.querySelector("#toast-region"),
 };
 
@@ -161,6 +179,7 @@ async function start() {
 	try {
 		applySnapshot(await getJson("/api/snapshot"));
 		void syncModelSettingsSummary();
+		void syncPlatformSettingsSummary();
 	} catch (error) {
 		setConnection("offline", "连接失败");
 		toast(errorMessage(error), true);
@@ -185,6 +204,10 @@ function bindEvents() {
 	});
 	elements.emptyReset.addEventListener("click", resetFilters);
 	elements.settingsButton.addEventListener("click", openModelSettings);
+	elements.platformSettingsButton.addEventListener(
+		"click",
+		openPlatformSettings,
+	);
 	elements.refreshButton.addEventListener("click", refreshPlatform);
 	elements.autoToggle.addEventListener("click", toggleAutoScheduler);
 	elements.detailAction.addEventListener("click", runDetailAction);
@@ -228,20 +251,21 @@ function bindEvents() {
 			syncClearApiKey();
 		}
 	});
-	elements.modelPlatformTokenToggle.addEventListener(
+	elements.platformForm.addEventListener("submit", savePlatformSettings);
+	elements.testPlatformSettings.addEventListener("click", testPlatformSettings);
+	elements.closePlatformSettings.addEventListener(
 		"click",
-		toggleModelPlatformTokenVisibility,
+		closePlatformSettings,
 	);
-	elements.clearPlatformToken.addEventListener(
-		"change",
-		syncClearPlatformToken,
-	);
-	elements.modelPlatformToken.addEventListener("input", () => {
-		if (elements.modelPlatformToken.value) {
-			elements.clearPlatformToken.checked = false;
-			syncClearPlatformToken();
-		}
+	elements.platformDialog.addEventListener("click", (event) => {
+		if (event.target === elements.platformDialog) closePlatformSettings();
 	});
+	elements.platformDialog.addEventListener("close", () => {
+		state.platformSettingsRequest++;
+		clearPlatformSettingsError();
+	});
+	elements.platformPlugin.addEventListener("change", renderPlatformPlugin);
+	elements.platformAuth.addEventListener("change", renderPlatformAuth);
 	elements.modelThinkingEnabled.addEventListener("change", () => {
 		if (!elements.modelThinkingEnabled.checked) return;
 		// 开启思考时若尚未选档位,回落到当前支持档位的第一个
@@ -289,6 +313,10 @@ function applySnapshot(snapshot) {
 	state.snapshot = snapshot;
 	state.generatedAt = snapshot.generatedAt;
 	setConnection("online", "实时连接");
+	elements.platformSettingsButton.classList.toggle(
+		"is-configured",
+		snapshot.controlPlane?.phase === "ready",
+	);
 	renderHeader(snapshot);
 	renderScheduler(snapshot.scheduler);
 	renderStats(snapshot);
@@ -652,6 +680,284 @@ function challengeControl(challenge) {
 	};
 }
 
+async function syncPlatformSettingsSummary() {
+	try {
+		const setup = await getJson("/api/control-plane");
+		state.platformSettings = setup;
+		renderPlatformStatus(setup.state);
+		elements.platformSettingsButton.classList.toggle(
+			"is-configured",
+			setup.state.phase === "ready",
+		);
+		if (setup.state.phase === "unconfigured" && !elements.platformDialog.open) {
+			await openPlatformSettings();
+		}
+	} catch {
+		elements.platformSettingsButton.hidden = true;
+	}
+}
+
+async function openPlatformSettings() {
+	const requestId = ++state.platformSettingsRequest;
+	if (!elements.platformDialog.open) elements.platformDialog.showModal();
+	clearPlatformSettingsError();
+	setPlatformSettingsBusy(true, "正在读取…");
+	setPlatformStatus("loading", "正在读取配置…", "等待控制面响应");
+	try {
+		const setup = await getJson("/api/control-plane");
+		if (requestId !== state.platformSettingsRequest) return;
+		state.platformSettings = setup;
+		renderPlatformSettings(setup);
+	} catch (error) {
+		if (requestId !== state.platformSettingsRequest) return;
+		const message = errorMessage(error);
+		setPlatformStatus("error", "无法读取平台配置", message);
+		showPlatformSettingsError(message);
+	} finally {
+		if (requestId === state.platformSettingsRequest) {
+			setPlatformSettingsBusy(false, "保存并连接");
+		}
+	}
+}
+
+function renderPlatformSettings(setup) {
+	elements.platformProjectId.value = setup.config?.project?.id ?? "ctf-project";
+	elements.platformProjectName.value = setup.config?.project?.name ?? "CTF";
+	elements.platformSandboxImage.value =
+		setup.config?.sandbox?.image ?? "ctf-agent-solver:latest";
+	elements.platformNetworkMode.value =
+		setup.config?.sandbox?.networkMode ?? "bridge";
+	elements.platformPrivileged.checked =
+		setup.config?.sandbox?.privileged === true;
+	elements.platformPlugin.replaceChildren();
+	for (const platform of setup.platforms) {
+		elements.platformPlugin.append(option(platform.id, platform.setup.label));
+	}
+	if (setup.config?.platform?.plugin) {
+		elements.platformPlugin.value = setup.config.platform.plugin;
+	}
+	renderPlatformPlugin();
+	renderPlatformStatus(setup.state);
+}
+
+function selectedPlatform() {
+	return state.platformSettings?.platforms.find(
+		(platform) => platform.id === elements.platformPlugin.value,
+	);
+}
+
+function renderPlatformPlugin() {
+	const platform = selectedPlatform();
+	elements.platformFields.replaceChildren();
+	elements.platformAuth.replaceChildren();
+	if (!platform) {
+		elements.platformPluginDescription.textContent = "没有可配置的平台插件";
+		return;
+	}
+	elements.platformPluginDescription.textContent = platform.setup.description;
+	const storedConfig =
+		state.platformSettings?.config?.platform?.plugin === platform.id
+			? objectData(state.platformSettings.config.platform.config)
+			: {};
+	const config = { ...platform.setup.defaultConfig, ...storedConfig };
+	for (const field of platform.setup.fields) {
+		const label = el("label", "model-field");
+		const title = el("span", "", field.label);
+		const input = document.createElement("input");
+		input.dataset.platformField = field.key;
+		input.type = field.type === "integer" ? "number" : field.type;
+		input.required = field.required;
+		if (field.placeholder) input.placeholder = field.placeholder;
+		if (field.minimum !== undefined) input.min = String(field.minimum);
+		if (field.maximum !== undefined) input.max = String(field.maximum);
+		const value = config[field.key];
+		if (value !== undefined) input.value = String(value);
+		label.append(title, input);
+		elements.platformFields.append(label);
+	}
+	for (const strategy of platform.setup.authStrategies) {
+		elements.platformAuth.append(option(strategy.id, strategy.label));
+	}
+	const matched = platform.setup.authStrategies.find((strategy) =>
+		configContains(config, strategy.config),
+	);
+	if (matched) elements.platformAuth.value = matched.id;
+	renderPlatformAuth();
+}
+
+function renderPlatformAuth() {
+	const platform = selectedPlatform();
+	const strategy = platform?.setup.authStrategies.find(
+		(candidate) => candidate.id === elements.platformAuth.value,
+	);
+	elements.platformSecrets.replaceChildren();
+	if (!strategy) return;
+	for (const secret of strategy.secrets) {
+		const status = state.platformSettings?.secrets?.[secret.name];
+		const label = el("label", "model-field");
+		const title = el("span", "", secret.label);
+		const input = document.createElement("input");
+		input.dataset.platformSecret = secret.name;
+		input.type = secret.type === "text" ? "text" : "password";
+		input.autocomplete = "new-password";
+		input.required = secret.required && !status?.configured;
+		input.placeholder = status?.configured
+			? `已配置（${secretSourceLabel(status.source)}）；留空保持`
+			: "请输入凭据";
+		label.append(title, input);
+		elements.platformSecrets.append(label);
+	}
+}
+
+function platformSetupPayload() {
+	const platform = selectedPlatform();
+	if (!platform) throw new Error("请选择平台插件");
+	const strategy = platform.setup.authStrategies.find(
+		(candidate) => candidate.id === elements.platformAuth.value,
+	);
+	if (!strategy) throw new Error("请选择认证方式");
+	const platformConfig = {
+		...platform.setup.defaultConfig,
+		...strategy.config,
+	};
+	for (const input of elements.platformFields.querySelectorAll(
+		"[data-platform-field]",
+	)) {
+		if (!input.value.trim()) {
+			delete platformConfig[input.dataset.platformField];
+			continue;
+		}
+		platformConfig[input.dataset.platformField] =
+			input.type === "number" ? Number(input.value) : input.value.trim();
+	}
+	const secrets = {};
+	for (const input of elements.platformSecrets.querySelectorAll(
+		"[data-platform-secret]",
+	)) {
+		if (input.value) secrets[input.dataset.platformSecret] = input.value;
+	}
+	return {
+		config: {
+			version: 1,
+			project: {
+				id: elements.platformProjectId.value.trim(),
+				name: elements.platformProjectName.value.trim(),
+			},
+			platform: { plugin: platform.id, config: platformConfig },
+			sandbox: {
+				image: elements.platformSandboxImage.value.trim(),
+				privileged: elements.platformPrivileged.checked,
+				networkMode: elements.platformNetworkMode.value,
+			},
+		},
+		secrets,
+	};
+}
+
+async function testPlatformSettings() {
+	clearPlatformSettingsError();
+	if (!elements.platformForm.reportValidity()) return;
+	setPlatformSettingsBusy(true, "正在测试…");
+	try {
+		const result = await controlPost(
+			"/api/control-plane/test",
+			platformSetupPayload(),
+		);
+		setPlatformStatus(
+			"ready",
+			"平台连接测试成功",
+			`${result.overview.name} · ${result.overview.challenges} 道题`,
+		);
+		toast("平台连接测试成功，配置尚未保存");
+	} catch (error) {
+		const message = errorMessage(error);
+		setPlatformStatus("error", "平台连接测试失败", message);
+		showPlatformSettingsError(message);
+	} finally {
+		setPlatformSettingsBusy(false, "保存并连接");
+	}
+}
+
+async function savePlatformSettings(event) {
+	event.preventDefault();
+	clearPlatformSettingsError();
+	setPlatformSettingsBusy(true, "正在连接…");
+	try {
+		const result = await controlPost(
+			"/api/control-plane/apply",
+			platformSetupPayload(),
+		);
+		state.platformSettings = result.setup;
+		applySnapshot(result.snapshot);
+		closePlatformSettings();
+		toast("比赛平台配置已保存并连接");
+	} catch (error) {
+		const message = errorMessage(error);
+		setPlatformStatus("error", "平台配置未保存", message);
+		showPlatformSettingsError(message);
+	} finally {
+		setPlatformSettingsBusy(false, "保存并连接");
+	}
+}
+
+function renderPlatformStatus(stateView) {
+	if (stateView.phase === "ready") {
+		setPlatformStatus(
+			"ready",
+			"比赛平台已连接",
+			`${stateView.platformId} · ${stateView.projectName}`,
+		);
+	} else if (stateView.phase === "degraded") {
+		setPlatformStatus(
+			"error",
+			"比赛平台连接异常",
+			stateView.lastError ?? "请检查配置后重试",
+		);
+	} else {
+		setPlatformStatus("loading", "比赛平台尚未连接", "请填写并测试配置");
+	}
+}
+
+function setPlatformStatus(kind, title, description) {
+	elements.platformStatus.classList.toggle("is-ready", kind === "ready");
+	elements.platformStatus.classList.toggle("is-error", kind === "error");
+	elements.platformStatusTitle.textContent = title;
+	elements.platformStatusDescription.textContent = description;
+}
+
+function setPlatformSettingsBusy(busy, label) {
+	for (const input of elements.platformForm.elements) input.disabled = busy;
+	elements.savePlatformSettingsLabel.textContent = label;
+	elements.savePlatformSettings.classList.toggle("is-loading", busy);
+	elements.platformForm.setAttribute("aria-busy", String(busy));
+}
+
+function closePlatformSettings() {
+	if (elements.platformDialog.open) elements.platformDialog.close();
+}
+
+function showPlatformSettingsError(message) {
+	elements.platformFormError.hidden = false;
+	elements.platformFormError.textContent = message;
+}
+
+function clearPlatformSettingsError() {
+	elements.platformFormError.hidden = true;
+	elements.platformFormError.textContent = "";
+}
+
+function secretSourceLabel(source) {
+	return source === "environment" ? "环境变量" : "本地密钥存储";
+}
+
+function configContains(value, expected) {
+	if (!expected || typeof expected !== "object") return value === expected;
+	if (!value || typeof value !== "object") return false;
+	return Object.entries(expected).every(([key, child]) =>
+		configContains(value[key], child),
+	);
+}
+
 async function openModelSettings() {
 	const requestId = ++state.modelSettingsRequest;
 	if (!elements.modelDialog.open) elements.modelDialog.showModal();
@@ -694,12 +1000,6 @@ async function saveModelSettings(event) {
 	} else if (elements.modelApiKey.value.trim()) {
 		body.apiKey = elements.modelApiKey.value.trim();
 	}
-	if (elements.clearPlatformToken.checked) {
-		body.clearPlatformToken = true;
-	} else if (elements.modelPlatformToken.value.trim()) {
-		body.platformToken = elements.modelPlatformToken.value.trim();
-	}
-
 	setModelSettingsBusy(true, "正在应用…");
 	try {
 		const result = await controlPost("/api/model-config", body);
@@ -742,23 +1042,6 @@ function renderModelSettings(configuration) {
 	elements.clearApiKey.checked = false;
 	syncClearApiKey();
 	renderThinkingSettings(configuration);
-	elements.modelPlatformToken.value = "";
-	elements.modelPlatformToken.placeholder =
-		configuration.platformTokenConfigured
-			? "已配置；留空则保持现有 token"
-			: "输入新的平台 token";
-	elements.modelPlatformTokenState.textContent =
-		configuration.platformTokenConfigured
-			? `Platform Token 已配置 · ${apiKeySourceLabel(configuration.platformTokenSource)}`
-			: "尚未配置平台 token";
-	elements.modelPlatformTokenState.classList.toggle(
-		"is-configured",
-		configuration.platformTokenConfigured,
-	);
-	elements.clearPlatformTokenLabel.hidden =
-		!configuration.platformTokenConfigured;
-	elements.clearPlatformToken.checked = false;
-	syncClearPlatformToken();
 	elements.settingsButton.classList.toggle(
 		"is-configured",
 		configuration.configured,
@@ -796,15 +1079,11 @@ function setModelSettingsBusy(busy, label) {
 		elements.modelReasoningEffort,
 		elements.modelPassthroughThinking,
 		elements.clearApiKey,
-		elements.clearPlatformToken,
 	]) {
 		input.disabled = busy;
 	}
 	elements.modelApiKey.disabled = busy || elements.clearApiKey.checked;
 	elements.modelApiKeyToggle.disabled = busy;
-	elements.modelPlatformToken.disabled =
-		busy || elements.clearPlatformToken.checked;
-	elements.modelPlatformTokenToggle.disabled = busy;
 	elements.saveModelSettings.disabled = busy;
 	elements.saveModelSettings.classList.toggle("is-loading", busy);
 	elements.saveModelSettingsLabel.textContent = label;
@@ -818,13 +1097,6 @@ function syncClearApiKey() {
 	if (clearing) elements.modelApiKey.value = "";
 }
 
-function syncClearPlatformToken() {
-	const clearing = elements.clearPlatformToken.checked;
-	elements.modelPlatformToken.disabled =
-		clearing || elements.modelForm.getAttribute("aria-busy") === "true";
-	if (clearing) elements.modelPlatformToken.value = "";
-}
-
 function toggleModelApiKeyVisibility() {
 	const visible = elements.modelApiKey.type === "text";
 	elements.modelApiKey.type = visible ? "password" : "text";
@@ -832,16 +1104,6 @@ function toggleModelApiKeyVisibility() {
 	elements.modelApiKeyToggle.setAttribute(
 		"aria-label",
 		visible ? "显示 API Key" : "隐藏 API Key",
-	);
-}
-
-function toggleModelPlatformTokenVisibility() {
-	const visible = elements.modelPlatformToken.type === "text";
-	elements.modelPlatformToken.type = visible ? "password" : "text";
-	elements.modelPlatformTokenToggle.textContent = visible ? "SHOW" : "HIDE";
-	elements.modelPlatformTokenToggle.setAttribute(
-		"aria-label",
-		visible ? "显示 Platform Token" : "隐藏 Platform Token",
 	);
 }
 
@@ -896,14 +1158,6 @@ function resetModelSecretControls() {
 	elements.modelApiKeyToggle.textContent = "SHOW";
 	elements.modelApiKeyToggle.setAttribute("aria-label", "显示 API Key");
 	elements.clearApiKey.checked = false;
-	elements.modelPlatformToken.type = "password";
-	elements.modelPlatformToken.value = "";
-	elements.modelPlatformTokenToggle.textContent = "SHOW";
-	elements.modelPlatformTokenToggle.setAttribute(
-		"aria-label",
-		"显示 Platform Token",
-	);
-	elements.clearPlatformToken.checked = false;
 	clearModelSettingsError();
 }
 

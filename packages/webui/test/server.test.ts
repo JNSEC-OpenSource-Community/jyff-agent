@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startWebUi, type WebUiServer } from "../src/server.ts";
+import type { DashboardControlPlane } from "../src/types.ts";
 import {
 	FakeDashboardProject,
 	FakeDashboardScheduler,
@@ -13,6 +14,111 @@ afterEach(async () => {
 });
 
 describe("WebUI HTTP server", () => {
+	it("未配置时仍可启动，并通过控制面 API 测试和应用平台配置", async () => {
+		let project: FakeDashboardProject | undefined;
+		let phase: "unconfigured" | "ready" = "unconfigured";
+		let appliedConfig: unknown;
+		const snapshot = () => ({
+			phase,
+			configured: phase === "ready",
+			projectId: phase === "ready" ? "demo" : null,
+			projectName: phase === "ready" ? "Demo CTF" : null,
+			platformId: phase === "ready" ? "ctfd" : null,
+			lastError: null,
+			updatedAt: "2026-08-04T00:00:00.000Z",
+		});
+		const controlPlane: DashboardControlPlane = {
+			snapshot,
+			setupSnapshot: () => ({
+				state: snapshot(),
+				config: null,
+				platforms: [
+					{
+						id: "ctfd",
+						setup: {
+							label: "CTFd",
+							description: "test",
+							defaultConfig: { tokenSecret: "CTFD_TOKEN" },
+							fields: [],
+							authStrategies: [],
+						},
+					},
+				],
+				secrets: {},
+			}),
+			currentProject: () => project,
+			currentScheduler: () => undefined,
+			testConnection: async () => ({
+				ok: true,
+				overview: {
+					id: "demo",
+					name: "Demo CTF",
+					challenges: 3,
+					announcements: 1,
+				},
+			}),
+			applySetup: async ({ config }) => {
+				appliedConfig = config;
+				project = new FakeDashboardProject();
+				phase = "ready";
+				return snapshot();
+			},
+			connect: async () => snapshot(),
+		};
+		const server = await startWebUi({
+			controlPlane,
+			host: "127.0.0.1",
+			port: 0,
+			pollIntervalMs: 60_000,
+		});
+		servers.push(server);
+
+		const initial = await fetch(`${server.url}/api/snapshot`);
+		expect(await initial.json()).toMatchObject({
+			overview: { name: "尚未配置比赛", challenges: 0 },
+			controlPlane: { phase: "unconfigured" },
+		});
+		expect((await fetch(`${server.url}/api/challenges/pwn-1`)).status).toBe(
+			503,
+		);
+
+		const config = {
+			version: 1,
+			project: { id: "demo", name: "Demo CTF" },
+			platform: {
+				plugin: "ctfd",
+				config: {
+					baseUrl: "https://demo.ctfd.io",
+					tokenSecret: "CTFD_TOKEN",
+				},
+			},
+			sandbox: {
+				image: "ctf-agent-solver:latest",
+				privileged: false,
+				networkMode: "bridge",
+			},
+		};
+		const tested = await fetch(`${server.url}/api/control-plane/test`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ config, secrets: { CTFD_TOKEN: "secret" } }),
+		});
+		expect(tested.status).toBe(200);
+		expect(await tested.json()).toMatchObject({ ok: true });
+
+		const applied = await fetch(`${server.url}/api/control-plane/apply`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ config, secrets: { CTFD_TOKEN: "secret" } }),
+		});
+		expect(applied.status).toBe(200);
+		expect(appliedConfig).toEqual(config);
+		expect(await applied.json()).toMatchObject({
+			setup: { state: { phase: "ready" } },
+			snapshot: { overview: { name: "Test CTF" } },
+		});
+	});
+
 	it("提供健康检查、静态前端、快照、详情和平台刷新 API", async () => {
 		const project = new FakeDashboardProject();
 		const server = await startWebUi({
@@ -171,14 +277,12 @@ describe("WebUI HTTP server", () => {
 				maxTokens: 4_096,
 				thinkingEnabled: true,
 				reasoningEffort: "high",
-				platformToken: "platform-secret",
 				apiKey,
 			}),
 		});
 		expect(saved.status).toBe(200);
 		const savedText = await saved.text();
 		expect(savedText).not.toContain(apiKey);
-		expect(savedText).not.toContain("platform-secret");
 		expect(JSON.parse(savedText)).toMatchObject({
 			configuration: {
 				provider: "custom-openai",
@@ -188,13 +292,10 @@ describe("WebUI HTTP server", () => {
 				apiKeySource: "webui",
 				thinkingEnabled: true,
 				reasoningEffort: "high",
-				platformTokenConfigured: true,
-				platformTokenSource: "webui",
 				configured: true,
 			},
 		});
 		expect(modelConfiguration.lastApiKey).toBe(apiKey);
-		expect(modelConfiguration.lastPlatformToken).toBe("platform-secret");
 
 		const invalid = await fetch(`${server.url}/api/model-config`, {
 			method: "POST",
