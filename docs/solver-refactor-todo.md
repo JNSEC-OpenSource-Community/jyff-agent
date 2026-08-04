@@ -15,6 +15,8 @@
   container.
 - Package dependencies must remain acyclic. Project orchestration may depend on
   SolverAgent, but SolverAgent must not depend on Project or RunStore.
+- BaseAgent and concrete agents live in the single `@ctf-agent/agents` package;
+  future agent roles extend BaseAgent inside this package.
 
 ## Implementation order
 
@@ -23,7 +25,7 @@
       `@ctf-agent/sandbox`.
 - [x] Implement a Docker-backed Pi `ExecutionEnv` with normalized file,
       execution, abort, timeout, and cleanup errors.
-- [x] Add `@ctf-agent/base-agent` using Pi `AgentHarness` and `Session`.
+- [x] Add BaseAgent using Pi `AgentHarness` and `Session`.
 - [x] Create/open one native Pi JSONL session per run and verify restoration.
 - [x] Migrate skill discovery, diagnostics, and prompt formatting to Pi.
 - [x] Remove the legacy compaction implementation in favor of Pi sessions.
@@ -39,6 +41,7 @@
       cancellation, and concurrent-dispatch edge cases.
 - [x] Update examples, WebUI dependencies, README, and package exports.
 - [x] Run typecheck and deterministic tests from a clean dependency install.
+- [x] Merge the BaseAgent and Solver packages into `@ctf-agent/agents`.
 
 ## Acceptance criteria
 
@@ -46,7 +49,7 @@
 - Restarting a run from its JSONL session restores messages, thinking level,
   active tools, and compaction entries.
 - No common file or shell tool executes on the host.
-- `packages/solver` contains no Project, SQLite, scheduler, skills parser,
+- `packages/agents/src/solver` contains no Project, SQLite, scheduler, skills parser,
   compaction algorithm, or Docker process implementation.
 - Expected operational failures never create an unhandled rejection; primary
   and cleanup failures remain observable without masking each other.

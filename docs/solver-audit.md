@@ -7,15 +7,14 @@
 
 | Package | 职责 |
 |---|---|
-| `@ctf-agent/base-agent` | Pi `AgentHarness`、JSONL Session、恢复、分支、compaction、skills、模型兼容桥与公共 Agent API |
+| `@ctf-agent/agents` | BaseAgent 的 Pi runtime/session/skills，以及继承它的 `CtfSolverAgent` 和单题 CTF 工具；不依赖 Project/SQLite |
 | `@ctf-agent/platform` | 平台插件、比赛、题目与单题 capability 契约 |
 | `@ctf-agent/sandbox` | Docker 生命周期、Docker-backed Pi `ExecutionEnv`、RTK |
-| `@ctf-agent/solver` | `CtfSolverAgent` 与单题 CTF 工具，不依赖 Project/SQLite |
 | `@ctf-agent/project` | Project、RunStore、blackboard、runner、scheduler 与遥测 |
 | `@ctf-agent/webui` | 控制面 HTTP/SSE 与 UI |
 
-依赖方向为 `project -> solver -> base-agent/platform/sandbox`，不存在反向
-`solver -> project` 依赖。
+依赖方向为 `project -> agents -> platform/sandbox`，不存在反向
+`agents -> project` 依赖。BaseAgent 与各职能 Agent 在同一个包内仍保持目录和类型边界。
 
 ## Session 存储决策
 

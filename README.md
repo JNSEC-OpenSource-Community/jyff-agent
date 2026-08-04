@@ -104,7 +104,7 @@ pnpm webui              # 启动实时控制台
 - `WebUI`：Project 与 ContestScheduler 的实时控制面；聚合平台题目、队列、RunStore 事件、远程环境与黑板数据，通过 SSE 推送变化，并提供受控的调度 API。
 - `DockerSandbox`：每个 Solver 一个容器。`bash`、`read`、`write`、`edit`、`list` 和 RTK 都在容器内执行；宿主机仅保留挂载的 workspace 与 Run 元数据。
 - Sessions：每个 Run 在 `.ctf-agent/runs/<run-id>/session.jsonl` 保存 Pi 原生树；消息、模型、thinking level、active tools、compaction 与分支均可恢复。SQLite 不重复保存完整 transcript。
-- Skills：`@ctf-agent/base-agent` 使用 Pi loader 发现 `.pi/skills/` 与 `.agents/skills/`，再复制到容器可见的 `/workspace/.skills/`；模型通过 Pi `read` 工具渐进加载正文。
+- Skills：`@ctf-agent/agents` 的 BaseAgent 使用 Pi loader 发现 `.pi/skills/` 与 `.agents/skills/`，再复制到容器可见的 `/workspace/.skills/`；模型通过 Pi `read` 工具渐进加载正文。
 - Compaction：使用 Pi session-tree 原生摘要节点；可调用 `await solver.compact()` 手动压缩。
 - **Blackboard（黑板）**：跨 attempt 共享的 Evidence-Opportunity 知识图。Agent 通过 `ctf_blackboard_read` 和 `ctf_blackboard_record` 工具读写；每次 attempt 自动获得有界、JSON 编码且明确标记为不可信数据的既有知识快照。详见 [`docs/blackboard-spec.md`](docs/blackboard-spec.md)。
 - 强制清理：Solver 无论成功、失败、超时或取消，都会先销毁当前题远程实例，再删除 Docker sandbox，最后持久化终态。
@@ -112,10 +112,9 @@ pnpm webui              # 启动实时控制台
 ### 目录结构
 
 ```text
-packages/base-agent/         # Pi harness、session、skills 与通用 Agent API
+packages/agents/             # BaseAgent、Pi session/skills、CtfSolverAgent 与题目工具
 packages/platform/           # 平台契约及 CTFd/GZCTF 插件
 packages/sandbox/            # Docker sandbox 与 Pi ExecutionEnv
-packages/solver/             # 仅 CTF SolverAgent 与题目工具
 packages/project/            # Project、SQLite、blackboard、runner、scheduler
 
 packages/webui/

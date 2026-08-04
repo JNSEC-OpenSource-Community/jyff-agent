@@ -376,16 +376,11 @@ origin 最多 8000 字符；Evidence/Opportunity 描述最多 4000 字符；每�
 ### 5.1 文件变更清单
 
 ```
-packages/solver/src/
-├── blackboard/
-│   └── index.ts              ← 【新增】所有黑板逻辑的入口
-├── project/
-│   └── run-store.ts          ← 【修改】加 3 张表 + 类型导出 + 5 个方法（含 ensureOrigin）+ 1 个 helper
-├── sandbox/
-│   └── tools.ts              ← 【修改】createSolverTools() 调用 createBlackboardTools()
-├── project/
-│   └── project.ts            ← 【修改】createSolver() 加 origin 创建 + 注入逻辑
-└── index.ts                  ← 【修改】加 export * from "./blackboard/index.ts"
+packages/project/src/
+├── blackboard.ts             ← 黑板序列化与 Agent tools
+├── run-store.ts              ← SQLite 表、记录类型与读写方法
+├── project.ts                ← 创建 origin、注入快照和 tools
+└── index.ts                  ← 导出 blackboard 与 RunStore 类型
 ```
 
 ### 5.2 允许修改与严禁修改的文件
@@ -581,7 +576,7 @@ SubAgent 返回后，Main Agent 调用 `concludeOpportunity()`，将 finding 写
 
 ## 附录：类型导出清单
 
-`packages/solver/src/index.ts` 需新增导出：
+`packages/project/src/index.ts` 导出：
 
 ```
 EvidenceRecord
@@ -590,7 +585,7 @@ OpportunityStatus
 BlackboardSummary
 ```
 
-`packages/solver/src/blackboard/index.ts` 需导出：
+`packages/project/src/blackboard.ts` 导出：
 
 ```
 serializeBlackboard()
