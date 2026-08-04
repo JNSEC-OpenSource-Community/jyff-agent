@@ -1,5 +1,5 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
 	type AgentSkill,
 	CtfSolverAgent,
@@ -46,6 +46,7 @@ import {
 	findProjectRoot,
 	loadProjectConfig,
 	type ProjectConfig,
+	parseProjectConfig,
 } from "./config.ts";
 
 const BLACKBOARD_SYSTEM_GUIDANCE = [
@@ -55,6 +56,8 @@ const BLACKBOARD_SYSTEM_GUIDANCE = [
 
 export interface OpenProjectOptions {
 	root?: string;
+	/** 已由控制面加载的配置；提供时不再从 .pi/ctf-config.json 重读。 */
+	config?: ProjectConfig;
 	platforms: readonly PlatformPlugin[];
 	/** Resolve a named secret without placing credentials in project config. */
 	resolveSecret?: (name: string) => string | undefined;
@@ -120,8 +123,12 @@ export class Project {
 	}
 
 	static async open(options: OpenProjectOptions): Promise<Project> {
-		const root = await findProjectRoot(options.root);
-		const config = await loadProjectConfig(root);
+		const root = options.config
+			? resolve(options.root ?? process.cwd())
+			: await findProjectRoot(options.root);
+		const config = options.config
+			? parseProjectConfig(options.config)
+			: await loadProjectConfig(root);
 		const plugin = options.platforms.find(
 			(candidate) => candidate.id === config.platform.plugin,
 		);

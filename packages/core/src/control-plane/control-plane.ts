@@ -75,7 +75,7 @@ export class ControlPlane {
 	private phase: ControlPlanePhase = "unconfigured";
 	private lastError: string | null = null;
 	private updatedAt = new Date().toISOString();
-	private transition?: Promise<ControlPlaneSnapshot>;
+	private transitionTail: Promise<void> = Promise.resolve();
 
 	private constructor(options: ControlPlaneOptions, secretStore: SecretStore) {
 		this.options = options;
@@ -163,11 +163,7 @@ export class ControlPlane {
 	}
 
 	async connect(): Promise<ControlPlaneSnapshot> {
-		if (this.transition) return this.transition;
-		this.transition = this.performConnect().finally(() => {
-			this.transition = undefined;
-		});
-		return this.transition;
+		return await this.enqueueTransition(() => this.performConnect());
 	}
 
 	async testConnection(
@@ -186,15 +182,29 @@ export class ControlPlane {
 	async applySetup(
 		input: ApplyControlPlaneSetup,
 	): Promise<ControlPlaneSnapshot> {
-		const config = this.validateConfig(input.config);
-		await this.testConnection({ config, secrets: input.secrets });
-		await this.disconnect();
-		if (input.secrets) await this.secretStore.set(input.secrets);
-		this.config = await this.configStore.save(config);
-		return await this.connect();
+		return await this.enqueueTransition(async () => {
+			const config = this.validateConfig(input.config);
+			await this.testConnection({ config, secrets: input.secrets });
+			await this.performDisconnect();
+			if (input.secrets) await this.secretStore.set(input.secrets);
+			this.config = await this.configStore.save(config);
+			return await this.performConnect();
+		});
 	}
 
 	async disconnect(): Promise<ControlPlaneSnapshot> {
+		return await this.enqueueTransition(() => this.performDisconnect());
+	}
+
+	async close(): Promise<void> {
+		await this.enqueueTransition(async () => {
+			this.setPhase("closing");
+			await this.performDisconnect();
+			return this.snapshot();
+		});
+	}
+
+	private async performDisconnect(): Promise<ControlPlaneSnapshot> {
 		const failures: unknown[] = [];
 		const scheduler = this.scheduler;
 		const project = this.project;
@@ -223,12 +233,6 @@ export class ControlPlane {
 		return this.snapshot();
 	}
 
-	async close(): Promise<void> {
-		this.setPhase("closing");
-		await this.disconnect();
-		this.setPhase(this.config ? "disconnected" : "unconfigured");
-	}
-
 	private async performConnect(): Promise<ControlPlaneSnapshot> {
 		if (!this.config) {
 			this.setPhase("unconfigured");
@@ -241,6 +245,7 @@ export class ControlPlane {
 			const project = await Project.open({
 				...this.options.project,
 				root: this.root,
+				config: this.config,
 				platforms: this.platforms,
 				resolveSecret: this.secretResolver(),
 			});
@@ -285,6 +290,17 @@ export class ControlPlane {
 	private setPhase(phase: ControlPlanePhase): void {
 		this.phase = phase;
 		this.updatedAt = new Date().toISOString();
+	}
+
+	private enqueueTransition(
+		operation: () => Promise<ControlPlaneSnapshot>,
+	): Promise<ControlPlaneSnapshot> {
+		const result = this.transitionTail.then(operation, operation);
+		this.transitionTail = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		return result;
 	}
 }
 

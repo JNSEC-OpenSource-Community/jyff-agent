@@ -4,18 +4,17 @@ import { type ProjectConfig, parseProjectConfig } from "../project/config.ts";
 
 export class ProjectConfigStore {
 	readonly path: string;
+	readonly legacyPath: string;
 
 	constructor(readonly root: string) {
-		this.path = join(root, ".pi", "ctf-config.json");
+		this.path = join(root, ".ctf-agent", "project-config.json");
+		this.legacyPath = join(root, ".pi", "ctf-config.json");
 	}
 
 	async load(): Promise<ProjectConfig | undefined> {
-		try {
-			return parseProjectConfig(JSON.parse(await readFile(this.path, "utf8")));
-		} catch (error) {
-			if (hasCode(error, "ENOENT")) return undefined;
-			throw new Error(`无法读取项目配置: ${this.path}`, { cause: error });
-		}
+		const current = await readConfig(this.path);
+		if (current) return current;
+		return await readConfig(this.legacyPath);
 	}
 
 	async save(config: ProjectConfig): Promise<ProjectConfig> {
@@ -29,6 +28,15 @@ export class ProjectConfigStore {
 		);
 		await rename(temporary, this.path);
 		return validated;
+	}
+}
+
+async function readConfig(path: string): Promise<ProjectConfig | undefined> {
+	try {
+		return parseProjectConfig(JSON.parse(await readFile(path, "utf8")));
+	} catch (error) {
+		if (hasCode(error, "ENOENT")) return undefined;
+		throw new Error(`无法读取项目配置: ${path}`, { cause: error });
 	}
 }
 

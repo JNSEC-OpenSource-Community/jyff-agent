@@ -64,10 +64,10 @@ class CredentialPlatform implements PlatformPlugin {
 	}
 }
 
-function config(): ProjectConfig {
+function config(name = "Setup Test"): ProjectConfig {
 	return {
 		version: 1,
-		project: { id: "setup-test", name: "Setup Test" },
+		project: { id: "setup-test", name },
 		platform: { plugin: "credential-test", config: {} },
 		sandbox: { image: "unused", privileged: false, networkMode: "none" },
 	};
@@ -135,11 +135,33 @@ describe("ControlPlane", () => {
 		expect(control.currentProject()).toBeDefined();
 		expect(await readFile(secretPath, "utf8")).toContain("secret-token");
 		expect(
-			await readFile(join(root, ".pi", "ctf-config.json"), "utf8"),
+			await readFile(join(root, ".ctf-agent", "project-config.json"), "utf8"),
 		).not.toContain("secret-token");
 
 		await control.close();
 		expect(plugin.closes).toBe(3);
+	});
+
+	it("串行处理并发配置变更，最终运行时与最后一次配置一致", async () => {
+		const root = await rootFixture();
+		const plugin = new CredentialPlatform();
+		const control = await ControlPlane.create({ root, platforms: [plugin] });
+
+		const [first, second] = await Promise.all([
+			control.applySetup({
+				config: config("First"),
+				secrets: { TEST_TOKEN: "secret-token" },
+			}),
+			control.applySetup({
+				config: config("Second"),
+				secrets: { TEST_TOKEN: "secret-token" },
+			}),
+		]);
+
+		expect(first.phase).toBe("ready");
+		expect(second).toMatchObject({ phase: "ready", projectName: "Second" });
+		expect((await control.currentProject()?.overview())?.name).toBe("Second");
+		await control.close();
 	});
 });
 

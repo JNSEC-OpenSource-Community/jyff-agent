@@ -66,6 +66,34 @@ async function fixture(): Promise<string> {
 }
 
 describe("Project", () => {
+	it("控制面传入配置时无需磁盘中的 .pi/ctf-config.json", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ctf-project-config-"));
+		roots.push(root);
+		const project = await Project.open({
+			root,
+			config: {
+				version: 1,
+				project: { id: "in-memory", name: "In-memory Config" },
+				platform: { plugin: "test", config: {} },
+				sandbox: {
+					image: "test-image",
+					privileged: false,
+					networkMode: "none",
+				},
+			},
+			platforms: [testPlatform],
+			sandboxFactory: async () => new FakeSandbox(),
+		});
+		try {
+			expect(project.config.project).toEqual({
+				id: "in-memory",
+				name: "In-memory Config",
+			});
+		} finally {
+			await project.close();
+		}
+	});
+
 	it("keeps Pi skill diagnostics observable without rejecting project startup", async () => {
 		const root = await fixture();
 		await mkdir(join(root, ".pi", "skills", "invalid"), { recursive: true });
