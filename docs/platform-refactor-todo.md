@@ -4,7 +4,8 @@
 
 - Project config selects a plugin and contains only plugin-owned, non-secret settings.
 - Project resolves named secrets at connect time; plugins own authentication state and wire protocols.
-- `@ctf-agent/platform` contains contracts only. CTFd and GZCTF never depend on one another.
+- `@ctf-agent/platform` is the single platform package. It exports the contracts and both adapters;
+  CTFd and GZCTF remain separate internal modules because their protocols are unrelated.
 - Platform-wide control methods remain in `PlatformProject`; SolverAgent receives only a bound
   `ChallengeCapability`.
 - CTFd uses an access token. GZCTF player endpoints use the `GZCTF_Token` identity cookie because
@@ -19,6 +20,7 @@
 - [x] Implement GZCTF challenge, attachment, asynchronous judgement, and container APIs.
 - [x] Add local HTTP contract tests and opt-in live, read-only contract probes.
 - [x] Register both plugins in the example runner and WebUI.
+- [x] Merge adapter packages into `@ctf-agent/platform` and delete the production mock package.
 - [ ] Run the authenticated GZCTF live probe with an account that has active team participation.
 
 The last item intentionally remains opt-in: the public site exposes no shared player credentials,

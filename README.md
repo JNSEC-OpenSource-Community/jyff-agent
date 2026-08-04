@@ -54,14 +54,11 @@ pnpm build:sandbox
 ### 3. 运行示例
 
 ```bash
-# 标准解题流程
-pnpm example:mock
-
-# 黑板系统专项测试
-pnpm example:blackboard
+# 使用 .pi/ctf-config.json 中配置的真实平台解题
+pnpm example
 
 # 启动本地实时 WebUI（http://127.0.0.1:3000）
-pnpm webui:mock
+pnpm webui
 ```
 
 ### 4. 用 Docker 启动 WebUI
@@ -88,9 +85,8 @@ pnpm build:sandbox      # 构建 Docker 沙箱镜像（需要 Docker）
 pnpm test               # 确定性测试；真实模型 E2E 默认 skipped
 pnpm test:runner        # ContestRunner 并发测试
 pnpm typecheck          # TypeScript 类型检查
-pnpm example:mock       # 运行解题示例
-pnpm example:blackboard # 运行黑板专项测试
-pnpm webui:mock         # 启动实时控制台
+pnpm example            # 运行真实平台解题示例
+pnpm webui              # 启动实时控制台
 ```
 
 ---
@@ -117,9 +113,7 @@ pnpm webui:mock         # 启动实时控制台
 
 ```text
 packages/base-agent/         # Pi harness、session、skills 与通用 Agent API
-packages/platform/           # 平台 capability 契约
-packages/platform-ctfd/      # CTFd access-token 适配器
-packages/platform-gzctf/     # GZCTF 玩家 Cookie、判题与容器适配器
+packages/platform/           # 平台契约及 CTFd/GZCTF 插件
 packages/sandbox/            # Docker sandbox 与 Pi ExecutionEnv
 packages/solver/             # 仅 CTF SolverAgent 与题目工具
 packages/project/            # Project、SQLite、blackboard、runner、scheduler
@@ -165,7 +159,7 @@ Context Window 和 Max Tokens。保存后配置立即应用，无需重启 WebUI
 
 WebUI 应嵌入持有 `Project` 的控制面进程，不应为每个 Solver 沙箱启动一份，也不要让
 另一个进程再次对同一项目执行 `Project.open()`；后者会按恢复规则把遗留的活跃 Run
-标记为 `interrupted`。`examples/mock-ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
+标记为 `interrupted`。`examples/ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
 
 ```ts
 import { ContestScheduler } from "@ctf-agent/project"
@@ -202,14 +196,14 @@ TLS 与认证，不要直接把端口暴露到公网。
 
 ```ts
 import { Project } from "@ctf-agent/project"
-import { mockPlatform } from "@ctf-agent/platform-mock"
+import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 
 const project = await Project.open({
-  root: "examples/mock-ctf",
-  platforms: [mockPlatform],
+  root: "examples/ctf",
+  platforms: [ctfdPlatform, gzctfPlatform],
 })
 
-const solver = await project.createSolver("warmup-flag", {
+const solver = await project.createSolver("challenge-id", {
   agent: piAgentOptions,
 })
 
@@ -300,6 +294,5 @@ Evidence、Opportunity 描述最多 4000 字符，单个 Opportunity 最多关�
 
 | 资源 | 说明 |
 |---|---|
-| `pnpm example:blackboard` | 黑板专项功能测试（6 步操作，含真实模型） |
 | `pnpm test` | 包含 RunStore / 工具 / E2E 测试 |
 | [`docs/blackboard-spec.md`](docs/blackboard-spec.md) | 完整设计规范 |
