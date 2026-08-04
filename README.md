@@ -118,6 +118,8 @@ pnpm webui:mock         # 启动实时控制台
 ```text
 packages/base-agent/         # Pi harness、session、skills 与通用 Agent API
 packages/platform/           # 平台 capability 契约
+packages/platform-ctfd/      # CTFd access-token 适配器
+packages/platform-gzctf/     # GZCTF 玩家 Cookie、判题与容器适配器
 packages/sandbox/            # Docker sandbox 与 Pi ExecutionEnv
 packages/solver/             # 仅 CTF SolverAgent 与题目工具
 packages/project/            # Project、SQLite、blackboard、runner、scheduler
@@ -130,6 +132,9 @@ packages/webui/
 ├── test/                    # 聚合模型与 HTTP/SSE 测试
 └── Dockerfile               # 控制面 WebUI 容器
 ```
+
+平台接入采用“插件 + 插件自有配置”模式；项目配置不保存 token、密码或 Cookie。CTFd 与
+GZCTF 的配置、认证方式和能力边界见 [`docs/platform-plugins.md`](docs/platform-plugins.md)。
 
 ---
 
