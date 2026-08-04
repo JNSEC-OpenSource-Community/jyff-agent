@@ -65,7 +65,7 @@ function piSkills(skills: readonly AgentSkill[]): Skill[] {
   return skills.map((skill) => ({
     name: skill.name,
     description: skill.description,
-    content: `${skill.body}\n\nSkill directory: ${skill.sandboxBaseDir ?? "(instructions only)"}`,
+    content: skill.content,
     filePath: skill.sandboxPath ?? skill.filePath,
   }))
 }
