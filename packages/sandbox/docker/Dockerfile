@@ -18,7 +18,11 @@ ARG PYCDC_SHA256
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get -o Acquire::Retries=5 update \
+RUN sed -i \
+		-e 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+		-e 's|http://security.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+        /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y \
         build-essential ca-certificates cmake meson ninja-build pkg-config \
         python3 python3-yaml wget xz-utils zlib1g-dev \
@@ -83,12 +87,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/ctf-venv/bin:/opt/re-venv/bin:/opt/rizin/bin:/opt/re-tools/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/opt/rizin/lib:/opt/rizin/lib/x86_64-linux-gnu"
 
-# Ubuntu 基础镜像默认使用 HTTP 源；先引导 CA，再切换 HTTPS 以降低大批量下载的断连率。
+# Ubuntu 基础镜像默认使用 HTTP 源；先引导 CA，再切换镜像源以降低大批量下载的断连率。
 RUN apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y ca-certificates \
     && sed -i \
-        -e 's|http://archive.ubuntu.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' \
-        -e 's|http://security.ubuntu.com/ubuntu/|https://security.ubuntu.com/ubuntu/|g' \
+        -e 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+        -e 's|http://security.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
         /etc/apt/sources.list.d/ubuntu.sources \
     && rm -rf /var/lib/apt/lists/*
 
@@ -295,7 +299,8 @@ COPY requirements-misc.txt /tmp/requirements-misc.txt
 RUN python -m pip install --no-cache-dir -r /tmp/requirements-misc.txt \
     && rm -f /tmp/requirements-misc.txt
 
-COPY --chmod=0755 re-preflight.py /usr/local/bin/ctf-re-preflight
+COPY re-preflight.py /usr/local/bin/ctf-re-preflight
+RUN chmod 0755 /usr/local/bin/ctf-re-preflight
 COPY tools.txt /tools.txt
 ENV TERM=xterm
 

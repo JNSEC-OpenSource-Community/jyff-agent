@@ -1,0 +1,25 @@
+services:
+  webui:
+    build:
+      context: .
+      dockerfile: packages/webui/Dockerfile
+    image: ctf-agent-webui:latest
+    command:
+      - --root
+      - /data
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3000"
+      - --workspace-volume
+      - ctf-agent-data
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ctf-agent-data:/data/.ctf-agent
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  ctf-agent-data:
+    name: ctf-agent-data
