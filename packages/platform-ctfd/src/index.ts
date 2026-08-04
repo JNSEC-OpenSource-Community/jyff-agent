@@ -158,7 +158,6 @@ function mapChallengeSummary(challenge: CTFdChallenge): ChallengeSummary {
     category: challenge.category,
     score: challenge.value,
     solved: challenge.solved_by_me === true,
-    ...(challenge.connection_info ? { needsEnv: true } : {}),
   }
 }
 

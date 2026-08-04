@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ctf-agent/platform-ctfd": "workspace:*",
+    "@ctf-agent/platform-gzctf": "workspace:*",
     "@ctf-agent/platform-mock": "workspace:*",
     "@ctf-agent/project": "workspace:*",
     "@ctf-agent/solver": "workspace:*",

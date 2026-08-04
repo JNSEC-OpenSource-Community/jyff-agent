@@ -29,6 +29,9 @@ importers:
       '@ctf-agent/platform-ctfd':
         specifier: workspace:*
         version: link:../../packages/platform-ctfd
+      '@ctf-agent/platform-gzctf':
+        specifier: workspace:*
+        version: link:../../packages/platform-gzctf
       '@ctf-agent/platform-mock':
         specifier: workspace:*
         version: link:../../packages/platform-mock
@@ -60,6 +63,12 @@ importers:
   packages/platform: {}
 
   packages/platform-ctfd:
+    dependencies:
+      '@ctf-agent/platform':
+        specifier: workspace:*
+        version: link:../platform
+
+  packages/platform-gzctf:
     dependencies:
       '@ctf-agent/platform':
         specifier: workspace:*
