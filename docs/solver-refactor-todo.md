@@ -35,10 +35,10 @@
 - [x] Consolidate runner/scheduler prompt execution, timeout, and result checks.
 - [x] Preserve abort, persistence, diagnostic, primary, and cleanup failures;
       keep non-critical telemetry failures observable without stopping agents.
-- [ ] Shrink duplicated tests and add session recovery, Docker tool, lifecycle,
+- [x] Shrink duplicated tests and add session recovery, Docker tool, lifecycle,
       cancellation, and concurrent-dispatch edge cases.
-- [ ] Update examples, WebUI dependencies, README, and compatibility exports.
-- [ ] Run typecheck and deterministic tests from a clean dependency install.
+- [x] Update examples, WebUI dependencies, README, and package exports.
+- [x] Run typecheck and deterministic tests from a clean dependency install.
 
 ## Acceptance criteria
 

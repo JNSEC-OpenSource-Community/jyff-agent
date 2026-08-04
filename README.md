@@ -100,32 +100,27 @@ pnpm webui:mock         # 启动实时控制台
 - `Project`：连接平台、同步比赛概览/公告、管理全局远程环境、保存 Run 元数据。
 - `PlatformPlugin`：纯业务平台适配器，不依赖 Pi。`PlatformProject` 是 Project 的完整控制面。
 - `ChallengeCapability`：由平台为单题创建的最小能力面；没有 `challengeId` 参数，因此 Solver 无法越题操作。
-- `CtfSolverAgent`：直接继承 `@earendil-works/pi-agent-core` 的 `Agent`，保留其原生 API。
+- `BaseAgent`：封装 Pi `AgentHarness`、原生 JSONL session tree、恢复、分支、compaction、skills 与公共生命周期。
+- `CtfSolverAgent`：继承 `BaseAgent`，只增加单题 CTF capability、提交终态与资源回收。
 - `RunStore`：SQLite/WAL 持久化每次题目尝试、状态转换、错误与清理结果；Project 重开时会把遗留活跃 Run 标为 `interrupted`。
 - `ContestRunner`：一次性批量执行器，适合脚本和测试。
 - `ContestScheduler`：长驻的混合调度器，负责自主队列、人工派发、同题去重、并发上限、调度 attempt 上限、硬超时、重试与取消。
 - `WebUI`：Project 与 ContestScheduler 的实时控制面；聚合平台题目、队列、RunStore 事件、远程环境与黑板数据，通过 SSE 推送变化，并提供受控的调度 API。
 - `DockerSandbox`：每个 Solver 一个容器。`bash`、`read`、`write`、`edit`、`list` 和 RTK 都在容器内执行；宿主机仅保留挂载的 workspace 与 Run 元数据。
-- Skills：发现 `.pi/skills/` 与 `.agents/skills/` 中 Pi-compatible `SKILL.md`，复制到容器可见的 `/workspace/.skills/`，以 `<available_skills>` catalog 和 `load_skill` 工具按需提供。
-- Compaction：自动在上下文接近 model window 时生成摘要；也可调用 `await solver.compact()` 手动压缩。
+- Sessions：每个 Run 在 `.ctf-agent/runs/<run-id>/session.jsonl` 保存 Pi 原生树；消息、模型、thinking level、active tools、compaction 与分支均可恢复。SQLite 不重复保存完整 transcript。
+- Skills：`@ctf-agent/base-agent` 使用 Pi loader 发现 `.pi/skills/` 与 `.agents/skills/`，再复制到容器可见的 `/workspace/.skills/`；模型通过 Pi `read` 工具渐进加载正文。
+- Compaction：使用 Pi session-tree 原生摘要节点；可调用 `await solver.compact()` 手动压缩。
 - **Blackboard（黑板）**：跨 attempt 共享的 Evidence-Opportunity 知识图。Agent 通过 `ctf_blackboard_read` 和 `ctf_blackboard_record` 工具读写；每次 attempt 自动获得有界、JSON 编码且明确标记为不可信数据的既有知识快照。详见 [`docs/blackboard-spec.md`](docs/blackboard-spec.md)。
 - 强制清理：Solver 无论成功、失败、超时或取消，都会先销毁当前题远程实例，再删除 Docker sandbox，最后持久化终态。
 
 ### 目录结构
 
 ```text
-packages/solver/
-├── docker/                  # Solver 镜像构建上下文
-├── src/
-│   ├── agent/               # Agent 生命周期与上下文压缩
-│   ├── blackboard/          # 黑板系统（跨 attempt 知识共享）
-│   ├── platform/            # 平台能力契约
-│   ├── project/             # Project、配置与 RunStore
-│   ├── runner/              # ContestRunner 批处理与 ContestScheduler 长驻调度
-│   ├── sandbox/             # Docker、命令和文件工具
-│   ├── skills/              # Skill 发现与物化
-│   └── index.ts             # 稳定公共 API
-└── test/                    # 与 src 领域结构镜像
+packages/base-agent/         # Pi harness、session、skills 与通用 Agent API
+packages/platform/           # 平台 capability 契约
+packages/sandbox/            # Docker sandbox 与 Pi ExecutionEnv
+packages/solver/             # 仅 CTF SolverAgent 与题目工具
+packages/project/            # Project、SQLite、blackboard、runner、scheduler
 
 packages/webui/
 ├── src/
@@ -168,7 +163,7 @@ WebUI 应嵌入持有 `Project` 的控制面进程，不应为每个 Solver 沙�
 标记为 `interrupted`。`examples/mock-ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
 
 ```ts
-import { ContestScheduler } from "@ctf-agent/solver"
+import { ContestScheduler } from "@ctf-agent/project"
 import { startWebUi } from "@ctf-agent/webui"
 
 const scheduler = new ContestScheduler(project, {
@@ -201,7 +196,7 @@ TLS 与认证，不要直接把端口暴露到公网。
 ### 单题解题
 
 ```ts
-import { Project } from "@ctf-agent/solver"
+import { Project } from "@ctf-agent/project"
 import { mockPlatform } from "@ctf-agent/platform-mock"
 
 const project = await Project.open({
@@ -230,7 +225,7 @@ try {
 ### 批量并发
 
 ```ts
-import { ContestRunner } from "@ctf-agent/solver"
+import { ContestRunner } from "@ctf-agent/project"
 
 const runner = new ContestRunner(project, {
   maxConcurrent: 4,
@@ -254,7 +249,7 @@ console.log(summary)
 ```ts
 const solver = await project.createSolver("warmup-flag", {
   agent: piAgentOptions,
-  compaction: { reserveTokens: 8192, keepRecentTokens: 12000 },
+  compaction: true,
   // 或 compaction: false
 })
 ```
