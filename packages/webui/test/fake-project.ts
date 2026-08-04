@@ -284,7 +284,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
 			contextWindow: configuration.contextWindow,
 			maxTokens: configuration.maxTokens,
 			apiKeyConfigured,
-			apiKeySource: apiKeyConfigured ? "webui" : "none",
+			apiKeySource: apiKeyConfigured ? "secret-store" : "none",
 			thinkingEnabled: configuration.thinkingEnabled,
 			reasoningEffort: configuration.reasoningEffort,
 			passthroughThinking: configuration.passthroughThinking,

@@ -21,6 +21,27 @@ afterEach(async () => {
 
 class CredentialPlatform implements PlatformPlugin {
 	readonly id = "credential-test";
+	readonly setup = {
+		label: "Credential test",
+		description: "test",
+		defaultConfig: {},
+		fields: [],
+		authStrategies: [
+			{
+				id: "token",
+				label: "Token",
+				config: {},
+				secrets: [
+					{
+						name: "TEST_TOKEN",
+						label: "Token",
+						type: "token" as const,
+						required: true,
+					},
+				],
+			},
+		],
+	};
 	readonly config = {
 		parse(value: unknown) {
 			if (typeof value !== "object" || value === null) {
@@ -93,19 +114,30 @@ describe("ControlPlane", () => {
 		});
 	});
 
-	it("平台认证失败进入 degraded，而不是让启动过程崩溃", async () => {
+	it("平台凭据不从环境变量回退，认证失败进入 degraded", async () => {
 		const root = await rootFixture();
 		await writeConfig(root, config());
-		const control = await ControlPlane.create({
-			root,
-			platforms: [new CredentialPlatform()],
-		});
+		const previous = process.env.TEST_TOKEN;
+		process.env.TEST_TOKEN = "secret-token";
+		try {
+			const control = await ControlPlane.create({
+				root,
+				platforms: [new CredentialPlatform()],
+			});
 
-		expect(await control.start()).toMatchObject({
-			phase: "degraded",
-			configured: true,
-			lastError: "缺少 TEST_TOKEN",
-		});
+			expect(control.setupSnapshot().secrets.TEST_TOKEN).toEqual({
+				configured: false,
+				source: "none",
+			});
+			expect(await control.start()).toMatchObject({
+				phase: "degraded",
+				configured: true,
+				lastError: "缺少 TEST_TOKEN",
+			});
+		} finally {
+			if (previous === undefined) delete process.env.TEST_TOKEN;
+			else process.env.TEST_TOKEN = previous;
+		}
 	});
 
 	it("测试连接成功后原子保存配置和 Secret，并建立运行时", async () => {

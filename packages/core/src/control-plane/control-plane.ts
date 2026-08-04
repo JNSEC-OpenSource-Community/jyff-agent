@@ -44,7 +44,7 @@ export interface ControlPlaneSetupSnapshot {
 	platforms: Array<{ id: string; setup: PlatformSetupDescriptor }>;
 	secrets: Record<
 		string,
-		{ configured: boolean; source: "store" | "environment" | "none" }
+		{ configured: boolean; source: "store" | "none" }
 	>;
 }
 
@@ -57,7 +57,6 @@ export interface ControlPlaneOptions {
 	root: string;
 	platforms: readonly PlatformPlugin[];
 	secretStore?: SecretStore;
-	resolveSecret?: (name: string) => string | undefined;
 	project?: Omit<OpenProjectOptions, "root" | "platforms" | "resolveSecret">;
 	createScheduler?: (project: Project) => ContestScheduler | undefined;
 }
@@ -133,14 +132,13 @@ export class ControlPlane {
 			config: this.configuration() ?? null,
 			platforms,
 			secrets: Object.fromEntries(
-				[...names].map((name) => {
-					const source = this.secretStore.has(name)
-						? "store"
-						: (this.options.resolveSecret?.(name) ?? process.env[name])
-							? "environment"
-							: "none";
-					return [name, { configured: source !== "none", source }];
-				}),
+				[...names].map((name) => [
+					name,
+					{
+						configured: this.secretStore.has(name),
+						source: this.secretStore.has(name) ? "store" : "none",
+					},
+				]),
 			),
 		};
 	}
@@ -281,10 +279,7 @@ export class ControlPlane {
 		overrides: Readonly<Record<string, string | undefined>> = {},
 	): (name: string) => string | undefined {
 		return (name) =>
-			overrides[name] ??
-			this.secretStore.get(name) ??
-			this.options.resolveSecret?.(name) ??
-			process.env[name];
+			overrides[name] ?? this.secretStore.get(name);
 	}
 
 	private setPhase(phase: ControlPlanePhase): void {

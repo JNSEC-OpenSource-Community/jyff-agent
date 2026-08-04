@@ -6,90 +6,33 @@
 
 ## 快速开始
 
-### 1. 配置 API 凭据
-
-复制 `.env.example` 为 `.env` 并填入你的 API 信息：
+### 1. 安装依赖
 
 ```bash
-cp .env.example .env
+pnpm install
 ```
 
-`.env` 文件格式（支持所有 OpenAI-compatible API）：
+控制面进程应嵌入 `@ctf-agent/webui` 并持有唯一的 `ControlPlane`。启动后，
+用户仅通过 WebUI 顶部的“模型设置”与“比赛平台设置”完成业务配置。
 
-```ini
-# DeepSeek
-CTF_MODEL_API_KEY = "sk-your-deepseek-api-key"
-CTF_MODEL_ID = "deepseek-chat"
-CTF_MODEL_BASE_URL = "https://api.deepseek.com"
-CTF_MODEL_PROVIDER = "deepseek"
+模型 API Key、CTFd Token、GZCTF 用户名/密码或 Cookie 只会写入
+`.ctf-agent/secrets.json` Secret Store，不从环境变量回退读取，也不会通过读取接口回传浏览器。
+非敏感的模型参数和平台参数分别保存到 `.ctf-agent/model-config.json` 与
+`.ctf-agent/project-config.json`。
 
-# OpenRouter
-# CTF_MODEL_API_KEY = "sk-or-v1-your-openrouter-key"
-# CTF_MODEL_ID = "openai/gpt-4o"
-```
-
-可用的环境变量：
-
-| 变量 | 必填 | 说明 |
-|---|---|---|
-| `CTF_MODEL_API_KEY` | 是 | API 密钥 |
-| `CTF_MODEL_ID` | 是 | 模型 ID |
-| `CTF_MODEL_PROVIDER` | 否 | Provider，默认 `"openrouter"` |
-| `CTF_MODEL_BASE_URL` | 否 | API endpoint（DeepSeek 需设置） |
-| `CTF_MODEL_CONTEXT_WINDOW` | 否 | 上下文窗口大小，默认 64000 |
-| `CTF_MODEL_MAX_TOKENS` | 否 | 最大输出 tokens，默认 4096 |
-
-同时兼容 `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`（旧变量名）。
-
-脚本和测试使用 `loadEnvFile()` 从 `.env` 加载，环境变量直接设置优先级更高。
-`.env` 未配置时 E2E 测试自动标记为 skipped。即使已配置凭据，真实模型测试也只在显式设置
-`CTF_RUN_MODEL_E2E=1` 时运行，避免普通 `pnpm test` 意外产生外部请求和费用。
-
-### 2. 构建 Docker 沙箱（可选）
+### 2. 构建 Docker 沙箱
 
 ```bash
 pnpm build:sandbox
 ```
 
-### 3. 运行示例
-
-```bash
-# 使用 .pi/ctf-config.json 中配置的真实平台解题
-pnpm example
-
-# 启动本地实时 WebUI（http://127.0.0.1:3000，无配置也可启动）
-pnpm webui
-```
-
-### 4. 用 Docker 启动 WebUI
-
-```bash
-docker compose -f compose.webui.yaml up --build
-```
-
-控制台默认仅发布到 `127.0.0.1:3000`。通过 `CTF_WEBUI_PORT=8080` 可修改宿主机端口。
-Docker 模式使用命名卷 `ctf-agent-data` 保存 SQLite、附件和各次尝试的 workspace；
-WebUI 容器与它启动的 Solver 容器共享该卷，因此容器重启后仍可查看历史状态。
-
-默认 `CTF_SCHEDULER_AUTO_START=false`，打开页面后可人工调度单题，或显式点击“开启自主调度”。
-要使用调度功能，需配置 `CTF_MODEL_API_KEY` 和 `CTF_MODEL_ID`；未配置时页面仍可只读查看历史。
-首次启动可从顶部“比赛平台设置”选择 CTFd 或 GZCTF、填写认证信息并测试连接。比赛配置和
-凭据分别保存在数据卷内的 `.ctf-agent/project-config.json` 与 `.ctf-agent/secrets.json`；
-旧的 `.pi/ctf-config.json` 仍可读取，但 WebUI 不再向它写入。
-
-> `compose.webui.yaml` 将 Docker socket 挂入 WebUI，以便它创建和销毁 Solver 容器。能够访问
-> 该控制面的进程实际上拥有宿主机级 Docker 权限。请只在可信主机使用，不要向公网直接暴露端口，
-> 生产环境应改用受限的容器执行服务或 socket proxy。
-
-### 5. 常用命令
+### 3. 常用命令
 
 ```bash
 pnpm build:sandbox      # 构建 Docker 沙箱镜像（需要 Docker）
 pnpm test               # 确定性测试；真实模型 E2E 默认 skipped
 pnpm test:runner        # ContestRunner 并发测试
 pnpm typecheck          # TypeScript 类型检查
-pnpm example            # 运行真实平台解题示例
-pnpm webui              # 启动实时控制台
 ```
 
 ---
@@ -126,8 +69,7 @@ packages/webui/
 │   ├── client/              # 无框架响应式前端
 │   ├── model.ts             # 平台、Run、黑板的聚合模型
 │   └── server.ts            # HTTP API、静态资源与 SSE
-├── test/                    # 聚合模型与 HTTP/SSE 测试
-└── Dockerfile               # 控制面 WebUI 容器
+└── test/                    # 聚合模型与 HTTP/SSE 测试
 ```
 
 平台接入采用“插件 + 插件自有配置”模式；项目配置不保存 token、密码或 Cookie。CTFd 与
@@ -151,8 +93,8 @@ GZCTF 的配置、认证方式和能力边界见 [`docs/platform-plugins.md`](do
 
 顶部的模型设置面板可配置 Provider、Model ID、OpenAI-compatible Base URL、API Key、
 Context Window 和 Max Tokens。保存后配置立即应用，无需重启 WebUI；API Key 明文不会通过
-读取接口回传浏览器。示例控制面把配置以仅服务进程可读的权限保存到
-`.ctf-agent/model-config.json`，该目录由 `ctf-agent-data` 数据卷持久化。清除 API Key 会同时
+读取接口回传浏览器。`createFileModelConfiguration()` 把 API Key 保存到
+`.ctf-agent/secrets.json`，其余模型参数保存到 `.ctf-agent/model-config.json`。清除 API Key 会同时
 暂停自主调度，但不会中断已经运行的 Agent。
 
 顶部的比赛平台设置面板由插件描述动态生成。CTFd 使用 Access Token；GZCTF 支持用户名密码
@@ -166,16 +108,26 @@ Context Window 和 Max Tokens。保存后配置立即应用，无需重启 WebUI
 
 WebUI 应嵌入持有 `ControlPlane` 的进程，不应为每个 Solver 沙箱启动一份，也不要让另一个
 进程再次打开同一项目；后者会按恢复规则把遗留的活跃 Run 标记为 `interrupted`。
-`examples/ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
+正式控制面应向模型配置和 `ControlPlane` 传入同一个 Secret Store：
 
 ```ts
-import { ContestScheduler, ControlPlane } from "@ctf-agent/core"
+import { join } from "node:path"
+import { ContestScheduler, ControlPlane, FileSecretStore } from "@ctf-agent/core"
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
-import { startWebUi } from "@ctf-agent/webui"
+import { createFileModelConfiguration, startWebUi } from "@ctf-agent/webui"
+
+const secretStore = await FileSecretStore.open(
+  join(projectRoot, ".ctf-agent", "secrets.json"),
+)
+const modelConfiguration = await createFileModelConfiguration({
+  storagePath: join(projectRoot, ".ctf-agent", "model-config.json"),
+  secretStore,
+})
 
 const controlPlane = await ControlPlane.create({
   root: projectRoot,
   platforms: [ctfdPlatform, gzctfPlatform],
+  secretStore,
   createScheduler: project => new ContestScheduler(project, {
     maxConcurrent: 4,
     maxAttempts: 2,
@@ -187,15 +139,15 @@ await controlPlane.start()
 
 const webui = await startWebUi({
   controlPlane,
+  modelConfiguration,
   host: "127.0.0.1",
   port: 3000,
   pollIntervalMs: 1000,
 })
 ```
 
-`CTF_TELEMETRY_LEVEL=full` 会把完整工具参数、工具结果和提交的 Flag 保存到 RunStore，并在详情页
+控制面可把完整工具参数、工具结果和提交的 Flag 保存到 RunStore，并在详情页
 展示；凭据类字段仍会脱敏。该模式便于 CTF 复盘，但 SQLite 中会包含敏感比赛数据。
-设置为 `safe` 可恢复命令/Flag 脱敏。修改只影响新事件，不会改写既有历史。
 
 HTTP 服务默认只监听本机且当前不内置身份认证。需要跨主机访问时，应在反向代理层增加
 TLS 与认证，不要直接把端口暴露到公网。
@@ -207,12 +159,18 @@ TLS 与认证，不要直接把端口暴露到公网。
 ### 单题解题
 
 ```ts
-import { Project } from "@ctf-agent/core"
+import { join } from "node:path"
+import { FileSecretStore, Project } from "@ctf-agent/core"
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 
+const projectRoot = "/path/to/project"
+const secretStore = await FileSecretStore.open(
+  join(projectRoot, ".ctf-agent", "secrets.json"),
+)
 const project = await Project.open({
-  root: "examples/ctf",
+  root: projectRoot,
   platforms: [ctfdPlatform, gzctfPlatform],
+  resolveSecret: name => secretStore.get(name),
 })
 
 const solver = await project.createSolver("challenge-id", {

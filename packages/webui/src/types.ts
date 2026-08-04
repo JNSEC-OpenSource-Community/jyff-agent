@@ -143,7 +143,7 @@ export interface ModelConfigurationView {
 	contextWindow: number;
 	maxTokens: number;
 	apiKeyConfigured: boolean;
-	apiKeySource: "environment" | "webui" | "none";
+	apiKeySource: "secret-store" | "none";
 	/** 思维链开关(模型级配置,下次创建 solver 生效)。 */
 	thinkingEnabled: boolean;
 	/** 思考强度档位(当前模型支持的档位之一,见 supportedThinkingLevels)。 */

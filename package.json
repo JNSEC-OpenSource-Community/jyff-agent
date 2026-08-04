@@ -16,9 +16,7 @@
 		"format:check": "biome format .",
 		"lint": "biome lint .",
 		"lint:fix": "biome check --write .",
-		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"example": "pnpm --filter @ctf-agent/example-ctf solve",
-		"webui": "pnpm --filter @ctf-agent/example-ctf webui"
+		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",

@@ -947,7 +947,7 @@ function clearPlatformSettingsError() {
 }
 
 function secretSourceLabel(source) {
-	return source === "environment" ? "环境变量" : "本地密钥存储";
+	return source === "store" ? "Secret Store" : "未设置";
 }
 
 function configContains(value, expected) {
@@ -1176,8 +1176,7 @@ function clearModelSettingsError() {
 }
 
 function apiKeySourceLabel(source) {
-	if (source === "webui") return "WebUI 本地存储";
-	if (source === "environment") return "环境变量";
+	if (source === "secret-store") return "Secret Store";
 	return "未设置";
 }
 

@@ -7,8 +7,8 @@ secret name and never persisted in the project configuration.
 
 The WebUI renders setup fields from each plugin's `setup` descriptor. It can test a temporary
 connection before replacing the current runtime. Secrets entered there are stored separately in
-`.ctf-agent/secrets.json` with service-only file permissions. Environment variables with matching
-names remain a deployment-time fallback.
+`.ctf-agent/secrets.json` with service-only file permissions. The runtime resolves credentials only
+from this Secret Store; environment variables are not a credential fallback.
 
 ## CTFd
 
@@ -31,7 +31,7 @@ names remain a deployment-time fallback.
 }
 ```
 
-Enter `CTFD_TOKEN` in the WebUI or set the environment variable to a CTFd user access token. The adapter uses CTFd's official `Token` authorization
+Enter `CTFD_TOKEN` in the WebUI. The adapter uses CTFd's official `Token` authorization
 scheme and supports challenge listing/detail, signed attachment downloads, notifications, and flag
 attempts. Core CTFd has no standard per-player container lifecycle API, so this adapter does not
 invent one.

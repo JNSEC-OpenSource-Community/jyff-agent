@@ -289,7 +289,7 @@ describe("WebUI HTTP server", () => {
 				modelId: "solver-model",
 				baseUrl: "https://models.example.test/v1",
 				apiKeyConfigured: true,
-				apiKeySource: "webui",
+				apiKeySource: "secret-store",
 				thinkingEnabled: true,
 				reasoningEffort: "high",
 				configured: true,

@@ -137,7 +137,7 @@ export class Project {
 		const platform = await plugin.connect({
 			project: config.project,
 			config: platformConfig,
-			resolveSecret: options.resolveSecret ?? ((name) => process.env[name]),
+			resolveSecret: options.resolveSecret ?? (() => undefined),
 		});
 		let runStore: RunStore | undefined;
 		try {
