@@ -56,6 +56,7 @@ describe("BaseAgent native session", () => {
     })
     await first.appendMessage({ role: "user", content: "second message", timestamp: 2 })
     await first.setThinkingLevel("high")
+    await first.setActiveTools([])
     await first.session.appendCompaction("summary", undefined, 123)
 
     const restored = await TestAgent.open({ ...common, thinkingLevel: "off" })
@@ -63,6 +64,7 @@ describe("BaseAgent native session", () => {
     expect(restored.thinkingLevel).toBe("high" satisfies ThinkingLevel)
     expect(restored.model.id).toBe(model.id)
     expect(restored.tools.map((tool) => tool.name)).toEqual(["noop"])
+    expect(restored.activeTools).toEqual([])
     const entries = await restored.session.getEntries()
     expect(entries.some((entry) =>
       entry.type === "message" && entry.message.role === "user" && entry.message.content === "second message",

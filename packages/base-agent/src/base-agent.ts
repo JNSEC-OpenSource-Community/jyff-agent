@@ -8,6 +8,8 @@ import {
   type AgentMessage,
   type AgentTool,
   type CompactResult,
+  type NavigateTreeResult,
+  type PromptTemplate,
   type Skill,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core"
@@ -23,6 +25,7 @@ export interface BaseAgentOptions {
   tools?: readonly AgentTool[]
   activeToolNames?: readonly string[]
   skills?: readonly Skill[]
+  promptTemplates?: readonly PromptTemplate[]
   initialMessages?: readonly AgentMessage[]
   compaction?: boolean
 }
@@ -63,7 +66,7 @@ export async function prepareBaseAgent(options: BaseAgentOptions): Promise<Prepa
       thinkingLevel: opened.thinkingLevel,
       tools,
       activeToolNames: opened.activeToolNames,
-      resources: { skills },
+      resources: { skills, promptTemplates: [...(options.promptTemplates ?? [])] },
       systemPrompt,
     }),
   }
@@ -119,6 +122,7 @@ export abstract class BaseAgent {
   get model(): Model<any> { return this.harness.getModel() }
   get thinkingLevel(): ThinkingLevel { return this.harness.getThinkingLevel() }
   get tools(): AgentTool[] { return this.harness.getTools() as unknown as AgentTool[] }
+  get activeTools(): AgentTool[] { return this.harness.getActiveTools() as unknown as AgentTool[] }
 
   async getMessages(): Promise<AgentMessage[]> {
     return (await this.session.buildContext()).messages
@@ -132,6 +136,7 @@ export abstract class BaseAgent {
   skill(name: string, additionalInstructions?: string) {
     return this.harness.skill(name, additionalInstructions)
   }
+  promptFromTemplate(name: string, args?: string[]) { return this.harness.promptFromTemplate(name, args) }
 
   steer(text: string, options?: { images?: ImageContent[] }) { return this.harness.steer(text, options) }
   followUp(text: string, options?: { images?: ImageContent[] }) { return this.harness.followUp(text, options) }
@@ -146,7 +151,17 @@ export abstract class BaseAgent {
   }
   async setThinkingLevel(level: ThinkingLevel): Promise<void> { await this.harness.setThinkingLevel(level) }
   async setModel(model: Model<any>): Promise<void> { await this.harness.setModel(model) }
+  async setTools(tools: AgentTool[], activeToolNames?: string[]): Promise<void> {
+    await this.harness.setTools(tools as unknown as Parameters<AgentHarness["setTools"]>[0], activeToolNames)
+  }
+  async setActiveTools(toolNames: string[]): Promise<void> { await this.harness.setActiveTools(toolNames) }
   async compact(customInstructions?: string): Promise<CompactResult> { return this.harness.compact(customInstructions) }
+  async navigateTree(targetId: string, options?: {
+    summarize?: boolean
+    customInstructions?: string
+    replaceInstructions?: boolean
+    label?: string
+  }): Promise<NavigateTreeResult> { return this.harness.navigateTree(targetId, options) }
   abort() { return this.harness.abort() }
   waitForIdle() { return this.harness.waitForIdle() }
   hasQueuedMessages(): boolean { return this.queuedMessages > 0 }
