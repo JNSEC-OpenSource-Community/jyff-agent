@@ -1,18 +1,19 @@
 {
   "version": 1,
   "project": {
-    "id": "myctf-local",
-    "name": "MyCTF 2025 (Remote)"
+    "id": "ctfd-demo",
+    "name": "CTFd Demo"
   },
   "platform": {
-    "plugin": "mock",
+    "plugin": "ctfd",
     "config": {
-      "name": "MyCTF 2025"
+      "baseUrl": "https://demo.ctfd.io",
+      "tokenSecret": "CTFD_TOKEN"
     }
   },
   "sandbox": {
     "image": "ctf-agent-solver:latest",
     "privileged": false,
-    "networkMode": "host"
+    "networkMode": "bridge"
   }
 }

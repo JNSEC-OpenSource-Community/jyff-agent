@@ -1,22 +1,15 @@
-// examples/mock-ctf/run-myctf.ts —— 8 路并发批量解题(MyCTF 平台管道第五步)
-// 复用 run.ts 的 loadEnvFile 与模型构造样板(复制,不重写)。
+// 真实平台批量解题入口。
 // CLI: --only <id> 只跑单题(便于冒烟);不传则跑全部未解决题目。
-import { execFile } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { promisify } from "node:util"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { getModel, type Model } from "@earendil-works/pi-ai/compat"
 import { ContestRunner, Project, parseProjectConfig, type ProjectConfig } from "@ctf-agent/project"
-import { mockPlatform } from "@ctf-agent/platform-mock"
-import { ctfdPlatform } from "@ctf-agent/platform-ctfd"
-import { gzctfPlatform } from "@ctf-agent/platform-gzctf"
+import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import { deepseekThinkingLevelMap, thinkingEnabledFromEnv, thinkingLevelFromEnv } from "./agent-config.ts"
 
-const exec = promisify(execFile)
-
-// 从项目根目录的 .env 文件加载环境变量(不依赖 dotenv 包) —— 与 run.ts 相同
+// 从项目根目录的 .env 文件加载环境变量(不依赖 dotenv 包)。
 function loadEnvFile(): void {
   const candidates = [
     join(resolve(import.meta.dirname), "..", "..", ".env"),
@@ -77,7 +70,7 @@ if (!modelId) {
   )
 }
 
-// 模型构造 —— 与 run.ts 相同
+// 模型构造。
 const model: Model<"openai-completions"> = baseUrl ? {
   id: modelId,
   name: modelId,
@@ -115,7 +108,7 @@ const model: Model<"openai-completions"> = baseUrl ? {
   }
 })()
 
-// 从合并后的 ctf-config.json 读取平台模式与题列表;与 Project.open 共用 parseProjectConfig 统一 schema 校验。
+// 与 Project.open 共用 parseProjectConfig 统一 schema 校验。
 const root = resolve(import.meta.dirname)
 const configPath = join(root, ".pi", "ctf-config.json")
 let parsedConfig: ProjectConfig
@@ -124,83 +117,24 @@ try {
 } catch (error) {
   fail(`无法读取 ctf-config.json:${error instanceof Error ? error.message : String(error)}`)
 }
-// 平台模式由 platform.plugin 决定；题列表仅 mock 配置内置，CTFd 由服务器提供。
 const activePlatform = parsedConfig.platform.plugin
-interface MockChallengeList { challenges?: Array<{ id: string; remote?: boolean }> }
-const mockChallenges = (parsedConfig.platform.config as MockChallengeList).challenges ?? []
-const allIds = mockChallenges.map((challenge) => challenge.id)
-const uniqueIds = new Set(allIds)
 
-// 重复 id 警告:配置存在碰撞时 ContestRunner 按 id 去重,实际运行的题数少于配置条数。
-const duplicateCount = allIds.length - uniqueIds.size
-if (activePlatform === "mock") {
-  console.log(`配置存在 ${duplicateCount} 个重复 id,实际运行 ${uniqueIds.size} 题`)
-}
-
-// --only 校验:mock 配置即权威题列表,禁止 total=0 假通过;remote 题列表由服务器提供,交给 selectChallenge 过滤。
-if (activePlatform === "mock" && onlyId && !uniqueIds.has(onlyId)) {
-  fail(`未找到题目 id: ${onlyId}`)
-}
-
-const remoteIds = new Set(
-  mockChallenges
-    .filter((challenge) => challenge.remote)
-    .map((challenge) => challenge.id),
-)
-
-function buildSystemPrompt(challengeId: string): string {
+function buildSystemPrompt(): string {
   const lines = [
     "你是 CTF Solver;所有命令和文件操作必须使用 Docker sandbox tools。",
     "请始终使用中文进行思考和推理(reasoning 输出中文)。",
     "开始时必须调用 ctf_blackboard_read 查看共享知识。",
     "必须先调用 ctf_challenge_info,使用 ctf_download_attachment 下载附件,使用 read 读取附件。",
     "必须使用 bash 解码附件,使用 ctf_blackboard_record 记录解码结果,最后调用 ctf_submit_flag。",
+    "若当前题提供 ctf_instance_start 工具,先启动实例并根据返回的 endpoint 连接；完成后销毁实例。",
   ]
-  if (remoteIds.has(challengeId)) {
-    lines.push(
-      "远程题:必须先用 ctf_instance_start 申请环境,再用 bash 连接 endpoint(tcp://主机名:端口)。",
-      "动态 flag 题:FLAG 已写入容器内文件(Pwn:/home/ctf/flag;Web:/flag.txt),找到后直接提交。",
-      "用完后必须调用 ctf_instance_destroy 销毁实例。",
-    )
-  }
   return lines.join("\n")
-}
-
-// 容器泄漏审计:challenge-* 远程实例与 solver 沙箱应全部清理,ctf-net 网络常驻属正常。
-// 审计自身的 docker 命令失败不落入外层 catch(不误标"批量解题失败"),单独报错并置审计失败。
-let auditFailed = false
-async function auditLeaks(): Promise<void> {
-  let containers: { stdout: string }
-  let networks: { stdout: string }
-  try {
-    ;[containers, networks] = await Promise.all([
-      exec("docker", ["ps", "-a", "--format", "{{.Names}}"]),
-      exec("docker", ["network", "ls", "--format", "{{.Name}}"]),
-    ])
-  } catch (error) {
-    auditFailed = true
-    console.error(`泄漏审计失败: docker 命令执行失败:${error instanceof Error ? error.message : String(error)}`)
-    return
-  }
-  const names = containers.stdout.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
-  const challengeContainers = names.filter((name) => name.startsWith("challenge-"))
-  const solverContainers = names.filter((name) => name.includes("solver"))
-  const ctfNetExists = networks.stdout.split(/\r?\n/).map((name) => name.trim()).includes("ctf-net")
-  console.log(`泄漏审计: challenge-* 容器数=${challengeContainers.length} solver 容器数=${solverContainers.length} ctf-net 网络存在=${ctfNetExists}`)
-  if (challengeContainers.length > 0 || solverContainers.length > 0) {
-    auditFailed = true
-    console.error(`泄漏审计失败: 存在残留容器 ${challengeContainers.concat(solverContainers).join(", ")}`)
-  }
-  if (!ctfNetExists) {
-    auditFailed = true
-    console.error("泄漏审计失败: ctf-net 网络不存在")
-  }
 }
 
 let project: Project | undefined
 try {
   console.log(`\n[1/3] 打开 CTF Project(平台: ${activePlatform})`)
-  project = await Project.open({ root, platforms: [mockPlatform, ctfdPlatform, gzctfPlatform] })
+  project = await Project.open({ root, platforms: [ctfdPlatform, gzctfPlatform] })
 
   console.log(`[2/3] 创建 ContestRunner(8 路并发 / maxAttempts 2 / 30min 超时 / retryDelay 2s)${onlyId ? `,仅跑 --only ${onlyId}` : ""}\n`)
   const runner = new ContestRunner(project, {
@@ -215,7 +149,7 @@ try {
       initialState: {
         model,
         thinkingLevel: thinkingLevelFromEnv(),
-        systemPrompt: buildSystemPrompt(challenge.id),
+        systemPrompt: buildSystemPrompt(),
       },
     }),
     compaction: true,
@@ -224,7 +158,7 @@ try {
   })
 
   const summary = await runner.run()
-  // --only 假通过守卫:remote 模式题列表来自服务器,拼错 id 会 total=0 静默成功,两种模式都必须显式失败。
+  // 服务器题目列表中不存在 --only 时显式失败，避免 total=0 假通过。
   if (onlyId && summary.total === 0) {
     fail(`未找到题目 id: ${onlyId}`)
   }
@@ -235,13 +169,7 @@ try {
     }
   }
 
-  if (activePlatform === "mock") {
-    const diagnostics = mockPlatform.diagnostics()
-    console.log(`平台诊断: instanceStarts=${diagnostics.instanceStarts} instanceDestroys=${diagnostics.instanceDestroys} activeEnvironments=${diagnostics.activeEnvironments} maxActiveEnvironments=${diagnostics.maxActiveEnvironments}`)
-  }
-
-  await auditLeaks()
-  if (summary.failed > 0 || auditFailed) process.exitCode = 1
+  if (summary.failed > 0) process.exitCode = 1
 } catch (error) {
   console.error(`\n批量解题失败:${error instanceof Error ? error.stack ?? error.message : String(error)}`)
   process.exitCode = 1

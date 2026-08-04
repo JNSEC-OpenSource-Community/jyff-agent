@@ -6,16 +6,22 @@ WORKDIR /app
 RUN corepack pnpm config set registry https://registry.npmmirror.com
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY packages/base-agent/package.json packages/base-agent/package.json
+COPY packages/platform/package.json packages/platform/package.json
+COPY packages/project/package.json packages/project/package.json
+COPY packages/sandbox/package.json packages/sandbox/package.json
 COPY packages/solver/package.json packages/solver/package.json
-COPY packages/platform-mock/package.json packages/platform-mock/package.json
 COPY packages/webui/package.json packages/webui/package.json
-COPY examples/mock-ctf/package.json examples/mock-ctf/package.json
+COPY examples/ctf/package.json examples/ctf/package.json
 RUN corepack pnpm install --frozen-lockfile
 
+COPY packages/base-agent packages/base-agent
+COPY packages/platform packages/platform
+COPY packages/project packages/project
+COPY packages/sandbox packages/sandbox
 COPY packages/solver packages/solver
-COPY packages/platform-mock packages/platform-mock
 COPY packages/webui packages/webui
-COPY examples/mock-ctf examples/mock-ctf
+COPY examples/ctf examples/ctf
 
 ENV CTF_WEBUI_HOST=0.0.0.0
 ENV CTF_WEBUI_PORT=3000
@@ -26,4 +32,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q -O - http://127.0.0.1:3000/health >/dev/null || exit 1
 
-CMD ["corepack", "pnpm", "webui:mock"]
+CMD ["corepack", "pnpm", "webui"]

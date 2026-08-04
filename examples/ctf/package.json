@@ -1,19 +1,13 @@
 {
-  "name": "@ctf-agent/example-mock-ctf",
+  "name": "@ctf-agent/example-ctf",
   "private": true,
   "type": "module",
   "scripts": {
-    "probe:openrouter": "./test-openrouter.sh",
     "solve": "node --experimental-transform-types run.ts",
-    "solve:myctf": "node --experimental-transform-types run-myctf.ts",
-    "webui": "node --experimental-transform-types webui.ts",
-    "test:blackboard": "node --experimental-transform-types test-blackboard.ts",
-    "run:all": "pnpm run probe:openrouter && pnpm run solve"
+    "webui": "node --experimental-transform-types webui.ts"
   },
   "dependencies": {
-    "@ctf-agent/platform-ctfd": "workspace:*",
-    "@ctf-agent/platform-gzctf": "workspace:*",
-    "@ctf-agent/platform-mock": "workspace:*",
+    "@ctf-agent/platform": "workspace:*",
     "@ctf-agent/project": "workspace:*",
     "@ctf-agent/solver": "workspace:*",
     "@ctf-agent/webui": "workspace:*",

@@ -22,10 +22,14 @@ services:
       CTF_MODEL_BASE_URL: ${CTF_MODEL_BASE_URL:-}
       CTF_MODEL_CONTEXT_WINDOW: ${CTF_MODEL_CONTEXT_WINDOW:-64000}
       CTF_MODEL_MAX_TOKENS: ${CTF_MODEL_MAX_TOKENS:-4096}
+      CTFD_TOKEN: ${CTFD_TOKEN:-}
+      GZCTF_USERNAME: ${GZCTF_USERNAME:-}
+      GZCTF_PASSWORD: ${GZCTF_PASSWORD:-}
+      GZCTF_COOKIE: ${GZCTF_COOKIE:-}
     ports:
       - "127.0.0.1:${CTF_WEBUI_PORT:-3000}:3000"
     volumes:
-      - ctf-agent-data:/app/examples/mock-ctf/.ctf-agent
+      - ctf-agent-data:/app/examples/ctf/.ctf-agent
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 

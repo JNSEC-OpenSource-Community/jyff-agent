@@ -24,17 +24,11 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
 
-  examples/mock-ctf:
+  examples/ctf:
     dependencies:
-      '@ctf-agent/platform-ctfd':
+      '@ctf-agent/platform':
         specifier: workspace:*
-        version: link:../../packages/platform-ctfd
-      '@ctf-agent/platform-gzctf':
-        specifier: workspace:*
-        version: link:../../packages/platform-gzctf
-      '@ctf-agent/platform-mock':
-        specifier: workspace:*
-        version: link:../../packages/platform-mock
+        version: link:../../packages/platform
       '@ctf-agent/project':
         specifier: workspace:*
         version: link:../../packages/project
@@ -61,24 +55,6 @@ importers:
         version: 1.1.38
 
   packages/platform: {}
-
-  packages/platform-ctfd:
-    dependencies:
-      '@ctf-agent/platform':
-        specifier: workspace:*
-        version: link:../platform
-
-  packages/platform-gzctf:
-    dependencies:
-      '@ctf-agent/platform':
-        specifier: workspace:*
-        version: link:../platform
-
-  packages/platform-mock:
-    dependencies:
-      '@ctf-agent/platform':
-        specifier: workspace:*
-        version: link:../platform
 
   packages/project:
     dependencies:

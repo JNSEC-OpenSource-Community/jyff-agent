@@ -12,9 +12,8 @@
     "test:runner": "vitest run packages/project/test/runner/contest-runner.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "example:mock": "pnpm --filter @ctf-agent/example-mock-ctf solve",
-    "example:blackboard": "pnpm --filter @ctf-agent/example-mock-ctf test:blackboard",
-    "webui:mock": "pnpm --filter @ctf-agent/example-mock-ctf webui"
+    "example": "pnpm --filter @ctf-agent/example-ctf solve",
+    "webui": "pnpm --filter @ctf-agent/example-ctf webui"
   },
   "devDependencies": {
     "@earendil-works/pi-agent-core": "^0.82.1",

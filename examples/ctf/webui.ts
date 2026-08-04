@@ -1,8 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { mockPlatform } from "@ctf-agent/platform-mock"
-import { ctfdPlatform } from "@ctf-agent/platform-ctfd"
-import { gzctfPlatform } from "@ctf-agent/platform-gzctf"
+import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 import {
   ContestScheduler,
   Project,
@@ -61,7 +59,7 @@ const activePlatform = parsedConfig.platform.plugin
 
 const project = await Project.open({
   root,
-  platforms: [mockPlatform, ctfdPlatform, gzctfPlatform],
+  platforms: [ctfdPlatform, gzctfPlatform],
   resolveSecret: (name) => name === "CTFD_TOKEN"
     ? model.platformToken() ?? process.env[name]
     : process.env[name],
