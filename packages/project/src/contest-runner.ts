@@ -2,6 +2,15 @@ import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { ChallengeSummary } from "@ctf-agent/platform"
 import { type CreateSolverOptions, Project } from "./project.ts"
 import { CtfSolverAgent, type SolverCloseReason } from "@ctf-agent/solver"
+import {
+  ChallengeTimeoutError,
+  ContestRunnerCancelledError,
+  hasTerminalSubmission,
+  latestAgentError,
+  runSolverPrompt,
+} from "./solver-attempt.ts"
+
+export { ChallengeTimeoutError, ContestRunnerCancelledError } from "./solver-attempt.ts"
 
 export interface ContestRunnerAttemptContext {
   challenge: ChallengeSummary
@@ -54,20 +63,6 @@ export interface ContestRunnerRunOptions {
 }
 
 const DEFAULT_PROMPT = "解决当前 CTF 题目。获取题目信息和附件，必要时启动远程实例，找到并提交 Flag。"
-
-export class ChallengeTimeoutError extends Error {
-  constructor(readonly timeoutMs: number) {
-    super(`Solver 超过单次时限 ${timeoutMs}ms`)
-    this.name = "ChallengeTimeoutError"
-  }
-}
-
-export class ContestRunnerCancelledError extends Error {
-  constructor() {
-    super("ContestRunner 已取消")
-    this.name = "ContestRunnerCancelledError"
-  }
-}
 
 /**
  * 比赛级单进程调度器。
@@ -220,15 +215,15 @@ export class ContestRunner {
           runIds.push(solver.runId)
           this.activeSolvers.set(challenge.id, solver)
 
-          await runPromptWithDeadline(
+          await runSolverPrompt({
             solver,
             prompt,
-            this.options.challengeTimeoutMs ?? 30 * 60_000,
-            this.options.abortGraceMs ?? 5_000,
+            timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
+            abortGraceMs: this.options.abortGraceMs ?? 5_000,
             signal,
-          )
+          })
 
-          if (solver.submission?.status === "accepted" || solver.submission?.status === "already_solved") {
+          if (hasTerminalSubmission(solver)) {
             // agent_end listener 已执行 close；显式 await 保证清理和持久化完全结算。
             await solver.close("submitted")
             return { challengeId: challenge.id, status: "solved", attempts, runIds }
@@ -275,50 +270,6 @@ export class ContestRunner {
       .map((result) => result.reason)
     if (failures.length > 0) throw new AggregateError(failures, "ContestRunner 无法回收全部 Solver 资源")
   }
-}
-
-async function runPromptWithDeadline(
-  solver: CtfSolverAgent,
-  prompt: string,
-  timeoutMs: number,
-  abortGraceMs: number,
-  signal: AbortSignal,
-): Promise<void> {
-  if (signal.aborted) throw new ContestRunnerCancelledError()
-  const operation = solver.prompt(prompt)
-  const settled = operation.then(
-    () => ({ kind: "completed" as const }),
-    (error: unknown) => ({ kind: "failed" as const, error }),
-  )
-  let timeout: NodeJS.Timeout | undefined
-  let abort: (() => void) | undefined
-  const stop = new Promise<{ kind: "timeout" } | { kind: "cancelled" }>((resolve) => {
-    timeout = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs)
-    abort = () => resolve({ kind: "cancelled" })
-    signal.addEventListener("abort", abort, { once: true })
-  })
-
-  const outcome = await Promise.race([settled, stop])
-  if (timeout) clearTimeout(timeout)
-  if (abort) signal.removeEventListener("abort", abort)
-  if (outcome.kind === "completed") return
-  if (outcome.kind === "failed") throw outcome.error
-
-  await solver.abort()
-  await Promise.race([settled, abortableDelay(abortGraceMs)])
-  if (outcome.kind === "cancelled") throw new ContestRunnerCancelledError()
-  throw new ChallengeTimeoutError(timeoutMs)
-}
-
-async function latestAgentError(solver: CtfSolverAgent): Promise<string | undefined> {
-  const messages = await solver.transcript()
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index]
-    if (message?.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")) {
-      return message.errorMessage ?? `Agent ${message.stopReason}`
-    }
-  }
-  return undefined
 }
 
 function closeReason(error: unknown, signal: AbortSignal): SolverCloseReason {

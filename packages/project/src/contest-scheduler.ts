@@ -3,6 +3,7 @@ import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/solver"
 import type { ChallengeSummary } from "@ctf-agent/platform"
 import type { CreateSolverOptions, Project } from "./project.ts"
 import type { RunSource } from "./run-store.ts"
+import { ChallengeTimeoutError, hasTerminalSubmission, latestAgentError, runSolverPrompt } from "./solver-attempt.ts"
 
 export type SchedulerQueueSource = Extract<RunSource, "auto" | "manual" | "retry">
 export type SchedulerPhase = "preparing" | "running" | "cancelling"
@@ -339,14 +340,13 @@ export class ContestScheduler {
       const prompt = typeof this.options.prompt === "function"
         ? await this.options.prompt(context)
         : this.options.prompt ?? DEFAULT_PROMPT
-      await runPromptWithTimeout(
+      await runSolverPrompt({
         solver,
         prompt,
-        this.options.challengeTimeoutMs ?? 30 * 60_000,
-        this.options.abortGraceMs ?? 5_000,
-      )
-      if (solver.submission?.status === "accepted" ||
-        solver.submission?.status === "already_solved") {
+        timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
+        abortGraceMs: this.options.abortGraceMs ?? 5_000,
+      })
+      if (hasTerminalSubmission(solver)) {
         await solver.close("submitted")
         return
       }
@@ -354,7 +354,7 @@ export class ContestScheduler {
     } catch (error) {
       failureReason = active.cancelRequested
         ? "cancelled"
-        : error instanceof SchedulerTimeoutError
+        : error instanceof ChallengeTimeoutError
           ? "timed_out"
           : "failed"
       failureMessage = errorText(error)
@@ -406,54 +406,6 @@ export class ContestScheduler {
   private assertNotShuttingDown(): void {
     if (this.shuttingDown) throw new Error("调度器正在关闭")
   }
-}
-
-class SchedulerTimeoutError extends Error {
-  constructor(timeoutMs: number) {
-    super(`Solver 超过单次时限 ${timeoutMs}ms`)
-    this.name = "SchedulerTimeoutError"
-  }
-}
-
-async function runPromptWithTimeout(
-  solver: CtfSolverAgent,
-  prompt: string,
-  timeoutMs: number,
-  abortGraceMs: number,
-): Promise<void> {
-  const operation = solver.prompt(prompt)
-  const settled = operation.then(
-    () => ({ kind: "completed" as const }),
-    (error: unknown) => ({ kind: "failed" as const, error }),
-  )
-  let timeout: NodeJS.Timeout | undefined
-  const expired = new Promise<{ kind: "timeout" }>((resolve) => {
-    timeout = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs)
-  })
-  const outcome = await Promise.race([settled, expired])
-  if (timeout) clearTimeout(timeout)
-  if (outcome.kind === "completed") return
-  if (outcome.kind === "failed") throw outcome.error
-  await solver.abort()
-  await Promise.race([
-    settled,
-    new Promise((resolve) => setTimeout(resolve, abortGraceMs)),
-  ])
-  throw new SchedulerTimeoutError(timeoutMs)
-}
-
-async function latestAgentError(solver: CtfSolverAgent): Promise<string | undefined> {
-  const messages = await solver.transcript()
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index]
-    if (
-      message?.role === "assistant" &&
-      (message.stopReason === "error" || message.stopReason === "aborted")
-    ) {
-      return message.errorMessage ?? `Agent ${message.stopReason}`
-    }
-  }
-  return undefined
 }
 
 function deduplicate(challenges: readonly ChallengeSummary[]): ChallengeSummary[] {

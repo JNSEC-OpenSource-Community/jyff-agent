@@ -32,7 +32,7 @@
 - [x] Extract Project, RunStore, runner, and scheduler into
       `@ctf-agent/project`.
 - [x] Remove RunStore access from solver tools; Project injects blackboard tools.
-- [ ] Consolidate runner/scheduler attempt execution and lifecycle cleanup.
+- [x] Consolidate runner/scheduler prompt execution, timeout, and result checks.
 - [ ] Classify validation, tool, abort, persistence, diagnostic, and cleanup
       errors; remove silent broad catches.
 - [ ] Shrink duplicated tests and add session recovery, Docker tool, lifecycle,
