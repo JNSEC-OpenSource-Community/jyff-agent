@@ -7,7 +7,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/solver/docker",
+    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
     "test": "vitest run",
     "test:runner": "vitest run packages/project/test/runner/contest-runner.test.ts",
     "test:watch": "vitest",

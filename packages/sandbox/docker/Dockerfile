@@ -1,4 +1,4 @@
-# Solver 的所有命令、RTK 与文件操作均在此容器中执行。
+# Agent 的所有命令、RTK 与文件操作均在此容器中执行。
 ARG RIZIN_VERSION=0.9.1
 ARG RIZIN_SOURCE_SHA256=7ac1cd7daca7afdda742e15478b1f747fc1f813e496fee71839d1e109e543dca
 ARG RZ_GHIDRA_VERSION=0.9.0
