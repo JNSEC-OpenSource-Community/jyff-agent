@@ -16,7 +16,8 @@
     <header class="topbar">
       <a class="brand" href="/" aria-label="CTF Agent 控制台首页">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" role="img">
+          <svg viewBox="0 0 32 32">
+            <title>CTF Agent</title>
             <path d="M4 7.5h8.5L16 4l3.5 3.5H28V16l-3.5 3.5V28H16l-3.5-3.5H4V16l3.5-3.5L4 7.5Z"></path>
             <path class="brand-mark-core" d="m11 12 4 4-4 4m6 0h5"></path>
           </svg>
@@ -75,7 +76,7 @@
             <small id="scheduler-description">控制面状态尚未同步</small>
           </div>
         </div>
-        <div class="scheduler-metrics" aria-label="调度队列状态">
+        <div class="scheduler-metrics" role="group" aria-label="调度队列状态">
           <div><span>队列</span><strong id="scheduler-queued">—</strong></div>
           <div><span>活跃</span><strong id="scheduler-active">—</strong></div>
           <div><span>并发</span><strong id="scheduler-capacity">—</strong></div>
@@ -251,7 +252,7 @@
               <label class="export-full-label" title="勾选后导出的复盘中保留明文 Flag 与完整工具参数">
                 <input type="checkbox" id="export-full"> 明文
               </label>
-              <a class="control-button export-link" id="export-link" download>导出复盘</a>
+              <a class="control-button export-link" id="export-link" href="/" download>导出复盘</a>
             </span>
             <button class="icon-button" id="close-detail" type="button" aria-label="关闭题目详情">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>

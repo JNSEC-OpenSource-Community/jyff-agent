@@ -1,21 +1,26 @@
-import { Type } from "typebox"
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import { Type } from "typebox";
 import {
-  BLACKBOARD_DESCRIPTION_MAX_LENGTH,
-  BLACKBOARD_SOURCE_MAX_ITEMS,
-  type BlackboardSummary,
-  type RunStore,
-} from "./run-store.ts"
+	BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+	BLACKBOARD_SOURCE_MAX_ITEMS,
+	type BlackboardSummary,
+	type RunStore,
+} from "./run-store.ts";
 
-export const BLACKBOARD_TOOL_MAX_CHARACTERS = 64_000
-export const BLACKBOARD_INJECTION_MAX_CHARACTERS = 16_000
+export const BLACKBOARD_TOOL_MAX_CHARACTERS = 64_000;
+export const BLACKBOARD_INJECTION_MAX_CHARACTERS = 16_000;
 
-function result(details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
-  return { content: [{ type: "text", text: JSON.stringify(details, null, 2) }], details }
+function result(
+	details: Record<string, unknown>,
+): AgentToolResult<Record<string, unknown>> {
+	return {
+		content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+		details,
+	};
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+	return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -28,158 +33,199 @@ function errorText(error: unknown): string {
  * with an LLM-based summarizer without changing the data model or tool interface.
  */
 export function serializeBlackboard(
-  summary: BlackboardSummary,
-  options: { maxCharacters?: number } = {},
+	summary: BlackboardSummary,
+	options: { maxCharacters?: number } = {},
 ): string {
-  const lines: string[] = []
+	const lines: string[] = [];
 
-  if (summary.evidence.length > 0) {
-    lines.push("## Confirmed Evidence")
-    for (const e of summary.evidence) {
-      lines.push(`- [e${e.id}] ${JSON.stringify(e.description)}`)
-    }
-    lines.push("")
-  }
+	if (summary.evidence.length > 0) {
+		lines.push("## Confirmed Evidence");
+		for (const e of summary.evidence) {
+			lines.push(`- [e${e.id}] ${JSON.stringify(e.description)}`);
+		}
+		lines.push("");
+	}
 
-  const openOpportunities = summary.opportunities.filter((o) => o.status === "open")
-  const concludedOpportunities = summary.opportunities.filter((o) => o.status === "concluded")
+	const openOpportunities = summary.opportunities.filter(
+		(o) => o.status === "open",
+	);
+	const concludedOpportunities = summary.opportunities.filter(
+		(o) => o.status === "concluded",
+	);
 
-  if (openOpportunities.length > 0) {
-    lines.push("## Open Opportunities")
-    for (const o of openOpportunities) {
-      const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ")
-      lines.push(`- [o${o.id}] from ${sources}: ${JSON.stringify(o.description)}`)
-    }
-    lines.push("")
-  }
+	if (openOpportunities.length > 0) {
+		lines.push("## Open Opportunities");
+		for (const o of openOpportunities) {
+			const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ");
+			lines.push(
+				`- [o${o.id}] from ${sources}: ${JSON.stringify(o.description)}`,
+			);
+		}
+		lines.push("");
+	}
 
-  if (concludedOpportunities.length > 0) {
-    lines.push("## Concluded Opportunities")
-    for (const o of concludedOpportunities) {
-      const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ")
-      const target = o.targetEvidenceId ? ` → e${o.targetEvidenceId}` : ""
-      lines.push(`- [o${o.id}] from ${sources}${target}: ${JSON.stringify(o.description)}`)
-    }
-    lines.push("")
-  }
+	if (concludedOpportunities.length > 0) {
+		lines.push("## Concluded Opportunities");
+		for (const o of concludedOpportunities) {
+			const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ");
+			const target = o.targetEvidenceId ? ` → e${o.targetEvidenceId}` : "";
+			lines.push(
+				`- [o${o.id}] from ${sources}${target}: ${JSON.stringify(o.description)}`,
+			);
+		}
+		lines.push("");
+	}
 
-  lines.push(
-    "Use ctf_blackboard_record to add new evidence or opportunities as you discover them.",
-  )
-  const text = lines.join("\n")
-  const maxCharacters = Math.max(
-    0,
-    Math.floor(options.maxCharacters ?? BLACKBOARD_TOOL_MAX_CHARACTERS),
-  )
-  if (text.length <= maxCharacters) return text
+	lines.push(
+		"Use ctf_blackboard_record to add new evidence or opportunities as you discover them.",
+	);
+	const text = lines.join("\n");
+	const maxCharacters = Math.max(
+		0,
+		Math.floor(options.maxCharacters ?? BLACKBOARD_TOOL_MAX_CHARACTERS),
+	);
+	if (text.length <= maxCharacters) return text;
 
-  const suffix = [
-    "",
-    "[Blackboard snapshot truncated. Call ctf_blackboard_read for the latest bounded snapshot.]",
-  ].join("\n")
-  if (suffix.length >= maxCharacters) return suffix.slice(0, maxCharacters)
-  return text.slice(0, maxCharacters - suffix.length) + suffix
+	const suffix = [
+		"",
+		"[Blackboard snapshot truncated. Call ctf_blackboard_read for the latest bounded snapshot.]",
+	].join("\n");
+	if (suffix.length >= maxCharacters) return suffix.slice(0, maxCharacters);
+	return text.slice(0, maxCharacters - suffix.length) + suffix;
 }
 
 export interface BlackboardToolOptions {
-  runStore: RunStore
-  challengeId: string
-  runId: string
+	runStore: RunStore;
+	challengeId: string;
+	runId: string;
 }
 
-export function createBlackboardTools(options: BlackboardToolOptions): AgentTool[] {
-  const { runStore, challengeId, runId } = options
+export function createBlackboardTools(
+	options: BlackboardToolOptions,
+): AgentTool[] {
+	const { runStore, challengeId, runId } = options;
 
-  return [
-    {
-      name: "ctf_blackboard_read",
-      label: "Read Blackboard",
-      description:
-        "Read the current state of the shared challenge blackboard, including all confirmed evidence and open/concluded opportunities.",
-      parameters: Type.Object({}),
-      executionMode: "sequential",
-      async execute() {
-        const summary = runStore.getBlackboardSummary(challengeId)
-        const text = serializeBlackboard(summary)
-        return { content: [{ type: "text", text }], details: summary as unknown as Record<string, unknown> }
-      },
-    },
-    {
-      name: "ctf_blackboard_record",
-      label: "Record to Blackboard",
-      description:
-        "Record to the shared challenge blackboard. You can record evidence (confirmed findings), " +
-        "declare opportunities (exploration directions from existing evidence), conclude opportunities " +
-        "(record the result of exploring an opportunity), or any combination of these.",
-      parameters: Type.Object({
-        evidence: Type.Optional(Type.Object({
-          description: Type.String({ minLength: 1, maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH }),
-        })),
-        opportunity: Type.Optional(Type.Object({
-          description: Type.String({ minLength: 1, maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH }),
-          sourceEvidenceIds: Type.Array(
-            Type.Integer({ minimum: 1 }),
-            { minItems: 1, maxItems: BLACKBOARD_SOURCE_MAX_ITEMS },
-          ),
-        })),
-        concludeOpportunity: Type.Optional(Type.Object({
-          opportunityId: Type.Integer({ minimum: 1 }),
-          resultDescription: Type.String({ minLength: 1, maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH }),
-        })),
-      }),
-      executionMode: "sequential",
-      async execute(_id, params) {
-        const input = params as {
-          evidence?: { description: string }
-          opportunity?: { description: string; sourceEvidenceIds: number[] }
-          concludeOpportunity?: { opportunityId: number; resultDescription: string }
-        }
+	return [
+		{
+			name: "ctf_blackboard_read",
+			label: "Read Blackboard",
+			description:
+				"Read the current state of the shared challenge blackboard, including all confirmed evidence and open/concluded opportunities.",
+			parameters: Type.Object({}),
+			executionMode: "sequential",
+			async execute() {
+				const summary = runStore.getBlackboardSummary(challengeId);
+				const text = serializeBlackboard(summary);
+				return {
+					content: [{ type: "text", text }],
+					details: summary as unknown as Record<string, unknown>,
+				};
+			},
+		},
+		{
+			name: "ctf_blackboard_record",
+			label: "Record to Blackboard",
+			description:
+				"Record to the shared challenge blackboard. You can record evidence (confirmed findings), " +
+				"declare opportunities (exploration directions from existing evidence), conclude opportunities " +
+				"(record the result of exploring an opportunity), or any combination of these.",
+			parameters: Type.Object({
+				evidence: Type.Optional(
+					Type.Object({
+						description: Type.String({
+							minLength: 1,
+							maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+						}),
+					}),
+				),
+				opportunity: Type.Optional(
+					Type.Object({
+						description: Type.String({
+							minLength: 1,
+							maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+						}),
+						sourceEvidenceIds: Type.Array(Type.Integer({ minimum: 1 }), {
+							minItems: 1,
+							maxItems: BLACKBOARD_SOURCE_MAX_ITEMS,
+						}),
+					}),
+				),
+				concludeOpportunity: Type.Optional(
+					Type.Object({
+						opportunityId: Type.Integer({ minimum: 1 }),
+						resultDescription: Type.String({
+							minLength: 1,
+							maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+						}),
+					}),
+				),
+			}),
+			executionMode: "sequential",
+			async execute(_id, params) {
+				const input = params as {
+					evidence?: { description: string };
+					opportunity?: { description: string; sourceEvidenceIds: number[] };
+					concludeOpportunity?: {
+						opportunityId: number;
+						resultDescription: string;
+					};
+				};
 
-        if (!input.evidence && !input.opportunity && !input.concludeOpportunity) {
-          throw new Error("At least one of evidence, opportunity, or concludeOpportunity is required")
-        }
+				if (
+					!input.evidence &&
+					!input.opportunity &&
+					!input.concludeOpportunity
+				) {
+					throw new Error(
+						"At least one of evidence, opportunity, or concludeOpportunity is required",
+					);
+				}
 
-        const details: Record<string, unknown> = {}
+				const details: Record<string, unknown> = {};
 
-        if (input.evidence) {
-          try {
-            const record = runStore.recordEvidence(challengeId, runId, input.evidence.description)
-            details.evidence = record
-          } catch (err) {
-            details.evidenceError = errorText(err)
-          }
-        }
+				if (input.evidence) {
+					try {
+						const record = runStore.recordEvidence(
+							challengeId,
+							runId,
+							input.evidence.description,
+						);
+						details.evidence = record;
+					} catch (err) {
+						details.evidenceError = errorText(err);
+					}
+				}
 
-        if (input.opportunity) {
-          try {
-            const record = runStore.recordOpportunity(
-              challengeId,
-              runId,
-              input.opportunity.description,
-              input.opportunity.sourceEvidenceIds,
-            )
-            details.opportunity = record
-          } catch (err) {
-            details.opportunityError = errorText(err)
-          }
-        }
+				if (input.opportunity) {
+					try {
+						const record = runStore.recordOpportunity(
+							challengeId,
+							runId,
+							input.opportunity.description,
+							input.opportunity.sourceEvidenceIds,
+						);
+						details.opportunity = record;
+					} catch (err) {
+						details.opportunityError = errorText(err);
+					}
+				}
 
-        if (input.concludeOpportunity) {
-          try {
-            const concluded = runStore.concludeOpportunity(
-              challengeId,
-              input.concludeOpportunity.opportunityId,
-              input.concludeOpportunity.resultDescription,
-              runId,
-            )
-            details.concluded = concluded
-          } catch (err) {
-            details.concludeError = errorText(err)
-          }
-        }
+				if (input.concludeOpportunity) {
+					try {
+						const concluded = runStore.concludeOpportunity(
+							challengeId,
+							input.concludeOpportunity.opportunityId,
+							input.concludeOpportunity.resultDescription,
+							runId,
+						);
+						details.concluded = concluded;
+					} catch (err) {
+						details.concludeError = errorText(err);
+					}
+				}
 
-        return result(details)
-      },
-    },
-  ]
+				return result(details);
+			},
+		},
+	];
 }

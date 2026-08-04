@@ -1,14 +1,16 @@
 {
-  "name": "@ctf-agent/project",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": {
-    "@ctf-agent/agents": "workspace:*",
-    "@ctf-agent/platform": "workspace:*",
-    "@ctf-agent/sandbox": "workspace:*",
-    "@earendil-works/pi-agent-core": "^0.82.1",
-    "typebox": "^1.1.38"
-  }
+	"name": "@ctf-agent/project",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@ctf-agent/agents": "workspace:*",
+		"@ctf-agent/platform": "workspace:*",
+		"@ctf-agent/sandbox": "workspace:*",
+		"@earendil-works/pi-agent-core": "^0.82.1",
+		"typebox": "^1.1.38"
+	}
 }

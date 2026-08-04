@@ -1,19 +1,19 @@
 {
-  "version": 1,
-  "project": {
-    "id": "ctfd-demo",
-    "name": "CTFd Demo"
-  },
-  "platform": {
-    "plugin": "ctfd",
-    "config": {
-      "baseUrl": "https://demo.ctfd.io",
-      "tokenSecret": "CTFD_TOKEN"
-    }
-  },
-  "sandbox": {
-    "image": "ctf-agent-solver:latest",
-    "privileged": false,
-    "networkMode": "bridge"
-  }
+	"version": 1,
+	"project": {
+		"id": "ctfd-demo",
+		"name": "CTFd Demo"
+	},
+	"platform": {
+		"plugin": "ctfd",
+		"config": {
+			"baseUrl": "https://demo.ctfd.io",
+			"tokenSecret": "CTFD_TOKEN"
+		}
+	},
+	"sandbox": {
+		"image": "ctf-agent-solver:latest",
+		"privileged": false,
+		"networkMode": "bridge"
+	}
 }

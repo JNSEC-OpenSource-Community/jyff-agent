@@ -1,9 +1,9 @@
 {
-  "name": "@ctf-agent/platform",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
-  }
+	"name": "@ctf-agent/platform",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	}
 }

@@ -1,15 +1,15 @@
 {
-  "name": "@ctf-agent/example-ctf",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "solve": "node --experimental-transform-types run.ts",
-    "webui": "node --experimental-transform-types webui.ts"
-  },
-  "dependencies": {
-    "@ctf-agent/platform": "workspace:*",
-    "@ctf-agent/project": "workspace:*",
-    "@ctf-agent/webui": "workspace:*",
-    "@earendil-works/pi-ai": "^0.82.1"
-  }
+	"name": "@ctf-agent/example-ctf",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"solve": "node --experimental-transform-types run.ts",
+		"webui": "node --experimental-transform-types webui.ts"
+	},
+	"dependencies": {
+		"@ctf-agent/platform": "workspace:*",
+		"@ctf-agent/project": "workspace:*",
+		"@ctf-agent/webui": "workspace:*",
+		"@earendil-works/pi-ai": "^0.82.1"
+	}
 }
