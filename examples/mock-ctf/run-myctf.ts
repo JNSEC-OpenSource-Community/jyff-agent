@@ -221,7 +221,7 @@ try {
         systemPrompt: buildSystemPrompt(challenge.id),
       },
     }),
-    compaction: { reserveTokens: 3_000, keepRecentTokens: 8_000 },
+    compaction: true,
     prompt: "解决当前 CTF 题目。严格完成黑板读取、题目信息、附件下载、read 读取、bash 分析、黑板记录和 Flag 提交的完整工具链。",
     selectChallenge: (challenge) => (onlyId ? challenge.id === onlyId : true),
   })

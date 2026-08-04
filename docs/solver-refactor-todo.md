@@ -26,7 +26,7 @@
 - [x] Add `@ctf-agent/base-agent` using Pi `AgentHarness` and `Session`.
 - [x] Create/open one native Pi JSONL session per run and verify restoration.
 - [x] Migrate skill discovery, diagnostics, and prompt formatting to Pi.
-- [ ] Remove the legacy compaction implementation in favor of Pi sessions.
+- [x] Remove the legacy compaction implementation in favor of Pi sessions.
 - [x] Migrate bash/read/write/edit to Pi tools over the Docker environment.
 - [x] Make `CtfSolverAgent` extend `BaseAgent` and remove duplicated runtime code.
 - [ ] Extract Project, RunStore, runner, and scheduler into

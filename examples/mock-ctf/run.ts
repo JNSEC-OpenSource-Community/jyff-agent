@@ -115,7 +115,7 @@ try {
         ].join("\n"),
       },
     },
-    compaction: { reserveTokens: 3_000, keepRecentTokens: 8_000 },
+    compaction: true,
   })
 
   solver.subscribe((event) => {

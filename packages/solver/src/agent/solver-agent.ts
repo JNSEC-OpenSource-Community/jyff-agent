@@ -10,7 +10,6 @@ import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions, Skill } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
 import type { RunStore } from "../project/run-store.ts"
-import type { CompactionOptions } from "./compaction.ts"
 import type { AgentSkill } from "../skills/project-skills.ts"
 import { createSolverTools } from "../sandbox/tools.ts"
 
@@ -30,7 +29,7 @@ export interface CreateCtfSolverAgentOptions {
   features?: {
     skills?: readonly AgentSkill[]
     /** `false` disables BaseAgent's native Pi automatic compaction check. */
-    compaction?: false | CompactionOptions
+    compaction?: boolean
   }
   blackboard?: {
     runStore: RunStore

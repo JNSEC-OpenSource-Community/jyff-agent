@@ -1,4 +1,3 @@
-export * from "./agent/compaction.ts"
 export * from "./agent/solver-agent.ts"
 export * from "./blackboard/index.ts"
 export * from "@ctf-agent/platform"

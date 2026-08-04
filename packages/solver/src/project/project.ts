@@ -11,7 +11,6 @@ import {
 } from "@ctf-agent/sandbox"
 import { CtfSolverAgent, type SolverCloseDetails } from "../agent/solver-agent.ts"
 import { discoverProjectSkills, materializeSkills, type AgentSkill } from "../skills/project-skills.ts"
-import type { CompactionOptions } from "../agent/compaction.ts"
 import type { Announcement, ChallengeSummary, ContestOverview, PlatformPlugin, PlatformProject, RemoteEnvironment } from "@ctf-agent/platform"
 import {
   RunStore,
@@ -54,7 +53,8 @@ export interface ProjectTelemetryOptions {
 
 export interface CreateSolverOptions {
   agent: AgentOptions
-  compaction?: false | CompactionOptions
+  /** Uses Pi's native session-tree compaction. Defaults to enabled. */
+  compaction?: boolean
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource

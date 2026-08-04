@@ -94,7 +94,7 @@ const scheduler = new ContestScheduler(project, {
       : {}),
   }),
   createAgentOptions: () => model.createAgentOptions(),
-  compaction: { reserveTokens: 3_000, keepRecentTokens: 8_000 },
+  compaction: true,
 })
 // 停止调度(暂停自主/关闭)时自动销毁全部运行实例
 async function destroyAllInstances(): Promise<void> {
