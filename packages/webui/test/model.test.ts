@@ -31,6 +31,8 @@ describe("WebUI dashboard model", () => {
     expect(
       snapshot.challenges.find((challenge) => challenge.id === "web-1"),
     ).toMatchObject({ status: "solved", progress: "Flag 已确认" })
+    expect(project.latestRunEventCalls).toBe(1)
+    expect(project.runEventsCalls).toBe(0)
   })
 
   it("生成包含时间线、环境和协作黑板的单题详情", async () => {
@@ -47,6 +49,56 @@ describe("WebUI dashboard model", () => {
     await expect(
       buildChallengeDetails(project, "missing"),
     ).resolves.toBeUndefined()
+  })
+
+  it("题目详情复用当前 Dashboard 快照，不重复访问平台", async () => {
+    const project = new FakeDashboardProject()
+    const snapshot = await buildDashboardSnapshot(project)
+    const overviewCalls = project.overviewCalls
+
+    const details = await buildChallengeDetails(
+      project,
+      "pwn-1",
+      undefined,
+      snapshot,
+    )
+
+    expect(details?.challenge.title).toBe("Heap Garden")
+    expect(project.overviewCalls).toBe(overviewCalls)
+  })
+
+  it("详情合并旧版逐片 thinking 事件，避免超大时间线", async () => {
+    const project = new FakeDashboardProject()
+    project.eventValues.get("run-pwn-1")?.push(
+      {
+        id: 2,
+        runId: "run-pwn-1",
+        type: "agent_thinking",
+        data: { text: "先看" },
+        createdAt: "2026-07-29T12:00:01.000Z",
+      },
+      {
+        id: 3,
+        runId: "run-pwn-1",
+        type: "agent_thinking",
+        data: { text: "保护" },
+        createdAt: "2026-07-29T12:00:01.100Z",
+      },
+      {
+        id: 4,
+        runId: "run-pwn-1",
+        type: "agent_thinking",
+        data: { text: "机制" },
+        createdAt: "2026-07-29T12:00:01.200Z",
+      },
+    )
+
+    const details = await buildChallengeDetails(project, "pwn-1")
+    const thinking = details?.runs[0]?.events.filter(
+      (event) => event.type === "agent_thinking",
+    )
+    expect(thinking).toHaveLength(1)
+    expect(thinking?.[0]?.data).toMatchObject({ text: "先看保护机制" })
   })
 
   it("把调度队列状态映射为 queued，并暴露队列位置和来源", async () => {

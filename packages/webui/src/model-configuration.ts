@@ -4,11 +4,15 @@ import type { SecretStore } from "@ctf-agent/core"
 import type { AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import {
+  type Api,
+  type Context,
   getModel,
   getSupportedThinkingLevels,
   type Model,
+  type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat"
 import type {
+  DashboardModelAuthentication,
   DashboardModelConfiguration,
   ModelConfigurationUpdate,
   ModelConfigurationView,
@@ -32,7 +36,6 @@ interface StoredModelConfiguration {
   modelId?: string
   baseUrl?: string
   contextWindow?: number
-  maxTokens?: number
   thinkingEnabled?: boolean
   reasoningEffort?: string
   passthroughThinking?: boolean
@@ -41,6 +44,7 @@ interface StoredModelConfiguration {
 export interface FileModelConfigurationOptions {
   storagePath: string
   secretStore: SecretStore
+  authentication?: DashboardModelAuthentication
 }
 
 export interface AgentModelConfiguration extends DashboardModelConfiguration {
@@ -55,7 +59,7 @@ export async function createFileModelConfiguration(
   options: FileModelConfigurationOptions,
 ): Promise<AgentModelConfiguration> {
   const parsed = await readStoredConfiguration(options.storagePath)
-  if (parsed.legacyApiKey !== undefined) {
+  if (parsed.legacyApiKey !== undefined || parsed.needsRewrite) {
     if (parsed.legacyApiKey && !options.secretStore.has(MODEL_API_KEY_SECRET)) {
       await options.secretStore.set({
         [MODEL_API_KEY_SECRET]: parsed.legacyApiKey,
@@ -73,20 +77,31 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   ) {}
 
   snapshot(): ModelConfigurationView {
-    const apiKeyConfigured = this.options.secretStore.has(MODEL_API_KEY_SECRET)
+    const provider = this.values.provider ?? "openrouter"
+    const secretConfigured = this.options.secretStore.has(MODEL_API_KEY_SECRET)
+    const providerCredentialConfigured =
+      !this.values.baseUrl &&
+      this.options.authentication?.hasCredential(provider) === true
+    const apiKeyConfigured = secretConfigured || providerCredentialConfigured
     const modelId = this.values.modelId ?? ""
     const unavailableReason = this.unavailableReason()
     const model = unavailableReason
       ? undefined
-      : resolveModel({ ...this.values, thinkingEnabled: true })
+      : resolveModel(
+          { ...this.values, thinkingEnabled: true },
+          this.options.authentication,
+        )
     return {
-      provider: this.values.provider ?? "openrouter",
+      provider,
       modelId,
       baseUrl: this.values.baseUrl ?? "",
       contextWindow: this.values.contextWindow ?? 64_000,
-      maxTokens: this.values.maxTokens ?? 4_096,
       apiKeyConfigured,
-      apiKeySource: apiKeyConfigured ? "secret-store" : "none",
+      apiKeySource: providerCredentialConfigured
+        ? "provider-credential"
+        : secretConfigured
+          ? "secret-store"
+          : "none",
       thinkingEnabled: this.values.thinkingEnabled ?? false,
       reasoningEffort: this.values.reasoningEffort ?? "max",
       passthroughThinking: this.values.passthroughThinking ?? false,
@@ -106,7 +121,6 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       modelId: configuration.modelId,
       baseUrl: configuration.baseUrl,
       contextWindow: configuration.contextWindow,
-      maxTokens: configuration.maxTokens,
       thinkingEnabled: configuration.thinkingEnabled,
       reasoningEffort: configuration.reasoningEffort,
       passthroughThinking: configuration.passthroughThinking,
@@ -128,13 +142,35 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   createAgentOptions(): AgentOptions {
     const apiKey = this.options.secretStore.get(MODEL_API_KEY_SECRET)
     const unavailableReason = this.unavailableReason()
-    if (!apiKey || unavailableReason) {
+    if (unavailableReason) {
       throw new Error(unavailableReason ?? "未配置模型 API Key，调度操作已禁用")
     }
-    const model = resolveModel(this.values)
+    const model = resolveModel(this.values, this.options.authentication)
     const provider = model.provider
+    const nativeAuthentication =
+      !this.values.baseUrl &&
+      this.options.authentication?.hasCredential(provider) === true
+    if (nativeAuthentication && this.options.authentication) {
+      const models = this.options.authentication.models
+      return {
+        streamFn: ((candidate, context, streamOptions) =>
+          models.streamSimple(
+            candidate,
+            context,
+            streamOptions,
+          )) as AgentOptions["streamFn"],
+        initialState: {
+          model,
+          thinkingLevel: this.values.thinkingEnabled
+            ? normalizeThinkingLevel(this.values.reasoningEffort)
+            : "off",
+          systemPrompt: SOLVER_SYSTEM_PROMPT,
+        },
+      }
+    }
+    if (!apiKey) throw new Error("未配置模型 API Key，调度操作已禁用")
     return {
-      streamFn: streamSimple as AgentOptions["streamFn"],
+      streamFn: streamWithoutOutputTokenLimit as AgentOptions["streamFn"],
       getApiKey: (requestedProvider) =>
         requestedProvider === provider ? apiKey : undefined,
       initialState: {
@@ -148,12 +184,19 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   }
 
   private unavailableReason(): string | undefined {
-    if (!this.options.secretStore.has(MODEL_API_KEY_SECRET)) {
-      return "未配置模型 API Key，调度操作已禁用"
-    }
     if (!this.values.modelId) return "未配置 Model ID，调度操作已禁用"
+    const provider = this.values.provider ?? "openrouter"
+    const providerCredentialConfigured =
+      !this.values.baseUrl &&
+      this.options.authentication?.hasCredential(provider) === true
+    if (
+      !providerCredentialConfigured &&
+      !this.options.secretStore.has(MODEL_API_KEY_SECRET)
+    ) {
+      return "未配置模型凭据或 API Key，调度操作已禁用"
+    }
     try {
-      resolveModel(this.values)
+      resolveModel(this.values, this.options.authentication)
       return undefined
     } catch (error) {
       return error instanceof Error ? error.message : String(error)
@@ -164,6 +207,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
 async function readStoredConfiguration(path: string): Promise<{
   configuration: StoredModelConfiguration
   legacyApiKey?: string
+  needsRewrite?: boolean
 }> {
   let parsed: unknown
   try {
@@ -187,9 +231,6 @@ async function readStoredConfiguration(path: string): Promise<{
       ...(positiveInteger(parsed.contextWindow)
         ? { contextWindow: parsed.contextWindow }
         : {}),
-      ...(positiveInteger(parsed.maxTokens)
-        ? { maxTokens: parsed.maxTokens }
-        : {}),
       ...(typeof parsed.thinkingEnabled === "boolean"
         ? { thinkingEnabled: parsed.thinkingEnabled }
         : {}),
@@ -203,6 +244,7 @@ async function readStoredConfiguration(path: string): Promise<{
     ...(typeof parsed.apiKey === "string"
       ? { legacyApiKey: parsed.apiKey }
       : {}),
+    ...("maxTokens" in parsed ? { needsRewrite: true } : {}),
   }
 }
 
@@ -226,12 +268,12 @@ function positiveInteger(value: unknown): value is number {
 
 function resolveModel(
   configuration: StoredModelConfiguration,
-): Model<"openai-completions"> {
+  authentication?: DashboardModelAuthentication,
+): Model<Api> {
   const provider = configuration.provider ?? "openrouter"
   const modelId = configuration.modelId ?? ""
   const baseUrl = configuration.baseUrl?.replace(/\/+$/, "") ?? ""
   const contextWindow = configuration.contextWindow ?? 64_000
-  const maxTokens = configuration.maxTokens ?? 4_096
   const reasoning = configuration.thinkingEnabled ?? false
 
   if (baseUrl) {
@@ -252,7 +294,10 @@ function resolveModel(
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow,
-      maxTokens,
+      // Pi requires model output capacity metadata. For custom endpoints the
+      // context window is the only known ceiling; the request itself omits an
+      // output-token field and lets the provider/model decide.
+      maxTokens: contextWindow,
       compat: {
         supportsStore: false,
         supportsDeveloperRole: false,
@@ -261,6 +306,15 @@ function resolveModel(
         supportsLongCacheRetention: false,
         maxTokensField: "max_tokens",
       },
+    }
+  }
+
+  if (authentication?.hasCredential(provider)) {
+    const native = authentication.models.getModel(provider, modelId)
+    if (!native) throw new Error(`Pi 未内置模型: ${provider}/${modelId}`)
+    return {
+      ...native,
+      contextWindow: Math.min(native.contextWindow, contextWindow),
     }
   }
 
@@ -275,10 +329,33 @@ function resolveModel(
   return {
     ...openAiModel,
     contextWindow: Math.min(openAiModel.contextWindow, contextWindow),
-    maxTokens: Math.min(openAiModel.maxTokens, maxTokens),
     reasoning,
     compat: { ...openAiModel.compat, supportsDeveloperRole: false },
   }
+}
+
+/** Keep Pi's reasoning/provider mapping, but never send a client token budget. */
+function streamWithoutOutputTokenLimit(
+  model: Model<"openai-completions">,
+  context: Context,
+  options?: SimpleStreamOptions,
+) {
+  const upstreamOnPayload = options?.onPayload
+  return streamSimple(model, context, {
+    ...options,
+    onPayload: async (payload, payloadModel) => {
+      const transformed = await upstreamOnPayload?.(payload, payloadModel)
+      return omitOutputTokenLimit(transformed ?? payload)
+    },
+  })
+}
+
+export function omitOutputTokenLimit(payload: unknown): unknown {
+  if (!isRecord(payload)) return payload
+  const copy = { ...payload }
+  delete copy.max_tokens
+  delete copy.max_completion_tokens
+  return copy
 }
 
 function deepseekThinkingLevelMap(

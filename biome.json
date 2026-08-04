@@ -6,7 +6,8 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": false
+    "ignoreUnknown": false,
+    "includes": ["**", "!packages/webui/src/client/app.js"]
   },
   "formatter": {
     "enabled": true,
@@ -46,6 +47,27 @@
           "a11y": {
             "useFocusableInteractive": "off",
             "useSemanticElements": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/webui/src/client/app.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useFocusableInteractive": "off",
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/webui/src/client/settings-dialogs.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noLabelWithoutControl": "off"
           }
         }
       }

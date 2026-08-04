@@ -4,6 +4,12 @@ export {
   buildEmptyDashboardSnapshot,
 } from "./model.ts"
 export {
+  createFileModelAuthentication,
+  FileCredentialStore,
+  type FileModelAuthenticationOptions,
+  parseCredentialImport,
+} from "./model-authentication.ts"
+export {
   type AgentModelConfiguration,
   createFileModelConfiguration,
   type FileModelConfigurationOptions,
@@ -15,12 +21,20 @@ export type {
   DashboardChallenge,
   DashboardChallengeStatus,
   DashboardControlPlane,
+  DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardProject,
   DashboardRun,
   DashboardScheduler,
   DashboardSnapshot,
   DashboardStats,
+  ModelAuthCredentialType,
+  ModelAuthenticationView,
+  ModelAuthImportResult,
+  ModelAuthLoginSessionView,
+  ModelAuthMethodId,
+  ModelAuthProviderId,
+  ModelAuthProviderView,
   ModelConfigurationUpdate,
   ModelConfigurationView,
 } from "./types.ts"

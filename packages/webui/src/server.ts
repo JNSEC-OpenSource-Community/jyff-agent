@@ -18,6 +18,7 @@ import {
 } from "./model.ts"
 import type {
   DashboardControlPlane,
+  DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardProject,
   DashboardScheduler,
@@ -34,6 +35,7 @@ export interface WebUiOptions {
   scheduler?: DashboardScheduler
   schedulerReconcileIntervalMs?: number
   modelConfiguration?: DashboardModelConfiguration
+  modelAuthentication?: DashboardModelAuthentication
 }
 
 export interface WebUiServer {
@@ -47,6 +49,14 @@ export interface WebUiServer {
 interface StaticAsset {
   content: Buffer
   contentType: string
+}
+
+interface DashboardSyncHealth {
+  status: "ok" | "degraded"
+  consecutiveFailures: number
+  lastAttemptAt: string
+  lastSuccessAt: string | null
+  lastError: string | null
 }
 
 const STATIC_ASSETS = new Map<string, { file: URL; contentType: string }>([
@@ -100,15 +110,74 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     }
     throw new Error("WebUI 当前没有可用的 project")
   }
-  let latestSnapshot = await buildCurrentSnapshot()
+  const initialAttemptAt = new Date().toISOString()
+  let syncHealth: DashboardSyncHealth
+  let latestSnapshot: DashboardSnapshot
+  try {
+    latestSnapshot = await buildCurrentSnapshot()
+    syncHealth = {
+      status: "ok",
+      consecutiveFailures: 0,
+      lastAttemptAt: initialAttemptAt,
+      lastSuccessAt: latestSnapshot.generatedAt,
+      lastError: null,
+    }
+  } catch (error) {
+    if (!options.controlPlane) throw error
+    const message = errorText(error)
+    latestSnapshot = buildEmptyDashboardSnapshot(options.controlPlane)
+    syncHealth = {
+      status: "degraded",
+      consecutiveFailures: 1,
+      lastAttemptAt: initialAttemptAt,
+      lastSuccessAt: null,
+      lastError: message,
+    }
+    console.warn(`[webui] 初始平台同步失败，将在后台恢复：${message}`)
+  }
   let serializedSnapshot = JSON.stringify(latestSnapshot)
   let snapshotFingerprint = fingerprint(latestSnapshot)
   let pendingRefresh: Promise<DashboardSnapshot> | undefined
+
+  const markSyncSuccess = (snapshot: DashboardSnapshot): void => {
+    const recovered = syncHealth.status === "degraded"
+    syncHealth = {
+      status: "ok",
+      consecutiveFailures: 0,
+      lastAttemptAt: snapshot.generatedAt,
+      lastSuccessAt: snapshot.generatedAt,
+      lastError: null,
+    }
+    if (recovered) {
+      console.info("[webui] 平台同步已恢复")
+      broadcast(clients, "dashboard_recovered", JSON.stringify(syncHealth))
+    }
+  }
+
+  const markSyncFailure = (error: unknown, source: string): void => {
+    const message = errorText(error)
+    syncHealth = {
+      status: "degraded",
+      consecutiveFailures: syncHealth.consecutiveFailures + 1,
+      lastAttemptAt: new Date().toISOString(),
+      lastSuccessAt: syncHealth.lastSuccessAt,
+      lastError: message,
+    }
+    console.warn(
+      `[webui] ${source}失败（连续 ${syncHealth.consecutiveFailures} 次）：${message}`,
+    )
+    broadcast(
+      clients,
+      "dashboard_error",
+      JSON.stringify({ message, ...syncHealth }),
+    )
+  }
 
   const refresh = async (): Promise<DashboardSnapshot> => {
     if (pendingRefresh) return pendingRefresh
     pendingRefresh = buildCurrentSnapshot()
       .then((snapshot) => {
+        markSyncSuccess(snapshot)
         const serialized = JSON.stringify(snapshot)
         const nextFingerprint = fingerprint(snapshot)
         latestSnapshot = snapshot
@@ -118,6 +187,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
           broadcast(clients, "snapshot", serialized, snapshot.generatedAt)
         }
         return snapshot
+      })
+      .catch((error: unknown) => {
+        markSyncFailure(error, "平台快照同步")
+        throw error
       })
       .finally(() => {
         pendingRefresh = undefined
@@ -162,9 +235,12 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         status: "ok",
         generatedAt: latestSnapshot.generatedAt,
         connectedClients: clients.size,
+        platformSync: { ...syncHealth },
         controlPlane: options.controlPlane?.snapshot() ?? null,
         scheduler: currentScheduler()?.snapshot() ?? null,
         modelConfiguration: options.modelConfiguration?.snapshot() ?? null,
+        modelAuthentication:
+          (await options.modelAuthentication?.snapshot()) ?? null,
       })
       return
     }
@@ -267,6 +343,181 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    if (method === "GET" && url.pathname === "/api/model-auth") {
+      requireModelAuthentication(options.modelAuthentication)
+      sendJson(response, 200, await options.modelAuthentication.snapshot())
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/model-auth/login") {
+      requireModelAuthentication(options.modelAuthentication)
+      const authentication = options.modelAuthentication
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      const provider = requiredString(
+        body.provider,
+        "Provider",
+        128,
+        "invalid_model_authentication",
+      )
+      const methodId = requiredString(
+        body.method,
+        "登录方式",
+        128,
+        "invalid_model_authentication",
+      )
+      const secret =
+        body.secret === undefined
+          ? undefined
+          : optionalString(
+              body.secret,
+              "凭据",
+              16_384,
+              "invalid_model_authentication",
+            )
+      sendJson(
+        response,
+        202,
+        await modelAuthenticationAction(() =>
+          authentication.startLogin({
+            provider,
+            method: methodId,
+            ...(secret ? { secret } : {}),
+          }),
+        ),
+      )
+      return
+    }
+
+    const loginSession = /^\/api\/model-auth\/login\/([^/]+)$/.exec(
+      url.pathname,
+    )
+    if (method === "GET" && loginSession) {
+      requireModelAuthentication(options.modelAuthentication)
+      const authentication = options.modelAuthentication
+      const session = await modelAuthenticationAction(() =>
+        Promise.resolve(
+          authentication.loginSession(
+            decodeURIComponent(loginSession[1] ?? ""),
+          ),
+        ),
+      )
+      if (session.status === "success") {
+        await reconcileModelAvailability(
+          options.modelConfiguration,
+          currentScheduler(),
+        )
+      }
+      sendJson(response, 200, session)
+      return
+    }
+
+    const loginAction =
+      /^\/api\/model-auth\/login\/([^/]+)\/(prompt|cancel)$/.exec(url.pathname)
+    if (method === "POST" && loginAction) {
+      requireModelAuthentication(options.modelAuthentication)
+      const authentication = options.modelAuthentication
+      requireJsonRequest(request)
+      const sessionId = decodeURIComponent(loginAction[1] ?? "")
+      if (loginAction[2] === "prompt") {
+        const body = await readJsonBody(request)
+        const value = requiredString(
+          body.value,
+          "登录输入",
+          16_384,
+          "invalid_model_authentication",
+        )
+        sendJson(
+          response,
+          200,
+          await modelAuthenticationAction(() =>
+            Promise.resolve(authentication.submitPrompt(sessionId, value)),
+          ),
+        )
+      } else {
+        await readJsonBody(request)
+        sendJson(
+          response,
+          200,
+          await modelAuthenticationAction(() =>
+            Promise.resolve(authentication.cancelLogin(sessionId)),
+          ),
+        )
+      }
+      return
+    }
+
+    const modelLogout = /^\/api\/model-auth\/providers\/([^/]+)\/logout$/.exec(
+      url.pathname,
+    )
+    if (method === "POST" && modelLogout) {
+      requireModelAuthentication(options.modelAuthentication)
+      const modelAuthentication = options.modelAuthentication
+      requireJsonRequest(request)
+      await readJsonBody(request)
+      const authentication = await modelAuthenticationAction(() =>
+        modelAuthentication.logout(decodeURIComponent(modelLogout[1] ?? "")),
+      )
+      const configuration = await reconcileModelAvailability(
+        options.modelConfiguration,
+        currentScheduler(),
+      )
+      sendJson(response, 200, {
+        authentication,
+        configuration,
+        snapshot: await refresh(),
+      })
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/model-auth/import") {
+      requireModelAuthentication(options.modelAuthentication)
+      const authentication = options.modelAuthentication
+      requireJsonRequest(request)
+      const body = await readJsonBody(request, 262_144)
+      const raw = requiredString(
+        body.json,
+        "auth.json",
+        250_000,
+        "invalid_model_authentication",
+      )
+      const imported = await modelAuthenticationAction(() =>
+        authentication.importJson(raw),
+      )
+      const configuration = await reconcileModelAvailability(
+        options.modelConfiguration,
+        currentScheduler(),
+      )
+      sendJson(response, 200, {
+        imported,
+        authentication: await authentication.snapshot(),
+        configuration,
+        snapshot: await refresh(),
+      })
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/model-auth/import-file") {
+      requireModelAuthentication(options.modelAuthentication)
+      const authentication = options.modelAuthentication
+      requireJsonRequest(request)
+      await readJsonBody(request)
+      const imported = await modelAuthenticationAction(() =>
+        authentication.importFile(),
+      )
+      const configuration = await reconcileModelAvailability(
+        options.modelConfiguration,
+        currentScheduler(),
+      )
+      sendJson(response, 200, {
+        imported,
+        authentication: await authentication.snapshot(),
+        configuration,
+        snapshot: await refresh(),
+      })
+      return
+    }
+
     if (method === "POST" && url.pathname === "/api/scheduler/auto/start") {
       const scheduler = currentScheduler()
       requireScheduler(scheduler)
@@ -281,6 +532,22 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       requireScheduler(scheduler)
       requireJsonRequest(request)
       scheduler.pauseAuto()
+      sendJson(response, 200, await refresh())
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/scheduler/concurrency") {
+      const scheduler = currentScheduler()
+      requireScheduler(scheduler)
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      const maxConcurrent = requiredPositiveInteger(
+        body.maxConcurrent,
+        "调度并发量",
+        64,
+        "invalid_scheduler_configuration",
+      )
+      await scheduler.setMaxConcurrent(maxConcurrent)
       sendJson(response, 200, await refresh())
       return
     }
@@ -379,6 +646,50 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    const subagentAction =
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/(steer|cancel)$/.exec(
+        url.pathname,
+      )
+    if (method === "POST" && subagentAction) {
+      const project = currentProject()
+      requireProject(project)
+      requireJsonRequest(request)
+      const runId = decodeURIComponent(subagentAction[1] ?? "")
+      const subagentId = decodeURIComponent(subagentAction[2] ?? "")
+      try {
+        if (subagentAction[3] === "steer") {
+          const body = await readJsonBody(request)
+          const message = requiredString(
+            body.message,
+            "Message",
+            4_000,
+            "invalid_message",
+          )
+          sendJson(
+            response,
+            200,
+            await project.steerSubagent(runId, subagentId, message),
+          )
+        } else {
+          sendJson(
+            response,
+            200,
+            await project.cancelSubagent(runId, subagentId),
+          )
+        }
+      } catch (error) {
+        if (hasCode(error, "subagent_unavailable")) {
+          throw new HttpRequestError(
+            409,
+            "subagent_unavailable",
+            errorText(error),
+          )
+        }
+        throw error
+      }
+      return
+    }
+
     // 会话复盘导出:必须在 /api/challenges/ 详情分支(startsWith)之前,否则路径被吞。
     const exportMatch = /^\/api\/challenges\/([^/]+)\/export$/.exec(
       url.pathname,
@@ -430,6 +741,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         project,
         challengeId,
         currentScheduler(),
+        latestSnapshot,
       )
       if (!details) {
         sendJson(response, 404, { error: "challenge_not_found" })
@@ -454,6 +766,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         serializedSnapshot,
         latestSnapshot.generatedAt,
       )
+      writeEvent(response, "dashboard_status", JSON.stringify(syncHealth))
       request.once("close", () => clients.delete(response))
       return
     }
@@ -483,41 +796,54 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   })
 
   const address = server.address() as AddressInfo
-  const interval = setInterval(() => {
-    void refresh().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error)
-      broadcast(clients, "dashboard_error", JSON.stringify({ message }))
-    })
-  }, pollIntervalMs)
-  interval.unref()
+  let closed = false
+  let refreshTimer: NodeJS.Timeout | undefined
+  const scheduleRefresh = (delayMs: number): void => {
+    refreshTimer = setTimeout(async () => {
+      try {
+        await refresh()
+      } catch {
+        // refresh() already records and broadcasts the failure exactly once.
+      } finally {
+        if (!closed) {
+          const exponent = Math.min(syncHealth.consecutiveFailures, 5)
+          const nextDelay =
+            syncHealth.status === "ok"
+              ? pollIntervalMs
+              : Math.min(30_000, pollIntervalMs * 2 ** exponent)
+          scheduleRefresh(nextDelay)
+        }
+      }
+    }, delayMs)
+    refreshTimer.unref()
+  }
+  scheduleRefresh(pollIntervalMs)
 
   const heartbeat = setInterval(() => {
     for (const client of clients) client.write(": heartbeat\n\n")
   }, 15_000)
   heartbeat.unref()
-  const schedulerReconcileInterval =
-    options.scheduler || options.controlPlane
-      ? setInterval(
-          () => {
-            const scheduler = currentScheduler()
-            if (!scheduler?.snapshot().autoEnabled) return
-            void scheduler
-              .reconcile()
-              .then(() => refresh())
-              .catch((error: unknown) => {
-                const message =
-                  error instanceof Error ? error.message : String(error)
-                broadcast(
-                  clients,
-                  "dashboard_error",
-                  JSON.stringify({ message }),
-                )
-              })
-          },
-          Math.max(5_000, options.schedulerReconcileIntervalMs ?? 30_000),
-        )
-      : undefined
-  schedulerReconcileInterval?.unref()
+  const schedulerReconcileDelay = Math.max(
+    5_000,
+    options.schedulerReconcileIntervalMs ?? 30_000,
+  )
+  let schedulerReconcileTimer: NodeJS.Timeout | undefined
+  const scheduleReconcile = (delayMs: number): void => {
+    if (!options.scheduler && !options.controlPlane) return
+    schedulerReconcileTimer = setTimeout(async () => {
+      const scheduler = currentScheduler()
+      if (scheduler?.snapshot().autoEnabled) {
+        try {
+          await scheduler.reconcile()
+        } catch (error) {
+          markSyncFailure(error, "调度器平台同步")
+        }
+      }
+      if (!closed) scheduleReconcile(schedulerReconcileDelay)
+    }, delayMs)
+    schedulerReconcileTimer.unref()
+  }
+  scheduleReconcile(schedulerReconcileDelay)
 
   return {
     host,
@@ -525,9 +851,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     url: `http://${host.includes(":") ? `[${host}]` : host}:${address.port}`,
     refresh,
     async close(): Promise<void> {
-      clearInterval(interval)
+      closed = true
+      if (refreshTimer) clearTimeout(refreshTimer)
       clearInterval(heartbeat)
-      if (schedulerReconcileInterval) clearInterval(schedulerReconcileInterval)
+      if (schedulerReconcileTimer) clearTimeout(schedulerReconcileTimer)
       for (const client of clients) client.end()
       clients.clear()
       await new Promise<void>((resolve, reject) => {
@@ -630,6 +957,43 @@ function requireModelConfiguration(
   }
 }
 
+function requireModelAuthentication(
+  authentication: DashboardModelAuthentication | undefined,
+): asserts authentication is DashboardModelAuthentication {
+  if (!authentication) {
+    throw new HttpRequestError(
+      404,
+      "model_authentication_unavailable",
+      "当前控制面不支持模型凭据管理",
+    )
+  }
+}
+
+async function reconcileModelAvailability(
+  configuration: DashboardModelConfiguration | undefined,
+  scheduler: DashboardScheduler | undefined,
+): Promise<ReturnType<DashboardModelConfiguration["snapshot"]> | null> {
+  if (!configuration) return null
+  const current = configuration.snapshot()
+  if (current.configured) await scheduler?.reconcile()
+  else scheduler?.pauseAuto()
+  return current
+}
+
+async function modelAuthenticationAction<T>(
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action()
+  } catch (error) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_authentication",
+      errorText(error),
+    )
+  }
+}
+
 function requireControlPlane(
   controlPlane: DashboardControlPlane | undefined,
 ): asserts controlPlane is DashboardControlPlane {
@@ -722,13 +1086,14 @@ function requireJsonRequest(request: IncomingMessage): void {
 
 async function readJsonBody(
   request: IncomingMessage,
+  maximumSize = 16_384,
 ): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += buffer.byteLength
-    if (size > 16_384)
+    if (size > maximumSize)
       throw new HttpRequestError(413, "payload_too_large", "请求体过大")
     chunks.push(buffer)
   }
@@ -789,18 +1154,6 @@ function modelConfigurationUpdate(
     "Context Window",
     2_000_000,
   )
-  const maxTokens = requiredPositiveInteger(
-    body.maxTokens,
-    "Max Tokens",
-    1_000_000,
-  )
-  if (maxTokens > contextWindow) {
-    throw new HttpRequestError(
-      400,
-      "invalid_model_configuration",
-      "Max Tokens 不能大于 Context Window",
-    )
-  }
   const apiKey =
     body.apiKey === undefined
       ? undefined
@@ -832,7 +1185,6 @@ function modelConfigurationUpdate(
     modelId,
     baseUrl: baseUrl.replace(/\/+$/, ""),
     contextWindow,
-    maxTokens,
     thinkingEnabled,
     reasoningEffort,
     passthroughThinking,
@@ -914,13 +1266,10 @@ function requiredPositiveInteger(
   value: unknown,
   field: string,
   max: number,
+  code = "invalid_model_configuration",
 ): number {
   if (!Number.isInteger(value) || Number(value) <= 0 || Number(value) > max) {
-    throw new HttpRequestError(
-      400,
-      "invalid_model_configuration",
-      `${field} 必须是 1–${max} 的整数`,
-    )
+    throw new HttpRequestError(400, code, `${field} 必须是 1–${max} 的整数`)
   }
   return Number(value)
 }

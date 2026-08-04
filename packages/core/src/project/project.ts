@@ -3,17 +3,21 @@ import { join, resolve } from "node:path"
 import {
   type AgentSkill,
   CtfSolverAgent,
+  type DiscoveredSubagentRoles,
   discoverProjectSkillsWithDiagnostics,
+  discoverSubagentRoles,
   materializeSkills,
   type SolverCloseDetails,
+  type SubagentRole,
 } from "@ctf-agent/agents"
-import type {
-  Announcement,
-  ChallengeSummary,
-  ContestOverview,
-  PlatformPlugin,
-  PlatformProject,
-  RemoteEnvironment,
+import {
+  type Announcement,
+  type ChallengeSummary,
+  type ContestOverview,
+  isRetryablePlatformError,
+  type PlatformPlugin,
+  type PlatformProject,
+  type RemoteEnvironment,
 } from "@ctf-agent/platform"
 import {
   DockerSandbox,
@@ -28,12 +32,17 @@ import type {
   AgentOptions,
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core"
-import { extractAssistantText } from "../agent/thinking.ts"
+import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
 import {
   BLACKBOARD_INJECTION_MAX_CHARACTERS,
   createBlackboardTools,
   serializeBlackboard,
 } from "../collaboration/blackboard.ts"
+import {
+  CtfSubagentManager,
+  createSubagentManagerTools,
+  type SubagentRecord,
+} from "../collaboration/subagent-manager.ts"
 import {
   type RunEvent,
   type RunFilter,
@@ -71,6 +80,9 @@ export interface OpenProjectOptions {
     relativeWorkspace: string
   }) => DockerWorkspaceMount
   telemetry?: ProjectTelemetryOptions
+  subagents?: {
+    maxConcurrent?: number
+  }
 }
 
 export interface ProjectTelemetryOptions {
@@ -79,7 +91,7 @@ export interface ProjectTelemetryOptions {
 }
 
 export interface ProjectDiagnostic {
-  code: "skill" | "telemetry"
+  code: "skill" | "subagent" | "telemetry"
   message: string
   createdAt: string
   path?: string
@@ -102,6 +114,7 @@ export class Project {
   readonly root: string
   readonly config: ProjectConfig
   private readonly solvers = new Set<CtfSolverAgent>()
+  private readonly subagentManagers = new Map<string, CtfSubagentManager>()
   private readonly diagnosticLog: ProjectDiagnostic[]
   private closed = false
   private constructor(
@@ -112,9 +125,13 @@ export class Project {
       options: DockerSandboxOptions,
     ) => Promise<Sandbox>,
     private readonly skills: readonly AgentSkill[],
+    private readonly subagentRoles: ReadonlyMap<string, SubagentRole>,
     private readonly runStore: RunStore,
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly telemetry: Required<ProjectTelemetryOptions>,
+    private readonly subagentRuntime: {
+      maxConcurrent: number
+    },
     diagnostics: readonly ProjectDiagnostic[],
   ) {
     this.root = root
@@ -141,21 +158,23 @@ export class Project {
     })
     let runStore: RunStore | undefined
     try {
-      const discovered = await discoverProjectSkillsWithDiagnostics(
-        root,
-        options.skillPaths,
-      )
+      const [discovered, discoveredSubagents] = await Promise.all([
+        discoverProjectSkillsWithDiagnostics(root, options.skillPaths),
+        discoverSubagentRoles(root),
+      ])
       const agentDirectory = join(root, ".ctf-agent")
       await mkdir(agentDirectory, { recursive: true })
       runStore = await RunStore.open(join(agentDirectory, "runs.sqlite"))
       // Project.open 只可能发生在新进程/新控制面中；遗留活跃记录不可继续信任。
       runStore.markInterruptedRuns()
+      runStore.markInterruptedSubagents()
       return new Project(
         root,
         config,
         platform,
         options.sandboxFactory ?? DockerSandbox.create,
         discovered.skills,
+        discoveredSubagents.roles,
         runStore,
         options.workspaceMount,
         {
@@ -165,12 +184,10 @@ export class Project {
             options.telemetry?.maxTextLength ?? 8_000,
           ),
         },
-        discovered.diagnostics.map((diagnostic) => ({
-          code: "skill",
-          message: diagnostic.message,
-          path: diagnostic.path,
-          createdAt: new Date().toISOString(),
-        })),
+        {
+          maxConcurrent: Math.max(1, options.subagents?.maxConcurrent ?? 4),
+        },
+        projectDiagnostics(discovered, discoveredSubagents),
       )
     } catch (error) {
       const failures: unknown[] = [error]
@@ -223,6 +240,32 @@ export class Project {
   }
   runEvents(runId: string): RunEvent[] {
     return this.runStore.events(runId)
+  }
+  latestRunEvent(runId: string): RunEvent | undefined {
+    return this.runStore.latestEvent(runId)
+  }
+  subagents(runId: string): SubagentRecord[] {
+    return this.runStore.subagents(runId)
+  }
+  availableSubagents(): SubagentRole[] {
+    return [...this.subagentRoles.values()].filter((role) => role.enabled)
+  }
+  async steerSubagent(
+    runId: string,
+    subagentId: string,
+    message: string,
+  ): Promise<SubagentRecord> {
+    const manager = this.subagentManagers.get(runId)
+    if (!manager) throw subagentUnavailable(runId)
+    return manager.steer(subagentId, message)
+  }
+  async cancelSubagent(
+    runId: string,
+    subagentId: string,
+  ): Promise<SubagentRecord> {
+    const manager = this.subagentManagers.get(runId)
+    if (!manager) throw subagentUnavailable(runId)
+    return manager.cancel(subagentId)
   }
   isChallengeSolved(challengeId: string): boolean {
     return this.runStore.isSolved(challengeId)
@@ -330,6 +373,7 @@ export class Project {
       | Awaited<ReturnType<PlatformProject["bindChallenge"]>>
       | undefined
     let sandbox: Sandbox | undefined
+    let subagentManager: CtfSubagentManager | undefined
     try {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
@@ -366,6 +410,36 @@ export class Project {
         networkMode: this.config.sandbox.networkMode,
       })
 
+      subagentManager = new CtfSubagentManager({
+        projectId: this.config.project.id,
+        runId,
+        runDirectory,
+        challenge,
+        capability,
+        sandbox,
+        agent: options.agent,
+        roles: this.subagentRoles,
+        skills,
+        maxConcurrent: this.subagentRuntime.maxConcurrent,
+        onRecord: (subagent, event) => {
+          try {
+            this.runStore.upsertSubagent(subagent)
+            this.runStore.appendEvent(runId, `subagent_${event}`, {
+              subagentId: subagent.id,
+              role: subagent.role,
+              description: subagent.description,
+              status: subagent.status,
+              activeTool: subagent.activeTool,
+              turns: subagent.turns,
+              toolUses: subagent.toolUses,
+              totalTokens: subagent.totalTokens,
+            })
+          } catch (error) {
+            this.recordDiagnostic("telemetry", error, runId)
+          }
+        },
+      })
+
       let solver!: CtfSolverAgent
       solver = await CtfSolverAgent.create({
         identity: {
@@ -388,10 +462,17 @@ export class Project {
                 challengeId,
                 runId,
               }),
+              ...createSubagentManagerTools(subagentManager),
             ],
             systemPrompt: [
               options.agent.initialState?.systemPrompt,
               BLACKBOARD_SYSTEM_GUIDANCE,
+              `You can delegate bounded parallel work with Agent, get_subagent_result, steer_subagent, cancel_subagent, and list_subagents. Available SubAgent roles: ${subagentManager
+                .availableRoles()
+                .map((role) => `${role.name} (${role.description})`)
+                .join(
+                  "; ",
+                )}. Give every worker a self-contained task and independently verify its result before recording evidence or submitting a flag.`,
             ]
               .filter(Boolean)
               .join("\n\n"),
@@ -402,8 +483,10 @@ export class Project {
           },
         },
         features: { skills, compaction: options.compaction },
+        onBeforeCleanup: () => subagentManager?.close(),
         onClosed: async (details) => {
           this.solvers.delete(solver)
+          this.subagentManagers.delete(runId)
           const updated = this.runStore.updateRun(
             runId,
             {
@@ -422,25 +505,20 @@ export class Project {
           await this.persistRecord(updated, runDirectory)
         },
       })
+      subagentManager.attachParent(solver)
       const telemetryCalls = new Map<
         string,
         { toolName: string; args: unknown }
       >()
-      // 流式思维链:pi 把 thinking_delta(逐段 reasoning_content)包装为 message_update
-      // 事件。每条 delta 实时落一条 agent_thinking 词片,WebUI 按轮聚合展示、导出端按 id
-      // 拼接还原完整思考。DeepSeek 默认请求也会返回 reasoning_content(适配器无条件解析),
-      // 门控读取当前 thinkingLevel；BaseAgent 同时把变更写入 Pi session tree。
+      // pi 在 message_end 中提供完整的 thinking block。按 turn 持久化一条，避免
+      // reasoning token 逐片写入 SQLite，导致事件表/WAL 和 Dashboard 查询爆炸。
       solver.subscribe((event) => {
-        if (
-          event.type === "message_update" &&
-          event.assistantMessageEvent.type === "thinking_delta" &&
-          solver.thinkingLevel !== "off"
-        ) {
+        if (event.type === "message_end" && solver.thinkingLevel !== "off") {
           try {
-            const delta = event.assistantMessageEvent.delta
-            if (delta) {
+            const thinking = extractThinkingText(event.message)
+            if (thinking) {
               this.runStore.appendEvent(runId, "agent_thinking", {
-                text: delta,
+                text: thinking,
                 ts: new Date().toISOString(),
               })
             }
@@ -507,9 +585,17 @@ export class Project {
       )
       await this.persistRecord(running, runDirectory)
       this.solvers.add(solver)
+      this.subagentManagers.set(runId, subagentManager)
       return solver
     } catch (error) {
       const cleanupErrors: string[] = []
+      if (subagentManager) {
+        try {
+          await subagentManager.close()
+        } catch (cleanupError) {
+          cleanupErrors.push(`SubAgent 回收失败: ${errorText(cleanupError)}`)
+        }
+      }
       if (capability?.instance) {
         try {
           await capability.instance.destroy()
@@ -529,6 +615,7 @@ export class Project {
         ...cleanupErrors.map((message) => new Error(message)),
       ]
       try {
+        const retryable = isRetryablePlatformError(error)
         const updated = this.runStore.updateRun(
           runId,
           {
@@ -540,14 +627,18 @@ export class Project {
             finishedAt: new Date().toISOString(),
           },
           "run_creation_failed",
-          { error: errorText(error), cleanupErrors },
+          { error: errorText(error), cleanupErrors, retryable },
         )
         await this.persistRecord(updated, runDirectory)
       } catch (persistenceError) {
         failures.push(persistenceError)
       }
-      if (failures.length > 1)
-        throw new AggregateError(failures, `无法创建 Solver ${runId}`)
+      if (failures.length > 1) {
+        throw Object.assign(
+          new AggregateError(failures, `无法创建 Solver ${runId}`),
+          { retryable: isRetryablePlatformError(error) },
+        )
+      }
       throw error
     }
   }
@@ -624,6 +715,15 @@ function noActiveRunError(): Error {
   return Object.assign(new Error("该题当前没有运行中的 Agent"), {
     code: "no_active_run",
   })
+}
+
+function subagentUnavailable(runId: string): Error {
+  return Object.assign(
+    new Error(`Run ${runId} 当前没有活跃的 SubAgent manager`),
+    {
+      code: "subagent_unavailable",
+    },
+  )
 }
 
 /** pi 思考强度档位全集(与 pi-agent-core ThinkingLevel 一致,含 off)。 */
@@ -815,4 +915,25 @@ function flagSubmission(
 function field(value: unknown, key: string): unknown {
   if (typeof value !== "object" || value === null) return undefined
   return (value as Record<string, unknown>)[key]
+}
+
+function projectDiagnostics(
+  skills: Awaited<ReturnType<typeof discoverProjectSkillsWithDiagnostics>>,
+  subagents: DiscoveredSubagentRoles,
+): ProjectDiagnostic[] {
+  const createdAt = new Date().toISOString()
+  return [
+    ...skills.diagnostics.map((diagnostic) => ({
+      code: "skill" as const,
+      message: diagnostic.message,
+      path: diagnostic.path,
+      createdAt,
+    })),
+    ...subagents.diagnostics.map((diagnostic) => ({
+      code: "subagent" as const,
+      message: diagnostic.message,
+      path: diagnostic.path,
+      createdAt,
+    })),
+  ]
 }

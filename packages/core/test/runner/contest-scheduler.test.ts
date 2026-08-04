@@ -127,6 +127,62 @@ function solvingAgent(item: TestChallenge, delayMs = 20): AgentOptions {
 }
 
 describe("ContestScheduler", () => {
+  it.each([
+    { label: "输出达到 token 上限", stopReason: "length" as const },
+    { label: "模型过早正常结束", stopReason: "stop" as const },
+  ])("$label 时在同一个 Run 内自动续跑", async ({ stopReason }) => {
+    const item = challenge(99)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: () => {
+        const faux = createFauxCore({ provider: `continuation-${stopReason}` })
+        faux.setResponses([
+          fauxAssistantMessage(
+            "分析尚未完成。",
+            stopReason === "length" ? { stopReason: "length" } : undefined,
+          ),
+          fauxAssistantMessage(
+            fauxToolCall(
+              "ctf_submit_flag",
+              { flag: item.flag },
+              { id: `continued-submit-${stopReason}` },
+            ),
+            { stopReason: "toolUse" },
+          ),
+          fauxAssistantMessage("已提交。"),
+        ])
+        return {
+          streamFn: faux.streamSimple as AgentOptions["streamFn"],
+          initialState: { model: faux.getModel(), thinkingLevel: "off" },
+        }
+      },
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () =>
+          project.isChallengeSolved(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+
+      expect(project.runs({ challengeId: item.id })).toEqual([
+        expect.objectContaining({
+          attempt: 1,
+          status: "solved",
+          closeReason: "submitted",
+        }),
+      ])
+      expect(project.schedulerAttemptCount(item.id)).toBe(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("自动模式按并发上限调度全部未解题，并记录 auto 来源", async () => {
     const challenges = [challenge(1), challenge(2), challenge(3), challenge(4)]
     const byId = new Map(challenges.map((item) => [item.id, item]))
@@ -217,7 +273,7 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("暂停自主模式后保留自动队列，但不再派发下一题", async () => {
+  it("暂停自主模式后清空等待队列，但不取消活跃任务", async () => {
     const challenges = [challenge(1), challenge(2)]
     const tracker = new SandboxTracker()
     const project = await fixture(challenges, tracker)
@@ -243,20 +299,91 @@ describe("ContestScheduler", () => {
 
       scheduler.pauseAuto()
       if (!activeId) throw new Error("自主调度未创建活跃任务")
-      await scheduler.cancel(activeId)
-      await waitUntil(() => scheduler.snapshot().active.length === 0)
 
       expect(scheduler.snapshot()).toMatchObject({
         autoEnabled: false,
-        queued: [
-          expect.objectContaining({
-            challengeId: queuedId,
-            source: "auto",
-          }),
-        ],
-        active: [],
+        queued: [],
+        active: [expect.objectContaining({ challengeId: activeId })],
       })
       expect(project.runs({ challengeId: queuedId })).toHaveLength(0)
+      await scheduler.cancel(activeId)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("暂停自主模式会同时清除此前补发的 manual 等待任务", async () => {
+    const challenges = [challenge(1), challenge(2), challenge(3)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(
+          requiredChallenge(challenges.find((item) => item.id === summary.id)),
+          500,
+        ),
+    })
+
+    try {
+      const first = requiredChallenge(challenges[0])
+      const second = requiredChallenge(challenges[1])
+      const third = requiredChallenge(challenges[2])
+      await scheduler.dispatch(first.id)
+      await waitUntil(() => scheduler.snapshot().active.length === 1)
+      await scheduler.dispatch(second.id)
+      await scheduler.dispatch(third.id)
+      expect(scheduler.snapshot().queued.map((item) => item.source)).toEqual([
+        "manual",
+        "manual",
+      ])
+
+      scheduler.pauseAuto()
+      expect(scheduler.snapshot().queued).toEqual([])
+      const activeId = scheduler.snapshot().active[0]?.challengeId
+      if (activeId) await scheduler.cancel(activeId)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("运行时更新并发上限并立即补充 worker", async () => {
+    const challenges = [challenge(1), challenge(2), challenge(3)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    const persisted: number[] = []
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      onMaxConcurrentChange: (value) => {
+        persisted.push(value)
+      },
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(
+          requiredChallenge(challenges.find((item) => item.id === summary.id)),
+          300,
+        ),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await waitUntil(
+        () =>
+          scheduler.snapshot().active.length === 1 &&
+          scheduler.snapshot().queued.length === 2,
+      )
+      await scheduler.setMaxConcurrent(2)
+      await waitUntil(() => scheduler.snapshot().active.length === 2)
+      expect(scheduler.snapshot().maxConcurrent).toBe(2)
+      expect(persisted).toEqual([2])
+      await expect(scheduler.setMaxConcurrent(0)).rejects.toThrow("正整数")
+      await expect(scheduler.setMaxConcurrent(65)).rejects.toThrow(
+        "不能超过 64",
+      )
     } finally {
       await scheduler.shutdown()
       await project.close()
@@ -318,6 +445,43 @@ describe("ContestScheduler", () => {
         challengeId: item.id,
         status: "solved",
       })
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("平台瞬时创建故障恢复后继续调度且不消耗解题预算", async () => {
+    const item = challenge(1, {
+      failures: { bind: 1 },
+      retryableFailures: { bind: true },
+    })
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      retryDelayMs: 0,
+      infrastructureRetryDelayMs: 0,
+      createAgentOptions: () => solvingAgent(item),
+    })
+    try {
+      await scheduler.startAuto()
+      await waitUntil(
+        () =>
+          project.isChallengeSolved(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+
+      expect(project.runs({ challengeId: item.id })).toEqual([
+        expect.objectContaining({
+          attempt: 1,
+          status: "failed",
+          error: expect.stringContaining("测试故障"),
+        }),
+        expect.objectContaining({ attempt: 2, status: "solved" }),
+      ])
+      expect(project.schedulerAttemptCount(item.id)).toBe(1)
     } finally {
       await scheduler.shutdown()
       await project.close()

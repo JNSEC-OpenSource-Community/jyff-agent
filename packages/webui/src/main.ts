@@ -5,7 +5,9 @@ import {
   FileSecretStore,
 } from "@ctf-agent/core"
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
+import { createFileModelAuthentication } from "./model-authentication.ts"
 import { createFileModelConfiguration } from "./model-configuration.ts"
+import { createFileSchedulerConfiguration } from "./scheduler-configuration.ts"
 import { startWebUi } from "./server.ts"
 
 interface WebUiProcessOptions {
@@ -18,6 +20,7 @@ interface WebUiProcessOptions {
   challengeTimeoutMs: number
   retryDelayMs: number
   workspaceVolume?: string
+  authFile: string
   autoStart: boolean
 }
 
@@ -26,9 +29,18 @@ const stateDirectory = join(options.root, ".ctf-agent")
 const secretStore = await FileSecretStore.open(
   join(stateDirectory, "secrets.json"),
 )
+const modelAuthentication = await createFileModelAuthentication({
+  storagePath: join(stateDirectory, "auth.json"),
+  importPath: options.authFile,
+})
 const modelConfiguration = await createFileModelConfiguration({
   storagePath: join(stateDirectory, "model-config.json"),
   secretStore,
+  authentication: modelAuthentication,
+})
+const schedulerConfiguration = await createFileSchedulerConfiguration({
+  storagePath: join(stateDirectory, "scheduler-config.json"),
+  fallback: options.maxConcurrent,
 })
 const controlPlane = await ControlPlane.create({
   root: options.root,
@@ -48,7 +60,7 @@ const controlPlane = await ControlPlane.create({
   },
   createScheduler: (project) =>
     new ContestScheduler(project, {
-      maxConcurrent: options.maxConcurrent,
+      maxConcurrent: schedulerConfiguration.snapshot(),
       maxAttempts: options.maxAttempts,
       challengeTimeoutMs: options.challengeTimeoutMs,
       retryDelayMs: options.retryDelayMs,
@@ -63,12 +75,16 @@ const controlPlane = await ControlPlane.create({
       },
       createAgentOptions: () => modelConfiguration.createAgentOptions(),
       compaction: true,
+      onMaxConcurrentChange: async (maxConcurrent) => {
+        await schedulerConfiguration.update(maxConcurrent)
+      },
     }),
 })
 
 await controlPlane.start()
 const webui = await startWebUi({
   controlPlane,
+  modelAuthentication,
   modelConfiguration,
   host: options.host,
   port: options.port,
@@ -131,6 +147,7 @@ function parseOptions(args: string[]): WebUiProcessOptions {
     "--challenge-timeout-ms",
     "--retry-delay-ms",
     "--workspace-volume",
+    "--auth-file",
   ])
   for (const name of values.keys()) {
     if (!known.has(name)) throw new Error(`未知启动参数: ${name}`)
@@ -162,6 +179,7 @@ function parseOptions(args: string[]): WebUiProcessOptions {
     ...(values.get("--workspace-volume")
       ? { workspaceVolume: values.get("--workspace-volume") }
       : {}),
+    authFile: resolve(values.get("--auth-file") ?? "/auth.json"),
     autoStart,
   }
 }

@@ -1,5 +1,8 @@
 import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents"
-import type { ChallengeSummary } from "@ctf-agent/platform"
+import {
+  type ChallengeSummary,
+  isRetryablePlatformError,
+} from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { RunSource } from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
@@ -22,6 +25,7 @@ export interface ContestSchedulerOptions {
   challengeTimeoutMs?: number
   abortGraceMs?: number
   retryDelayMs?: number
+  infrastructureRetryDelayMs?: number
   createAgentOptions(
     context: SchedulerAttemptContext,
   ): AgentOptions | Promise<AgentOptions>
@@ -32,6 +36,8 @@ export interface ContestSchedulerOptions {
   availability?: () => SchedulerAvailability
   available?: boolean
   unavailableReason?: string
+  /** Persist the new runtime concurrency limit before it becomes active. */
+  onMaxConcurrentChange?: (maxConcurrent: number) => void | Promise<void>
 }
 
 export interface SchedulerAvailability {
@@ -105,16 +111,17 @@ interface ActiveItem {
   runId: string | null
   solver?: CtfSolverAgent
   cancelRequested: boolean
+  queueGeneration: number
   operation?: Promise<void>
 }
 
 const DEFAULT_PROMPT =
-  "解决当前 CTF 题目。获取题目信息和附件，必要时启动远程实例，找到并提交 Flag。"
+  "解决当前 CTF 题目。获取题目信息和附件，必要时启动远程实例，找到并提交 Flag。持续实际执行分析和验证，不要以计划、下一步说明或尚未执行的动作结束；除非已经提交正确 Flag 或遇到无法绕过的外部阻塞，否则继续调用工具推进。"
 
 /**
  * 长驻的混合调度控制面：
  * - 自动模式把所有未解题目加入队列；
- * - 暂停自动模式时人工任务仍可运行；
+ * - 暂停自动模式会清空全部等待任务，但不会取消已经运行的任务；
  * - 同题在 queued/active 阶段互斥；
  * - 失败按调度来源计入重试预算，direct/test Run 不消耗预算。
  */
@@ -125,12 +132,15 @@ export class ContestScheduler {
   private shuttingDown = false
   private pumping = false
   private lastError?: string
+  private maxConcurrent: number
+  private queueGeneration = 0
 
   constructor(
     private readonly project: Project,
     private readonly options: ContestSchedulerOptions,
   ) {
     positiveInteger(options.maxConcurrent, "maxConcurrent")
+    this.maxConcurrent = options.maxConcurrent
     positiveInteger(options.maxAttempts ?? 2, "maxAttempts")
     positiveInteger(
       options.challengeTimeoutMs ?? 30 * 60_000,
@@ -138,6 +148,10 @@ export class ContestScheduler {
     )
     nonNegativeInteger(options.abortGraceMs ?? 5_000, "abortGraceMs")
     nonNegativeInteger(options.retryDelayMs ?? 2_000, "retryDelayMs")
+    nonNegativeInteger(
+      options.infrastructureRetryDelayMs ?? 15_000,
+      "infrastructureRetryDelayMs",
+    )
   }
 
   snapshot(): ContestSchedulerSnapshot {
@@ -148,7 +162,7 @@ export class ContestScheduler {
         ? { unavailableReason: availability.unavailableReason }
         : {}),
       autoEnabled: this.autoEnabled,
-      maxConcurrent: this.options.maxConcurrent,
+      maxConcurrent: this.maxConcurrent,
       maxAttempts: this.options.maxAttempts ?? 2,
       queued: this.queue.map((item, index) => ({
         challengeId: item.challenge.id,
@@ -179,6 +193,22 @@ export class ContestScheduler {
 
   pauseAuto(): ContestSchedulerSnapshot {
     this.autoEnabled = false
+    this.queueGeneration += 1
+    this.queue.length = 0
+    return this.snapshot()
+  }
+
+  async setMaxConcurrent(
+    maxConcurrent: number,
+  ): Promise<ContestSchedulerSnapshot> {
+    this.assertAvailable()
+    this.assertNotShuttingDown()
+    positiveInteger(maxConcurrent, "maxConcurrent")
+    if (maxConcurrent > 64) throw new Error("maxConcurrent 不能超过 64")
+    if (maxConcurrent === this.maxConcurrent) return this.snapshot()
+    await this.options.onMaxConcurrentChange?.(maxConcurrent)
+    this.maxConcurrent = maxConcurrent
+    this.pump()
     return this.snapshot()
   }
 
@@ -322,7 +352,7 @@ export class ContestScheduler {
     this.pumping = true
     try {
       while (
-        this.active.size < this.options.maxConcurrent &&
+        this.active.size < this.maxConcurrent &&
         this.availability().available
       ) {
         const index = this.queue.findIndex(
@@ -340,6 +370,7 @@ export class ContestScheduler {
           startedAt: new Date().toISOString(),
           runId: null,
           cancelRequested: false,
+          queueGeneration: this.queueGeneration,
         }
         this.active.set(item.challenge.id, active)
         const operation = this.runItem(active)
@@ -364,6 +395,7 @@ export class ContestScheduler {
     )
     let failureReason: SolverCloseReason | undefined
     let failureMessage: string | undefined
+    let retryableFailure = false
     try {
       const context: SchedulerAttemptContext = {
         challenge: active.challenge,
@@ -378,6 +410,7 @@ export class ContestScheduler {
         attempt: active.attempt,
         source: active.source,
       })
+      this.lastError = undefined
       active.solver = solver
       active.runId = solver.runId
       active.phase = "running"
@@ -403,6 +436,7 @@ export class ContestScheduler {
         (await latestAgentError(solver)) ?? "Agent 已结束，但没有提交正确 Flag",
       )
     } catch (error) {
+      retryableFailure = isRetryablePlatformError(error)
       failureReason = active.cancelRequested
         ? "cancelled"
         : error instanceof ChallengeTimeoutError
@@ -414,18 +448,33 @@ export class ContestScheduler {
       active.solver = undefined
     }
 
+    const schedulerAttemptsAfter = this.project.schedulerAttemptCount(
+      active.challenge.id,
+    )
     if (
       failureReason !== "cancelled" &&
-      this.project.schedulerAttemptCount(active.challenge.id) >
-        schedulerAttemptsBefore &&
+      (retryableFailure || schedulerAttemptsAfter > schedulerAttemptsBefore) &&
       !this.shuttingDown &&
-      this.project.schedulerAttemptCount(active.challenge.id) <
-        (this.options.maxAttempts ?? 2) &&
+      active.queueGeneration === this.queueGeneration &&
+      (retryableFailure ||
+        schedulerAttemptsAfter < (this.options.maxAttempts ?? 2)) &&
       !this.project.isChallengeSolved(active.challenge.id)
     ) {
-      const delay = this.options.retryDelayMs ?? 2_000
+      if (failureMessage) {
+        this.lastError = `${active.challenge.title}: ${failureMessage}（等待重试）`
+      }
+      const configuredDelay = this.options.retryDelayMs ?? 2_000
+      const delay = retryableFailure
+        ? Math.max(
+            this.options.infrastructureRetryDelayMs ?? 15_000,
+            configuredDelay,
+          )
+        : configuredDelay
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
       if (
+        !active.cancelRequested &&
+        !this.shuttingDown &&
+        active.queueGeneration === this.queueGeneration &&
         !this.queue.some((item) => item.challenge.id === active.challenge.id)
       ) {
         this.queue.push({

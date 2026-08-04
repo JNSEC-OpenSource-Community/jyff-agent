@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import type { SubagentRecord } from "../collaboration/subagent-manager.ts"
 
 export type RunStatus =
   | "preparing"
@@ -193,6 +194,29 @@ interface EventRow {
   created_at: string
 }
 
+interface SubagentRow {
+  id: string
+  run_id: string
+  role: string
+  display_name: string
+  description: string
+  status: SubagentRecord["status"]
+  background: number
+  prompt: string
+  session_path: string
+  container_cwd: string
+  result: string | null
+  error: string | null
+  active_tool: string | null
+  turns: number
+  tool_uses: number
+  total_tokens: number
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
 interface BlackboardStatsRow {
   challenge_id: string
   evidence_count: number
@@ -259,6 +283,31 @@ function runFromRow(row: RunRow): RunRecord {
   }
 }
 
+function subagentFromRow(row: SubagentRow): SubagentRecord {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    role: row.role,
+    displayName: row.display_name,
+    description: row.description,
+    status: row.status,
+    background: row.background === 1,
+    prompt: row.prompt,
+    sessionPath: row.session_path,
+    containerCwd: row.container_cwd,
+    ...(row.result === null ? {} : { result: row.result }),
+    ...(row.error === null ? {} : { error: row.error }),
+    ...(row.active_tool === null ? {} : { activeTool: row.active_tool }),
+    turns: row.turns,
+    toolUses: row.tool_uses,
+    totalTokens: row.total_tokens,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+    ...(row.completed_at === null ? {} : { completedAt: row.completed_at }),
+  }
+}
+
 /**
  * SQLite-backed authoritative Run state.
  *
@@ -314,6 +363,32 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS run_events_run_id
         ON run_events(run_id, id);
+
+      CREATE TABLE IF NOT EXISTS run_subagents (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL,
+        background INTEGER NOT NULL CHECK (background IN (0, 1)),
+        prompt TEXT NOT NULL,
+        session_path TEXT NOT NULL,
+        container_cwd TEXT NOT NULL,
+        result TEXT,
+        error TEXT,
+        active_tool TEXT,
+        turns INTEGER NOT NULL DEFAULT 0,
+        tool_uses INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS run_subagents_run_status
+        ON run_subagents(run_id, status, created_at);
 
       CREATE TABLE IF NOT EXISTS challenge_evidence (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -522,7 +597,15 @@ export class RunStore {
       .prepare(`
       SELECT COUNT(*) AS attempts
       FROM runs
-      WHERE challenge_id = ? AND source IN ('auto', 'manual', 'retry')
+      WHERE challenge_id = ?
+        AND source IN ('auto', 'manual', 'retry')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM run_events
+          WHERE run_events.run_id = runs.id
+            AND run_events.type = 'run_creation_failed'
+            AND json_extract(run_events.data_json, '$.retryable') = 1
+        )
     `)
       .get(challengeId) as { attempts: number }
     return row.attempts
@@ -559,6 +642,26 @@ export class RunStore {
     }))
   }
 
+  latestEvent(runId: string): RunEvent | undefined {
+    this.assertOpen()
+    const row = this.database
+      .prepare(`
+      SELECT * FROM run_events
+      WHERE run_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `)
+      .get(runId) as unknown as EventRow | undefined
+    if (!row) return undefined
+    return {
+      id: row.id,
+      runId: row.run_id,
+      type: row.type,
+      ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
+      createdAt: row.created_at,
+    }
+  }
+
   appendEvent(runId: string, type: string, data?: unknown): RunEvent {
     this.assertOpen()
     const timestamp = new Date().toISOString()
@@ -577,6 +680,91 @@ export class RunStore {
       this.database.exec("ROLLBACK")
       throw error
     }
+  }
+
+  /** Persist one worker snapshot; lifecycle events remain in run_events for replay. */
+  upsertSubagent(record: SubagentRecord): SubagentRecord {
+    this.assertOpen()
+    this.getRunOrThrow(record.runId)
+    this.database
+      .prepare(`
+        INSERT INTO run_subagents (
+          id, run_id, role, display_name, description, status, background,
+          prompt, session_path, container_cwd, result, error, active_tool,
+          turns, tool_uses, total_tokens, created_at, updated_at, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          role = excluded.role,
+          display_name = excluded.display_name,
+          description = excluded.description,
+          status = excluded.status,
+          background = excluded.background,
+          prompt = excluded.prompt,
+          session_path = excluded.session_path,
+          container_cwd = excluded.container_cwd,
+          result = excluded.result,
+          error = excluded.error,
+          active_tool = excluded.active_tool,
+          turns = excluded.turns,
+          tool_uses = excluded.tool_uses,
+          total_tokens = excluded.total_tokens,
+          updated_at = excluded.updated_at,
+          started_at = excluded.started_at,
+          completed_at = excluded.completed_at
+      `)
+      .run(
+        record.id,
+        record.runId,
+        record.role,
+        record.displayName,
+        record.description,
+        record.status,
+        record.background ? 1 : 0,
+        record.prompt,
+        record.sessionPath,
+        record.containerCwd,
+        record.result ?? null,
+        record.error ?? null,
+        record.activeTool ?? null,
+        record.turns,
+        record.toolUses,
+        record.totalTokens,
+        record.createdAt,
+        record.updatedAt,
+        record.startedAt ?? null,
+        record.completedAt ?? null,
+      )
+    return { ...record }
+  }
+
+  subagents(runId: string): SubagentRecord[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT * FROM run_subagents
+        WHERE run_id = ?
+        ORDER BY created_at ASC, id ASC
+      `)
+      .all(runId) as unknown as SubagentRow[]
+    return rows.map(subagentFromRow)
+  }
+
+  markInterruptedSubagents(
+    message = "进程退出时 SubAgent 未进入终态",
+  ): SubagentRecord[] {
+    this.assertOpen()
+    const timestamp = new Date().toISOString()
+    this.database
+      .prepare(`
+        UPDATE run_subagents
+        SET status = 'interrupted', error = ?, updated_at = ?, completed_at = ?
+        WHERE status IN ('queued', 'running')
+      `)
+      .run(message, timestamp, timestamp)
+    const rows = this.database
+      .prepare("SELECT * FROM run_subagents WHERE completed_at = ?")
+      .all(timestamp) as unknown as SubagentRow[]
+    return rows.map(subagentFromRow)
   }
 
   recordEvidence(

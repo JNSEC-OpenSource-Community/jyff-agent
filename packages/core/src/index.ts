@@ -1,6 +1,7 @@
 export * from "@ctf-agent/platform"
 export * from "./agent/thinking.ts"
 export * from "./collaboration/blackboard.ts"
+export * from "./collaboration/subagent-manager.ts"
 export * from "./control-plane/config-store.ts"
 export * from "./control-plane/control-plane.ts"
 export * from "./control-plane/secret-store.ts"

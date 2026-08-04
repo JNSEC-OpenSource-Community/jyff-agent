@@ -77,7 +77,7 @@ class OrderedSandbox implements Sandbox {
 }
 
 describe("CtfSolverAgent 强制清理", () => {
-  it("失败关闭时先销毁远程实例，再关闭 Sandbox，最后持久化状态", async () => {
+  it("失败关闭时先回收 SubAgent，再销毁实例、Sandbox 并持久化状态", async () => {
     const log: string[] = []
     let details: SolverCloseDetails | undefined
     const solver = await CtfSolverAgent.create({
@@ -91,6 +91,9 @@ describe("CtfSolverAgent 强制清理", () => {
       capability: challengeCapability(log),
       sandbox: new OrderedSandbox(log),
       agent,
+      onBeforeCleanup: () => {
+        log.push("subagents")
+      },
       onClosed: (value) => {
         log.push("persist")
         details = value
@@ -98,7 +101,7 @@ describe("CtfSolverAgent 强制清理", () => {
     })
 
     await solver.close("failed", "模型故障")
-    expect(log).toEqual(["instance", "sandbox", "persist"])
+    expect(log).toEqual(["subagents", "instance", "sandbox", "persist"])
     expect(details).toEqual({
       reason: "failed",
       error: "模型故障",

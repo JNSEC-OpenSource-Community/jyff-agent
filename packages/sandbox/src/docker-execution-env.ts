@@ -19,6 +19,8 @@ import {
 } from "./docker-sandbox.ts"
 
 const WORKSPACE = "/workspace"
+const DEFAULT_SHELL_TIMEOUT_SECONDS = 5 * 60
+const MAX_TIMER_MS = 2_147_483_647
 
 const FILE_HELPER = String.raw`
 import base64, json, os, shutil, stat, sys
@@ -135,9 +137,14 @@ interface FileResponse<T> {
 
 /** Pi ExecutionEnv whose filesystem and shell namespace are the run container. */
 export class DockerExecutionEnv implements ExecutionEnv {
-  readonly cwd = WORKSPACE
+  readonly cwd: string
 
-  constructor(private readonly sandbox: Sandbox) {}
+  constructor(
+    private readonly sandbox: Sandbox,
+    options: { cwd?: string } = {},
+  ) {
+    this.cwd = executionCwd(options.cwd)
+  }
 
   async absolutePath(path: string): Promise<Result<string, FileError>> {
     return this.address(path)
@@ -167,6 +174,19 @@ export class DockerExecutionEnv implements ExecutionEnv {
     if (!cwd.ok) {
       return err(new ExecutionError("unknown", cwd.error.message, cwd.error))
     }
+    const timeoutSeconds = options.timeout ?? DEFAULT_SHELL_TIMEOUT_SECONDS
+    if (
+      !Number.isFinite(timeoutSeconds) ||
+      timeoutSeconds <= 0 ||
+      timeoutSeconds * 1000 > MAX_TIMER_MS
+    ) {
+      return err(
+        new ExecutionError(
+          "timeout",
+          "Invalid timeout: must be a positive finite number of seconds",
+        ),
+      )
+    }
     const environment = Object.entries(options.env ?? {}).map(
       ([key, value]) => `${key}=${value}`,
     )
@@ -186,8 +206,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     try {
       const result = await this.sandbox.exec(args, {
         signal: options.abortSignal,
-        timeoutMs:
-          options.timeout === undefined ? undefined : options.timeout * 1000,
+        timeoutMs: timeoutSeconds * 1000,
         onStdout: options.onStdout,
         onStderr: options.onStderr,
       })
@@ -440,6 +459,18 @@ export class DockerExecutionEnv implements ExecutionEnv {
       )
     }
   }
+}
+
+function executionCwd(value: string | undefined): string {
+  if (value === undefined) return WORKSPACE
+  if (value.includes("\\") || value.includes("\0")) {
+    throw new Error("Docker execution cwd must use POSIX separators")
+  }
+  const cwd = posix.resolve(WORKSPACE, value)
+  if (cwd !== WORKSPACE && !cwd.startsWith(`${WORKSPACE}/`)) {
+    throw new Error("Docker execution cwd escapes /workspace")
+  }
+  return cwd
 }
 
 function encoded(content: string | Uint8Array): string {

@@ -9,8 +9,9 @@
 - 并发调度：自动、人工、重试、取消、超时和 attempt 上限；
 - 每题独立 Docker sandbox；
 - Pi 原生 JSONL session 保存、恢复、分支与 compaction；
+- 每个 Run 独立的 SubAgent fleet：专业角色、并发队列、后台通知与 steer/resume/cancel；
 - SQLite RunStore、完整工具时间线和跨 attempt 黑板；
-- 无框架 WebUI、HTTP API 与 SSE 实时更新。
+- React WebUI、HTTP API 与 SSE 实时更新。
 
 ## 使用 Docker Compose 启动
 
@@ -32,21 +33,24 @@ docker compose -f compose.webui.yaml ps
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
-1. 在“模型设置”中填写 OpenAI-compatible Provider、Model ID、Base URL 和 API Key；
+1. 在“模型设置”中登录 Codex / Claude、填写 API Key、导入 `auth.json`，或配置 OpenAI-compatible 端点；
 2. 在“比赛平台设置”中选择 CTFd 或 GZCTF，填写站点、比赛与认证信息；
 3. 先“测试连接”，成功后再“保存并连接”；
 4. 人工调度单题，或开启自主调度整场比赛。
 
-Compose 不读取 `.env`，也不向容器注入模型或平台凭据。所有业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
+Compose 只使用 `CTF_AGENT_WEBUI_PORT` 和 `CTF_AGENT_CHALLENGE_TIMEOUT_MS` 两个可选环境变量（默认分别为 `3000` 和 `1800000`）；不会从环境注入模型或平台凭据。其余业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
 
 ```text
 .ctf-agent/
 ├── secrets.json          # API Key、Token、密码或 Cookie，权限 0600
+├── auth.json             # Pi Provider OAuth / API Key 凭据，权限 0600
 ├── model-config.json     # 非敏感模型参数
 ├── project-config.json   # 平台、比赛和 sandbox 配置
 ├── runs.sqlite           # Run、事件、调度与黑板
 └── runs/<run-id>/
     ├── session.jsonl     # Pi 原生 session tree
+    ├── subagents/<id>/
+    │   └── session.jsonl # 每个 worker 的独立可恢复会话
     └── workspace/        # Solver 产物
 ```
 
@@ -75,7 +79,28 @@ wsl -d kali-linux -- bash -lc `
   'cd /mnt/e/dev/my-projects/ctf-agent && docker compose -f compose.webui.yaml up -d --build'
 ```
 
-WebUI 仅映射到宿主机 `127.0.0.1:3000`。WSL2 通常可由 Windows 浏览器直接访问该地址。
+WebUI 仅映射到宿主机 `127.0.0.1:3000`。WSL2 通常可由 Windows 浏览器直接访问该地址。Codex 和 Claude OAuth 回调分别使用仅绑定本机的 `1455`、`53692` 端口。
+
+## 模型认证
+
+模型设置支持以下入口：
+
+| Provider | 登录方式 | 持久化标识 |
+|---|---|---|
+| OpenAI Codex | 浏览器 OAuth、Device Code | `openai-codex` |
+| Claude | 浏览器 OAuth / 手动回调、Claude Code OAuth Token、Anthropic API Key | `anthropic` |
+| OpenAI API | Platform API Key | `openai` |
+| OpenAI-compatible | Provider、Base URL、Model ID、API Key | 旧版通用配置 |
+
+OAuth 和原生 Provider API Key 由 Pi 的 `CredentialStore` 写入具名卷中的 `.ctf-agent/auth.json`，刷新 token 时会原子更新；WebUI 状态接口只返回 Provider、凭据类型和模型清单，不返回凭据原文。
+
+WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：
+
+```bash
+docker cp "$HOME/.codex/auth.json" "$(docker compose -f compose.webui.yaml ps -q webui):/auth.json"
+```
+
+导入成功后凭据已复制到持久卷，临时 `/auth.json` 不再参与后续 token 刷新。
 
 ## 平台认证
 
@@ -91,7 +116,7 @@ GZCTF 的玩家接口使用身份 Cookie，不是管理员 API Token。目标站
 
 ```text
 packages/
-├── agents/    BaseAgent、Pi session/skills、CtfSolverAgent、单题工具
+├── agents/    BaseAgent、Pi session/skills、CtfSolverAgent/SubAgent、单题工具
 ├── platform/  平台契约，以及 CTFd/GZCTF 单文件插件
 ├── sandbox/   Docker 生命周期、Pi ExecutionEnv、RTK 与 solver 镜像
 ├── core/      Project、ControlPlane、调度器、SQLite、blackboard
@@ -106,6 +131,7 @@ packages/
 
 - [Solver 与 Pi Coding Agent 审计](docs/solver-audit.md)
 - [Blackboard 规范](docs/blackboard-spec.md)
+- [SubAgent 架构与自定义角色](docs/subagents.md)
 - [平台插件说明](docs/platform-plugins.md)
 
 ## 本地开发
@@ -136,13 +162,16 @@ WebUI 可执行入口还支持：
 | `--challenge-timeout-ms` | `1800000` | 单次挑战硬超时 |
 | `--retry-delay-ms` | `2000` | 重试间隔 |
 | `--workspace-volume` | 无 | 容器部署时供 Solver 挂载的 Docker volume |
+| `--auth-file` | `/auth.json` | WebUI“读取 auth.json”使用的导入路径 |
 | `--auto-start` | 关闭 | 已有完整配置时启动自主调度 |
 
-当前发行镜像只启用 OpenAI-compatible streaming，并裁掉 Pi 中未使用的 Anthropic、Bedrock、Gemini 和 Mistral SDK。若要接入原生 Provider，需要恢复相应依赖并在模型运行层选择对应 stream 实现。
+单次 Run 在上述挑战超时内会持续自动续跑；模型提前正常结束或单轮输出被提供方截断，都不会再消耗固定次数预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，实际单轮能力由模型提供方决定；上下文接近模型窗口时仍使用 Pi compaction 保留关键进度。
+
+当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 
 ## 安全说明
 
-- WebUI 不会在读取 API 中回传凭据明文；模型和平台共用同一个 `FileSecretStore`。
+- WebUI 不会在读取 API 中回传凭据明文；Provider 凭据使用 Pi `CredentialStore`，平台和通用端点密钥使用 `FileSecretStore`。
 - HTTP 服务暂不内置用户认证。不要把 3000 端口直接暴露到公网；跨主机访问应放在带 TLS 和认证的反向代理后。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。

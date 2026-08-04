@@ -24,6 +24,12 @@ export interface TestChallenge {
   failures?: Partial<
     Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", number>
   >
+  retryableFailures?: Partial<
+    Record<
+      "bind" | "getInfo" | "download" | "submit" | "instanceStart",
+      boolean
+    >
+  >
 }
 
 interface TestPlatformConfig {
@@ -242,7 +248,9 @@ class TestPlatformProject implements PlatformProject {
     const remaining = failures?.[kind] ?? 0
     if (!failures || remaining < 1) return
     failures[kind] = remaining - 1
-    throw new Error(`测试故障: ${challenge.id}.${kind}`)
+    throw Object.assign(new Error(`测试故障: ${challenge.id}.${kind}`), {
+      retryable: challenge.retryableFailures?.[kind] === true,
+    })
   }
 }
 
