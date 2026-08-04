@@ -1,30 +1,145 @@
 CTF SOLVER TOOL REFERENCE
 =========================
 
-Core: bash, curl, wget, git, jq, sqlite3, ripgrep
-Network: nc, socat, openssl
-Binary: file, strings, xxd, objdump, readelf, nm, gdb, ltrace, strace, patchelf
-Build: gcc, g++, make, nasm
-Go: /usr/local/go/bin/go (1.26.5), gofmt (add to PATH: export PATH=/usr/local/go/bin:$PATH)
-Java (use absolute paths; no java on PATH by default):
-  /opt/jdks/8/bin/java     (Zulu 8u65, 2015, old/vulnerable)
-  /opt/jdks/17/bin/java    (Temurin 17.0.2)
-  /opt/jdks/21/bin/java    (Temurin 21.0.1)
-  javac/jar/javap/keytool live in the same bin/ dirs; JAVA_HOME=/opt/jdks/<8|17|21>
-  note: old JDK cacerts may reject modern TLS sites; use curl/wget for HTTPS
-  decompile (wrappers already on PATH):
-    vineflower <input.jar|class> <output-dir>   # modern, prefer first (runs on JDK 21)
-    cfr <input.class|jar>                        # fallback, old jars (runs on JDK 8)
-Steganography: exiftool, steghide, pngcheck
-Image and OCR: identify, convert, tesseract
-Audio: ffmpeg, sox
-Archives: tar, zip, unzip, 7z
+Prefer deterministic, non-interactive commands. Request JSON or machine-readable output
+when available, add explicit timeouts in the calling Agent, and write generated files under
+/workspace.
 
-Python libraries:
-  PIL/Pillow, numpy, scipy, soundfile
-  pwn/pwntools, ropper, pefile
+LANGUAGE RUNTIMES
+  /usr/local/go/bin/go version
+  /usr/local/go/bin/gofmt -w ./source.go
+  /opt/jdks/8/bin/java -version
+  /opt/jdks/17/bin/java -version
+  /opt/jdks/21/bin/java -version
+  vineflower ./input.jar /workspace/decompiled
+  cfr ./input.class --outputdir /workspace/decompiled
+
+  Go 1.26.5 is installed under /usr/local/go; add /usr/local/go/bin to PATH when needed.
+  Java is intentionally absent from the default PATH. Select /opt/jdks/8, /opt/jdks/17,
+  or /opt/jdks/21 explicitly through an absolute path or JAVA_HOME. Vineflower uses JDK 21;
+  CFR uses JDK 8 for older bytecode.
+
+PWN TRIAGE
+  file ./chall
+  /usr/bin/checksec --output=json --file=./chall
+  pwn checksec ./chall
+  readelf -hW ./chall
+  objdump -Mintel -d ./chall
+  ROPgadget --binary ./chall --only "pop|ret"
+  ropper --file ./chall --search "pop rdi; ret"
+  one_gadget ./libc.so.6
+  seccomp-tools disasm ./filter.bpf
+  pwninit --bin ./chall --libc ./libc.so.6 --ld ./ld-linux-x86-64.so.2
+  vmlinux-to-elf ./vmlinux /workspace/vmlinux.elf
+
+PWN AUXILIARY
+  musl-gcc -static ./exploit.c -o ./exploit-static
+  valgrind --tool=memcheck --xml=yes --xml-file=/workspace/valgrind.xml ./chall
+  afl-fuzz -i ./seeds -o /workspace/afl-out -- ./chall @@
+  pahole -C task_struct ./vmlinux
+  bpftool btf dump file ./vmlinux format c > /workspace/vmlinux.h
+  dtc -I dtb -O dts ./firmware.dtb -o /workspace/firmware.dts
+  unsquashfs -d /workspace/rootfs ./rootfs.squashfs
+  busybox --list
+
+DEBUGGING (BATCH-FIRST)
+  pwndbg --batch -q -ex "set debuginfod enabled off" -ex "set pagination off" -ex "info functions" ./chall
+  gdb-multiarch --batch -q -ex "set pagination off" -ex "info files" ./chall
+  gdb --batch -q -x ./commands.gdb ./chall
+  strace -f -s 512 -o /workspace/strace.log ./chall
+  ltrace -f -s 512 -o /workspace/ltrace.log ./chall
+
+MULTI-ARCH AND KERNEL BASICS
+  aarch64-linux-gnu-gcc ./probe.c -o ./probe-aarch64
+  arm-linux-gnueabihf-gcc ./probe.c -o ./probe-armhf
+  mipsel-linux-gnu-gcc ./probe.c -o ./probe-mipsel
+  riscv64-linux-gnu-gcc ./probe.c -o ./probe-riscv64
+  qemu-aarch64 -L /usr/aarch64-linux-gnu ./probe-aarch64
+  qemu-arm -L /usr/arm-linux-gnueabihf ./probe-armhf
+  qemu-mipsel -L /usr/mipsel-linux-gnu ./probe-mipsel
+  qemu-riscv64 -L /usr/riscv64-linux-gnu ./probe-riscv64
+  qemu-system-x86_64 -nographic -kernel ./bzImage -initrd ./initramfs.cpio.gz
+  qemu-system-aarch64 -machine virt -cpu cortex-a57 -nographic -kernel ./Image
+  qemu-system-mipsel -M malta -nographic -kernel ./vmlinux
+  qemu-system-riscv64 -machine virt -nographic -kernel ./Image
+  aarch64-linux-gnu-objdump -d ./chall-aarch64
+  gcc -m32 ./exploit.c -o ./exploit32
+
+REVERSE ENGINEERING (JSON-FIRST)
+  ctf-re-preflight ./chall -o /workspace/preflight --timeout 180
+  ctf-re-preflight ./chall -o /workspace/preflight-quick --quick
+  rz-bin -Ij ./chall
+  rizin -qq -N -e scr.color=0 -e scr.interactive=false -A -c "aflj" ./chall
+  rizin -qq -N -e scr.color=0 -e scr.interactive=false -A -c "pdfj @ main" ./chall
+  rizin -qq -N -e scr.color=0 -e scr.interactive=false -A -c "pdgj @ main" ./chall
+  rz-asm -a x86 -b 64 "xor rax, rax; ret"
+  capa -j ./chall > /workspace/capa.json
+  floss -j ./chall > /workspace/floss.json
+  binwalk --csv --log=/workspace/binwalk.csv ./firmware.bin
+  pycdas ./module.pyc > /workspace/module.bytecode.txt
+  pycdc ./module.pyc > /workspace/module.py
+  upx -t ./packed
+  upx -d ./packed -o ./unpacked
+  yara -r ./rules.yar ./target
+  wasm-objdump -x ./module.wasm
+  wasm2wat ./module.wasm -o ./module.wat
+
+MISC AND STEGANOGRAPHY (BATCH-FIRST)
+  exiftool -j -G1 -a ./artifact > /workspace/metadata.json
+  identify -verbose ./image.png > /workspace/image-identify.txt
+  pngcheck -cvt ./image.png
+  pngcrush -n -v ./image.png
+  stegolsb steglsb -r -i ./image.png -o /workspace/image-lsb.bin -n 1
+  stegolsb wavsteg -r -i ./audio.wav -o /workspace/audio-lsb.bin -n 1 -b 4096
+  steghide info -sf ./carrier.jpg
+  stegseek ./carrier.jpg ./wordlist.txt /workspace/extracted.bin
+  outguess -r ./carrier.jpg /workspace/outguess.bin
+  stegsnow -C ./whitespace.txt
+  zbarimg --quiet --raw ./code.png
+  qrencode -o /workspace/qr.png "decoded-or-reconstructed-data"
+  gifsicle --info ./animation.gif
+  webpmux -info ./image.webp
+  binwalk --csv --log=/workspace/binwalk.csv ./artifact
+  foremost -i ./artifact -o /workspace/foremost-output
+  bsdtar -tf ./archive
+  ent ./artifact
+  basez --base64 --decode < ./encoded.txt > /workspace/decoded.bin
+
+  stegolsb provides deterministic PNG/BMP and WAV LSB recovery; specify the bit count
+  and, for WAV, an explicit byte count. stegseek targets steghide carriers and needs an
+  explicit wordlist for cracking. Keep extraction output under /workspace; foremost
+  requires a new, non-existing output directory for each run.
+
+PYTHON AUTOMATION
+  python -c "from pwn import *; print(cyclic(200).decode())"
+  python -c "import capstone, lief, pefile, unicorn; print('binary APIs ready')"
+  angr-python ./solve.py
+  qltool run -f ./chall --rootfs ./rootfs --json
+  frida -f ./chall -l ./hook.js --no-pause
+
+  angr, Qiling, and Frida run from /opt/re-venv. Use angr-python for angr/Qiling scripts
+  so their pinned Capstone/Z3 dependencies do not conflict with pwntools. Qiling needs a
+  challenge-provided or separately prepared rootfs. Frida injection may require additional
+  ptrace capability depending on how the container is launched.
+
+CORE
+  bash, curl, wget, git, jq, sqlite3, ripgrep
+NETWORK
+  nc, socat, openssl
+BUILD AND PATCH
+  gcc, g++, clang, make, cmake, nasm, patchelf, elfutils
+MEDIA AND STEGO
+  exiftool, steghide, stegseek, stegolsb, outguess, stegsnow, pngcheck, pngcrush
+  optipng, identify, convert, zbarimg, qrencode, gifsicle, webpmux, tesseract
+  ffmpeg, sox, foremost, ent
+ARCHIVES
+  tar, zip, unzip, 7z, bsdtar, cabextract, binwalk, unsquashfs, lz4, zstd
+
+PYTHON LIBRARIES
+  pwn/pwntools, ropper, ROPgadget, capstone, unicorn, lief, pefile
+  angr, claripy, qiling, frida-tools
   Crypto/pycryptodome, sympy, gmpy2, z3
-  scapy, requests, bs4, lxml
-  construct, bitstring
+  PIL/Pillow, numpy, scipy, soundfile
+  scapy, requests, bs4, lxml, construct, bitstring
 
-Use installed primitives first. Add challenge-specific packages only when the task requires them.
+Use installed primitives first. Add challenge-specific packages only when required.
