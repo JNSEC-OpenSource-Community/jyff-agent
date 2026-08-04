@@ -1,8 +1,14 @@
 # Platform plugins
 
-Projects select a platform adapter in `.pi/ctf-config.json`. The `config` object is parsed by that
-adapter; credentials are referenced by environment-variable name and are never persisted in the
-project file.
+Projects select a platform adapter through the WebUI or configuration. The control plane persists
+its current configuration in `.ctf-agent/project-config.json`; `.pi/ctf-config.json` remains a
+read-only legacy fallback. Each plugin parses its own `config` object. Credentials are referenced by
+secret name and never persisted in the project configuration.
+
+The WebUI renders setup fields from each plugin's `setup` descriptor. It can test a temporary
+connection before replacing the current runtime. Secrets entered there are stored separately in
+`.ctf-agent/secrets.json` with service-only file permissions. Environment variables with matching
+names remain a deployment-time fallback.
 
 ## CTFd
 
@@ -25,7 +31,7 @@ project file.
 }
 ```
 
-Set `CTFD_TOKEN` to a CTFd user access token. The adapter uses CTFd's official `Token` authorization
+Enter `CTFD_TOKEN` in the WebUI or set the environment variable to a CTFd user access token. The adapter uses CTFd's official `Token` authorization
 scheme and supports challenge listing/detail, signed attachment downloads, notifications, and flag
 attempts. Core CTFd has no standard per-player container lifecycle API, so this adapter does not
 invent one.

@@ -57,7 +57,7 @@ pnpm build:sandbox
 # 使用 .pi/ctf-config.json 中配置的真实平台解题
 pnpm example
 
-# 启动本地实时 WebUI（http://127.0.0.1:3000）
+# 启动本地实时 WebUI（http://127.0.0.1:3000，无配置也可启动）
 pnpm webui
 ```
 
@@ -73,6 +73,9 @@ WebUI 容器与它启动的 Solver 容器共享该卷，因此容器重启后仍
 
 默认 `CTF_SCHEDULER_AUTO_START=false`，打开页面后可人工调度单题，或显式点击“开启自主调度”。
 要使用调度功能，需配置 `CTF_MODEL_API_KEY` 和 `CTF_MODEL_ID`；未配置时页面仍可只读查看历史。
+首次启动可从顶部“比赛平台设置”选择 CTFd 或 GZCTF、填写认证信息并测试连接。比赛配置和
+凭据分别保存在数据卷内的 `.ctf-agent/project-config.json` 与 `.ctf-agent/secrets.json`；
+旧的 `.pi/ctf-config.json` 仍可读取，但 WebUI 不再向它写入。
 
 > `compose.webui.yaml` 将 Docker socket 挂入 WebUI，以便它创建和销毁 Solver 容器。能够访问
 > 该控制面的进程实际上拥有宿主机级 Docker 权限。请只在可信主机使用，不要向公网直接暴露端口，
@@ -101,7 +104,8 @@ pnpm webui              # 启动实时控制台
 - `RunStore`：SQLite/WAL 持久化每次题目尝试、状态转换、错误与清理结果；Project 重开时会把遗留活跃 Run 标为 `interrupted`。
 - `ContestRunner`：一次性批量执行器，适合脚本和测试。
 - `ContestScheduler`：长驻的混合调度器，负责自主队列、人工派发、同题去重、并发上限、调度 attempt 上限、硬超时、重试与取消。
-- `WebUI`：Project 与 ContestScheduler 的实时控制面；聚合平台题目、队列、RunStore 事件、远程环境与黑板数据，通过 SSE 推送变化，并提供受控的调度 API。
+- `ControlPlane`：持有可替换的 Project 与 ContestScheduler 生命周期；配置缺失或平台连接失败时进入可恢复状态，而不是终止 WebUI。
+- `WebUI`：ControlPlane 的实时界面；配置平台插件、聚合题目/队列/RunStore/远程环境与黑板，通过 SSE 推送变化，并提供受控的调度 API。
 - `DockerSandbox`：每个 Solver 一个容器。`bash`、`read`、`write`、`edit`、`list` 和 RTK 都在容器内执行；宿主机仅保留挂载的 workspace 与 Run 元数据。
 - Sessions：每个 Run 在 `.ctf-agent/runs/<run-id>/session.jsonl` 保存 Pi 原生树；消息、模型、thinking level、active tools、compaction 与分支均可恢复。SQLite 不重复保存完整 transcript。
 - Skills：`@ctf-agent/agents` 的 BaseAgent 使用 Pi loader 发现 `.pi/skills/` 与 `.agents/skills/`，再复制到容器可见的 `/workspace/.skills/`；模型通过 Pi `read` 工具渐进加载正文。
@@ -115,7 +119,7 @@ pnpm webui              # 启动实时控制台
 packages/agents/             # BaseAgent、Pi session/skills、CtfSolverAgent 与题目工具
 packages/platform/           # 平台契约及 CTFd/GZCTF 插件
 packages/sandbox/            # Docker sandbox 与 Pi ExecutionEnv
-packages/core/            # Project、SQLite、blackboard、runner、scheduler
+packages/core/               # 控制面、Project、SQLite、blackboard、runner、scheduler
 
 packages/webui/
 ├── src/
@@ -151,29 +155,38 @@ Context Window 和 Max Tokens。保存后配置立即应用，无需重启 WebUI
 `.ctf-agent/model-config.json`，该目录由 `ctf-agent-data` 数据卷持久化。清除 API Key 会同时
 暂停自主调度，但不会中断已经运行的 Agent。
 
+顶部的比赛平台设置面板由插件描述动态生成。CTFd 使用 Access Token；GZCTF 支持用户名密码
+或浏览器 Cookie。测试连接不会改动当前运行时，只有“保存并连接”成功后才替换 Project 与调度器；
+认证或网络失败会保留在可重试的 `degraded` 状态，HTTP 服务和历史数据页面不会因此退出。
+
 每次 Run 都记录来源：`auto`、`manual`、`retry`、`direct` 或 `test`。只有前三者消耗调度器的
 重试预算，因此开发测试和旧的直接运行不会让题目莫名达到调度上限。历史中出现多次 attempt，
 代表确实创建过多次独立 Solver；关闭原因 `submitted` 表示 Flag 已被平台接受，`manual`
 表示旧调用方主动关闭，`cancelled` 表示由当前控制面取消。
 
-WebUI 应嵌入持有 `Project` 的控制面进程，不应为每个 Solver 沙箱启动一份，也不要让
-另一个进程再次对同一项目执行 `Project.open()`；后者会按恢复规则把遗留的活跃 Run
-标记为 `interrupted`。`examples/ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
+WebUI 应嵌入持有 `ControlPlane` 的进程，不应为每个 Solver 沙箱启动一份，也不要让另一个
+进程再次打开同一项目；后者会按恢复规则把遗留的活跃 Run 标记为 `interrupted`。
+`examples/ctf/webui.ts` 是可运行的混合调度示例，正式控制面可直接：
 
 ```ts
-import { ContestScheduler } from "@ctf-agent/core"
+import { ContestScheduler, ControlPlane } from "@ctf-agent/core"
+import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 import { startWebUi } from "@ctf-agent/webui"
 
-const scheduler = new ContestScheduler(project, {
-  maxConcurrent: 4,
-  maxAttempts: 2,
-  createAgentOptions: ({ challenge, attempt }) =>
-    createAgentOptions(challenge, attempt),
+const controlPlane = await ControlPlane.create({
+  root: projectRoot,
+  platforms: [ctfdPlatform, gzctfPlatform],
+  createScheduler: project => new ContestScheduler(project, {
+    maxConcurrent: 4,
+    maxAttempts: 2,
+    createAgentOptions: ({ challenge, attempt }) =>
+      createAgentOptions(challenge, attempt),
+  }),
 })
+await controlPlane.start()
 
 const webui = await startWebUi({
-  project,
-  scheduler,
+  controlPlane,
   host: "127.0.0.1",
   port: 3000,
   pollIntervalMs: 1000,
