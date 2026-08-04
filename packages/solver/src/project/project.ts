@@ -1,6 +1,6 @@
 import { mkdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { AgentEvent, AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core"
+import type { AgentEvent, AgentMessage, AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { findProjectRoot, loadProjectConfig, type ProjectConfig } from "./config.ts"
 import {
   DockerSandbox,
@@ -21,6 +21,7 @@ import {
   type RunSource,
   type RunStatus,
 } from "./run-store.ts"
+import { extractAssistantText } from "../agent/thinking.ts"
 import {
   BLACKBOARD_INJECTION_MAX_CHARACTERS,
   serializeBlackboard,
@@ -134,6 +135,64 @@ export class Project {
   blackboard(challengeId: string) { return this.runStore.getBlackboardSummary(challengeId) }
   blackboardStats() { return this.runStore.getBlackboardStats() }
 
+  /**
+   * 向该题当前活跃的 solver 发送人工消息(题目级对话框入口)。
+   * 消息经 pi-agent steer() 在下一 turn 边界注入,并先落 human_message 事件。
+   * 无活跃 solver → 抛 code:"no_active_run";空文本 → 抛 code:"invalid_message"。
+   * 整个临界区同步完成(appendEvent 与 steer 均为同步调用),杜绝检查与注入之间的交错。
+   */
+  async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
+    const trimmed = text.trim()
+    if (!trimmed) {
+      throw Object.assign(new Error("消息不能为空"), { code: "invalid_message" })
+    }
+    for (const solver of [...this.solvers].reverse()) {
+      if (solver.challenge.id !== challengeId || solver.isClosed) continue
+      try {
+        this.runStore.appendEvent(solver.runId, "human_message", {
+          text: trimmed,
+          ts: new Date().toISOString(),
+        })
+      } catch {
+        // runStore 已关闭 ≈ Project 正在关闭,视同无活跃 solver
+        throw noActiveRunError()
+      }
+      solver.steer({
+        role: "user",
+        content: [{ type: "text", text: trimmed }],
+        timestamp: Date.now(),
+      })
+      return { runId: solver.runId }
+    }
+    throw noActiveRunError()
+  }
+
+  /**
+   * 切换该题当前活跃 solver 的思考强度,当前 run 的下一 turn 边界生效
+   * (CtfSolverAgent.prepareNextTurn 包装注入)。先落 thinking_level_update 事件再赋值,
+   * 事件经 appendEvent 旁路(RunStore 透传),不走 solver 事件流(裸 Agent 空闲时
+   * processEvents 抛错)。无活跃 solver → 抛 code:"no_active_run";非法档位 → code:"invalid_level"。
+   */
+  async setThinkingLevel(challengeId: string, level: ThinkingLevel): Promise<{ runId: string }> {
+    if (!VALID_THINKING_LEVELS.has(level)) {
+      throw Object.assign(new Error(`不支持的思考强度: ${level}`), { code: "invalid_level" })
+    }
+    for (const solver of [...this.solvers].reverse()) {
+      if (solver.challenge.id !== challengeId || solver.isClosed) continue
+      try {
+        this.runStore.appendEvent(solver.runId, "thinking_level_update", {
+          level,
+          ts: new Date().toISOString(),
+        })
+      } catch {
+        throw noActiveRunError()
+      }
+      solver.setThinkingLevel(level)
+      return { runId: solver.runId }
+    }
+    throw noActiveRunError()
+  }
+
   async createSolver(challengeId: string, options: CreateSolverOptions): Promise<CtfSolverAgent> {
     if (this.closed) throw new Error("Project 已关闭")
     const runId = newRunId()
@@ -219,7 +278,62 @@ export class Project {
         },
       })
       const telemetryCalls = new Map<string, { toolName: string; args: unknown }>()
+      // 流式思维链:pi 把 thinking_delta(逐段 reasoning_content)包装为 message_update
+      // 事件。每条 delta 实时落一条 agent_thinking 词片,WebUI 按轮聚合展示、导出端按 id
+      // 拼接还原完整思考。DeepSeek 默认请求也会返回 reasoning_content(适配器无条件解析),
+      // 门控读 solver.state.thinkingLevel 实时值(setThinkingLevel 动态切换后立即生效)。
       solver.subscribe((event) => {
+        if (
+          event.type === "message_update" &&
+          event.assistantMessageEvent.type === "thinking_delta" &&
+          solver.state.thinkingLevel !== "off"
+        ) {
+          try {
+            const delta = event.assistantMessageEvent.delta
+            if (delta) {
+              this.runStore.appendEvent(runId, "agent_thinking", {
+                text: delta,
+                ts: new Date().toISOString(),
+              })
+            }
+          } catch {
+            // 思考事件持久化失败不得影响 Agent 生命周期(与进度遥测同策略)
+          }
+        }
+        // assistant 文本回复不 gate 于 thinkingLevel:对话框的 agent_message
+        // 事件必须始终可见(人工干涉的前提是能看到回复)。
+        if (event.type === "message_end") {
+          try {
+            const text = extractAssistantText(event.message)
+            if (text) {
+              this.runStore.appendEvent(runId, "agent_message", {
+                text,
+                ts: new Date().toISOString(),
+              })
+            }
+          } catch {
+            // 同上:持久化失败不影响 Agent 生命周期
+          }
+        }
+        // token 消耗记录:不 gate 于 thinkingLevel(用量与思维链开关无关,off 也要记)。
+        // 部分 provider 可能不返回 usage(运行时为 undefined),缺失即跳过,导出按存在值汇总。
+        if (event.type === "message_end" && event.message.role === "assistant" && event.message.usage) {
+          try {
+            const { usage } = event.message
+            this.runStore.appendEvent(runId, "agent_usage", {
+              input: usage.input,
+              output: usage.output,
+              cacheRead: usage.cacheRead,
+              cacheWrite: usage.cacheWrite,
+              ...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
+              totalTokens: usage.totalTokens,
+              cost: usage.cost,
+              ts: new Date().toISOString(),
+            })
+          } catch {
+            // 同上:持久化失败不影响 Agent 生命周期
+          }
+        }
         const progress = progressEvents(event, this.telemetry, telemetryCalls)
         for (const item of progress) {
           try {
@@ -307,6 +421,22 @@ function runStatus(details: SolverCloseDetails): RunStatus {
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+/** 该题无活跃 solver 的错误契约:webui server 层按 code 映射 409(跨包不依赖错误类型)。 */
+function noActiveRunError(): Error {
+  return Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+}
+
+/** pi 思考强度档位全集(与 pi-agent-core ThinkingLevel 一致,含 off)。 */
+const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+])
 
 function injectBlackboard(runStore: RunStore, challengeId: string): string {
   try {

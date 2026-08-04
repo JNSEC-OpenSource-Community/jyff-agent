@@ -448,6 +448,70 @@ summary:focus-visible,
   margin-right: 7px;
 }
 
+/* 会话复盘导出(详情页头部):链接伪装成按钮 + 明文勾选 */
+.export-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-wrap[hidden] {
+  display: none;
+}
+
+/* 运行中思考强度切换(详情页头部) */
+.thinking-level-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.thinking-level-control[hidden] {
+  display: none;
+}
+
+.thinking-level-control select {
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.thinking-level-control select:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.export-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--canvas);
+}
+
+.export-full-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.export-full-label input[type="checkbox"] {
+  accent-color: var(--acid);
+  cursor: pointer;
+}
+
 .scheduler-warning {
   grid-column: 1 / -1;
   margin: -3px 0 0 22px;
@@ -1169,6 +1233,31 @@ summary:focus-visible,
   min-width: 0;
 }
 
+/* 思维链开关与思考强度选择 */
+.model-checkbox {
+  width: 17px;
+  height: 17px;
+  margin: 4px 0;
+  accent-color: var(--acid);
+  cursor: pointer;
+}
+
+.model-field select {
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.model-field select:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .model-field-wide {
   grid-column: 1 / -1;
 }
@@ -1572,13 +1661,27 @@ summary:focus-visible,
 
 .run-card summary {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 12px;
   align-items: center;
   min-height: 54px;
   padding: 10px 14px;
   list-style: none;
   cursor: pointer;
+}
+
+/* 单次会话导出(不继承 summary 的 pointer 光标) */
+.run-export-link {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.run-export-link:hover {
+  color: var(--acid);
 }
 
 .run-card summary::-webkit-details-marker {
@@ -1638,6 +1741,13 @@ summary:focus-visible,
 .timeline-item.is-tool::before { background: var(--cyan); }
 .timeline-item.is-success::before { background: var(--acid); }
 .timeline-item.is-error::before { background: var(--coral); }
+.timeline-item.is-thinking::before { background: var(--amber); }
+
+.timeline-item.is-thinking {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.8;
+}
 
 .timeline-item strong {
   display: block;
@@ -1669,6 +1779,44 @@ summary:focus-visible,
   border-radius: 3px;
   background: #090c0b;
   line-height: 1.55;
+}
+
+.thinking-details {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.thinking-details summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.thinking-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-details summary::before {
+  color: var(--dim);
+  content: "+";
+  font-family: var(--mono);
+}
+
+.thinking-details[open] summary::before {
+  content: "−";
+}
+
+.thinking-details .thinking-text {
+  margin: 0;
+  padding: 0 10px 9px;
 }
 
 .accepted-submission {
@@ -2169,3 +2317,78 @@ summary:focus-visible,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===== 人工干涉对话框（题目级） ===== */
+
+.intervention-bar {
+  padding: 14px 30px 18px;
+  border-top: 1px solid var(--line);
+  background: rgba(15, 19, 17, 0.92);
+}
+
+.intervention-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.intervention-row input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  font-family: var(--body);
+  font-size: 13px;
+}
+
+.intervention-row input:focus {
+  border-color: var(--cyan);
+  outline: none;
+}
+
+.intervention-row input:disabled {
+  color: var(--dim);
+}
+
+.intervention-send {
+  min-height: 38px;
+}
+
+.intervention-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* ===== 时间线：人工消息 / Agent 回复 / 工具需求上报 ===== */
+
+.timeline-item.is-human::before { background: var(--blue); }
+.timeline-item.is-agent::before { background: var(--ink); }
+.timeline-item.is-warn::before { background: var(--amber); }
+
+.timeline-item.is-human p {
+  width: fit-content;
+  max-width: 85%;
+  margin-left: auto;
+  padding: 8px 10px;
+  color: var(--ink);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.timeline-item.is-agent p {
+  width: fit-content;
+  max-width: 85%;
+  padding: 8px 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+

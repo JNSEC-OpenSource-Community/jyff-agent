@@ -30,6 +30,7 @@ export interface DashboardChallenge {
   score: number
   status: DashboardChallengeStatus
   platformSolved: boolean
+  needsEnv?: boolean
   attempts: number
   latestRunId: string | null
   latestRunStatus: RunRecord["status"] | null
@@ -87,6 +88,16 @@ export interface DashboardProject {
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   schedulerAttemptCount(challengeId: string): number
+  /**
+   * 向某题当前活跃的 solver 发送人工消息(题目级对话框)。
+   * 无活跃 solver 时 reject 一个带 code:"no_active_run" 的 Error。
+   */
+  sendMessage(challengeId: string, text: string): Promise<{ runId: string }>
+  /**
+   * 切换某题当前活跃 solver 的思考强度(当前 run 下一 turn 边界生效)。
+   * 无活跃 solver → code:"no_active_run";非法档位 → code:"invalid_level"。
+   */
+  setThinkingLevel(challengeId: string, level: string): Promise<{ runId: string }>
 }
 
 export interface DashboardScheduler {
@@ -106,6 +117,16 @@ export interface ModelConfigurationView {
   maxTokens: number
   apiKeyConfigured: boolean
   apiKeySource: "environment" | "webui" | "none"
+  /** 思维链开关(模型级配置,下次创建 solver 生效)。 */
+  thinkingEnabled: boolean
+  /** 思考强度档位(当前模型支持的档位之一,见 supportedThinkingLevels)。 */
+  reasoningEffort: string
+  /** 透传模式:自定义 baseUrl 时全档位同名直通(中转站场景)。 */
+  passthroughThinking: boolean
+  /** 当前模型实际支持的档位(pi 动态计算;配置不完整时只有 ["off"])。 */
+  supportedThinkingLevels: string[]
+  platformTokenConfigured: boolean
+  platformTokenSource: "environment" | "webui" | "none"
   configured: boolean
   unavailableReason?: string
 }
@@ -116,8 +137,13 @@ export interface ModelConfigurationUpdate {
   baseUrl: string
   contextWindow: number
   maxTokens: number
+  thinkingEnabled: boolean
+  reasoningEffort: string
+  passthroughThinking: boolean
   apiKey?: string
   clearApiKey?: boolean
+  platformToken?: string
+  clearPlatformToken?: boolean
 }
 
 export interface DashboardModelConfiguration {

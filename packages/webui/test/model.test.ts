@@ -21,6 +21,7 @@ describe("WebUI dashboard model", () => {
     expect(snapshot.challenges.find((challenge) => challenge.id === "pwn-1"))
       .toMatchObject({
         status: "running",
+        needsEnv: false,
         progress: "正在执行 终端命令",
         attempts: 1,
         evidence: 1,
@@ -59,5 +60,50 @@ describe("WebUI dashboard model", () => {
         queuePosition: 1,
         dispatchSource: "manual",
       })
+  })
+
+  it("最后事件为 human_message/agent_message/agent_usage 时映射进度文案", async () => {
+    const project = new FakeDashboardProject()
+    project.eventValues.get("run-pwn-1")!.push({
+      id: 2,
+      runId: "run-pwn-1",
+      type: "human_message",
+      data: { text: "先检查文件头", ts: "2026-07-29T12:01:00.000Z" },
+      createdAt: "2026-07-29T12:01:00.000Z",
+    })
+    const human = await buildDashboardSnapshot(project)
+    expect(human.challenges.find((challenge) => challenge.id === "pwn-1")?.progress)
+      .toBe("已发送人工消息")
+
+    project.eventValues.get("run-pwn-1")!.push({
+      id: 3,
+      runId: "run-pwn-1",
+      type: "agent_message",
+      data: { text: "收到，开始分析", ts: "2026-07-29T12:01:10.000Z" },
+      createdAt: "2026-07-29T12:01:10.000Z",
+    })
+    const agent = await buildDashboardSnapshot(project)
+    expect(agent.challenges.find((challenge) => challenge.id === "pwn-1")?.progress)
+      .toBe("Agent 正在回复")
+
+    project.eventValues.get("run-pwn-1")!.push({
+      id: 4,
+      runId: "run-pwn-1",
+      type: "agent_usage",
+      data: { input: 100, output: 50, totalTokens: 150, ts: "2026-07-29T12:01:30.000Z" },
+      createdAt: "2026-07-29T12:01:30.000Z",
+    })
+    const usage = await buildDashboardSnapshot(project)
+    expect(usage.challenges.find((challenge) => challenge.id === "pwn-1")?.progress)
+      .toBe("已记录本轮用量")
+
+    // 详情时间线应包含全部新事件
+    const details = await buildChallengeDetails(project, "pwn-1")
+    expect(details?.runs[0]?.events.map((event) => event.type)).toEqual([
+      "tool_started",
+      "human_message",
+      "agent_message",
+      "agent_usage",
+    ])
   })
 })

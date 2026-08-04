@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { randomBytes, randomUUID } from "node:crypto"
 import type {
   Announcement,
   Attachment,
@@ -11,6 +11,7 @@ import type {
   PlatformProject,
   RemoteEnvironment,
 } from "@ctf-agent/solver"
+import { DockerInstanceProvider } from "./docker-instance.ts"
 
 export interface MockChallenge {
   id: string
@@ -18,9 +19,12 @@ export interface MockChallenge {
   category: string
   score: number
   description: string
+  needsEnv?: boolean
+  guide?: string
   attachments: Array<{ id: string; name: string; content: string }>
   flag: string
   remote?: boolean
+  container?: { image: string; port: number }   // 配置后远程题以真实 Docker 容器启动(动态 FLAG)
   failures?: {
     bind?: number
     getInfo?: number
@@ -57,6 +61,12 @@ const defaults: MockChallenge[] = [{
   flag: "MOCK{platform-plugin-works}",
 }]
 
+/** Docker 容器名允许 [a-zA-Z0-9][a-zA-Z0-9_.-]*,把题目 id 清洗成安全片段。 */
+function slug(name: string): string {
+  const cleaned = name.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "")
+  return cleaned || "challenge"
+}
+
 function copyInfo(challenge: MockChallenge): ChallengeInfo {
   const attachments: Attachment[] = challenge.attachments.map((attachment) => ({
     id: attachment.id,
@@ -70,6 +80,7 @@ function copyInfo(challenge: MockChallenge): ChallengeInfo {
     score: challenge.score,
     description: challenge.description,
     attachments,
+    ...(challenge.guide ? { environmentGuide: challenge.guide } : {}),
   }
 }
 
@@ -78,6 +89,8 @@ export class MockContest implements PlatformProject {
   private readonly announcements: Announcement[]
   private readonly name: string
   private readonly environments = new Map<string, RemoteEnvironment>()
+  private readonly instanceFlags = new Map<string, string>()      // 环境 id → 动态 flag
+  private readonly instanceContainers = new Map<string, string>() // 环境 id → 容器名
   private readonly solved = new Set<string>()
   private readonly remainingFailures = new Map<string, Record<FailureKind, number>>()
   private readonly bindAttempts = new Map<string, number>()
@@ -108,7 +121,7 @@ export class MockContest implements PlatformProject {
   }
 
   async listChallenges(): Promise<ChallengeSummary[]> {
-    return this.challenges.map((challenge) => ({ ...copyInfo(challenge), attachments: undefined, description: undefined, solved: this.solved.has(challenge.id) }))
+    return this.challenges.map((challenge) => ({ ...copyInfo(challenge), attachments: undefined, description: undefined, solved: this.solved.has(challenge.id), needsEnv: challenge.needsEnv === true }))
       .map(({ attachments: _attachments, description: _description, ...summary }) => summary)
   }
 
@@ -150,6 +163,18 @@ export class MockContest implements PlatformProject {
         this.submissions.set(challenge.id, (this.submissions.get(challenge.id) ?? 0) + 1)
         this.fail(challenge, "submit")
         if (this.solved.has(challenge.id)) return { status: "already_solved", message: "该题已经解决" }
+        if (challenge.remote) {
+          // 远程题优先校验运行中实例的动态 flag(容器启动时注入)
+          const running = this.runningEnvironment(challenge.id)
+          const dynamic = running ? this.instanceFlags.get(running.id) : undefined
+          if (dynamic) {
+            if (flag.trim() === dynamic) {
+              this.solved.add(challenge.id)
+              return { status: "accepted", message: "Flag accepted" }
+            }
+            return { status: "rejected", message: "Flag 不正确" }
+          }
+        }
         if (flag.trim() !== challenge.flag) return { status: "rejected", message: "Flag 不正确" }
         this.solved.add(challenge.id)
         return { status: "accepted", message: "Flag accepted" }
@@ -160,23 +185,43 @@ export class MockContest implements PlatformProject {
       capability.instance = {
         start: async () => {
           this.fail(challenge, "instanceStart")
-          const existing = [...this.environments.values()].find((item) => item.challengeId === challenge.id && item.status === "running")
+          const existing = this.runningEnvironment(challenge.id)
           if (existing) return existing
-          const environment: RemoteEnvironment = {
-            id: randomUUID(), challengeId: challenge.id, status: "running", endpoint: `mock://${challenge.id}`,
+          const envId = `${challenge.id}-${randomUUID().slice(0, 8)}`
+          const containerName = `challenge-${slug(challenge.id)}-${randomUUID().slice(0, 8)}`
+          let environment: RemoteEnvironment
+          if (challenge.container) {
+            // 真实容器:动态 FLAG 注入
+            const flag = `myctf{${randomBytes(6).toString("hex")}}`
+            const provider = new DockerInstanceProvider(
+              { image: challenge.container.image, port: challenge.container.port, network: DockerInstanceProvider.networkName, flag },
+              containerName,
+            )
+            const env = await provider.start()
+            this.instanceFlags.set(envId, flag)
+            this.instanceContainers.set(envId, containerName)
+            environment = { ...env, challengeId: challenge.id, id: envId }
+          } else {
+            // 旧行为:内存模拟(无 container 字段的 remote 题)
+            environment = { id: envId, challengeId: challenge.id, status: "running", endpoint: `mock://${challenge.id}` }
           }
           this.environments.set(environment.id, environment)
           this.instanceStarts++
           this.maxActiveEnvironments = Math.max(this.maxActiveEnvironments, this.activeEnvironmentCount())
           return environment
         },
-        status: async () => [...this.environments.values()].find((item) => item.challengeId === challenge.id && item.status === "running") ?? null,
+        status: async () => this.runningEnvironment(challenge.id) ?? null,
         destroy: async () => {
-          const current = [...this.environments.values()].find((item) => item.challengeId === challenge.id && item.status === "running")
-          if (current) {
-            this.environments.set(current.id, { ...current, status: "stopped" })
-            this.instanceDestroys++
+          const current = this.runningEnvironment(challenge.id)
+          if (!current) return
+          const containerName = this.instanceContainers.get(current.id)
+          if (containerName) {
+            await DockerInstanceProvider.destroyByName(containerName)
+            this.instanceContainers.delete(current.id)
+            this.instanceFlags.delete(current.id)
           }
+          this.environments.set(current.id, { ...current, status: "stopped" })
+          this.instanceDestroys++
         },
       }
     }
@@ -195,6 +240,10 @@ export class MockContest implements PlatformProject {
   }
 
   async close(): Promise<void> { }
+
+  private runningEnvironment(challengeId: string): RemoteEnvironment | undefined {
+    return [...this.environments.values()].find((item) => item.challengeId === challengeId && item.status === "running")
+  }
 
   private activeEnvironmentCount(): number {
     return [...this.environments.values()].filter((environment) => environment.status === "running").length

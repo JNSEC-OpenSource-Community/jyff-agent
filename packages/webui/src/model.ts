@@ -62,6 +62,7 @@ export async function buildDashboardSnapshot(
       score: challenge.score,
       status,
       platformSolved: challenge.solved === true,
+      needsEnv: challenge.needsEnv === true,
       attempts: challengeRuns.length,
       latestRunId: latest?.id ?? null,
       latestRunStatus: latest?.status ?? null,
@@ -169,6 +170,10 @@ function progressLabel(
     const failed = eventField(event, "isError") === "true"
     return `${failed ? "工具失败" : "已完成"}${tool ? ` · ${humanToolName(tool)}` : ""}`
   }
+  if (event?.type === "agent_message") return "Agent 正在回复"
+  if (event?.type === "agent_usage") return "已记录本轮用量"
+  if (event?.type === "thinking_level_update") return "已切换思考强度"
+  if (event?.type === "human_message") return "已发送人工消息"
   switch (status) {
     case "queued": return "已进入调度队列"
     case "pending": return "尚未入队"

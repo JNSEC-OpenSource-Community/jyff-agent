@@ -1,4 +1,4 @@
-import { Agent, type AgentMessage, type AgentOptions } from "@earendil-works/pi-agent-core"
+import { Agent, type AgentMessage, type AgentOptions, type ThinkingLevel } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "../platform/types.ts"
 import type { Sandbox } from "../sandbox/docker-sandbox.ts"
 import type { RunStore } from "../project/run-store.ts"
@@ -74,7 +74,13 @@ export class CtfSolverAgent extends Agent {
       }),
       ...(loadSkill ? [loadSkill] : []),
     ]
-    const { initialState, transformContext: inheritedTransform, convertToLlm: inheritedConvert, ...agentOptions } = options.agent
+    const {
+      initialState,
+      transformContext: inheritedTransform,
+      convertToLlm: inheritedConvert,
+      prepareNextTurn: inheritedPrepareNextTurn,
+      ...agentOptions
+    } = options.agent
     const catalog = buildSkillsCatalog(skills)
     super({
       ...agentOptions,
@@ -85,6 +91,12 @@ export class CtfSolverAgent extends Agent {
       transformContext: async (messages, signal) => {
         const compacted = await autoCompact(messages, signal)
         return inheritedTransform ? inheritedTransform(compacted, signal) : compacted
+      },
+      // 每 turn 边界把 state.thinkingLevel 注入下一轮请求:setThinkingLevel 的
+      // 运行中切换即可在当前 run 的下一 turn 生效(agent-loop 把 "off" 转 undefined)。
+      prepareNextTurn: async (context) => {
+        const inherited = inheritedPrepareNextTurn ? await inheritedPrepareNextTurn(context) : undefined
+        return { ...(inherited ?? {}), thinkingLevel: this.state.thinkingLevel }
       },
       initialState: {
         ...initialState,
@@ -138,6 +150,14 @@ export class CtfSolverAgent extends Agent {
 
   get closedReason(): SolverCloseReason | undefined {
     return this.closed ? this.closeReason : undefined
+  }
+
+  /**
+   * 运行时切换思考强度:当前 run 的下一 turn 边界生效(prepareNextTurn 包装注入)。
+   * 注意:模型 reasoning=false(思考开关关)时档位会被 pi 钳制为 off,开关属于模型级配置。
+   */
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.state.thinkingLevel = level
   }
 
   /** 手动压缩会先中断当前推理，确保不会在进行中的 tool turn 中改写 transcript。 */

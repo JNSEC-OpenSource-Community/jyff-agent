@@ -85,6 +85,30 @@ export class FakeDashboardProject implements DashboardProject {
     openOpportunities: 1,
     concludedOpportunities: 0,
   }]
+  sendMessageCalls: Array<{ challengeId: string; text: string }> = []
+  sendMessageResult: { runId: string } | { error: "no_active_run" } | { error: "invalid_message" } =
+    { runId: "run-pwn-1" }
+  thinkingLevelCalls: Array<{ challengeId: string; level: string }> = []
+  thinkingLevelResult: { runId: string } | { error: "no_active_run" } = { runId: "run-pwn-1" }
+
+  async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
+    this.sendMessageCalls.push({ challengeId, text })
+    if ("error" in this.sendMessageResult) {
+      if (this.sendMessageResult.error === "no_active_run") {
+        throw Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+      }
+      throw Object.assign(new Error("消息内容不合法(测试)"), { code: "invalid_message" })
+    }
+    return this.sendMessageResult
+  }
+
+  async setThinkingLevel(challengeId: string, level: string): Promise<{ runId: string }> {
+    this.thinkingLevelCalls.push({ challengeId, level })
+    if ("error" in this.thinkingLevelResult) {
+      throw Object.assign(new Error("该题当前没有运行中的 Agent"), { code: "no_active_run" })
+    }
+    return this.thinkingLevelResult
+  }
 
   async refresh(): Promise<ContestOverview> {
     this.refreshCalls++
@@ -175,10 +199,17 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     maxTokens: 4_096,
     apiKeyConfigured: false,
     apiKeySource: "none",
+    thinkingEnabled: false,
+    reasoningEffort: "max",
+    passthroughThinking: false,
+    supportedThinkingLevels: ["low", "medium", "high", "max"],
+    platformTokenConfigured: false,
+    platformTokenSource: "none",
     configured: false,
     unavailableReason: "missing model configuration",
   }
   lastApiKey: string | undefined
+  lastPlatformToken: string | undefined
 
   snapshot(): ModelConfigurationView {
     return structuredClone(this.value)
@@ -187,6 +218,8 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
   async update(configuration: ModelConfigurationUpdate): Promise<ModelConfigurationView> {
     if (configuration.apiKey) this.lastApiKey = configuration.apiKey
     if (configuration.clearApiKey) this.lastApiKey = undefined
+    if (configuration.platformToken) this.lastPlatformToken = configuration.platformToken
+    if (configuration.clearPlatformToken) this.lastPlatformToken = undefined
     const apiKeyConfigured = Boolean(this.lastApiKey)
     this.value = {
       provider: configuration.provider,
@@ -196,6 +229,12 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       maxTokens: configuration.maxTokens,
       apiKeyConfigured,
       apiKeySource: apiKeyConfigured ? "webui" : "none",
+      thinkingEnabled: configuration.thinkingEnabled,
+      reasoningEffort: configuration.reasoningEffort,
+      passthroughThinking: configuration.passthroughThinking,
+      supportedThinkingLevels: this.value.supportedThinkingLevels,
+      platformTokenConfigured: Boolean(this.lastPlatformToken),
+      platformTokenSource: this.lastPlatformToken ? "webui" : "none",
       configured: apiKeyConfigured && Boolean(configuration.modelId),
       ...(!apiKeyConfigured || !configuration.modelId
         ? { unavailableReason: "missing model configuration" }

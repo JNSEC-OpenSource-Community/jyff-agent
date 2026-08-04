@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { ContestSchedulerError } from "@ctf-agent/solver"
+import { buildSessionMarkdown } from "./export.ts"
 import { buildChallengeDetails, buildDashboardSnapshot } from "./model.ts"
 import type {
   DashboardModelConfiguration,
@@ -178,6 +179,94 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    // 题目级对话框:向该题当前活跃的 solver 发送人工消息(走 project,不走调度器)
+    const message = /^\/api\/challenges\/([^/]+)\/message$/.exec(url.pathname)
+    if (method === "POST" && message) {
+      requireJsonRequest(request)
+      const challengeId = decodeURIComponent(message[1]!)
+      const body = await readJsonBody(request)
+      const text = requiredString(body.text, "Text", 4_000, "invalid_message")
+      try {
+        sendJson(response, 200, await options.project.sendMessage(challengeId, text))
+      } catch (error) {
+        if (hasCode(error, "no_active_run")) {
+          throw new HttpRequestError(409, "no_active_run", "该题当前没有运行中的 Agent")
+        }
+        if (hasCode(error, "invalid_message")) {
+          // 保留 project 侧原始错误文案,不掩盖真实校验错误(requiredString 已在上游拦截)
+          throw new HttpRequestError(
+            400,
+            "invalid_message",
+            error instanceof Error && error.message ? error.message : "invalid_message",
+          )
+        }
+        throw error
+      }
+      return
+    }
+
+    // 运行中切换思考强度:向该题当前活跃的 solver 设置 thinkingLevel(下一 turn 生效)
+    const thinkingLevel = /^\/api\/challenges\/([^/]+)\/thinking-level$/.exec(url.pathname)
+    if (method === "POST" && thinkingLevel) {
+      requireJsonRequest(request)
+      const challengeId = decodeURIComponent(thinkingLevel[1]!)
+      const body = await readJsonBody(request)
+      const level = requiredString(body.level, "Level", 32, "invalid_level")
+      if (!THINKING_LEVELS.has(level) && level !== "off") {
+        throw new HttpRequestError(
+          400,
+          "invalid_level",
+          `思考强度必须是 ${[...THINKING_LEVELS, "off"].join("/")} 之一`,
+        )
+      }
+      try {
+        sendJson(response, 200, await options.project.setThinkingLevel(challengeId, level))
+      } catch (error) {
+        if (hasCode(error, "no_active_run")) {
+          throw new HttpRequestError(409, "no_active_run", "该题当前没有运行中的 Agent")
+        }
+        if (hasCode(error, "invalid_level")) {
+          throw new HttpRequestError(400, "invalid_level", "不支持的思考强度")
+        }
+        throw error
+      }
+      return
+    }
+
+    // 会话复盘导出:必须在 /api/challenges/ 详情分支(startsWith)之前,否则路径被吞。
+    const exportMatch = /^\/api\/challenges\/([^/]+)\/export$/.exec(url.pathname)
+    if (method === "GET" && exportMatch) {
+      const challengeId = decodeURIComponent(exportMatch[1]!)
+      const runs = options.project.runs({ challengeId })
+      if (runs.length === 0) {
+        throw new HttpRequestError(404, "no_runs", "该题没有任何 Run 记录")
+      }
+      const runId = optionalQueryString(url.searchParams.get("run"), "run", 64)
+      if (runId) {
+        const exists = runs.some((run) => run.id === runId)
+        if (!exists) {
+          throw new HttpRequestError(404, "run_not_found", `该题不存在 Run: ${runId}`)
+        }
+      }
+      const markdown = buildSessionMarkdown(options.project, challengeId, {
+        runId,
+        full: url.searchParams.get("full") === "1",
+      })
+      const safeChallenge = filenameSafe(challengeId)
+      const filename = runId
+        ? `session-${safeChallenge}-${filenameSafe(runId.slice(0, 8))}-${timestampForFilename()}.md`
+        : `session-${safeChallenge}-all-${timestampForFilename()}.md`
+      const body = Buffer.from(markdown, "utf8")
+      response.writeHead(200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+        "Content-Length": body.byteLength,
+      })
+      response.end(body)
+      return
+    }
+
     if (method === "GET" && url.pathname.startsWith("/api/challenges/")) {
       const encodedId = url.pathname.slice("/api/challenges/".length)
       const challengeId = decodeURIComponent(encodedId)
@@ -346,6 +435,30 @@ function requireModelConfiguration(
   }
 }
 
+/** 跨包错误契约:按 Error 上的 code 字段匹配(不依赖错误类型)。 */
+function hasCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null &&
+    (error as { code?: unknown }).code === code
+}
+
+/** Content-Disposition filename 段白名单清洗:平台/run 数据不可信,防 header 注入。 */
+function filenameSafe(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
+}
+
+function timestampForFilename(): string {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("-")
+}
+
 function requireJsonRequest(request: IncomingMessage): void {
   const contentType = request.headers["content-type"] ?? ""
   if (!contentType.toLowerCase().startsWith("application/json")) {
@@ -438,32 +551,74 @@ function modelConfigurationUpdate(
       "不能同时设置和清除 API Key",
     )
   }
+  const thinkingEnabled = body.thinkingEnabled === true
+  const passthroughThinking = body.passthroughThinking === true
+  const reasoningEffort = requiredString(body.reasoningEffort, "Reasoning Effort", 32)
+  if (!THINKING_LEVELS.has(reasoningEffort)) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_configuration",
+      `Reasoning Effort 必须是 ${[...THINKING_LEVELS].join("/")} 之一`,
+    )
+  }
+  const platformToken = body.platformToken === undefined
+    ? undefined
+    : optionalString(body.platformToken, "Platform Token", 8_192)
+  const clearPlatformToken = body.clearPlatformToken === true
+  if (platformToken && clearPlatformToken) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_configuration",
+      "不能同时设置和清除 Platform Token",
+    )
+  }
   return {
     provider,
     modelId,
     baseUrl: baseUrl.replace(/\/+$/, ""),
     contextWindow,
     maxTokens,
+    thinkingEnabled,
+    reasoningEffort,
+    passthroughThinking,
     ...(apiKey ? { apiKey } : {}),
     ...(clearApiKey ? { clearApiKey: true } : {}),
+    ...(platformToken ? { platformToken } : {}),
+    ...(clearPlatformToken ? { clearPlatformToken: true } : {}),
   }
 }
 
-function requiredString(value: unknown, field: string, maxLength: number): string {
-  const text = optionalString(value, field, maxLength)
+/** 思考强度档位全集(与 pi ThinkingLevel 一致,不含 off——off 由 thinkingEnabled 表达)。 */
+const THINKING_LEVELS = new Set(["minimal", "low", "medium", "high", "xhigh", "max"])
+
+function optionalQueryString(value: string | null, field: string, maxLength: number): string | undefined {
+  if (value === null) return undefined
+  const text = value.trim()
+  if (text.length === 0) return undefined
+  if (text.length > maxLength) {
+    throw new HttpRequestError(400, "invalid_query", `${field} 长度不能超过 ${maxLength}`)
+  }
+  if (/[\u0000-\u001f\u007f]/.test(text)) {
+    throw new HttpRequestError(400, "invalid_query", `${field} 不能包含控制字符`)
+  }
+  return text
+}
+
+function requiredString(value: unknown, field: string, maxLength: number, code = "invalid_model_configuration"): string {
+  const text = optionalString(value, field, maxLength, code)
   if (text) return text
   throw new HttpRequestError(
     400,
-    "invalid_model_configuration",
+    code,
     `${field} 不能为空`,
   )
 }
 
-function optionalString(value: unknown, field: string, maxLength: number): string {
+function optionalString(value: unknown, field: string, maxLength: number, code = "invalid_model_configuration"): string {
   if (typeof value !== "string") {
     throw new HttpRequestError(
       400,
-      "invalid_model_configuration",
+      code,
       `${field} 必须是字符串`,
     )
   }
@@ -471,7 +626,7 @@ function optionalString(value: unknown, field: string, maxLength: number): strin
   if (text.length > maxLength) {
     throw new HttpRequestError(
       400,
-      "invalid_model_configuration",
+      code,
       `${field} 长度不能超过 ${maxLength}`,
     )
   }
