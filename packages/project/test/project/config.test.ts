@@ -6,7 +6,7 @@ describe("Project 配置", () => {
     expect(parseProjectConfig({
       version: 1,
       project: { id: "p", name: "P" },
-      platform: { plugin: "mock", config: {} },
+      platform: { plugin: "test", config: {} },
       sandbox: { image: "solver" },
     })).toMatchObject({ sandbox: { image: "solver", privileged: false, networkMode: "bridge" } })
   })
@@ -14,7 +14,7 @@ describe("Project 配置", () => {
   it("拒绝不支持的网络模式", () => {
     expect(() => parseProjectConfig({
       version: 1,
-      project: { id: "p", name: "P" }, platform: { plugin: "mock", config: {} },
+      project: { id: "p", name: "P" }, platform: { plugin: "test", config: {} },
       sandbox: { image: "solver", networkMode: "invalid" },
     })).toThrow("networkMode")
   })
@@ -23,7 +23,7 @@ describe("Project 配置", () => {
     expect(() => parseProjectConfig({
       version: 1,
       project: { id: "p", name: "P" },
-      contest: { platform: "mock", eventId: "e" },
+      contest: { platform: "legacy", eventId: "e" },
       platform: { config: {} },
       sandbox: { image: "solver" },
     })).toThrow("platform.plugin")

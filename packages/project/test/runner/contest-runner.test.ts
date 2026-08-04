@@ -4,7 +4,7 @@ import { join } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vitest"
-import { MockPlatformPlugin, type MockChallenge } from "../../../platform-mock/src/index.js"
+import { TestPlatformPlugin, type TestChallenge } from "../fake-platform.ts"
 import { ContestRunner } from "../../src/contest-runner.js"
 import { Project } from "../../src/project.js"
 import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
@@ -38,22 +38,22 @@ class SandboxTracker {
   }
 }
 
-async function projectFixture(challenges: MockChallenge[], tracker: SandboxTracker) {
+async function projectFixture(challenges: TestChallenge[], tracker: SandboxTracker) {
   const root = await mkdtemp(join(tmpdir(), "ctf-runner-"))
   roots.push(root)
   await mkdir(join(root, ".pi"), { recursive: true })
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "runner-test", name: "Runner Test" },
-    platform: { plugin: "mock", config: { challenges } },
+    platform: { plugin: "test", config: { challenges } },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }))
-  const plugin = new MockPlatformPlugin()
+  const plugin = new TestPlatformPlugin()
   const project = await Project.open({ root, platforms: [plugin], sandboxFactory: tracker.create })
   return { project, plugin }
 }
 
-function solvingAgent(challenge: MockChallenge, attempt: number, responseDelayMs = 25): AgentOptions {
+function solvingAgent(challenge: TestChallenge, attempt: number, responseDelayMs = 25): AgentOptions {
   const faux = createFauxCore({ provider: `runner-${challenge.id}-${attempt}` })
   const calls = [
     ...(challenge.remote ? [fauxToolCall("ctf_instance_start", {}, { id: `start-${challenge.id}-${attempt}` })] : []),
@@ -72,7 +72,7 @@ function solvingAgent(challenge: MockChallenge, attempt: number, responseDelayMs
   }
 }
 
-function challenge(index: number, options: Partial<MockChallenge> = {}): MockChallenge {
+function challenge(index: number, options: Partial<TestChallenge> = {}): TestChallenge {
   return {
     id: `challenge-${index}`,
     title: `Challenge ${index}`,

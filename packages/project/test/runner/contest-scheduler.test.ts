@@ -4,7 +4,7 @@ import { join } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vitest"
-import { MockPlatformPlugin, type MockChallenge } from "../../../platform-mock/src/index.ts"
+import { TestPlatformPlugin, type TestChallenge } from "../fake-platform.ts"
 import { Project } from "../../src/project.ts"
 import { ContestScheduler, ContestSchedulerError } from "../../src/contest-scheduler.ts"
 import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
@@ -38,7 +38,7 @@ class SandboxTracker {
   }
 }
 
-function challenge(index: number, options: Partial<MockChallenge> = {}): MockChallenge {
+function challenge(index: number, options: Partial<TestChallenge> = {}): TestChallenge {
   return {
     id: `challenge-${index}`,
     title: `Challenge ${index}`,
@@ -51,26 +51,26 @@ function challenge(index: number, options: Partial<MockChallenge> = {}): MockCha
   }
 }
 
-async function fixture(challenges: MockChallenge[], tracker: SandboxTracker) {
+async function fixture(challenges: TestChallenge[], tracker: SandboxTracker) {
   const root = await mkdtemp(join(tmpdir(), "ctf-scheduler-"))
   roots.push(root)
   await mkdir(join(root, ".pi"), { recursive: true })
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "scheduler-test", name: "Scheduler Test" },
-    platform: { plugin: "mock", config: { challenges } },
+    platform: { plugin: "test", config: { challenges } },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }))
   const project = await Project.open({
     root,
-    platforms: [new MockPlatformPlugin()],
+    platforms: [new TestPlatformPlugin()],
     sandboxFactory: tracker.create,
     telemetry: { level: "full" },
   })
   return project
 }
 
-function solvingAgent(item: MockChallenge, delayMs = 20): AgentOptions {
+function solvingAgent(item: TestChallenge, delayMs = 20): AgentOptions {
   const faux = createFauxCore({ provider: `scheduler-${item.id}` })
   faux.setResponses([
     async () => {

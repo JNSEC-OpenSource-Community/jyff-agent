@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { afterAll, describe, expect, it } from "vitest"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
-import { mockPlatform } from "../../../platform-mock/src/index.js"
+import { testPlatform } from "../fake-platform.ts"
 import { Project } from "../../src/project.js"
 
 const cleanupRoots: string[] = []
@@ -50,13 +50,13 @@ async function setupProject(): Promise<{ project: Project; root: string }> {
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "e2e-bb", name: "E2E BB" },
-    platform: { plugin: "mock", config: {} },
+    platform: { plugin: "test", config: {} },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }))
   return {
     project: await Project.open({
       root,
-      platforms: [mockPlatform],
+      platforms: [testPlatform],
       sandboxFactory: async () => new FakeSandbox() as any,
     }),
     root,

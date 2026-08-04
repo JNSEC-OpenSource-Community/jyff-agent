@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { BaseAgent } from "@ctf-agent/base-agent"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
-import { mockPlatform } from "../../../platform-mock/src/index.js"
+import { testPlatform } from "../fake-platform.ts"
 import { Project } from "../../src/project.js"
 import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 
@@ -30,7 +30,7 @@ async function fixture(): Promise<string> {
   await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify({
     version: 1,
     project: { id: "test-project", name: "Test Project" },
-    platform: { plugin: "mock", config: {} },
+    platform: { plugin: "test", config: {} },
     sandbox: { image: "test-image", privileged: true, networkMode: "none" },
   }))
   await mkdir(join(root, ".pi", "skills", "reverse"), { recursive: true })
@@ -45,7 +45,7 @@ describe("Project", () => {
     await writeFile(join(root, ".pi", "skills", "invalid", "SKILL.md"), "---\nname: INVALID\ndescription: bad\n---\nbody")
     const project = await Project.open({
       root,
-      platforms: [mockPlatform],
+      platforms: [testPlatform],
       sandboxFactory: async () => new FakeSandbox(),
     })
     try {
@@ -63,7 +63,7 @@ describe("Project", () => {
     let received: DockerSandboxOptions | undefined
     const project = await Project.open({
       root,
-      platforms: [mockPlatform],
+      platforms: [testPlatform],
       sandboxFactory: async (options) => {
         received = options
         return sandbox
@@ -112,7 +112,7 @@ describe("Project", () => {
     const root = await fixture()
     const project = await Project.open({
       root,
-      platforms: [mockPlatform],
+      platforms: [testPlatform],
       sandboxFactory: async () => new FakeSandbox(),
     })
 
@@ -146,7 +146,7 @@ async function projectWithSolver() {
   const root = await fixture()
   const project = await Project.open({
     root,
-    platforms: [mockPlatform],
+    platforms: [testPlatform],
     sandboxFactory: async () => new FakeSandbox(),
   })
   const solver = await project.createSolver("warmup-flag", { agent: agentOptions })
