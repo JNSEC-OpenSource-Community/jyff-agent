@@ -171,11 +171,19 @@ export class CtfSolverAgent extends BaseAgent {
   }
 
   private async performClose(reason: SolverCloseReason, error: string | undefined, waitForRun: boolean): Promise<void> {
-    if (waitForRun) {
-      await this.abort()
-      await this.waitForIdle()
-    }
     const cleanupErrors: string[] = []
+    if (waitForRun) {
+      try {
+        await this.abort()
+      } catch (cleanupError) {
+        cleanupErrors.push(`Agent 中止失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`)
+      }
+      try {
+        await this.waitForIdle()
+      } catch (cleanupError) {
+        cleanupErrors.push(`Agent 等待结束失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`)
+      }
+    }
     if (this.capability.instance) {
       try {
         await this.capability.instance.destroy()

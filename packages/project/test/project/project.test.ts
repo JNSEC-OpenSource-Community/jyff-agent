@@ -40,6 +40,24 @@ async function fixture(): Promise<string> {
 }
 
 describe("Project", () => {
+  it("keeps Pi skill diagnostics observable without rejecting project startup", async () => {
+    const root = await fixture()
+    await mkdir(join(root, ".pi", "skills", "invalid"), { recursive: true })
+    await writeFile(join(root, ".pi", "skills", "invalid", "SKILL.md"), "---\nname: INVALID\ndescription: bad\n---\nbody")
+    const project = await Project.open({
+      root,
+      platforms: [mockPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      expect(project.diagnostics()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "skill", path: expect.stringContaining("invalid") }),
+      ]))
+    } finally {
+      await project.close()
+    }
+  })
+
   it("创建题目绑定的 Agent、持久化 workspace，并在 close 后仅删除容器", async () => {
     const root = await fixture()
     const sandbox = new FakeSandbox()

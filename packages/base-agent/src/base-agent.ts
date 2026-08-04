@@ -155,7 +155,10 @@ export abstract class BaseAgent {
     if (!this.autoCompaction) return
     const messages = await this.getMessages()
     const tokens = estimateContextTokens(messages).tokens
-    if (shouldCompact(tokens, this.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
+    // Pi's native defaults assume a context window larger than reserveTokens.
+    // A smaller model must still be allowed to run instead of compacting an empty/short session.
+    const usableContext = this.model.contextWindow - DEFAULT_COMPACTION_SETTINGS.reserveTokens
+    if (usableContext > 0 && shouldCompact(tokens, this.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
       await this.harness.compact()
     }
   }

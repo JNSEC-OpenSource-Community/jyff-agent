@@ -69,4 +69,20 @@ describe("BaseAgent native session", () => {
     )).toBe(true)
     expect(entries.some((entry) => entry.type === "compaction")).toBe(true)
   })
+
+  it("does not attempt impossible default compaction for a small-context model", async () => {
+    const root = await mkdtemp(join(tmpdir(), "base-agent-small-context-"))
+    roots.push(root)
+    const smallModel = { ...model, id: "small", contextWindow: 1_024 }
+    const agent = await TestAgent.open({
+      session: { path: join(root, "session.jsonl"), id: "small-run", cwd: root },
+      models: modelsFromAgentOptions(legacy, smallModel),
+      model: smallModel,
+      initialMessages: [{ role: "user", content: "short history", timestamp: 1 }],
+    })
+
+    const response = await agent.prompt("continue")
+    expect(response.stopReason).toBe("error")
+    expect(response.errorMessage).toBe("model is not called by this test")
+  })
 })

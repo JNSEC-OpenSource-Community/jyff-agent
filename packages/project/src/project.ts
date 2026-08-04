@@ -1,7 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { AgentHarnessEvent, AgentMessage, AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
-import { discoverProjectSkills, materializeSkills, type AgentSkill } from "@ctf-agent/base-agent"
+import { discoverProjectSkillsWithDiagnostics, materializeSkills, type AgentSkill } from "@ctf-agent/base-agent"
 import { findProjectRoot, loadProjectConfig, type ProjectConfig } from "./config.ts"
 import {
   DockerSandbox,
@@ -52,6 +52,14 @@ export interface ProjectTelemetryOptions {
   maxTextLength?: number
 }
 
+export interface ProjectDiagnostic {
+  code: "skill" | "telemetry"
+  message: string
+  createdAt: string
+  path?: string
+  runId?: string
+}
+
 export interface CreateSolverOptions {
   agent: AgentOptions
   /** Uses Pi's native session-tree compaction. Defaults to enabled. */
@@ -68,6 +76,7 @@ export class Project {
   readonly root: string
   readonly config: ProjectConfig
   private readonly solvers = new Set<CtfSolverAgent>()
+  private readonly diagnosticLog: ProjectDiagnostic[]
   private closed = false
   private constructor(
     root: string,
@@ -78,9 +87,11 @@ export class Project {
     private readonly runStore: RunStore,
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly telemetry: Required<ProjectTelemetryOptions>,
+    diagnostics: readonly ProjectDiagnostic[],
   ) {
     this.root = root
     this.config = config
+    this.diagnosticLog = [...diagnostics]
   }
 
   static async open(options: OpenProjectOptions): Promise<Project> {
@@ -91,7 +102,7 @@ export class Project {
     const platform = await plugin.connect({ eventId: config.contest.eventId, config: config.platform.config })
     let runStore: RunStore | undefined
     try {
-      const skills = await discoverProjectSkills(root, options.skillPaths)
+      const discovered = await discoverProjectSkillsWithDiagnostics(root, options.skillPaths)
       const agentDirectory = join(root, ".ctf-agent")
       await mkdir(agentDirectory, { recursive: true })
       runStore = await RunStore.open(join(agentDirectory, "runs.sqlite"))
@@ -102,17 +113,25 @@ export class Project {
         config,
         platform,
         options.sandboxFactory ?? DockerSandbox.create,
-        skills,
+        discovered.skills,
         runStore,
         options.workspaceMount,
         {
           level: options.telemetry?.level ?? "safe",
           maxTextLength: Math.max(240, options.telemetry?.maxTextLength ?? 8_000),
         },
+        discovered.diagnostics.map((diagnostic) => ({
+          code: "skill",
+          message: diagnostic.message,
+          path: diagnostic.path,
+          createdAt: new Date().toISOString(),
+        })),
       )
     } catch (error) {
-      runStore?.close()
-      await platform.close().catch(() => undefined)
+      const failures: unknown[] = [error]
+      try { runStore?.close() } catch (cleanupError) { failures.push(cleanupError) }
+      try { await platform.close() } catch (cleanupError) { failures.push(cleanupError) }
+      if (failures.length > 1) throw new AggregateError(failures, "Project 初始化失败，且资源回收不完整")
       throw error
     }
   }
@@ -135,6 +154,7 @@ export class Project {
   schedulerAttemptCount(challengeId: string): number { return this.runStore.schedulerAttemptCount(challengeId) }
   blackboard(challengeId: string) { return this.runStore.getBlackboardSummary(challengeId) }
   blackboardStats() { return this.runStore.getBlackboardStats() }
+  diagnostics(): readonly ProjectDiagnostic[] { return [...this.diagnosticLog] }
 
   /**
    * 向该题当前活跃的 solver 发送人工消息(题目级对话框入口)。
@@ -296,8 +316,8 @@ export class Project {
                 ts: new Date().toISOString(),
               })
             }
-          } catch {
-            // 思考事件持久化失败不得影响 Agent 生命周期(与进度遥测同策略)
+          } catch (error) {
+            this.recordDiagnostic("telemetry", error, runId)
           }
         }
         // assistant 文本回复不 gate 于 thinkingLevel:对话框的 agent_message
@@ -311,8 +331,8 @@ export class Project {
                 ts: new Date().toISOString(),
               })
             }
-          } catch {
-            // 同上:持久化失败不影响 Agent 生命周期
+          } catch (error) {
+            this.recordDiagnostic("telemetry", error, runId)
           }
         }
         // token 消耗记录:不 gate 于 thinkingLevel(用量与思维链开关无关,off 也要记)。
@@ -330,16 +350,16 @@ export class Project {
               cost: usage.cost,
               ts: new Date().toISOString(),
             })
-          } catch {
-            // 同上:持久化失败不影响 Agent 生命周期
+          } catch (error) {
+            this.recordDiagnostic("telemetry", error, runId)
           }
         }
         const progress = progressEvents(event, this.telemetry, telemetryCalls)
         for (const item of progress) {
           try {
             this.runStore.appendEvent(runId, item.type, item.data)
-          } catch {
-            // 进度遥测不得改变 Agent 生命周期；持久化终态仍由 onClosed 负责。
+          } catch (error) {
+            this.recordDiagnostic("telemetry", error, runId)
           }
         }
       })
@@ -366,17 +386,20 @@ export class Project {
           cleanupErrors.push(`Sandbox 关闭失败: ${errorText(cleanupError)}`)
         }
       }
-      const updated = this.runStore.updateRun(runId, {
-        status: "failed",
-        closeReason: "failed",
-        error: errorText(error),
-        cleanupError: cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
-        finishedAt: new Date().toISOString(),
-      }, "run_creation_failed", { error: errorText(error), cleanupErrors })
-      await this.persistRecord(updated, runDirectory)
-      if (cleanupErrors.length > 0) {
-        throw new AggregateError([error, ...cleanupErrors.map((message) => new Error(message))], `无法创建 Solver ${runId}`)
+      const failures: unknown[] = [error, ...cleanupErrors.map((message) => new Error(message))]
+      try {
+        const updated = this.runStore.updateRun(runId, {
+          status: "failed",
+          closeReason: "failed",
+          error: errorText(error),
+          cleanupError: cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
+          finishedAt: new Date().toISOString(),
+        }, "run_creation_failed", { error: errorText(error), cleanupErrors })
+        await this.persistRecord(updated, runDirectory)
+      } catch (persistenceError) {
+        failures.push(persistenceError)
       }
+      if (failures.length > 1) throw new AggregateError(failures, `无法创建 Solver ${runId}`)
       throw error
     }
   }
@@ -405,6 +428,11 @@ export class Project {
     const temporary = `${target}.tmp-${process.pid}`
     await writeFile(temporary, JSON.stringify(record, null, 2))
     await rename(temporary, target)
+  }
+
+  private recordDiagnostic(code: ProjectDiagnostic["code"], error: unknown, runId?: string): void {
+    if (this.diagnosticLog.length >= 100) this.diagnosticLog.shift()
+    this.diagnosticLog.push({ code, message: errorText(error), createdAt: new Date().toISOString(), ...(runId ? { runId } : {}) })
   }
 }
 
@@ -439,20 +467,16 @@ const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
 ])
 
 function injectBlackboard(runStore: RunStore, challengeId: string): string {
-  try {
-    const summary = runStore.getBlackboardSummary(challengeId)
-    const text = serializeBlackboard(summary, {
-      maxCharacters: BLACKBOARD_INJECTION_MAX_CHARACTERS,
-    })
-    if (!text) return ""
-    const encoded = JSON.stringify({ snapshot: text })
-      .replaceAll("<", "\\u003c")
-      .replaceAll(">", "\\u003e")
-      .replaceAll("&", "\\u0026")
-    return `<untrusted_challenge_blackboard encoding="json">\n${encoded}\n</untrusted_challenge_blackboard>`
-  } catch {
-    return ""
-  }
+  const summary = runStore.getBlackboardSummary(challengeId)
+  const text = serializeBlackboard(summary, {
+    maxCharacters: BLACKBOARD_INJECTION_MAX_CHARACTERS,
+  })
+  if (!text) return ""
+  const encoded = JSON.stringify({ snapshot: text })
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+  return `<untrusted_challenge_blackboard encoding="json">\n${encoded}\n</untrusted_challenge_blackboard>`
 }
 
 function progressEvents(

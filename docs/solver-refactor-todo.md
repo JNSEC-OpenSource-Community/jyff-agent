@@ -33,8 +33,8 @@
       `@ctf-agent/project`.
 - [x] Remove RunStore access from solver tools; Project injects blackboard tools.
 - [x] Consolidate runner/scheduler prompt execution, timeout, and result checks.
-- [ ] Classify validation, tool, abort, persistence, diagnostic, and cleanup
-      errors; remove silent broad catches.
+- [x] Preserve abort, persistence, diagnostic, primary, and cleanup failures;
+      keep non-critical telemetry failures observable without stopping agents.
 - [ ] Shrink duplicated tests and add session recovery, Docker tool, lifecycle,
       cancellation, and concurrent-dispatch edge cases.
 - [ ] Update examples, WebUI dependencies, README, and compatibility exports.
