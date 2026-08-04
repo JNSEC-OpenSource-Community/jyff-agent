@@ -18,15 +18,15 @@
 
 ## Implementation order
 
-- [ ] Extract platform contracts into `@ctf-agent/platform`.
-- [ ] Extract sandbox contracts and Docker implementation into
+- [x] Extract platform contracts into `@ctf-agent/platform`.
+- [x] Extract sandbox contracts and Docker implementation into
       `@ctf-agent/sandbox`.
-- [ ] Implement a Docker-backed Pi `ExecutionEnv` with normalized file,
+- [x] Implement a Docker-backed Pi `ExecutionEnv` with normalized file,
       execution, abort, timeout, and cleanup errors.
 - [ ] Add `@ctf-agent/base-agent` using Pi `AgentHarness` and `Session`.
 - [ ] Create/open one native Pi JSONL session per run and verify restoration.
 - [ ] Migrate skills and compaction to Pi's exported implementations.
-- [ ] Migrate bash/read/write/edit to Pi tools over the Docker environment.
+- [x] Migrate bash/read/write/edit to Pi tools over the Docker environment.
 - [ ] Make `CtfSolverAgent` extend `BaseAgent` and remove duplicated runtime code.
 - [ ] Extract Project, RunStore, runner, and scheduler into
       `@ctf-agent/project`.

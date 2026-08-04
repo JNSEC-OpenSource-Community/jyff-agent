@@ -1,6 +1,6 @@
 import { Agent, type AgentMessage, type AgentOptions, type ThinkingLevel } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "@ctf-agent/platform"
-import type { Sandbox } from "../sandbox/docker-sandbox.ts"
+import type { Sandbox } from "@ctf-agent/sandbox"
 import type { RunStore } from "../project/run-store.ts"
 import { compactMessages, convertSolverMessages, shouldCompact, type CompactionOptions } from "./compaction.ts"
 import { buildSkillsCatalog, createLoadSkillTool, type AgentSkill } from "../skills/project-skills.ts"

@@ -8,7 +8,7 @@ import {
   type DockerSandboxOptions,
   type DockerWorkspaceMount,
   type Sandbox,
-} from "../sandbox/docker-sandbox.ts"
+} from "@ctf-agent/sandbox"
 import { CtfSolverAgent, type SolverCloseDetails } from "../agent/solver-agent.ts"
 import { discoverProjectSkills, materializeSkills, type AgentSkill } from "../skills/project-skills.ts"
 import type { CompactionOptions } from "../agent/compaction.ts"

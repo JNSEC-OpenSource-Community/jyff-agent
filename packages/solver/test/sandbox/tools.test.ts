@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { ChallengeCapability, FlagSubmission } from "../../src/platform/types.js"
-import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
+import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
+import type { CommandResult, Sandbox, SandboxExecOptions } from "../../src/sandbox/docker-sandbox.js"
 import { createSolverTools } from "../../src/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {
@@ -8,12 +8,25 @@ class FakeSandbox implements Sandbox {
   readonly calls: Array<{ args: string[]; input?: string }> = []
   closed = false
 
-  async exec(args: string[], options?: { input?: string }): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     this.calls.push({ args, input: options?.input })
-    if (args[0] === "rtk" && args[1] === "--version") return { code: 0, stdout: "rtk 1", stderr: "" }
-    if (args[0] === "rtk" && args[1] === "rewrite") return { code: 0, stdout: "rg MOCK", stderr: "" }
-    if (args[0] === "bash") return { code: 0, stdout: "sandbox output", stderr: "" }
-    return { code: 0, stdout: JSON.stringify({ path: "attachments/flag.txt", bytes: 4 }), stderr: "" }
+    if (args[0] === "python3") {
+      const payload = JSON.parse(options?.input ?? "{}") as { op: string; path: string }
+      const value = payload.op === "canonical"
+        ? payload.path
+        : payload.op === "info"
+          ? { name: "file", path: payload.path, kind: "file", size: 0, mtimeMs: 0 }
+          : null
+      return { code: 0, stdout: JSON.stringify({ ok: true, value }), stderr: "" }
+    }
+    if (args[0] === "bash") {
+      const command = args.at(-1)
+      if (command === "rtk --version") return { code: 0, stdout: "rtk 1", stderr: "" }
+      if (command?.startsWith("rtk rewrite ")) return { code: 0, stdout: "rg MOCK", stderr: "" }
+      options?.onStdout?.("sandbox output")
+      return { code: 0, stdout: "sandbox output", stderr: "" }
+    }
+    return { code: 1, stdout: "", stderr: "unexpected command" }
   }
 
   async close(): Promise<void> { this.closed = true }
@@ -61,10 +74,18 @@ describe("Solver tools", () => {
     const bash = await tool("bash", tools).execute("bash", { command: "grep MOCK flag.txt" })
 
     expect(sandbox.calls[0]?.args).toEqual(["python3", "-c", expect.any(String)])
-    expect(JSON.parse(sandbox.calls[0]?.input ?? "{}")).toMatchObject({ op: "write", path: "notes/a.txt" })
-    expect(JSON.parse(sandbox.calls[1]?.input ?? "{}")).toMatchObject({ op: "write_bytes", path: "attachments/flag.bin", base64: "AP8B" })
-    expect(sandbox.calls.slice(-1)[0]?.args).toEqual(["bash", "-lc", "rg MOCK"])
-    expect(bash.details).toMatchObject({ command: "rg MOCK", stdout: "sandbox output" })
+    const fileCalls = sandbox.calls
+      .filter((call) => call.args[0] === "python3")
+      .map((call) => JSON.parse(call.input ?? "{}"))
+    expect(fileCalls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ op: "write", path: "/workspace/notes/a.txt", base64: "eA==" }),
+      expect.objectContaining({ op: "write", path: "/workspace/attachments/flag/flag.bin", base64: "AP8B" }),
+    ]))
+    const bashCommands = sandbox.calls
+      .filter((call) => call.args[0] === "bash")
+      .map((call) => call.args.at(-1))
+    expect(bashCommands).toEqual(["rtk --version", expect.stringMatching(/^rtk rewrite /), "rg MOCK"])
+    expect(bash.content).toEqual([{ type: "text", text: "sandbox output" }])
   })
 
   it("提交成功会通知 Agent 在本轮结束后回收容器", async () => {

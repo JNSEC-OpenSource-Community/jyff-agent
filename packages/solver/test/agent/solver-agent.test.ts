@@ -1,6 +1,6 @@
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import type { ChallengeCapability } from "@ctf-agent/platform"
 import { describe, expect, it } from "vitest"
-import type { ChallengeCapability } from "../../src/platform/types.js"
 import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
 import { CtfSolverAgent, type SolverCloseDetails } from "../../src/agent/solver-agent.js"
 

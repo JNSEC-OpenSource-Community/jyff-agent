@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { RtkRewriter } from "../../src/sandbox/rtk.js"
+import { DockerExecutionEnv, RtkRewriter } from "@ctf-agent/sandbox"
 import type { CommandResult, Sandbox } from "../../src/sandbox/docker-sandbox.js"
 
 class UnavailableSandbox implements Sandbox {
@@ -15,8 +15,9 @@ class UnavailableSandbox implements Sandbox {
 describe("RtkRewriter", () => {
   it("RTK 在容器中不可用时 fail-open，并且不在宿主机探测", async () => {
     const sandbox = new UnavailableSandbox()
-    const rtk = new RtkRewriter(sandbox)
+    const rtk = new RtkRewriter(new DockerExecutionEnv(sandbox))
     await expect(rtk.rewrite("cat flag.txt")).resolves.toBe("cat flag.txt")
-    expect(sandbox.calls).toEqual([["rtk", "--version"]])
+    expect(sandbox.calls).toHaveLength(1)
+    expect(sandbox.calls[0]?.slice(0, 2)).toEqual(["bash", "-lc"])
   })
 })
