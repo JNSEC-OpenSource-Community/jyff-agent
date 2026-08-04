@@ -32,9 +32,6 @@ importers:
       '@ctf-agent/project':
         specifier: workspace:*
         version: link:../../packages/project
-      '@ctf-agent/solver':
-        specifier: workspace:*
-        version: link:../../packages/solver
       '@ctf-agent/webui':
         specifier: workspace:*
         version: link:../../packages/webui
@@ -42,8 +39,14 @@ importers:
         specifier: ^0.82.1
         version: 0.82.1(ws@8.21.1)(zod@4.4.3)
 
-  packages/base-agent:
+  packages/agents:
     dependencies:
+      '@ctf-agent/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@ctf-agent/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@earendil-works/pi-agent-core':
         specifier: ^0.82.1
         version: 0.82.1(ws@8.21.1)(zod@4.4.3)
@@ -58,18 +61,15 @@ importers:
 
   packages/project:
     dependencies:
-      '@ctf-agent/base-agent':
+      '@ctf-agent/agents':
         specifier: workspace:*
-        version: link:../base-agent
+        version: link:../agents
       '@ctf-agent/platform':
         specifier: workspace:*
         version: link:../platform
       '@ctf-agent/sandbox':
         specifier: workspace:*
         version: link:../sandbox
-      '@ctf-agent/solver':
-        specifier: workspace:*
-        version: link:../solver
       '@earendil-works/pi-agent-core':
         specifier: ^0.82.1
         version: 0.82.1(ws@8.21.1)(zod@4.4.3)
@@ -83,35 +83,11 @@ importers:
         specifier: ^0.82.1
         version: 0.82.1(ws@8.21.1)(zod@4.4.3)
 
-  packages/solver:
-    dependencies:
-      '@ctf-agent/base-agent':
-        specifier: workspace:*
-        version: link:../base-agent
-      '@ctf-agent/platform':
-        specifier: workspace:*
-        version: link:../platform
-      '@ctf-agent/sandbox':
-        specifier: workspace:*
-        version: link:../sandbox
-      '@earendil-works/pi-agent-core':
-        specifier: ^0.82.1
-        version: 0.82.1(ws@8.21.1)(zod@4.4.3)
-      '@earendil-works/pi-ai':
-        specifier: ^0.82.1
-        version: 0.82.1(ws@8.21.1)(zod@4.4.3)
-      typebox:
-        specifier: ^1.1.38
-        version: 1.1.38
-
   packages/webui:
     dependencies:
       '@ctf-agent/project':
         specifier: workspace:*
         version: link:../project
-      '@ctf-agent/solver':
-        specifier: workspace:*
-        version: link:../solver
 
 packages:
 

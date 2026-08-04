@@ -5,7 +5,7 @@ import {
   prepareBaseAgent,
   type AgentSkill,
   type PreparedBaseAgent,
-} from "@ctf-agent/base-agent"
+} from "../../base-agent/index.ts"
 import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "@ctf-agent/platform"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions, Skill } from "@earendil-works/pi-agent-core"

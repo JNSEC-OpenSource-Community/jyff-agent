@@ -5,7 +5,7 @@ import type { AgentOptions, AgentTool, ThinkingLevel } from "@earendil-works/pi-
 import type { Model } from "@earendil-works/pi-ai"
 import { Type } from "typebox"
 import { afterEach, describe, expect, it } from "vitest"
-import { BaseAgent, modelsFromAgentOptions, prepareBaseAgent, type BaseAgentOptions } from "../src/index.ts"
+import { BaseAgent, modelsFromAgentOptions, prepareBaseAgent, type BaseAgentOptions } from "../../src/index.ts"
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))

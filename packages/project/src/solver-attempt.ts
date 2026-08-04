@@ -1,4 +1,4 @@
-import type { CtfSolverAgent } from "@ctf-agent/solver"
+import type { CtfSolverAgent } from "@ctf-agent/agents"
 
 export class ChallengeTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {

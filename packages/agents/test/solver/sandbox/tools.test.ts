@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
 import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
-import { createSolverTools } from "../../src/sandbox/tools.js"
+import { createSolverTools } from "../../../src/solver/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {
   readonly id = "sandbox"

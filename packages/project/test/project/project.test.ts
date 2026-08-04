@@ -1,7 +1,7 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BaseAgent } from "@ctf-agent/base-agent"
+import { BaseAgent } from "@ctf-agent/agents"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
 import { testPlatform } from "../fake-platform.ts"

@@ -6,20 +6,18 @@ WORKDIR /app
 RUN corepack pnpm config set registry https://registry.npmmirror.com
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
-COPY packages/base-agent/package.json packages/base-agent/package.json
+COPY packages/agents/package.json packages/agents/package.json
 COPY packages/platform/package.json packages/platform/package.json
 COPY packages/project/package.json packages/project/package.json
 COPY packages/sandbox/package.json packages/sandbox/package.json
-COPY packages/solver/package.json packages/solver/package.json
 COPY packages/webui/package.json packages/webui/package.json
 COPY examples/ctf/package.json examples/ctf/package.json
 RUN corepack pnpm install --frozen-lockfile
 
-COPY packages/base-agent packages/base-agent
+COPY packages/agents packages/agents
 COPY packages/platform packages/platform
 COPY packages/project packages/project
 COPY packages/sandbox packages/sandbox
-COPY packages/solver packages/solver
 COPY packages/webui packages/webui
 COPY examples/ctf examples/ctf
 

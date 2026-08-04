@@ -5,10 +5,9 @@
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@ctf-agent/base-agent": "workspace:*",
+    "@ctf-agent/agents": "workspace:*",
     "@ctf-agent/platform": "workspace:*",
     "@ctf-agent/sandbox": "workspace:*",
-    "@ctf-agent/solver": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.82.1",
     "typebox": "^1.1.38"
   }

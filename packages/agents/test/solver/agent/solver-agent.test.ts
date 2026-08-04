@@ -5,7 +5,7 @@ import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { ChallengeCapability } from "@ctf-agent/platform"
 import { afterEach, describe, expect, it } from "vitest"
 import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
-import { CtfSolverAgent, type SolverCloseDetails } from "../../src/agent/solver-agent.js"
+import { CtfSolverAgent, type SolverCloseDetails } from "../../../src/solver/agent/solver-agent.js"
 
 const agent = {
   streamFn: (() => { throw new Error("本测试不调用模型") }) as AgentOptions["streamFn"],

@@ -1,7 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { AgentHarnessEvent, AgentMessage, AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
-import { discoverProjectSkillsWithDiagnostics, materializeSkills, type AgentSkill } from "@ctf-agent/base-agent"
+import { discoverProjectSkillsWithDiagnostics, materializeSkills, type AgentSkill } from "@ctf-agent/agents"
 import { findProjectRoot, loadProjectConfig, type ProjectConfig } from "./config.ts"
 import {
   DockerSandbox,
@@ -10,7 +10,7 @@ import {
   type DockerWorkspaceMount,
   type Sandbox,
 } from "@ctf-agent/sandbox"
-import { CtfSolverAgent, type SolverCloseDetails } from "@ctf-agent/solver"
+import { CtfSolverAgent, type SolverCloseDetails } from "@ctf-agent/agents"
 import type { Announcement, ChallengeSummary, ContestOverview, PlatformPlugin, PlatformProject, RemoteEnvironment } from "@ctf-agent/platform"
 import {
   RunStore,
