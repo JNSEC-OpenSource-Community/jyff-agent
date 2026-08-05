@@ -50,6 +50,8 @@ export type SolverCloseReason =
   | "failed"
   | "timed_out"
   | "cancelled"
+  | "interrupted"
+  | "blocked"
 
 export interface SolverCloseDetails {
   reason: SolverCloseReason

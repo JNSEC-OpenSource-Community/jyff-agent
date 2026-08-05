@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import type {
   CommandResult,
   DockerSandboxOptions,
@@ -130,30 +130,101 @@ describe("ContestScheduler", () => {
   it.each([
     { label: "输出达到 token 上限", stopReason: "length" as const },
     { label: "模型过早正常结束", stopReason: "stop" as const },
-  ])("$label 时在同一个 Run 内自动续跑", async ({ stopReason }) => {
-    const item = challenge(99)
+    {
+      label: "WebSocket 断连",
+      stopReason: "error" as const,
+      errorMessage: "websocket disconnected",
+    },
+  ])(
+    "$label 时关闭旧 Session 并在全新 Run 中续跑",
+    async ({ stopReason, errorMessage }) => {
+      const item = challenge(99)
+      const tracker = new SandboxTracker()
+      const project = await fixture([item], tracker)
+      let sessions = 0
+      const scheduler = new ContestScheduler(project, {
+        maxConcurrent: 1,
+        maxAttempts: 1,
+        createAgentOptions: () => {
+          sessions++
+          const faux = createFauxCore({
+            provider: `continuation-${stopReason}`,
+          })
+          faux.setResponses(
+            sessions === 1
+              ? [
+                  fauxAssistantMessage("分析尚未完成。", {
+                    stopReason,
+                    ...(errorMessage ? { errorMessage } : {}),
+                  }),
+                ]
+              : [
+                  fauxAssistantMessage(
+                    fauxToolCall(
+                      "ctf_submit_flag",
+                      { flag: item.flag },
+                      { id: `continued-submit-${stopReason}` },
+                    ),
+                    { stopReason: "toolUse" },
+                  ),
+                  fauxAssistantMessage("已提交。"),
+                ],
+          )
+          return {
+            streamFn: faux.streamSimple as AgentOptions["streamFn"],
+            initialState: { model: faux.getModel(), thinkingLevel: "off" },
+          }
+        },
+      })
+
+      try {
+        await scheduler.dispatch(item.id)
+        await waitUntil(
+          () =>
+            project.isChallengeSolved(item.id) &&
+            scheduler.snapshot().active.length === 0,
+        )
+
+        const runs = project.runs({ challengeId: item.id })
+        expect(runs).toEqual([
+          expect.objectContaining({
+            attempt: 1,
+            status: "interrupted",
+            closeReason: "interrupted",
+          }),
+          expect.objectContaining({
+            attempt: 2,
+            status: "solved",
+            closeReason: "submitted",
+          }),
+        ])
+        const continuedSession = await readFile(
+          join(dirname(runs[1]?.workspace ?? ""), "session.jsonl"),
+          "utf8",
+        )
+        expect(continuedSession).toContain("最终 flag 尚未提交，请继续解题")
+        expect(project.sessionInterruptionCount(item.id)).toBe(1)
+        expect(project.schedulerAttemptCount(item.id)).toBe(1)
+      } finally {
+        await scheduler.shutdown()
+        await project.close()
+      }
+    },
+  )
+
+  it("连续 Session 中断超过阈值后 blocked，并可由人工 force 重置", async () => {
+    const item = challenge(98)
     const tracker = new SandboxTracker()
     const project = await fixture([item], tracker)
+    let solveAfterIntervention = false
     const scheduler = new ContestScheduler(project, {
       maxConcurrent: 1,
       maxAttempts: 1,
+      maxSessionInterruptions: 1,
       createAgentOptions: () => {
-        const faux = createFauxCore({ provider: `continuation-${stopReason}` })
-        faux.setResponses([
-          fauxAssistantMessage(
-            "分析尚未完成。",
-            stopReason === "length" ? { stopReason: "length" } : undefined,
-          ),
-          fauxAssistantMessage(
-            fauxToolCall(
-              "ctf_submit_flag",
-              { flag: item.flag },
-              { id: `continued-submit-${stopReason}` },
-            ),
-            { stopReason: "toolUse" },
-          ),
-          fauxAssistantMessage("已提交。"),
-        ])
+        if (solveAfterIntervention) return solvingAgent(item, 0)
+        const faux = createFauxCore({ provider: "always-interrupted" })
+        faux.setResponses([fauxAssistantMessage("还没有 flag")])
         return {
           streamFn: faux.streamSimple as AgentOptions["streamFn"],
           initialState: { model: faux.getModel(), thinkingLevel: "off" },
@@ -165,18 +236,30 @@ describe("ContestScheduler", () => {
       await scheduler.dispatch(item.id)
       await waitUntil(
         () =>
-          project.isChallengeSolved(item.id) &&
+          project.runs({ challengeId: item.id }).at(-1)?.status === "blocked" &&
           scheduler.snapshot().active.length === 0,
       )
 
       expect(project.runs({ challengeId: item.id })).toEqual([
-        expect.objectContaining({
-          attempt: 1,
-          status: "solved",
-          closeReason: "submitted",
-        }),
+        expect.objectContaining({ status: "interrupted" }),
+        expect.objectContaining({ status: "blocked", closeReason: "blocked" }),
       ])
-      expect(project.schedulerAttemptCount(item.id)).toBe(1)
+      expect(project.sessionInterruptionCount(item.id)).toBe(2)
+      expect(project.isChallengeBlocked(item.id)).toBe(true)
+      expect(project.schedulerAttemptCount(item.id)).toBe(0)
+      await expect(scheduler.dispatch(item.id)).rejects.toMatchObject({
+        code: "blocked",
+      })
+
+      solveAfterIntervention = true
+      await scheduler.dispatch(item.id, { force: true })
+      await waitUntil(
+        () =>
+          project.isChallengeSolved(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+      expect(project.sessionInterruptionCount(item.id)).toBe(0)
+      expect(project.isChallengeBlocked(item.id)).toBe(false)
     } finally {
       await scheduler.shutdown()
       await project.close()

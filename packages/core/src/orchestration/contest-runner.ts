@@ -1,13 +1,15 @@
 import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents"
 import type { ChallengeSummary } from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
+import type { RunStatus } from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
 import {
   ChallengeTimeoutError,
   ContestRunnerCancelledError,
   hasTerminalSubmission,
-  latestAgentError,
   runSolverPrompt,
+  sessionInterruptionMessage,
 } from "./solver-attempt.ts"
 
 export {
@@ -25,6 +27,8 @@ export interface ContestRunnerOptions {
   maxConcurrent: number
   /** 每道题的总尝试上限，包含 RunStore 中已有的历史尝试。 */
   maxAttempts?: number
+  /** 超过该连续异常 Session 数后进入 blocked。 */
+  maxSessionInterruptions?: number
   /** 单次 Solver 尝试的硬超时。 */
   challengeTimeoutMs?: number
   /** abort 后等待 Agent 自行结束的宽限期，之后仍会强制回收资源。 */
@@ -42,7 +46,12 @@ export interface ContestRunnerOptions {
   selectChallenge?: (challenge: ChallengeSummary) => boolean | Promise<boolean>
 }
 
-export type ChallengeRunStatus = "solved" | "failed" | "cancelled" | "skipped"
+export type ChallengeRunStatus =
+  | "solved"
+  | "failed"
+  | "cancelled"
+  | "blocked"
+  | "skipped"
 
 export interface ChallengeRunResult {
   challengeId: string
@@ -55,6 +64,7 @@ export interface ChallengeRunResult {
     | "store_solved"
     | "filtered"
     | "attempts_exhausted"
+    | "blocked"
 }
 
 export interface ContestRunSummary {
@@ -64,6 +74,7 @@ export interface ContestRunSummary {
   solved: number
   failed: number
   cancelled: number
+  blocked: number
   skipped: number
   attempts: number
   results: ChallengeRunResult[]
@@ -74,7 +85,7 @@ export interface ContestRunnerRunOptions {
 }
 
 const DEFAULT_PROMPT =
-  "解决当前 CTF 题目。获取题目信息和附件，必要时启动远程实例，找到并提交 Flag。"
+  "解决当前 CTF 题目。检查初始题目信息和已下载附件，必要时启动远程实例，找到并提交 Flag。"
 
 /**
  * 比赛级单进程调度器。
@@ -96,6 +107,10 @@ export class ContestRunner {
   ) {
     positiveInteger(options.maxConcurrent, "maxConcurrent")
     positiveInteger(options.maxAttempts ?? 1, "maxAttempts")
+    positiveInteger(
+      options.maxSessionInterruptions ?? 3,
+      "maxSessionInterruptions",
+    )
     positiveInteger(
       options.challengeTimeoutMs ?? 30 * 60_000,
       "challengeTimeoutMs",
@@ -231,15 +246,28 @@ export class ContestRunner {
         error: "同一道题已有活跃 Solver",
       }
     }
+    if (this.project.isChallengeBlocked(challenge.id)) {
+      return {
+        challengeId: challenge.id,
+        status: "blocked",
+        attempts: 0,
+        runIds: [],
+        reason: "blocked",
+        error: "该题因连续 Session 异常中断已暂停，等待人工介入",
+      }
+    }
     this.activeChallenges.add(challenge.id)
     const maxAttempts = this.options.maxAttempts ?? 1
     const runIds: string[] = []
     let attempts = 0
+    let failures = this.project
+      .runs({ challengeId: challenge.id })
+      .filter((run) => countsAgainstAttemptBudget(run.status)).length
     let lastError: string | undefined
+    let continuation = false
 
     try {
-      let attempt = this.project.nextAttempt(challenge.id)
-      if (attempt > maxAttempts) {
+      if (failures >= maxAttempts) {
         return {
           challengeId: challenge.id,
           status: "failed",
@@ -250,7 +278,7 @@ export class ContestRunner {
         }
       }
 
-      while (attempt <= maxAttempts) {
+      while (failures < maxAttempts) {
         if (signal.aborted)
           return {
             challengeId: challenge.id,
@@ -260,12 +288,14 @@ export class ContestRunner {
             error: lastError,
           }
         attempts++
+        const attempt = this.project.nextAttempt(challenge.id)
         const context = { challenge, attempt }
         let solver: CtfSolverAgent | undefined
         try {
           const agent = await this.options.createAgentOptions(context)
-          const prompt =
-            typeof this.options.prompt === "function"
+          const prompt = continuation
+            ? INCOMPLETE_CONTINUATION_PROMPT
+            : typeof this.options.prompt === "function"
               ? await this.options.prompt(context)
               : (this.options.prompt ?? DEFAULT_PROMPT)
           solver = await this.project.createSolver(challenge.id, {
@@ -276,7 +306,7 @@ export class ContestRunner {
           runIds.push(solver.runId)
           this.activeSolvers.set(challenge.id, solver)
 
-          await runSolverPrompt({
+          const outcome = await runSolverPrompt({
             solver,
             prompt,
             timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
@@ -284,7 +314,7 @@ export class ContestRunner {
             signal,
           })
 
-          if (hasTerminalSubmission(solver)) {
+          if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
             // agent_end listener 已执行 close；显式 await 保证清理和持久化完全结算。
             await solver.close("submitted")
             return {
@@ -294,12 +324,34 @@ export class ContestRunner {
               runIds,
             }
           }
-          const agentError = await latestAgentError(solver)
-          throw new Error(agentError ?? "Agent 已结束，但没有提交正确 Flag")
+
+          const interruptionCount =
+            this.project.sessionInterruptionCount(challenge.id) + 1
+          const maximum = this.options.maxSessionInterruptions ?? 3
+          const blocked = interruptionCount > maximum
+          lastError = sessionInterruptionMessage(
+            outcome.stopReason,
+            outcome.error,
+            interruptionCount,
+            maximum,
+            blocked,
+          )
+          await solver.close(blocked ? "blocked" : "interrupted", lastError)
+          if (blocked) {
+            return {
+              challengeId: challenge.id,
+              status: "blocked",
+              attempts,
+              runIds,
+              reason: "blocked",
+              error: lastError,
+            }
+          }
+          continuation = true
         } catch (error) {
           const reason = closeReason(error, signal)
           lastError = errorText(error)
-          if (solver) {
+          if (solver && !solver.isClosed) {
             try {
               await solver.close(reason, lastError)
             } catch (cleanupError) {
@@ -315,7 +367,9 @@ export class ContestRunner {
               error: lastError,
             }
           }
-          if (attempt < maxAttempts) {
+          failures++
+          continuation = false
+          if (failures < maxAttempts) {
             try {
               await abortableDelay(this.options.retryDelayMs ?? 0, signal)
             } catch {
@@ -331,7 +385,6 @@ export class ContestRunner {
         } finally {
           this.activeSolvers.delete(challenge.id)
         }
-        attempt++
       }
       return {
         challengeId: challenge.id,
@@ -368,6 +421,10 @@ export class ContestRunner {
   }
 }
 
+function countsAgainstAttemptBudget(status: RunStatus): boolean {
+  return status !== "interrupted" && status !== "blocked" && status !== "solved"
+}
+
 function closeReason(error: unknown, signal: AbortSignal): SolverCloseReason {
   if (signal.aborted || error instanceof ContestRunnerCancelledError)
     return "cancelled"
@@ -402,6 +459,7 @@ function summarize(
     solved: results.filter((result) => result.status === "solved").length,
     failed: results.filter((result) => result.status === "failed").length,
     cancelled: results.filter((result) => result.status === "cancelled").length,
+    blocked: results.filter((result) => result.status === "blocked").length,
     skipped: results.filter((result) => result.status === "skipped").length,
     attempts: results.reduce((sum, result) => sum + result.attempts, 0),
     results,

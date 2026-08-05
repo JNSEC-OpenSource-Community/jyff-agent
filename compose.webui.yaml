@@ -13,6 +13,8 @@ services:
       - "3000"
       - --challenge-timeout-ms
       - "${CTF_AGENT_CHALLENGE_TIMEOUT_MS:-1800000}"
+      - --max-session-interruptions
+      - "${CTF_AGENT_MAX_SESSION_INTERRUPTIONS:-3}"
       - --auth-file
       - /auth.json
       - --workspace-volume

@@ -12,6 +12,7 @@ export type RunStatus =
   | "cancelled"
   | "closed"
   | "interrupted"
+  | "blocked"
 
 export type RunSource = "direct" | "auto" | "manual" | "retry" | "test"
 
@@ -22,6 +23,7 @@ export type RunCloseReason =
   | "timed_out"
   | "cancelled"
   | "interrupted"
+  | "blocked"
 
 export interface RunRecord {
   id: string
@@ -421,6 +423,14 @@ export class RunStore {
         evidence_id     INTEGER NOT NULL REFERENCES challenge_evidence(id) ON DELETE CASCADE,
         PRIMARY KEY (opportunity_id, evidence_id)
       );
+
+      CREATE TABLE IF NOT EXISTS challenge_runtime_state (
+        challenge_id TEXT PRIMARY KEY,
+        session_interruptions INTEGER NOT NULL DEFAULT 0
+          CHECK (session_interruptions >= 0),
+        blocked INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0, 1)),
+        updated_at TEXT NOT NULL
+      ) STRICT;
     `)
     const runColumns = database
       .prepare("PRAGMA table_info(runs)")
@@ -533,6 +543,10 @@ export class RunStore {
         : patch.finishedAt
     const status = patch.status ?? current.status
 
+    const recordsSessionInterruption =
+      (closeReason === "interrupted" || closeReason === "blocked") &&
+      current.closeReason !== "interrupted" &&
+      current.closeReason !== "blocked"
     this.database.exec("BEGIN IMMEDIATE")
     try {
       this.database
@@ -552,6 +566,23 @@ export class RunStore {
           finishedAt,
           id,
         )
+      if (recordsSessionInterruption) {
+        this.database
+          .prepare(`
+            INSERT INTO challenge_runtime_state (
+              challenge_id, session_interruptions, blocked, updated_at
+            ) VALUES (?, 1, ?, ?)
+            ON CONFLICT(challenge_id) DO UPDATE SET
+              session_interruptions = session_interruptions + 1,
+              blocked = excluded.blocked,
+              updated_at = excluded.updated_at
+          `)
+          .run(
+            current.challengeId,
+            closeReason === "blocked" ? 1 : 0,
+            timestamp,
+          )
+      }
       this.insertEvent(id, eventType, eventData ?? patch, timestamp)
       this.database.exec("COMMIT")
     } catch (updateError) {
@@ -599,6 +630,7 @@ export class RunStore {
       FROM runs
       WHERE challenge_id = ?
         AND source IN ('auto', 'manual', 'retry')
+        AND COALESCE(close_reason, '') NOT IN ('interrupted', 'blocked')
         AND NOT EXISTS (
           SELECT 1
           FROM run_events
@@ -609,6 +641,69 @@ export class RunStore {
     `)
       .get(challengeId) as { attempts: number }
     return row.attempts
+  }
+
+  sessionInterruptionCount(challengeId: string): number {
+    this.assertOpen()
+    const row = this.database
+      .prepare(`
+        SELECT session_interruptions AS count
+        FROM challenge_runtime_state
+        WHERE challenge_id = ?
+      `)
+      .get(challengeId) as { count: number } | undefined
+    return row?.count ?? 0
+  }
+
+  isChallengeBlocked(challengeId: string): boolean {
+    this.assertOpen()
+    const row = this.database
+      .prepare(`
+        SELECT blocked
+        FROM challenge_runtime_state
+        WHERE challenge_id = ?
+      `)
+      .get(challengeId) as { blocked: number } | undefined
+    return row?.blocked === 1
+  }
+
+  resetSessionInterruptions(challengeId: string): void {
+    this.assertOpen()
+    const timestamp = new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      this.database
+        .prepare(`
+          INSERT INTO challenge_runtime_state (
+            challenge_id, session_interruptions, blocked, updated_at
+          ) VALUES (?, 0, 0, ?)
+          ON CONFLICT(challenge_id) DO UPDATE SET
+            session_interruptions = 0,
+            blocked = 0,
+            updated_at = excluded.updated_at
+        `)
+        .run(challengeId, timestamp)
+      const latest = this.database
+        .prepare(`
+          SELECT id FROM runs
+          WHERE challenge_id = ?
+          ORDER BY attempt DESC
+          LIMIT 1
+        `)
+        .get(challengeId) as { id: string } | undefined
+      if (latest) {
+        this.insertEvent(
+          latest.id,
+          "session_interruptions_reset",
+          { challengeId },
+          timestamp,
+        )
+      }
+      this.database.exec("COMMIT")
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
   }
 
   isSolved(challengeId: string): boolean {

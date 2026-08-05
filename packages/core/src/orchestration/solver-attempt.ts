@@ -1,8 +1,4 @@
 import type { CtfSolverAgent } from "@ctf-agent/agents"
-import {
-  INCOMPLETE_CONTINUATION_PROMPT,
-  LENGTH_CONTINUATION_PROMPT,
-} from "../../prompts/solver-attempt.ts"
 
 export class ChallengeTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
@@ -18,6 +14,14 @@ export class ContestRunnerCancelledError extends Error {
   }
 }
 
+export type SolverPromptOutcome =
+  | { kind: "submitted"; stopReason: string }
+  | {
+      kind: "interrupted"
+      stopReason: string
+      error?: string
+    }
+
 /** Run one prompt with shared timeout/cancellation semantics used by every orchestrator. */
 export async function runSolverPrompt(options: {
   solver: CtfSolverAgent
@@ -25,12 +29,12 @@ export async function runSolverPrompt(options: {
   timeoutMs: number
   abortGraceMs: number
   signal?: AbortSignal
-}): Promise<void> {
+}): Promise<SolverPromptOutcome> {
   const { solver, prompt, timeoutMs, abortGraceMs, signal } = options
   if (signal?.aborted) throw new ContestRunnerCancelledError()
-  const operation = runUntilTerminalSubmission({ solver, prompt })
+  const operation = solver.prompt(prompt)
   const settled = operation.then(
-    () => ({ kind: "completed" as const }),
+    (response) => ({ kind: "completed" as const, response }),
     (error: unknown) => ({ kind: "failed" as const, error }),
   )
   let timeout: NodeJS.Timeout | undefined
@@ -48,8 +52,24 @@ export async function runSolverPrompt(options: {
   const outcome = await Promise.race([settled, stop])
   if (timeout) clearTimeout(timeout)
   if (onAbort) signal?.removeEventListener("abort", onAbort)
-  if (outcome.kind === "completed") return
-  if (outcome.kind === "failed") throw outcome.error
+  if (outcome.kind === "completed") {
+    return hasTerminalSubmission(solver)
+      ? { kind: "submitted", stopReason: outcome.response.stopReason }
+      : {
+          kind: "interrupted",
+          stopReason: outcome.response.stopReason,
+          ...(outcome.response.errorMessage
+            ? { error: outcome.response.errorMessage }
+            : {}),
+        }
+  }
+  if (outcome.kind === "failed") {
+    return {
+      kind: "interrupted",
+      stopReason: "error",
+      error: errorText(outcome.error),
+    }
+  }
 
   await solver.abort()
   await Promise.race([
@@ -58,24 +78,6 @@ export async function runSolverPrompt(options: {
   ])
   if (outcome.kind === "cancelled") throw new ContestRunnerCancelledError()
   throw new ChallengeTimeoutError(timeoutMs)
-}
-
-async function runUntilTerminalSubmission(options: {
-  solver: CtfSolverAgent
-  prompt: string
-}): Promise<void> {
-  const { solver } = options
-  let response = await solver.prompt(options.prompt)
-  while (!hasTerminalSubmission(solver)) {
-    if (response.stopReason === "error" || response.stopReason === "aborted") {
-      return
-    }
-    response = await solver.prompt(
-      response.stopReason === "length"
-        ? LENGTH_CONTINUATION_PROMPT
-        : INCOMPLETE_CONTINUATION_PROMPT,
-    )
-  }
 }
 
 export async function latestAgentError(
@@ -99,4 +101,21 @@ export function hasTerminalSubmission(solver: CtfSolverAgent): boolean {
     solver.submission?.status === "accepted" ||
     solver.submission?.status === "already_solved"
   )
+}
+
+export function sessionInterruptionMessage(
+  stopReason: string,
+  error: string | undefined,
+  count: number,
+  maximum: number,
+  blocked: boolean,
+): string {
+  const detail = error ? `: ${error}` : ""
+  return blocked
+    ? `Session 异常中断 ${count} 次，已超过阈值 ${maximum}，Agent 已设为 blocked（${stopReason}${detail}）`
+    : `Session 异常中断 ${count}/${maximum}（${stopReason}${detail}），将创建全新 Session 继续`
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

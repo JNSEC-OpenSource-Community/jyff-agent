@@ -281,6 +281,15 @@ export class Project {
   schedulerAttemptCount(challengeId: string): number {
     return this.runStore.schedulerAttemptCount(challengeId)
   }
+  sessionInterruptionCount(challengeId: string): number {
+    return this.runStore.sessionInterruptionCount(challengeId)
+  }
+  isChallengeBlocked(challengeId: string): boolean {
+    return this.runStore.isChallengeBlocked(challengeId)
+  }
+  resetSessionInterruptions(challengeId: string): void {
+    this.runStore.resetSessionInterruptions(challengeId)
+  }
   blackboard(challengeId: string) {
     return this.runStore.getBlackboardSummary(challengeId)
   }
@@ -531,6 +540,12 @@ export class Project {
         onClosed: async (details) => {
           this.solvers.delete(solver)
           this.subagentManagers.delete(runId)
+          const eventType =
+            details.reason === "interrupted"
+              ? "run_interrupted"
+              : details.reason === "blocked"
+                ? "run_blocked"
+                : "run_finished"
           const updated = this.runStore.updateRun(
             runId,
             {
@@ -543,7 +558,7 @@ export class Project {
                   : null,
               finishedAt: new Date().toISOString(),
             },
-            "run_finished",
+            eventType,
             details,
           )
           await this.persistRecord(updated, runDirectory)
@@ -751,6 +766,10 @@ function runStatus(details: SolverCloseDetails): RunStatus {
       return "cancelled"
     case "manual":
       return "closed"
+    case "interrupted":
+      return "interrupted"
+    case "blocked":
+      return "blocked"
   }
 }
 
