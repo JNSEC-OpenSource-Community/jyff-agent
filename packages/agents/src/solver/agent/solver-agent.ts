@@ -42,6 +42,8 @@ export interface CreateCtfSolverAgentOptions {
     skills?: readonly AgentSkill[]
     /** `false` disables BaseAgent's native Pi automatic compaction check. */
     compaction?: boolean
+    /** Keep the Solver alive after an accepted flag for the writeup turn. */
+    closeOnSubmission?: boolean
   }
   /** Runs before remote-instance and shared-sandbox cleanup (for child workers). */
   onBeforeCleanup?: () => Promise<void> | void
@@ -110,6 +112,7 @@ export class CtfSolverAgent extends BaseAgent {
     details: SolverCloseDetails,
   ) => Promise<void> | void
   private readonly onBeforeCleanup?: () => Promise<void> | void
+  private readonly closeOnSubmission: boolean
   private closeReason: SolverCloseReason = "manual"
   private closed = false
   private finalSubmission?: FlagSubmission
@@ -131,9 +134,15 @@ export class CtfSolverAgent extends BaseAgent {
     this.sandbox = options.sandbox
     this.onClosed = options.onClosed
     this.onBeforeCleanup = options.onBeforeCleanup
+    this.closeOnSubmission = options.features?.closeOnSubmission !== false
 
     this.subscribe(async (event) => {
-      if (event.type === "agent_end" && this.finalSubmission && !this.closing) {
+      if (
+        event.type === "agent_end" &&
+        this.finalSubmission &&
+        this.closeOnSubmission &&
+        !this.closing
+      ) {
         this.closed = true
         this.closeReason = "submitted"
         this.closing = this.performClose("submitted", undefined, false)
@@ -200,6 +209,10 @@ export class CtfSolverAgent extends BaseAgent {
   }
   get closedReason(): SolverCloseReason | undefined {
     return this.closed ? this.closeReason : undefined
+  }
+
+  async prepareWriteup(): Promise<void> {
+    await this.setActiveTools(["read", "write", "edit", "list"])
   }
 
   /** Compatibility helper for UIs/runners that need a point-in-time transcript. */

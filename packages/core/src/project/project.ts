@@ -118,8 +118,10 @@ export interface ProjectDiagnostic {
 
 export interface CreateSolverOptions {
   agent: AgentOptions
-  /** Uses Pi's native session-tree compaction. Defaults to enabled. */
+  /** 使用 Pi 原生 session-tree compaction；默认开启。 */
   compaction?: boolean
+  /** 提交 flag 后保留 Solver 执行 writeup turn。 */
+  writeup?: boolean
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource
@@ -396,6 +398,15 @@ export class Project {
   }
   challengeBlockEvents(challengeId: string) {
     return this.runStore.challengeBlockEvents(challengeId)
+  }
+  async markRunWritingWriteup(runId: string): Promise<RunRecord> {
+    const run = this.runStore.updateRun(
+      runId,
+      { status: "writing_writeup", error: null },
+      "run_writing_writeup",
+    )
+    await this.persistRecord(run, join(this.agentDirectory, "runs", runId))
+    return run
   }
   async markRunBlocking(runId: string, error?: string): Promise<RunRecord> {
     const run = this.runStore.updateRun(
@@ -703,7 +714,11 @@ export class Project {
             ],
           },
         },
-        features: { skills, compaction: options.compaction },
+        features: {
+          skills,
+          compaction: options.compaction,
+          closeOnSubmission: options.writeup !== true,
+        },
         onBeforeCleanup: () => subagentManager?.close(),
         onClosed: async (details) => {
           this.solvers.delete(solver)

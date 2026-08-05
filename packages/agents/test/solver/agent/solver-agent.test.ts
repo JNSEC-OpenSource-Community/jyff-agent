@@ -153,6 +153,31 @@ describe("CtfSolverAgent 强制清理", () => {
     ])
   })
 
+  it("writeup 模式只保留文件读写工具", async () => {
+    const log: string[] = []
+    const solver = await CtfSolverAgent.create({
+      identity: {
+        projectId: "project",
+        runId: "run",
+        runDirectory: await runDirectory(),
+        workspace: "workspace",
+        challenge: await challengeCapability(log).getInfo(),
+      },
+      capability: challengeCapability(log),
+      sandbox: new OrderedSandbox(log),
+      agent,
+    })
+
+    await solver.prepareWriteup()
+    expect(solver.activeTools.map((tool) => tool.name).sort()).toEqual([
+      "edit",
+      "list",
+      "read",
+      "write",
+    ])
+    await solver.close("manual")
+  })
+
   it("setThinkingLevel 更新 state.thinkingLevel(下一 turn 生效的注入源)", async () => {
     const log: string[] = []
     const solver = await CtfSolverAgent.create({

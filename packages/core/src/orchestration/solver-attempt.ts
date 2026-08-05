@@ -29,6 +29,7 @@ export async function runSolverPrompt(options: {
   timeoutMs: number
   abortGraceMs: number
   signal?: AbortSignal
+  ignoreExistingSubmission?: boolean
 }): Promise<SolverPromptOutcome> {
   const { solver, prompt, timeoutMs, abortGraceMs, signal } = options
   if (signal?.aborted) throw new ContestRunnerCancelledError()
@@ -53,7 +54,7 @@ export async function runSolverPrompt(options: {
   if (timeout) clearTimeout(timeout)
   if (onAbort) signal?.removeEventListener("abort", onAbort)
   if (outcome.kind === "completed") {
-    return hasTerminalSubmission(solver)
+    return !options.ignoreExistingSubmission && hasTerminalSubmission(solver)
       ? { kind: "submitted", stopReason: outcome.response.stopReason }
       : {
           kind: "interrupted",

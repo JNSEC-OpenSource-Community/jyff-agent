@@ -64,6 +64,7 @@ const controlPlane = await ControlPlane.create({
       maxConcurrent: schedulerConfiguration.snapshot(),
       maxAttempts: options.maxAttempts,
       maxSessionInterruptions: options.maxSessionInterruptions,
+      writeup: true,
       challengeTimeoutMs: options.challengeTimeoutMs,
       retryDelayMs: options.retryDelayMs,
       availability: () => {

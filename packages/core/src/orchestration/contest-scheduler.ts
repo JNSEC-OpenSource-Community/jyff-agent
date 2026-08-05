@@ -6,7 +6,10 @@ import {
 import type { ChallengeSummary } from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { activeSubagentsPrompt } from "../../prompts/project.ts"
-import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
+import {
+  INCOMPLETE_CONTINUATION_PROMPT,
+  WRITEUP_PROMPT,
+} from "../../prompts/solver-attempt.ts"
 import type {
   RunSource,
   SchedulerQueueRecord,
@@ -19,6 +22,7 @@ import {
   sessionInterruptionMessage,
 } from "./solver-attempt.ts"
 import { classifySolverStop } from "./stop-classifier.ts"
+import { validateChallengeWriteup } from "./writeup-validator.ts"
 
 export type SchedulerQueueSource = Extract<
   RunSource,
@@ -34,6 +38,8 @@ export interface ContestSchedulerOptions {
   abortGraceMs?: number
   retryDelayMs?: number
   infrastructureRetryDelayMs?: number
+  /** Flag accepted 后执行 writeup turn；生产调度应开启。 */
+  writeup?: boolean
   createAgentOptions(
     context: SchedulerAttemptContext,
   ): AgentOptions | Promise<AgentOptions>
@@ -560,6 +566,7 @@ export class ContestScheduler {
             compaction: false,
             attempt: active.attempt,
             source,
+            writeup: this.options.writeup === true,
           })
           this.lastError = undefined
           active.solver = solver
@@ -660,7 +667,11 @@ export class ContestScheduler {
           abortGraceMs: this.options.abortGraceMs ?? 5_000,
         })
         if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
-          await solver.close("submitted")
+          if (this.options.writeup === true) {
+            await this.writeupAfterSubmission(active, solver)
+          } else {
+            await solver.close("submitted")
+          }
           return
         }
 
@@ -846,6 +857,57 @@ export class ContestScheduler {
     } else if (failureMessage && failureReason !== "cancelled") {
       this.lastError = `${active.challenge.title}: ${failureMessage}`
     }
+  }
+
+  private async writeupAfterSubmission(
+    active: ActiveItem,
+    solver: CtfSolverAgent,
+  ): Promise<void> {
+    await this.project.markRunWritingWriteup(solver.runId)
+    await solver.prepareWriteup()
+    let prompt = WRITEUP_PROMPT
+    let lastErrors: string[] = []
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const outcome = await runSolverPrompt({
+        solver,
+        prompt,
+        timeoutMs: Math.min(
+          this.options.challengeTimeoutMs ?? 120_000,
+          120_000,
+        ),
+        abortGraceMs: this.options.abortGraceMs ?? 5_000,
+        ignoreExistingSubmission: true,
+      })
+      if (outcome.kind === "submitted") {
+        lastErrors = ["writeup turn attempted another submission"]
+      } else {
+        const validation = await validateChallengeWriteup(solver.workspace)
+        if (validation.valid) {
+          await solver.close("submitted")
+          return
+        }
+        lastErrors = validation.errors
+        this.project.appendRunEvent(solver.runId, "writeup_validation_failed", {
+          attempt: attempt + 1,
+          errors: validation.errors,
+          path: validation.path,
+        })
+      }
+      prompt = [
+        "The writeup validation failed. Fix /workspace/writeup.md and do not submit another flag.",
+        `Validation errors: ${lastErrors.join("; ")}`,
+        "Use the read/write/edit tools only, then finish the writeup turn.",
+      ].join("\n")
+      if (outcome.stopReason === "error" || outcome.stopReason === "aborted") {
+        break
+      }
+    }
+    const error = `writeup validation failed: ${lastErrors.join("; ")}`
+    this.project.appendRunEvent(solver.runId, "writeup_failed", {
+      challengeId: active.challenge.id,
+      errors: lastErrors,
+    })
+    await solver.close("failed", error)
   }
 
   private async finalizeBlockedRun(
