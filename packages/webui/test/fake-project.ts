@@ -273,10 +273,20 @@ export class FakeDashboardProject implements DashboardProject {
     ).length
   }
   sessionInterruptionCount(challengeId: string): number {
+    const resetAt = Math.max(
+      ...this.runValues
+        .filter((run) => run.challengeId === challengeId)
+        .flatMap((run) =>
+          (this.eventValues.get(run.id) ?? [])
+            .filter((event) => event.type === "session_interruptions_reset")
+            .map((event) => Date.parse(event.createdAt)),
+        ),
+    )
     return this.runValues.filter(
       (run) =>
         run.challengeId === challengeId &&
-        ["interrupted", "blocked"].includes(run.status),
+        ["interrupted", "blocked"].includes(run.status) &&
+        Date.parse(run.updatedAt) > resetAt,
     ).length
   }
 }
