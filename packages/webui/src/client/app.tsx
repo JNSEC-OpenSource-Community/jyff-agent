@@ -518,7 +518,7 @@ function SchedulerConsole(props: {
   const scheduler = props.snapshot?.scheduler
   const unavailable = !scheduler?.available
   const [concurrency, setConcurrency] = useState(
-    String(scheduler?.maxConcurrent ?? 2),
+    String(scheduler?.maxConcurrent ?? 8),
   )
   const [concurrencyDirty, setConcurrencyDirty] = useState(false)
   useEffect(() => {

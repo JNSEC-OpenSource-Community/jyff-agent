@@ -160,6 +160,33 @@ export interface RecordChallengeBlockEvent {
   createdAt?: string
 }
 
+export type SchedulerQueueLane = "normal" | "blocked"
+
+export interface SchedulerQueueRecord {
+  challengeId: string
+  source: RunSource
+  lane: SchedulerQueueLane
+  position: number
+  manualOverride: boolean
+  enqueuedAt: string
+  version: number
+}
+
+export interface EnqueueSchedulerChallenge {
+  challengeId: string
+  source: RunSource
+  lane?: SchedulerQueueLane
+  manualOverride?: boolean
+  enqueuedAt?: string
+}
+
+export interface MoveSchedulerChallenge {
+  challengeId: string
+  position: number
+  expectedVersion: number
+  overrideBlockedLane?: boolean
+}
+
 export interface ChallengeBlockEvent {
   id: number
   challengeId: string
@@ -269,6 +296,16 @@ interface SubagentRow {
   completed_at: string | null
 }
 
+interface SchedulerQueueRow {
+  challenge_id: string
+  source: RunSource
+  lane: SchedulerQueueLane
+  position: number
+  manual_override: number
+  enqueued_at: string
+  version: number
+}
+
 interface ChallengeRuntimeStateRow {
   challenge_id: string
   session_interruptions: number
@@ -324,6 +361,18 @@ function evidenceToSummary(
   row: EvidenceRow,
 ): BlackboardSummary["evidence"][number] {
   return { id: row.id, description: row.description, runId: row.run_id }
+}
+
+function schedulerQueueFromRow(row: SchedulerQueueRow): SchedulerQueueRecord {
+  return {
+    challengeId: row.challenge_id,
+    source: row.source,
+    lane: row.lane,
+    position: row.position,
+    manualOverride: row.manual_override === 1,
+    enqueuedAt: row.enqueued_at,
+    version: row.version,
+  }
 }
 
 function challengeRuntimeStateFromRow(
@@ -572,6 +621,20 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS challenge_block_events_challenge
         ON challenge_block_events(challenge_id, id);
+
+      CREATE TABLE IF NOT EXISTS scheduler_queue (
+        challenge_id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        lane TEXT NOT NULL CHECK (lane IN ('normal', 'blocked')),
+        position INTEGER NOT NULL CHECK (position >= 1),
+        manual_override INTEGER NOT NULL DEFAULT 0
+          CHECK (manual_override IN (0, 1)),
+        enqueued_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1)
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS scheduler_queue_order
+        ON scheduler_queue(manual_override DESC, lane, position, enqueued_at);
     `)
     const runColumns = database
       .prepare("PRAGMA table_info(runs)")
@@ -919,6 +982,187 @@ export class RunStore {
       `)
       .get(challengeId) as { count: number } | undefined
     return row?.count ?? 0
+  }
+
+  enqueueSchedulerChallenge(
+    input: EnqueueSchedulerChallenge,
+  ): SchedulerQueueRecord {
+    this.assertOpen()
+    const lane = input.lane ?? "normal"
+    const timestamp = input.enqueuedAt ?? new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const existing = this.database
+        .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
+        .get(input.challengeId) as unknown as SchedulerQueueRow | undefined
+      if (existing) {
+        this.database.exec("COMMIT")
+        return schedulerQueueFromRow(existing)
+      }
+      const next = this.database
+        .prepare(`
+          SELECT COALESCE(MAX(position), 0) + 1 AS position
+          FROM scheduler_queue WHERE lane = ?
+        `)
+        .get(lane) as { position: number }
+      this.database
+        .prepare(`
+          INSERT INTO scheduler_queue (
+            challenge_id, source, lane, position, manual_override,
+            enqueued_at, version
+          ) VALUES (?, ?, ?, ?, ?, ?, 1)
+        `)
+        .run(
+          input.challengeId,
+          input.source,
+          lane,
+          next.position,
+          input.manualOverride ? 1 : 0,
+          timestamp,
+        )
+      const row = this.database
+        .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
+        .get(input.challengeId) as unknown as SchedulerQueueRow
+      this.database.exec("COMMIT")
+      return schedulerQueueFromRow(row)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  schedulerQueue(): SchedulerQueueRecord[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT * FROM scheduler_queue
+        ORDER BY manual_override DESC,
+          CASE lane WHEN 'normal' THEN 0 ELSE 1 END,
+          position ASC, enqueued_at ASC, challenge_id ASC
+      `)
+      .all() as unknown as SchedulerQueueRow[]
+    return rows.map(schedulerQueueFromRow)
+  }
+
+  moveSchedulerChallenge(input: MoveSchedulerChallenge): SchedulerQueueRecord {
+    this.assertOpen()
+    if (!Number.isInteger(input.position) || input.position < 1) {
+      throw new Error("position must be a positive integer")
+    }
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.database
+        .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
+        .get(input.challengeId) as unknown as SchedulerQueueRow | undefined
+      if (!row) throw new Error(`Challenge is not queued: ${input.challengeId}`)
+      if (row.version !== input.expectedVersion) {
+        throw new Error(
+          `Scheduler queue version conflict: expected ${input.expectedVersion}, actual ${row.version}`,
+        )
+      }
+      const count = this.database
+        .prepare("SELECT COUNT(*) AS count FROM scheduler_queue WHERE lane = ?")
+        .get(row.lane) as { count: number }
+      const position = Math.min(input.position, count.count)
+      if (position < row.position) {
+        this.database
+          .prepare(`
+            UPDATE scheduler_queue
+            SET position = position + 1, version = version + 1
+            WHERE lane = ? AND position >= ? AND position < ?
+          `)
+          .run(row.lane, position, row.position)
+      } else if (position > row.position) {
+        this.database
+          .prepare(`
+            UPDATE scheduler_queue
+            SET position = position - 1, version = version + 1
+            WHERE lane = ? AND position > ? AND position <= ?
+          `)
+          .run(row.lane, row.position, position)
+      }
+      this.database
+        .prepare(`
+          UPDATE scheduler_queue
+          SET position = ?, manual_override = ?, version = version + 1
+          WHERE challenge_id = ?
+        `)
+        .run(
+          position,
+          input.overrideBlockedLane && row.lane === "blocked" ? 1 : 0,
+          input.challengeId,
+        )
+      const updated = this.database
+        .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
+        .get(input.challengeId) as unknown as SchedulerQueueRow
+      this.database.exec("COMMIT")
+      return schedulerQueueFromRow(updated)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  removeSchedulerChallenge(challengeId: string): boolean {
+    this.assertOpen()
+    const row = this.database
+      .prepare(
+        "SELECT lane, position FROM scheduler_queue WHERE challenge_id = ?",
+      )
+      .get(challengeId) as
+      | { lane: SchedulerQueueLane; position: number }
+      | undefined
+    if (!row) return false
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      this.database
+        .prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?")
+        .run(challengeId)
+      this.database
+        .prepare(`
+          UPDATE scheduler_queue
+          SET position = position - 1, version = version + 1
+          WHERE lane = ? AND position > ?
+        `)
+        .run(row.lane, row.position)
+      this.database.exec("COMMIT")
+      return true
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  reviveChallenge(challengeId: string): ChallengeRuntimeState {
+    this.assertOpen()
+    const timestamp = new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const current = this.database
+        .prepare("SELECT * FROM challenge_runtime_state WHERE challenge_id = ?")
+        .get(challengeId) as unknown as ChallengeRuntimeStateRow | undefined
+      if (!current?.blocked) {
+        throw new Error(`Challenge is not blocked: ${challengeId}`)
+      }
+      this.database
+        .prepare(`
+          UPDATE challenge_runtime_state
+          SET revival_count = revival_count + 1,
+              lifecycle_generation = lifecycle_generation + 1,
+              blocked = 0, blocked_at = NULL, blocked_run_id = NULL,
+              updated_at = ?
+          WHERE challenge_id = ?
+        `)
+        .run(timestamp, challengeId)
+      const updated = this.database
+        .prepare("SELECT * FROM challenge_runtime_state WHERE challenge_id = ?")
+        .get(challengeId) as unknown as ChallengeRuntimeStateRow
+      this.database.exec("COMMIT")
+      return challengeRuntimeStateFromRow(updated)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
   }
 
   challengeRuntimeState(challengeId: string): ChallengeRuntimeState {

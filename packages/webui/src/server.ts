@@ -552,6 +552,32 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    const queueMove = /^\/api\/scheduler\/queue\/([^/]+)$/.exec(url.pathname)
+    if (method === "PATCH" && queueMove) {
+      const scheduler = currentScheduler()
+      requireScheduler(scheduler)
+      requireJsonRequest(request)
+      const challengeId = decodeURIComponent(queueMove[1] ?? "")
+      const body = await readJsonBody(request)
+      scheduler.reorderQueue(challengeId, {
+        position: requiredPositiveInteger(
+          body.position,
+          "队列位置",
+          Number.MAX_SAFE_INTEGER,
+          "invalid_queue_position",
+        ),
+        expectedVersion: requiredPositiveInteger(
+          body.expectedVersion,
+          "队列版本",
+          Number.MAX_SAFE_INTEGER,
+          "invalid_queue_version",
+        ),
+        overrideBlockedLane: body.overrideBlockedLane === true,
+      })
+      sendJson(response, 200, await refresh())
+      return
+    }
+
     const action = /^\/api\/challenges\/([^/]+)\/(dispatch|cancel)$/.exec(
       url.pathname,
     )

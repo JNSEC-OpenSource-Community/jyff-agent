@@ -332,9 +332,26 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     this.value.queued.push({
       challengeId,
       source: "manual",
+      lane: "normal",
+      manualOverride: false,
       enqueuedAt: now,
       position: this.value.queued.length + 1,
+      version: 1,
     })
+    return this.snapshot()
+  }
+
+  reorderQueue(
+    challengeId: string,
+    options: { position: number; expectedVersion: number },
+  ): ContestSchedulerSnapshot {
+    const item = this.value.queued.find(
+      (candidate) => candidate.challengeId === challengeId,
+    )
+    if (!item) return this.snapshot()
+    item.position = options.position
+    item.version += 1
+    this.value.queued.sort((left, right) => left.position - right.position)
     return this.snapshot()
   }
 

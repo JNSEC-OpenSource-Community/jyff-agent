@@ -133,6 +133,14 @@ export interface DashboardScheduler {
     challengeId: string,
     options?: { force?: boolean },
   ): Promise<ContestSchedulerSnapshot>
+  reorderQueue(
+    challengeId: string,
+    options: {
+      position: number
+      expectedVersion: number
+      overrideBlockedLane?: boolean
+    },
+  ): ContestSchedulerSnapshot
   cancel(challengeId: string): Promise<ContestSchedulerSnapshot>
 }
 

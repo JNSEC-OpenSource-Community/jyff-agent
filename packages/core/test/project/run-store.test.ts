@@ -328,6 +328,91 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("持久化 normal/blocked 队列、支持乐观锁重排和人工跨 lane 提前", async () => {
+    const { path, store } = await storeFixture()
+    const normal1 = store.enqueueSchedulerChallenge({
+      challengeId: "normal-1",
+      source: "auto",
+    })
+    store.enqueueSchedulerChallenge({
+      challengeId: "normal-2",
+      source: "auto",
+    })
+    const blocked = store.enqueueSchedulerChallenge({
+      challengeId: "blocked-1",
+      source: "revival",
+      lane: "blocked",
+    })
+
+    expect(store.schedulerQueue().map((item) => item.challengeId)).toEqual([
+      "normal-1",
+      "normal-2",
+      "blocked-1",
+    ])
+    const moved = store.moveSchedulerChallenge({
+      challengeId: "normal-1",
+      position: 2,
+      expectedVersion: normal1.version,
+    })
+    expect(moved).toMatchObject({ position: 2, version: 2 })
+    expect(() =>
+      store.moveSchedulerChallenge({
+        challengeId: "normal-1",
+        position: 1,
+        expectedVersion: normal1.version,
+      }),
+    ).toThrow("version conflict")
+
+    store.moveSchedulerChallenge({
+      challengeId: "blocked-1",
+      position: 1,
+      expectedVersion: blocked.version,
+      overrideBlockedLane: true,
+    })
+    expect(store.schedulerQueue()[0]).toMatchObject({
+      challengeId: "blocked-1",
+      lane: "blocked",
+      manualOverride: true,
+    })
+    expect(store.removeSchedulerChallenge("normal-2")).toBe(true)
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.schedulerQueue().map((item) => item.challengeId)).toEqual([
+      "blocked-1",
+      "normal-1",
+    ])
+    reopened.close()
+  })
+
+  it("blocked 复活保留 score、增加阈值和 lifecycle generation", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "revive-run",
+      challengeId: "revive-challenge",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    for (let index = 0; index < 5; index += 1) {
+      store.recordChallengeBlockEvent({
+        challengeId: "revive-challenge",
+        runId: "revive-run",
+        eventKey: `revive-score:${index}`,
+        delta: 2,
+        reason: "compact_boundary",
+      })
+    }
+    const revived = store.reviveChallenge("revive-challenge")
+    expect(revived).toMatchObject({
+      blockScore: 10,
+      revivalCount: 1,
+      effectiveBlockThreshold: 12,
+      lifecycleGeneration: 1,
+      blocked: false,
+    })
+    store.close()
+  })
+
   it("从数据库层拒绝同题创建两个 active Run", async () => {
     const { store } = await storeFixture()
     store.createRun({

@@ -81,3 +81,5 @@ The correct final flag has not been submitted. Continue solving the challenge.
 RunStore 已具备 block v2 的持久化基础：`challenge_runtime_state` 保存 `block_score`、基础阈值、复活次数、blocked 来源和 lifecycle generation，`challenge_block_events` 以唯一 `event_key` 幂等记录每次计分及 compact 是否执行。有效阈值为 `base_block_threshold + revival_count * 4`，只有 `score > threshold` 才设置 blocked。数据库使用 partial unique index 保证同一道题最多存在一个 `preparing`、`running`、`blocking` 或 `writing_writeup` Run；打开遗留库时会保留最新 active Run，并把重复项审计为 interrupted。
 
 在 Solver supervisor 接管 turn 生命周期前，现有 Session 中断路径仍会同步维护旧 `session_interruptions` 与 `block_score` 兼容值；新 supervisor 应只写 block event ledger，旧字段只保留审计和迁移用途。
+
+调度等待队列持久化在 `scheduler_queue`，记录 normal/blocked lane、lane 内位置、人工跨 lane override 和乐观锁版本。自主调度优先填充 normal lane；普通题耗尽后，按 `blocked_at` 顺序加入 blocked revival。领取复活题时保留原 block score，`revival_count` 和 `lifecycle_generation` 各增加 1，因此有效阈值增加 4。人工重排使用版本检查，冲突时拒绝覆盖；数据库队列在进程关闭后保留，显式暂停自主调度或取消排队题目时才删除相应记录。生产默认 Solver 并发数为 8。

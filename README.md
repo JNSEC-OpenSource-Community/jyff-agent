@@ -159,7 +159,7 @@ WebUI 可执行入口还支持：
 | `--host` | `0.0.0.0` | HTTP 监听地址 |
 | `--port` | `3000` | HTTP 端口 |
 | `--poll-interval-ms` | `1000` | SSE 快照轮询周期 |
-| `--max-concurrent` | `2` | 最大并发 Solver 数 |
+| `--max-concurrent` | `8` | 最大并发 Solver 数 |
 | `--max-attempts` | `2` | 每题调度 attempt 上限 |
 | `--max-session-interruptions` | `3` | 未提交 Flag 的 Session 中断阈值；超过后 blocked |
 | `--challenge-timeout-ms` | `1800000` | 单次挑战硬超时 |

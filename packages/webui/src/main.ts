@@ -165,7 +165,7 @@ function parseOptions(args: string[]): WebUiProcessOptions {
       1_000,
       60_000,
     ),
-    maxConcurrent: positiveInteger(values, "--max-concurrent", 2, 64),
+    maxConcurrent: positiveInteger(values, "--max-concurrent", 8, 64),
     maxAttempts: positiveInteger(values, "--max-attempts", 2, 100),
     maxSessionInterruptions: positiveInteger(
       values,

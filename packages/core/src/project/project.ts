@@ -53,12 +53,15 @@ import {
   type SubagentRecord,
 } from "../collaboration/subagent-manager.ts"
 import {
+  type EnqueueSchedulerChallenge,
+  type MoveSchedulerChallenge,
   type RunEvent,
   type RunFilter,
   type RunRecord,
   type RunSource,
   type RunStatus,
   RunStore,
+  type SchedulerQueueRecord,
 } from "../persistence/run-store.ts"
 import { downloadChallengeAttachments } from "./attachments.ts"
 import {
@@ -289,6 +292,26 @@ export class Project {
   }
   resetSessionInterruptions(challengeId: string): void {
     this.runStore.resetSessionInterruptions(challengeId)
+  }
+  schedulerQueue(): SchedulerQueueRecord[] {
+    return this.runStore.schedulerQueue()
+  }
+  enqueueSchedulerChallenge(
+    input: EnqueueSchedulerChallenge,
+  ): SchedulerQueueRecord {
+    return this.runStore.enqueueSchedulerChallenge(input)
+  }
+  moveSchedulerChallenge(input: MoveSchedulerChallenge): SchedulerQueueRecord {
+    return this.runStore.moveSchedulerChallenge(input)
+  }
+  removeSchedulerChallenge(challengeId: string): boolean {
+    return this.runStore.removeSchedulerChallenge(challengeId)
+  }
+  reviveChallenge(challengeId: string) {
+    return this.runStore.reviveChallenge(challengeId)
+  }
+  challengeRuntimeState(challengeId: string) {
+    return this.runStore.challengeRuntimeState(challengeId)
   }
   blackboard(challengeId: string) {
     return this.runStore.getBlackboardSummary(challengeId)

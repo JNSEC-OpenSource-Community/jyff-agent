@@ -259,7 +259,12 @@ describe("ContestScheduler", () => {
           project.isChallengeSolved(item.id) &&
           scheduler.snapshot().active.length === 0,
       )
-      expect(project.sessionInterruptionCount(item.id)).toBe(0)
+      expect(project.sessionInterruptionCount(item.id)).toBe(2)
+      expect(project.challengeRuntimeState(item.id)).toMatchObject({
+        revivalCount: 1,
+        effectiveBlockThreshold: 12,
+        blocked: false,
+      })
       expect(project.isChallengeBlocked(item.id)).toBe(false)
     } finally {
       await scheduler.shutdown()

@@ -364,8 +364,11 @@ describe("WebUI HTTP server", () => {
     scheduler.value.queued.push({
       challengeId: "misc-1",
       source: "manual",
+      lane: "normal",
+      manualOverride: false,
       enqueuedAt: "2026-07-29T12:00:00.000Z",
       position: 1,
+      version: 1,
     })
     expect((await post("/api/scheduler/auto/pause")).status).toBe(200)
     expect(scheduler.snapshot().autoEnabled).toBe(false)

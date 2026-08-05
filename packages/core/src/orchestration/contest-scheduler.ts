@@ -5,7 +5,10 @@ import {
 } from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
-import type { RunSource } from "../persistence/run-store.ts"
+import type {
+  RunSource,
+  SchedulerQueueRecord,
+} from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
 import {
   ChallengeTimeoutError,
@@ -16,7 +19,7 @@ import {
 
 export type SchedulerQueueSource = Extract<
   RunSource,
-  "auto" | "manual" | "retry"
+  "auto" | "manual" | "retry" | "revival"
 >
 export type SchedulerPhase = "preparing" | "running" | "cancelling"
 
@@ -56,8 +59,11 @@ export interface SchedulerAttemptContext {
 export interface SchedulerQueueEntry {
   challengeId: string
   source: SchedulerQueueSource
+  lane: "normal" | "blocked"
+  manualOverride: boolean
   enqueuedAt: string
   position: number
+  version: number
 }
 
 export interface SchedulerActiveEntry {
@@ -90,7 +96,8 @@ export class ContestSchedulerError extends Error {
       | "already_active"
       | "already_solved"
       | "attempts_exhausted"
-      | "blocked",
+      | "blocked"
+      | "queue_version_conflict",
     message: string,
   ) {
     super(message)
@@ -101,13 +108,17 @@ export class ContestSchedulerError extends Error {
 interface QueueItem {
   challenge: ChallengeSummary
   source: SchedulerQueueSource
+  lane: "normal" | "blocked"
+  manualOverride: boolean
   requiresAuto: boolean
   enqueuedAt: string
+  version: number
 }
 
 interface ActiveItem {
   challenge: ChallengeSummary
   source: SchedulerQueueSource
+  lane: "normal" | "blocked"
   requiresAuto: boolean
   attempt: number
   phase: SchedulerPhase
@@ -120,7 +131,7 @@ interface ActiveItem {
 }
 
 const DEFAULT_PROMPT =
-  "解决当前 CTF 题目。检查初始题目信息和已下载附件，必要时启动远程实例，找到并提交 Flag。持续实际执行分析和验证，不要以计划、下一步说明或尚未执行的动作结束；除非已经提交正确 Flag 或遇到无法绕过的外部阻塞，否则继续调用工具推进。"
+  "Solve the current CTF challenge. Inspect the initial challenge data and downloaded attachments, start the remote instance when necessary, and find and submit the flag. Keep executing concrete analysis and validation rather than ending with an unexecuted plan. Continue using tools unless the correct flag is accepted or an external blocker cannot be bypassed."
 
 /**
  * 长驻的混合调度控制面：
@@ -176,8 +187,11 @@ export class ContestScheduler {
       queued: this.queue.map((item, index) => ({
         challengeId: item.challenge.id,
         source: item.source,
+        lane: item.lane,
+        manualOverride: item.manualOverride,
         enqueuedAt: item.enqueuedAt,
         position: index + 1,
+        version: item.version,
       })),
       active: [...this.active.values()].map((item) => ({
         challengeId: item.challenge.id,
@@ -203,6 +217,8 @@ export class ContestScheduler {
   pauseAuto(): ContestSchedulerSnapshot {
     this.autoEnabled = false
     this.queueGeneration += 1
+    for (const item of this.queue)
+      this.project.removeSchedulerChallenge(item.challenge.id)
     this.queue.length = 0
     return this.snapshot()
   }
@@ -231,23 +247,71 @@ export class ContestScheduler {
     }
     await this.project.refresh()
     const challenges = deduplicate(await this.project.challenges())
-    for (const challenge of challenges) {
-      if (challenge.solved || this.project.isChallengeSolved(challenge.id))
-        continue
-      if (this.project.isChallengeBlocked(challenge.id)) continue
-      if (this.hasChallenge(challenge.id)) continue
+    const byId = new Map(
+      challenges.map((challenge) => [challenge.id, challenge]),
+    )
+
+    for (const persisted of this.project.schedulerQueue()) {
+      const challenge = byId.get(persisted.challengeId)
       if (
-        this.project.schedulerAttemptCount(challenge.id) >=
-        (this.options.maxAttempts ?? 2)
+        !challenge ||
+        challenge.solved ||
+        this.project.isChallengeSolved(persisted.challengeId)
+      ) {
+        this.project.removeSchedulerChallenge(persisted.challengeId)
+        continue
+      }
+      if (this.hasChallenge(persisted.challengeId)) continue
+      this.queue.push({
+        challenge,
+        source: persisted.source as SchedulerQueueSource,
+        lane: persisted.lane,
+        manualOverride: persisted.manualOverride,
+        requiresAuto:
+          persisted.source !== "manual" && !persisted.manualOverride,
+        enqueuedAt: persisted.enqueuedAt,
+        version: persisted.version,
+      })
+    }
+
+    for (const challenge of challenges) {
+      if (
+        challenge.solved ||
+        this.project.isChallengeSolved(challenge.id) ||
+        this.project.isChallengeBlocked(challenge.id) ||
+        this.hasChallenge(challenge.id)
       ) {
         continue
       }
-      this.queue.push({
-        challenge,
-        source: "auto",
-        requiresAuto: true,
-        enqueuedAt: new Date().toISOString(),
-      })
+      this.enqueueChallenge(challenge, "auto", "normal", false, true)
+    }
+
+    const ordinaryOutstanding = challenges.some(
+      (challenge) =>
+        !challenge.solved &&
+        !this.project.isChallengeSolved(challenge.id) &&
+        !this.project.isChallengeBlocked(challenge.id),
+    )
+    if (!ordinaryOutstanding) {
+      const blocked = challenges
+        .filter(
+          (challenge) =>
+            !challenge.solved &&
+            this.project.isChallengeBlocked(challenge.id) &&
+            !this.hasChallenge(challenge.id),
+        )
+        .sort((left, right) => {
+          const leftAt =
+            this.project.challengeRuntimeState(left.id).blockedAt ?? ""
+          const rightAt =
+            this.project.challengeRuntimeState(right.id).blockedAt ?? ""
+          return (
+            leftAt.localeCompare(rightAt) || left.id.localeCompare(right.id)
+          )
+        })
+      for (const challenge of blocked) {
+        this.enqueueChallenge(challenge, "revival", "blocked", false, true)
+      }
     }
     this.pump()
     return this.snapshot()
@@ -286,26 +350,71 @@ export class ContestScheduler {
         "该题已经解出；重新验证需要显式 force",
       )
     }
-    if (this.project.isChallengeBlocked(challengeId) && !options.force) {
+    const blocked = this.project.isChallengeBlocked(challengeId)
+    if (blocked && !options.force) {
       throw new ContestSchedulerError(
         "blocked",
-        "该题因连续 Session 异常中断已暂停；需要人工 force 重新派发",
+        "该题已 blocked；需要人工 force 将其提前到调度队列",
       )
     }
-    const attempts = this.project.schedulerAttemptCount(challengeId)
-    if (attempts >= (this.options.maxAttempts ?? 2) && !options.force) {
-      throw new ContestSchedulerError(
-        "attempts_exhausted",
-        `该题调度尝试已达到上限 ${this.options.maxAttempts ?? 2}`,
-      )
-    }
-    if (options.force) this.project.resetSessionInterruptions(challengeId)
-    this.queue.push({
+    this.enqueueChallenge(
       challenge,
-      source: "manual",
-      requiresAuto: false,
-      enqueuedAt: new Date().toISOString(),
-    })
+      blocked ? "revival" : "manual",
+      blocked ? "blocked" : "normal",
+      blocked,
+      false,
+    )
+    this.pump()
+    return this.snapshot()
+  }
+
+  reorderQueue(
+    challengeId: string,
+    options: {
+      position: number
+      expectedVersion: number
+      overrideBlockedLane?: boolean
+    },
+  ): ContestSchedulerSnapshot {
+    const item = this.queue.find(
+      (candidate) => candidate.challenge.id === challengeId,
+    )
+    if (!item) {
+      throw new ContestSchedulerError(
+        "challenge_not_found",
+        `题目不在调度队列中: ${challengeId}`,
+      )
+    }
+    let moved: SchedulerQueueRecord
+    try {
+      moved = this.project.moveSchedulerChallenge({
+        challengeId,
+        position: options.position,
+        expectedVersion: options.expectedVersion,
+        overrideBlockedLane: options.overrideBlockedLane,
+      })
+    } catch (error) {
+      if (errorText(error).includes("version conflict")) {
+        throw new ContestSchedulerError(
+          "queue_version_conflict",
+          errorText(error),
+        )
+      }
+      throw error
+    }
+    item.manualOverride = moved.manualOverride
+    item.version = moved.version
+    item.requiresAuto = item.requiresAuto && !moved.manualOverride
+    const order = new Map(
+      this.project
+        .schedulerQueue()
+        .map((record, index) => [record.challengeId, index]),
+    )
+    this.queue.sort(
+      (left, right) =>
+        (order.get(left.challenge.id) ?? Number.MAX_SAFE_INTEGER) -
+        (order.get(right.challenge.id) ?? Number.MAX_SAFE_INTEGER),
+    )
     this.pump()
     return this.snapshot()
   }
@@ -316,6 +425,7 @@ export class ContestScheduler {
     )
     if (queueIndex >= 0) {
       this.queue.splice(queueIndex, 1)
+      this.project.removeSchedulerChallenge(challengeId)
       return this.snapshot()
     }
     const active = this.active.get(challengeId)
@@ -381,6 +491,7 @@ export class ContestScheduler {
         const active: ActiveItem = {
           challenge: item.challenge,
           source: item.source,
+          lane: item.lane,
           requiresAuto: item.requiresAuto,
           attempt: this.project.nextAttempt(item.challenge.id),
           phase: "preparing",
@@ -396,7 +507,8 @@ export class ContestScheduler {
           })
           .finally(() => {
             this.active.delete(item.challenge.id)
-            this.pump()
+            if (this.autoEnabled) void this.reconcile()
+            else this.pump()
           })
         active.operation = operation
       }
@@ -413,6 +525,13 @@ export class ContestScheduler {
     let failureMessage: string | undefined
     let retryableFailure = false
     let continuation = false
+
+    if (
+      active.lane === "blocked" &&
+      this.project.isChallengeBlocked(active.challenge.id)
+    ) {
+      this.project.reviveChallenge(active.challenge.id)
+    }
 
     while (!active.cancelRequested && !this.shuttingDown) {
       let solver: CtfSolverAgent | undefined
@@ -439,6 +558,7 @@ export class ContestScheduler {
         active.solver = solver
         active.runId = solver.runId
         active.phase = "running"
+        this.project.removeSchedulerChallenge(active.challenge.id)
         if (active.cancelRequested) {
           await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
           return
@@ -528,16 +648,44 @@ export class ContestScheduler {
         active.queueGeneration === this.queueGeneration &&
         !this.queue.some((item) => item.challenge.id === active.challenge.id)
       ) {
-        this.queue.push({
-          challenge: active.challenge,
-          source: "retry",
-          requiresAuto: active.requiresAuto,
-          enqueuedAt: new Date().toISOString(),
-        })
+        this.enqueueChallenge(
+          active.challenge,
+          "retry",
+          active.lane,
+          false,
+          active.requiresAuto,
+        )
       }
     } else if (failureMessage && failureReason !== "cancelled") {
       this.lastError = `${active.challenge.title}: ${failureMessage}`
     }
+  }
+
+  private enqueueChallenge(
+    challenge: ChallengeSummary,
+    source: SchedulerQueueSource,
+    lane: "normal" | "blocked",
+    manualOverride: boolean,
+    requiresAuto: boolean,
+  ): void {
+    if (this.queue.some((item) => item.challenge.id === challenge.id)) return
+    const persisted = this.project.enqueueSchedulerChallenge({
+      challengeId: challenge.id,
+      source,
+      lane,
+      manualOverride,
+    })
+    const item: QueueItem = {
+      challenge,
+      source,
+      lane,
+      manualOverride,
+      requiresAuto,
+      enqueuedAt: persisted.enqueuedAt,
+      version: persisted.version,
+    }
+    if (manualOverride) this.queue.unshift(item)
+    else this.queue.push(item)
   }
 
   private assertAvailable(): void {
