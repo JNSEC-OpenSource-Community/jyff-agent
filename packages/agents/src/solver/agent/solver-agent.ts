@@ -38,6 +38,8 @@ export interface CreateCtfSolverAgentOptions {
     /** `false` disables BaseAgent's native Pi automatic compaction check. */
     compaction?: boolean
   }
+  /** Runs before remote-instance and shared-sandbox cleanup (for child workers). */
+  onBeforeCleanup?: () => Promise<void> | void
   onClosed?: (details: SolverCloseDetails) => Promise<void> | void
 }
 
@@ -100,6 +102,7 @@ export class CtfSolverAgent extends BaseAgent {
   private readonly onClosed?: (
     details: SolverCloseDetails,
   ) => Promise<void> | void
+  private readonly onBeforeCleanup?: () => Promise<void> | void
   private closeReason: SolverCloseReason = "manual"
   private closed = false
   private finalSubmission?: FlagSubmission
@@ -117,6 +120,7 @@ export class CtfSolverAgent extends BaseAgent {
     this.capability = options.capability
     this.sandbox = options.sandbox
     this.onClosed = options.onClosed
+    this.onBeforeCleanup = options.onBeforeCleanup
 
     this.subscribe(async (event) => {
       if (event.type === "agent_end" && this.finalSubmission && !this.closing) {
@@ -224,6 +228,13 @@ export class CtfSolverAgent extends BaseAgent {
           `Agent 等待结束失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
         )
       }
+    }
+    try {
+      await this.onBeforeCleanup?.()
+    } catch (cleanupError) {
+      cleanupErrors.push(
+        `SubAgent 回收失败: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+      )
     }
     if (this.capability.instance) {
       try {

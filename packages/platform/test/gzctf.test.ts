@@ -5,6 +5,7 @@ import {
   encryptGZCTFApiData,
   gzctfConfig,
   gzctfPlatform,
+  isRetryablePlatformError,
 } from "../src/index.ts"
 
 describe("GZCTF platform config", () => {
@@ -263,6 +264,92 @@ describe("GZCTF platform contract", () => {
         .filter((item) => item.path.startsWith("/api/game/"))
         .every((item) => item.cookie === "GZCTF_Token=session-token"),
     ).toBe(true)
+  })
+
+  test("retries transient GET failures, refreshes expired password auth and coalesces cached reads", async () => {
+    const counts = new Map<string, number>()
+    let loginCount = 0
+    let rejectGameOnce = true
+    let detailFailures = 2
+    server = createServer((request, response) => {
+      const path = request.url ?? "/"
+      counts.set(path, (counts.get(path) ?? 0) + 1)
+      if (path === "/api/config")
+        return json(response, { title: "Local", apiPublicKey: null })
+      if (path === "/api/account/login") {
+        loginCount++
+        response.setHeader(
+          "Set-Cookie",
+          `GZCTF_Token=session-${loginCount}; Path=/; HttpOnly`,
+        )
+        response.statusCode = 200
+        return response.end()
+      }
+      if (path === "/api/account/profile") return json(response, { id: "user" })
+      if (path === "/api/game/9" && rejectGameOnce) {
+        rejectGameOnce = false
+        return json(response, { title: "Expired" }, 401)
+      }
+      if (path === "/api/game/9")
+        return json(response, { id: 9, title: "Retry Finals" })
+      if (path === "/api/game/9/details") {
+        if (detailFailures-- > 0)
+          return json(response, { title: "Temporary gateway error" }, 502)
+        return json(response, {
+          challenges: {
+            web: [{ id: 12, title: "Cache", category: "Web", score: 500 }],
+          },
+          rank: { solvedChallenges: [] },
+        })
+      }
+      if (path === "/api/game/9/notices?count=100&skip=0")
+        return json(response, [])
+      if (path === "/api/game/9/challenges/12")
+        return json(response, {
+          id: 12,
+          title: "Cache",
+          category: "Web",
+          score: 500,
+          type: "StaticAttachment",
+          content: "test",
+        })
+      return json(response, { title: `Not found: ${path}` }, 404)
+    })
+    const baseUrl = await listen(server)
+    const project = await gzctfPlatform.connect({
+      project: { id: "retry", name: "Retry" },
+      config: {
+        baseUrl,
+        gameId: 9,
+        maxRequestAttempts: 3,
+        retryBaseDelayMs: 1,
+        cacheTtlMs: 250,
+      },
+      resolveSecret: (name) =>
+        ({ GZCTF_USERNAME: "alice", GZCTF_PASSWORD: "password" })[name],
+    })
+
+    const [overview, challenges, announcements] = await Promise.all([
+      project.getOverview(),
+      project.listChallenges(),
+      project.listAnnouncements(),
+    ])
+    expect(overview.name).toBe("Retry Finals")
+    expect(challenges).toHaveLength(1)
+    expect(announcements).toEqual([])
+    expect(loginCount).toBe(2)
+    expect(counts.get("/api/game/9/details")).toBe(3)
+    expect(counts.get("/api/game/9/notices?count=100&skip=0")).toBe(1)
+
+    await Promise.all([
+      project.bindChallenge("12"),
+      project.bindChallenge("12"),
+    ])
+    expect(counts.get("/api/game/9/challenges/12")).toBe(1)
+    expect(counts.get("/api/game/9/details")).toBe(3)
+
+    const transient = Object.assign(new Error("gateway"), { retryable: true })
+    expect(isRetryablePlatformError(transient)).toBe(true)
   })
 
   test.runIf(process.env.GZCTF_LIVE === "1")(

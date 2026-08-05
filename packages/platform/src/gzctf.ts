@@ -25,6 +25,9 @@ export interface GZCTFPlatformConfig {
   name?: string
   auth: GZCTFAuthConfig
   timeoutMs: number
+  maxRequestAttempts: number
+  retryBaseDelayMs: number
+  cacheTtlMs: number
   submissionPollIntervalMs: number
   submissionTimeoutMs: number
 }
@@ -35,6 +38,9 @@ const allowedKeys = new Set([
   "name",
   "auth",
   "timeoutMs",
+  "maxRequestAttempts",
+  "retryBaseDelayMs",
+  "cacheTtlMs",
   "submissionPollIntervalMs",
   "submissionTimeoutMs",
 ])
@@ -62,6 +68,27 @@ export const gzctfConfig: PlatformConfig<GZCTFPlatformConfig> = {
       1_000,
       120_000,
     )
+    const maxRequestAttempts = optionalInteger(
+      raw.maxRequestAttempts,
+      3,
+      "GZCTF maxRequestAttempts",
+      1,
+      10,
+    )
+    const retryBaseDelayMs = optionalInteger(
+      raw.retryBaseDelayMs,
+      250,
+      "GZCTF retryBaseDelayMs",
+      1,
+      30_000,
+    )
+    const cacheTtlMs = optionalInteger(
+      raw.cacheTtlMs,
+      5_000,
+      "GZCTF cacheTtlMs",
+      250,
+      60_000,
+    )
     const submissionPollIntervalMs = optionalInteger(
       raw.submissionPollIntervalMs,
       500,
@@ -88,6 +115,9 @@ export const gzctfConfig: PlatformConfig<GZCTFPlatformConfig> = {
       gameId,
       auth,
       timeoutMs,
+      maxRequestAttempts,
+      retryBaseDelayMs,
+      cacheTtlMs,
       submissionPollIntervalMs,
       submissionTimeoutMs,
       ...(typeof raw.name === "string" ? { name: raw.name.trim() } : {}),
@@ -349,65 +379,80 @@ export class GZCTFApiError extends Error {
     super(message, options)
     this.name = "GZCTFApiError"
   }
+
+  get retryable(): boolean {
+    return (
+      this.kind === "network" ||
+      this.kind === "rate_limited" ||
+      (this.kind === "http" && (this.status ?? 0) >= 500)
+    )
+  }
 }
+
+type GZCTFCredentials =
+  | { type: "password"; username: string; password: string }
+  | { type: "cookie"; cookie: string }
 
 export class GZCTFClient {
   readonly baseUrl: URL
   readonly apiPublicKey?: string | null
   private readonly timeoutMs: number
+  private cookie: string
+  private reauthentication?: Promise<void>
+  private authenticationVersion = 0
 
   private constructor(
-    config: GZCTFPlatformConfig,
-    private readonly cookie: string,
-    clientConfig: GZCTFClientConfig,
+    private readonly config: GZCTFPlatformConfig,
+    cookie: string,
+    private readonly credentials: GZCTFCredentials,
+    private readonly clientConfig: GZCTFClientConfig,
     private readonly fetchFn: typeof fetch,
   ) {
     this.baseUrl = new URL(`${config.baseUrl}/`)
     this.timeoutMs = config.timeoutMs
     this.apiPublicKey = clientConfig.apiPublicKey
+    this.cookie = cookie
   }
 
   static async connect(
     config: GZCTFPlatformConfig,
-    credentials:
-      | { type: "password"; username: string; password: string }
-      | { type: "cookie"; cookie: string },
+    credentials: GZCTFCredentials,
     fetchFn: typeof fetch = fetch,
   ): Promise<GZCTFClient> {
-    const clientConfig = await request<GZCTFClientConfig>(
-      fetchFn,
-      new URL("api/config", `${config.baseUrl}/`),
-      config.timeoutMs,
-      "",
-      {},
-      true,
+    const baseUrl = new URL(`${config.baseUrl}/`)
+    const clientConfig = await retryRequest(
+      () =>
+        request<GZCTFClientConfig>(
+          fetchFn,
+          new URL("api/config", baseUrl),
+          config.timeoutMs,
+          "",
+          {},
+          true,
+        ),
+      config,
     )
-    let cookie: string
-    if (credentials.type === "cookie") {
-      cookie = normalizeCookie(credentials.cookie)
-    } else {
-      const encryptedPassword = await encryptGZCTFApiData(
-        credentials.password,
-        clientConfig.apiPublicKey,
-      )
-      const response = await rawRequest(
-        fetchFn,
-        new URL("api/account/login", `${config.baseUrl}/`),
-        config.timeoutMs,
-        "",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userName: credentials.username,
-            password: encryptedPassword,
-          }),
-        },
-      )
-      await ensureSuccess(response)
-      cookie = extractAuthCookie(response.headers)
-    }
-    const client = new GZCTFClient(config, cookie, clientConfig, fetchFn)
+    const cookie =
+      credentials.type === "cookie"
+        ? normalizeCookie(credentials.cookie)
+        : await retryRequest(
+            () =>
+              loginCookie(
+                fetchFn,
+                baseUrl,
+                config.timeoutMs,
+                clientConfig,
+                credentials,
+              ),
+            config,
+          )
+    const client = new GZCTFClient(
+      config,
+      cookie,
+      credentials,
+      clientConfig,
+      fetchFn,
+    )
     await client.get("account/profile")
     return client
   }
@@ -445,16 +490,28 @@ export class GZCTFClient {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw new GZCTFApiError("GZCTF 返回了不支持的附件 URL", "protocol")
     }
-    const response = await rawRequest(
-      this.fetchFn,
-      url,
-      this.timeoutMs,
-      url.origin === this.baseUrl.origin ? this.cookie : "",
-      {},
-    )
-    if (!response.ok)
-      throw await errorFromResponse(response, "GZCTF 附件下载失败")
-    return new Uint8Array(await response.arrayBuffer())
+    const sameOrigin = url.origin === this.baseUrl.origin
+    try {
+      const response = await this.execute(
+        async () => {
+          const result = await rawRequest(
+            this.fetchFn,
+            url,
+            this.timeoutMs,
+            sameOrigin ? this.cookie : "",
+            {},
+          )
+          if (!result.ok)
+            throw await errorFromResponse(result, "GZCTF 附件下载失败")
+          return result
+        },
+        true,
+        sameOrigin,
+      )
+      return new Uint8Array(await response.arrayBuffer())
+    } catch (error) {
+      throw requestContext(error, "GET", url)
+    }
   }
 
   private async api<T>(
@@ -463,15 +520,157 @@ export class GZCTFClient {
     expectJson: boolean,
   ): Promise<T> {
     const url = new URL(`api/${path.replace(/^\/+/, "")}`, this.baseUrl)
-    return await request<T>(
-      this.fetchFn,
-      url,
-      this.timeoutMs,
-      this.cookie,
-      init,
-      expectJson,
-    )
+    const method = init.method ?? "GET"
+    try {
+      return await this.execute(
+        () =>
+          request<T>(
+            this.fetchFn,
+            url,
+            this.timeoutMs,
+            this.cookie,
+            init,
+            expectJson,
+          ),
+        method === "GET" || method === "HEAD",
+        true,
+      )
+    } catch (error) {
+      throw requestContext(error, method, url)
+    }
   }
+
+  private async execute<T>(
+    operation: () => Promise<T>,
+    retryableMethod: boolean,
+    allowReauthentication: boolean,
+  ): Promise<T> {
+    let authenticatedAgain = false
+    let authenticationVersion = this.authenticationVersion
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await operation()
+      } catch (error) {
+        if (
+          allowReauthentication &&
+          !authenticatedAgain &&
+          error instanceof GZCTFApiError &&
+          error.kind === "authentication" &&
+          this.credentials.type === "password"
+        ) {
+          if (authenticationVersion === this.authenticationVersion) {
+            await this.reauthenticate()
+          }
+          authenticatedAgain = true
+          authenticationVersion = this.authenticationVersion
+          attempt -= 1
+          continue
+        }
+        if (
+          !retryableMethod ||
+          !isRetryableGZCTFError(error) ||
+          attempt >= this.config.maxRequestAttempts
+        ) {
+          throw error
+        }
+        await delay(retryDelay(this.config.retryBaseDelayMs, attempt))
+      }
+    }
+  }
+
+  private async reauthenticate(): Promise<void> {
+    if (this.credentials.type !== "password") return
+    if (!this.reauthentication) {
+      this.reauthentication = retryRequest(
+        () =>
+          loginCookie(
+            this.fetchFn,
+            this.baseUrl,
+            this.timeoutMs,
+            this.clientConfig,
+            this.credentials as Extract<GZCTFCredentials, { type: "password" }>,
+          ),
+        this.config,
+      )
+        .then((cookie) => {
+          this.cookie = cookie
+          this.authenticationVersion += 1
+        })
+        .finally(() => {
+          this.reauthentication = undefined
+        })
+    }
+    await this.reauthentication
+  }
+}
+
+async function loginCookie(
+  fetchFn: typeof fetch,
+  baseUrl: URL,
+  timeoutMs: number,
+  clientConfig: GZCTFClientConfig,
+  credentials: Extract<GZCTFCredentials, { type: "password" }>,
+): Promise<string> {
+  const encryptedPassword = await encryptGZCTFApiData(
+    credentials.password,
+    clientConfig.apiPublicKey,
+  )
+  const response = await rawRequest(
+    fetchFn,
+    new URL("api/account/login", baseUrl),
+    timeoutMs,
+    "",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: credentials.username,
+        password: encryptedPassword,
+      }),
+    },
+  )
+  await ensureSuccess(response)
+  return extractAuthCookie(response.headers)
+}
+
+async function retryRequest<T>(
+  operation: () => Promise<T>,
+  config: Pick<GZCTFPlatformConfig, "maxRequestAttempts" | "retryBaseDelayMs">,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      if (
+        !isRetryableGZCTFError(error) ||
+        attempt >= config.maxRequestAttempts
+      ) {
+        throw error
+      }
+      await delay(retryDelay(config.retryBaseDelayMs, attempt))
+    }
+  }
+}
+
+function retryDelay(baseDelayMs: number, attempt: number): number {
+  const exponential = Math.min(30_000, baseDelayMs * 2 ** (attempt - 1))
+  return Math.max(1, Math.round(exponential * (0.8 + Math.random() * 0.4)))
+}
+
+function isRetryableGZCTFError(error: unknown): boolean {
+  return error instanceof GZCTFApiError && error.retryable
+}
+
+function requestContext(error: unknown, method: string, url: URL): Error {
+  if (!(error instanceof GZCTFApiError))
+    return error instanceof Error ? error : new Error(String(error))
+  return new GZCTFApiError(
+    `${method} ${url.pathname}${url.search}: ${error.message}`,
+    error.kind,
+    error.status,
+    error.details,
+    { cause: error },
+  )
 }
 
 async function request<T>(
@@ -672,6 +871,43 @@ const noticeTitles: Record<string, string> = {
   NewChallenge: "新题目",
 }
 
+class AsyncTtlCache<T> {
+  private value?: T
+  private hasValue = false
+  private expiresAt = 0
+  private pending?: Promise<T>
+  private generation = 0
+
+  constructor(private readonly ttlMs: number) {}
+
+  async get(load: () => Promise<T>): Promise<T> {
+    if (this.hasValue && Date.now() < this.expiresAt) return this.value as T
+    if (this.pending) return await this.pending
+    const generation = this.generation
+    const pending = load()
+      .then((value) => {
+        if (this.generation === generation) {
+          this.value = value
+          this.hasValue = true
+          this.expiresAt = Date.now() + this.ttlMs
+        }
+        return value
+      })
+      .finally(() => {
+        if (this.pending === pending) this.pending = undefined
+      })
+    this.pending = pending
+    return await pending
+  }
+
+  clear(): void {
+    this.generation += 1
+    this.hasValue = false
+    this.expiresAt = 0
+    this.pending = undefined
+  }
+}
+
 class GZCTFChallengeCapability implements ChallengeCapability {
   readonly instance?: ChallengeCapability["instance"]
   private info?: ChallengeInfo
@@ -685,18 +921,37 @@ class GZCTFChallengeCapability implements ChallengeCapability {
     solved: boolean,
     detail: GZCTFChallengeDetail,
     private readonly environments: Map<string, RemoteEnvironment>,
+    private readonly loadDetail: () => Promise<GZCTFChallengeDetail>,
+    private readonly invalidate: () => void,
   ) {
     this.solved = solved
     this.info = mapChallengeInfo(detail, solved)
     if (isContainer(detail.type)) {
       this.instance = {
         start: async () => {
-          const container = await this.client.post<GZCTFContainer>(
-            this.containerPath(),
-          )
-          return this.remember(
-            mapContainer(this.environmentId(), this.challengeId, container),
-          )
+          const existing = await this.getInstanceStatus()
+          if (existing) return existing
+          try {
+            const container = await this.client.post<GZCTFContainer>(
+              this.containerPath(),
+            )
+            this.invalidate()
+            return this.remember(
+              mapContainer(this.environmentId(), this.challengeId, container),
+            )
+          } catch (error) {
+            // POST may have reached GZCTF even when its response was lost, and
+            // GZCTF reports an already-created instance as an error. Re-read
+            // status before exposing a noisy/non-idempotent failure to Agent.
+            this.invalidate()
+            try {
+              const created = await this.getInstanceStatus()
+              if (created) return created
+            } catch {
+              // Preserve the original start failure; it carries retryability.
+            }
+            throw error
+          }
         },
         status: async () => await this.getInstanceStatus(),
         destroy: async () => await this.destroyInstance(),
@@ -745,6 +1000,7 @@ class GZCTFChallengeCapability implements ChallengeCapability {
       )
       if (status === "Accepted") {
         this.solved = true
+        this.invalidate()
         return { status: "accepted", message: "Accepted" }
       }
       if (
@@ -774,7 +1030,7 @@ class GZCTFChallengeCapability implements ChallengeCapability {
   }
 
   private async detail(): Promise<GZCTFChallengeDetail> {
-    return await this.client.get<GZCTFChallengeDetail>(this.challengePath())
+    return await this.loadDetail()
   }
 
   private async getInstanceStatus(): Promise<RemoteEnvironment | null> {
@@ -796,8 +1052,25 @@ class GZCTFChallengeCapability implements ChallengeCapability {
     // Solver shutdown calls destroy for every container-capable challenge. Avoid
     // turning "never started" into a noisy platform error.
     if (!(await this.getInstanceStatus())) return
-    await this.client.delete(this.containerPath())
-    this.environments.delete(this.environmentId())
+    let firstError: unknown
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        await this.client.delete(this.containerPath())
+        this.invalidate()
+        this.environments.delete(this.environmentId())
+        return
+      } catch (error) {
+        firstError ??= error
+        this.invalidate()
+        try {
+          if (!(await this.getInstanceStatus())) return
+        } catch {
+          // Preserve the first DELETE failure if verification also failed.
+        }
+        if (attempt < 2) await delay(this.config.retryBaseDelayMs)
+      }
+    }
+    throw firstError
   }
 
   private remember(environment: RemoteEnvironment): RemoteEnvironment {
@@ -818,20 +1091,38 @@ class GZCTFChallengeCapability implements ChallengeCapability {
 
 class GZCTFProject implements PlatformProject {
   private readonly environments = new Map<string, RemoteEnvironment>()
+  private readonly game: AsyncTtlCache<GZCTFGame>
+  private readonly details: AsyncTtlCache<GZCTFGameDetails>
+  private readonly notices: AsyncTtlCache<GZCTFNotice[]>
+  private readonly challengeDetails = new Map<
+    number,
+    AsyncTtlCache<GZCTFChallengeDetail>
+  >()
 
   constructor(
     private readonly project: { id: string; name: string },
     private readonly config: GZCTFPlatformConfig,
     private readonly client: GZCTFClient,
-  ) {}
+  ) {
+    this.game = new AsyncTtlCache(Math.max(30_000, config.cacheTtlMs * 6))
+    this.details = new AsyncTtlCache(config.cacheTtlMs)
+    this.notices = new AsyncTtlCache(Math.max(30_000, config.cacheTtlMs * 6))
+  }
 
   async refresh(): Promise<ContestOverview> {
+    this.game.clear()
+    this.details.clear()
+    this.notices.clear()
+    for (const cache of this.challengeDetails.values()) cache.clear()
     return await this.getOverview()
   }
 
   async getOverview(): Promise<ContestOverview> {
     const [game, challenges, announcements] = await Promise.all([
-      this.client.get<GZCTFGame>(`game/${this.config.gameId}`),
+      this.game.get(
+        async () =>
+          await this.client.get<GZCTFGame>(`game/${this.config.gameId}`),
+      ),
       this.listChallenges(),
       this.listAnnouncements(),
     ])
@@ -860,8 +1151,11 @@ class GZCTFProject implements PlatformProject {
   }
 
   async listAnnouncements(): Promise<Announcement[]> {
-    const notices = await this.client.get<GZCTFNotice[]>(
-      `game/${this.config.gameId}/notices?count=100&skip=0`,
+    const notices = await this.notices.get(
+      async () =>
+        await this.client.get<GZCTFNotice[]>(
+          `game/${this.config.gameId}/notices?count=100&skip=0`,
+        ),
     )
     return notices.map((notice) => ({
       id: String(notice.id),
@@ -899,9 +1193,7 @@ class GZCTFProject implements PlatformProject {
   async bindChallenge(challengeId: string): Promise<ChallengeCapability> {
     const id = positiveId(challengeId)
     const [detail, game] = await Promise.all([
-      this.client.get<GZCTFChallengeDetail>(
-        `game/${this.config.gameId}/challenges/${id}`,
-      ),
+      this.challengeDetail(id),
       this.gameDetails(),
     ])
     const solved =
@@ -914,15 +1206,39 @@ class GZCTFProject implements PlatformProject {
       solved,
       detail,
       this.environments,
+      async () => await this.challengeDetail(id),
+      () => this.invalidateChallenge(id),
     )
   }
 
   async close(): Promise<void> {}
 
   private async gameDetails(): Promise<GZCTFGameDetails> {
-    return await this.client.get<GZCTFGameDetails>(
-      `game/${this.config.gameId}/details`,
+    return await this.details.get(
+      async () =>
+        await this.client.get<GZCTFGameDetails>(
+          `game/${this.config.gameId}/details`,
+        ),
     )
+  }
+
+  private async challengeDetail(id: number): Promise<GZCTFChallengeDetail> {
+    let cache = this.challengeDetails.get(id)
+    if (!cache) {
+      cache = new AsyncTtlCache(this.config.cacheTtlMs)
+      this.challengeDetails.set(id, cache)
+    }
+    return await cache.get(
+      async () =>
+        await this.client.get<GZCTFChallengeDetail>(
+          `game/${this.config.gameId}/challenges/${id}`,
+        ),
+    )
+  }
+
+  private invalidateChallenge(id: number): void {
+    this.challengeDetails.get(id)?.clear()
+    this.details.clear()
   }
 }
 

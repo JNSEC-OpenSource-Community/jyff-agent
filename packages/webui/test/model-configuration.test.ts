@@ -3,7 +3,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileSecretStore } from "@ctf-agent/core"
 import { afterEach, describe, expect, it } from "vitest"
-import { createFileModelConfiguration } from "../src/model-configuration.ts"
+import { createFileModelAuthentication } from "../src/model-authentication.ts"
+import {
+  createFileModelConfiguration,
+  omitOutputTokenLimit,
+} from "../src/model-configuration.ts"
 
 const roots: string[] = []
 
@@ -29,7 +33,6 @@ describe("file model configuration", () => {
       modelId: "solver-model",
       baseUrl: "https://models.example.test/v1",
       contextWindow: 64_000,
-      maxTokens: 4_096,
       thinkingEnabled: true,
       reasoningEffort: "high",
       passthroughThinking: false,
@@ -51,6 +54,7 @@ describe("file model configuration", () => {
       provider: "custom-openai",
       api: "openai-completions",
       baseUrl: "https://models.example.test/v1",
+      maxTokens: 64_000,
     })
     expect(await agent.getApiKey?.("custom-openai")).toBe("secret-key")
     expect(await agent.getApiKey?.("another-provider")).toBeUndefined()
@@ -60,7 +64,6 @@ describe("file model configuration", () => {
       modelId: "solver-model",
       baseUrl: "https://models.example.test/v1",
       contextWindow: 64_000,
-      maxTokens: 4_096,
       thinkingEnabled: false,
       reasoningEffort: "high",
       passthroughThinking: false,
@@ -75,7 +78,11 @@ describe("file model configuration", () => {
     const secretsPath = join(root, "secrets.json")
     await writeFile(
       storagePath,
-      JSON.stringify({ modelId: "solver-model", apiKey: "legacy-key" }),
+      JSON.stringify({
+        modelId: "solver-model",
+        maxTokens: 4_096,
+        apiKey: "legacy-key",
+      }),
     )
 
     const configuration = await createFileModelConfiguration({
@@ -85,7 +92,18 @@ describe("file model configuration", () => {
 
     expect(configuration.snapshot().apiKeySource).toBe("secret-store")
     expect(await readFile(storagePath, "utf8")).not.toContain("legacy-key")
+    expect(await readFile(storagePath, "utf8")).not.toContain("maxTokens")
     expect(await readFile(secretsPath, "utf8")).toContain("legacy-key")
+  })
+
+  it("从 OpenAI-compatible 请求中移除两种输出 token 字段", () => {
+    expect(
+      omitOutputTokenLimit({
+        model: "solver-model",
+        max_tokens: 4_096,
+        max_completion_tokens: 8_192,
+      }),
+    ).toEqual({ model: "solver-model" })
   })
 
   it("配置不完整时保持可恢复状态且不创建 Agent", async () => {
@@ -101,8 +119,46 @@ describe("file model configuration", () => {
       apiKeyConfigured: false,
       supportedThinkingLevels: [],
     })
-    expect(() => configuration.createAgentOptions()).toThrow(
-      "未配置模型 API Key",
+    expect(() => configuration.createAgentOptions()).toThrow("未配置 Model ID")
+  })
+
+  it("使用 Pi Provider 凭据与原生模型创建 Agent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-native-model-"))
+    roots.push(root)
+    const authentication = await createFileModelAuthentication({
+      storagePath: join(root, "auth.json"),
+    })
+    await authentication.importJson(
+      JSON.stringify({ OPENAI_API_KEY: "openai-test-key" }),
     )
+    const openAi = (await authentication.snapshot()).providers.find(
+      (provider) => provider.id === "openai",
+    )
+    const modelId = openAi?.models[0]?.id
+    if (!modelId) throw new Error("Pi 未提供 OpenAI 内置模型")
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+      authentication,
+    })
+
+    const view = await configuration.update({
+      provider: "openai",
+      modelId,
+      baseUrl: "",
+      contextWindow: 64_000,
+      thinkingEnabled: true,
+      reasoningEffort: "high",
+      passthroughThinking: false,
+    })
+
+    expect(view).toMatchObject({
+      configured: true,
+      apiKeyConfigured: true,
+      apiKeySource: "provider-credential",
+    })
+    expect(configuration.createAgentOptions()).toMatchObject({
+      initialState: { model: { provider: "openai", id: modelId } },
+    })
   })
 })

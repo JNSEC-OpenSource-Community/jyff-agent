@@ -11,10 +11,18 @@ services:
       - 0.0.0.0
       - --port
       - "3000"
+      - --challenge-timeout-ms
+      - "${CTF_AGENT_CHALLENGE_TIMEOUT_MS:-1800000}"
+      - --auth-file
+      - /auth.json
       - --workspace-volume
       - ctf-agent-data
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${CTF_AGENT_WEBUI_PORT:-3000}:3000"
+      - "127.0.0.1:1455:1455"
+      - "127.0.0.1:53692:53692"
+    environment:
+      PI_OAUTH_CALLBACK_HOST: 0.0.0.0
     volumes:
       - ctf-agent-data:/data/.ctf-agent
       - /var/run/docker.sock:/var/run/docker.sock

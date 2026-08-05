@@ -1,0 +1,598 @@
+import { randomUUID } from "node:crypto"
+import { join } from "node:path"
+import {
+  type AgentSkill,
+  availableSubagentRoles,
+  type ChallengeCapability,
+  type ChallengeInfo,
+  type CtfSolverAgent,
+  CtfSubagent,
+  resolveSubagentRole,
+  type Sandbox,
+  type SubagentRole,
+} from "@ctf-agent/agents"
+import { DockerExecutionEnv } from "@ctf-agent/sandbox"
+import type {
+  AgentHarnessEvent,
+  AgentOptions,
+  AgentTool,
+  AgentToolResult,
+} from "@earendil-works/pi-agent-core"
+import { Type } from "typebox"
+import { extractAssistantText } from "../agent/thinking.ts"
+
+export type SubagentStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "aborted"
+  | "interrupted"
+
+export interface SubagentRecord {
+  id: string
+  runId: string
+  role: string
+  displayName: string
+  description: string
+  status: SubagentStatus
+  background: boolean
+  prompt: string
+  sessionPath: string
+  containerCwd: string
+  result?: string
+  error?: string
+  activeTool?: string
+  turns: number
+  toolUses: number
+  totalTokens: number
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+}
+
+export type SubagentLifecycleEvent =
+  | "created"
+  | "started"
+  | "progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "aborted"
+  | "steered"
+
+export interface SubagentManagerOptions {
+  projectId: string
+  runId: string
+  runDirectory: string
+  challenge: ChallengeInfo
+  capability: ChallengeCapability
+  sandbox: Sandbox
+  agent: AgentOptions
+  roles: ReadonlyMap<string, SubagentRole>
+  skills?: readonly AgentSkill[]
+  maxConcurrent?: number
+  onRecord?: (
+    record: SubagentRecord,
+    event: SubagentLifecycleEvent,
+  ) => Promise<void> | void
+}
+
+interface ManagedSubagent {
+  record: SubagentRecord
+  role: SubagentRole
+  agent?: CtfSubagent
+  promise: Promise<SubagentRecord>
+  resolve: (record: SubagentRecord) => void
+  resultConsumed: boolean
+  hardAborted: boolean
+}
+
+interface QueuedRun {
+  managed: ManagedSubagent
+  prompt: string
+}
+
+const TERMINAL = new Set<SubagentStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+  "aborted",
+  "interrupted",
+])
+
+/** Per-run worker fleet adapted from pi-subagents' manager/runner split. */
+export class CtfSubagentManager {
+  private readonly records = new Map<string, ManagedSubagent>()
+  private readonly queue: QueuedRun[] = []
+  private readonly maxConcurrent: number
+  private runningBackground = 0
+  private parent?: CtfSolverAgent
+  private closing = false
+
+  constructor(private readonly options: SubagentManagerOptions) {
+    this.maxConcurrent = Math.max(1, options.maxConcurrent ?? 4)
+  }
+
+  attachParent(parent: CtfSolverAgent): void {
+    this.parent = parent
+  }
+
+  availableRoles(): SubagentRole[] {
+    return availableSubagentRoles(this.options.roles)
+  }
+
+  spawn(input: {
+    role: string
+    prompt: string
+    description: string
+    background: boolean
+  }): SubagentRecord {
+    if (this.closing) throw new Error("SubAgent manager 正在关闭")
+    const role = resolveSubagentRole(this.options.roles, input.role)
+    if (!role) {
+      throw new Error(
+        `未知或已禁用的 SubAgent 类型: ${input.role}; 可用类型: ${this.availableRoles()
+          .map((item) => item.name)
+          .join(", ")}`,
+      )
+    }
+    const prompt = boundedText(input.prompt, "prompt", 32_000)
+    const description = boundedText(input.description, "description", 240)
+    const id = randomUUID()
+    const now = new Date().toISOString()
+    const record: SubagentRecord = {
+      id,
+      runId: this.options.runId,
+      role: role.name,
+      displayName: role.displayName,
+      description,
+      status: input.background ? "queued" : "running",
+      background: input.background,
+      prompt,
+      sessionPath: join(
+        this.options.runDirectory,
+        "subagents",
+        id,
+        "session.jsonl",
+      ),
+      containerCwd: `/workspace/subagents/${id}`,
+      turns: 0,
+      toolUses: 0,
+      totalTokens: 0,
+      createdAt: now,
+      updatedAt: now,
+    }
+    let resolve!: (value: SubagentRecord) => void
+    const promise = new Promise<SubagentRecord>((done) => {
+      resolve = done
+    })
+    const managed: ManagedSubagent = {
+      record,
+      role,
+      promise,
+      resolve,
+      resultConsumed: false,
+      hardAborted: false,
+    }
+    this.records.set(id, managed)
+    this.emit(managed, "created")
+    if (input.background && this.runningBackground >= this.maxConcurrent) {
+      this.queue.push({ managed, prompt })
+    } else {
+      this.launch(managed, prompt, true)
+    }
+    return snapshot(record)
+  }
+
+  async resume(
+    id: string,
+    prompt: string,
+    background: boolean,
+  ): Promise<SubagentRecord> {
+    const managed = this.records.get(id)
+    if (!managed?.agent || !TERMINAL.has(managed.record.status)) {
+      throw new Error(`SubAgent ${id} 不存在、尚未完成或会话不可恢复`)
+    }
+    const nextPrompt = boundedText(prompt, "prompt", 32_000)
+    managed.record.background = background
+    managed.record.status = background ? "queued" : "running"
+    managed.record.prompt = nextPrompt
+    managed.record.result = undefined
+    managed.record.error = undefined
+    managed.record.completedAt = undefined
+    managed.record.updatedAt = new Date().toISOString()
+    managed.resultConsumed = false
+    managed.hardAborted = false
+    let resolve!: (value: SubagentRecord) => void
+    managed.promise = new Promise<SubagentRecord>((done) => {
+      resolve = done
+    })
+    managed.resolve = resolve
+    this.emit(managed, "created")
+    if (background && this.runningBackground >= this.maxConcurrent) {
+      this.queue.push({ managed, prompt: nextPrompt })
+    } else {
+      this.launch(managed, nextPrompt, false)
+    }
+    return background ? snapshot(managed.record) : await managed.promise
+  }
+
+  get(id: string): SubagentRecord | undefined {
+    const managed = this.records.get(id)
+    return managed ? snapshot(managed.record) : undefined
+  }
+
+  list(): SubagentRecord[] {
+    return [...this.records.values()]
+      .map(({ record }) => snapshot(record))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  }
+
+  async wait(id: string, signal?: AbortSignal): Promise<SubagentRecord> {
+    const managed = this.records.get(id)
+    if (!managed) throw new Error(`SubAgent 不存在: ${id}`)
+    const result = TERMINAL.has(managed.record.status)
+      ? managed.record
+      : await abortable(managed.promise, signal)
+    managed.resultConsumed = true
+    return snapshot(result)
+  }
+
+  async steer(id: string, message: string): Promise<SubagentRecord> {
+    const managed = this.records.get(id)
+    if (!managed?.agent || managed.record.status !== "running") {
+      throw new Error(`SubAgent ${id} 当前不可接收 steer`)
+    }
+    await managed.agent.steer(boundedText(message, "message", 4_000))
+    managed.record.updatedAt = new Date().toISOString()
+    this.emit(managed, "steered")
+    return snapshot(managed.record)
+  }
+
+  async cancel(id: string): Promise<SubagentRecord> {
+    const managed = this.records.get(id)
+    if (!managed || TERMINAL.has(managed.record.status)) {
+      throw new Error(`SubAgent ${id} 不存在或已经结束`)
+    }
+    if (managed.record.status === "queued") {
+      const index = this.queue.findIndex((item) => item.managed === managed)
+      if (index >= 0) this.queue.splice(index, 1)
+    } else {
+      await managed.agent?.abort()
+    }
+    this.finish(managed, "cancelled")
+    return snapshot(managed.record)
+  }
+
+  async close(): Promise<void> {
+    if (this.closing) return
+    this.closing = true
+    const pending = this.list().filter((record) => !TERMINAL.has(record.status))
+    await Promise.allSettled(pending.map((record) => this.cancel(record.id)))
+    await Promise.allSettled(
+      [...this.records.values()].map(({ agent }) => agent?.waitForIdle()),
+    )
+  }
+
+  /** Reserve a background slot synchronously, before any async session setup. */
+  private launch(
+    managed: ManagedSubagent,
+    prompt: string,
+    initialize: boolean,
+  ): void {
+    const background = managed.record.background
+    if (background) this.runningBackground++
+    void this.executeLaunch(managed, prompt, initialize).finally(() => {
+      if (background) {
+        this.runningBackground = Math.max(0, this.runningBackground - 1)
+      }
+      this.drainQueue()
+    })
+  }
+
+  private async executeLaunch(
+    managed: ManagedSubagent,
+    prompt: string,
+    initialize: boolean,
+  ): Promise<void> {
+    try {
+      if (initialize) {
+        const env = new DockerExecutionEnv(this.options.sandbox)
+        const created = await env.createDir(managed.record.containerCwd, {
+          recursive: true,
+        })
+        if (!created.ok) throw created.error
+        managed.agent = await CtfSubagent.create({
+          projectId: this.options.projectId,
+          runId: this.options.runId,
+          runDirectory: this.options.runDirectory,
+          subagentId: managed.record.id,
+          containerCwd: managed.record.containerCwd,
+          challenge: this.options.challenge,
+          capability: this.options.capability,
+          sandbox: this.options.sandbox,
+          agent: this.options.agent,
+          role: managed.role,
+          skills: this.options.skills,
+        })
+        this.subscribe(managed, managed.agent)
+      }
+      if (TERMINAL.has(managed.record.status)) return
+      await this.run(managed, prompt)
+    } catch (error) {
+      if (!isCancelled(managed)) {
+        managed.record.error = errorText(error)
+        this.finish(managed, managed.hardAborted ? "aborted" : "failed")
+      }
+    }
+  }
+
+  private async run(managed: ManagedSubagent, prompt: string): Promise<void> {
+    managed.record.status = "running"
+    managed.record.startedAt = new Date().toISOString()
+    managed.record.updatedAt = managed.record.startedAt
+    this.emit(managed, "started")
+    await managed.agent?.prompt(prompt)
+    if (isCancelled(managed)) return
+    const messages = (await managed.agent?.transcript()) ?? []
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const text = extractAssistantText(messages[index])
+      if (text) {
+        managed.record.result = text
+        break
+      }
+    }
+    this.finish(managed, managed.hardAborted ? "aborted" : "completed")
+  }
+
+  private subscribe(managed: ManagedSubagent, agent: CtfSubagent): void {
+    agent.subscribe((event) => {
+      this.captureProgress(managed, event)
+    })
+  }
+
+  private captureProgress(
+    managed: ManagedSubagent,
+    event: AgentHarnessEvent,
+  ): void {
+    let changed = false
+    if (event.type === "turn_end") {
+      managed.record.turns++
+      changed = true
+    }
+    if (event.type === "tool_execution_start") {
+      managed.record.activeTool = event.toolName
+      changed = true
+    }
+    if (event.type === "tool_execution_end") {
+      managed.record.toolUses++
+      managed.record.activeTool = undefined
+      changed = true
+    }
+    if (
+      event.type === "message_end" &&
+      event.message.role === "assistant" &&
+      event.message.usage
+    ) {
+      managed.record.totalTokens += event.message.usage.totalTokens
+      changed = true
+    }
+    if (!changed) return
+    managed.record.updatedAt = new Date().toISOString()
+    this.emit(managed, "progress")
+  }
+
+  private finish(managed: ManagedSubagent, status: SubagentStatus): void {
+    if (TERMINAL.has(managed.record.status)) return
+    managed.record.status = status
+    managed.record.activeTool = undefined
+    managed.record.completedAt = new Date().toISOString()
+    managed.record.updatedAt = managed.record.completedAt
+    const event: SubagentLifecycleEvent =
+      status === "completed"
+        ? "completed"
+        : status === "cancelled"
+          ? "cancelled"
+          : status === "aborted"
+            ? "aborted"
+            : "failed"
+    this.emit(managed, event)
+    managed.resolve(snapshot(managed.record))
+    if (managed.record.background && !managed.resultConsumed) {
+      void this.notifyParent(managed.record)
+    }
+  }
+
+  private drainQueue(): void {
+    while (
+      !this.closing &&
+      this.queue.length > 0 &&
+      this.runningBackground < this.maxConcurrent
+    ) {
+      const next = this.queue.shift()
+      if (next?.managed.record.status !== "queued") continue
+      this.launch(next.managed, next.prompt, true)
+    }
+  }
+
+  private emit(managed: ManagedSubagent, event: SubagentLifecycleEvent): void {
+    void Promise.resolve(
+      this.options.onRecord?.(snapshot(managed.record), event),
+    ).catch(() => undefined)
+  }
+
+  private async notifyParent(record: SubagentRecord): Promise<void> {
+    const parent = this.parent
+    if (!parent || parent.isClosed) return
+    const payload = JSON.stringify({
+      id: record.id,
+      role: record.role,
+      status: record.status,
+      output: (record.result ?? record.error ?? "No output").slice(0, 16_000),
+    })
+    await parent.followUp(
+      `<task-notification encoding="json">\n${payload}\n</task-notification>`,
+    )
+  }
+}
+
+/** Main-Agent tools use pi-subagents-compatible names and argument conventions. */
+export function createSubagentManagerTools(
+  manager: CtfSubagentManager,
+): AgentTool[] {
+  const types = manager
+    .availableRoles()
+    .map((role) => role.name)
+    .join(", ")
+  return [
+    {
+      name: "Agent",
+      label: "Launch SubAgent",
+      description: `Launch a specialized CTF SubAgent. Available types: ${types}.`,
+      parameters: Type.Object({
+        subagent_type: Type.String(),
+        prompt: Type.String({ minLength: 1, maxLength: 32_000 }),
+        description: Type.String({ minLength: 1, maxLength: 240 }),
+        run_in_background: Type.Optional(Type.Boolean()),
+        resume: Type.Optional(Type.String()),
+      }),
+      async execute(_id, raw, signal) {
+        const params = raw as {
+          subagent_type: string
+          prompt: string
+          description: string
+          run_in_background?: boolean
+          resume?: string
+        }
+        const background = params.run_in_background === true
+        if (params.resume) {
+          const record = await manager.resume(
+            params.resume,
+            params.prompt,
+            background,
+          )
+          return toolResult(record)
+        }
+        const record = manager.spawn({
+          role: params.subagent_type,
+          prompt: params.prompt,
+          description: params.description,
+          background,
+        })
+        return toolResult(
+          background ? record : await manager.wait(record.id, signal),
+        )
+      },
+    },
+    {
+      name: "get_subagent_result",
+      label: "Get SubAgent Result",
+      description: "Read or wait for a background SubAgent result.",
+      parameters: Type.Object({
+        agent_id: Type.String(),
+        wait: Type.Optional(Type.Boolean()),
+      }),
+      async execute(_id, raw, signal) {
+        const params = raw as { agent_id: string; wait?: boolean }
+        const record = params.wait
+          ? await manager.wait(params.agent_id, signal)
+          : manager.get(params.agent_id)
+        if (!record) throw new Error(`SubAgent 不存在: ${params.agent_id}`)
+        return toolResult(record)
+      },
+    },
+    {
+      name: "steer_subagent",
+      label: "Steer SubAgent",
+      description: "Send new guidance to a running SubAgent.",
+      parameters: Type.Object({
+        agent_id: Type.String(),
+        message: Type.String({ minLength: 1, maxLength: 4_000 }),
+      }),
+      async execute(_id, raw) {
+        const params = raw as { agent_id: string; message: string }
+        return toolResult(await manager.steer(params.agent_id, params.message))
+      },
+    },
+    {
+      name: "cancel_subagent",
+      label: "Cancel SubAgent",
+      description: "Cancel a queued or running SubAgent.",
+      parameters: Type.Object({ agent_id: Type.String() }),
+      async execute(_id, raw) {
+        return toolResult(
+          await manager.cancel((raw as { agent_id: string }).agent_id),
+        )
+      },
+    },
+    {
+      name: "list_subagents",
+      label: "List SubAgents",
+      description: "List this run's queued, running and completed SubAgents.",
+      parameters: Type.Object({}),
+      async execute() {
+        return toolResult({ agents: manager.list() })
+      },
+    },
+  ]
+}
+
+function toolResult(details: object): AgentToolResult<Record<string, unknown>> {
+  const value = details as Record<string, unknown>
+  return {
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+    details: value,
+  }
+}
+
+function snapshot(record: SubagentRecord): SubagentRecord {
+  return { ...record }
+}
+
+function boundedText(value: string, field: string, max: number): string {
+  const text = value.trim()
+  if (!text) throw new Error(`${field} 不能为空`)
+  if (text.length > max) throw new Error(`${field} 长度不能超过 ${max}`)
+  return text
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isCancelled(managed: ManagedSubagent): boolean {
+  return managed.record.status === "cancelled"
+}
+
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener("abort", onAbort)
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(signal.reason)
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+    promise.then(
+      (value) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(value)
+      },
+      (error: unknown) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}

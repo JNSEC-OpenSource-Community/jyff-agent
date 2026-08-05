@@ -128,7 +128,9 @@ export function createBlackboardTools(
       description:
         "Record to the shared challenge blackboard. You can record evidence (confirmed findings), " +
         "declare opportunities (exploration directions from existing evidence), conclude opportunities " +
-        "(record the result of exploring an opportunity), or any combination of these.",
+        "(record the result of exploring an opportunity), or any combination of these. " +
+        'Evidence must be one object such as {"evidence":{"description":"verified finding"}}; ' +
+        "do not pass a string or an array as evidence.",
       parameters: Type.Object({
         evidence: Type.Optional(
           Type.Object({

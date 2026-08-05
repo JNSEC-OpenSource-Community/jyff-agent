@@ -141,6 +141,14 @@ export class CTFdApiError extends Error {
     super(message, options)
     this.name = "CTFdApiError"
   }
+
+  get retryable(): boolean {
+    return (
+      this.kind === "network" ||
+      this.kind === "rate_limited" ||
+      (this.kind === "http" && (this.status ?? 0) >= 500)
+    )
+  }
 }
 
 export class CTFdClient {

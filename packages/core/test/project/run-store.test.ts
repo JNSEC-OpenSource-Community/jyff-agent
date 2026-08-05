@@ -111,6 +111,24 @@ describe("RunStore", () => {
     reopened.close()
   })
 
+  it("可直接读取最后事件，避免 Dashboard 扫描完整时间线", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "run-latest",
+      challengeId: "misc-1",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    store.appendEvent("run-latest", "agent_thinking", { text: "first" })
+    const latest = store.appendEvent("run-latest", "agent_message", {
+      text: "done",
+    })
+
+    expect(store.latestEvent("run-latest")).toEqual(latest)
+    expect(store.latestEvent("missing")).toBeUndefined()
+    store.close()
+  })
+
   it("agent_usage 事件可持久化与读取(data 原文保留,含 cost 与 reasoning)", async () => {
     const { path, store } = await storeFixture()
     store.createRun({
@@ -234,6 +252,27 @@ describe("RunStore", () => {
 
     expect(store.getRun("direct")?.source).toBe("direct")
     expect(store.schedulerAttemptCount("rev-1")).toBe(2)
+    store.close()
+  })
+
+  it("平台瞬时故障的创建失败不消耗调度 attempt", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "infra-failure",
+      challengeId: "web-1",
+      workspace: "workspace",
+      attempt: 1,
+      source: "auto",
+    })
+    store.updateRun(
+      "infra-failure",
+      { status: "failed", error: "HTTP 502" },
+      "run_creation_failed",
+      { error: "HTTP 502", retryable: true },
+    )
+
+    expect(store.schedulerAttemptCount("web-1")).toBe(0)
+    expect(store.nextAttempt("web-1")).toBe(2)
     store.close()
   })
 

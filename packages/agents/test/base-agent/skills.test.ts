@@ -62,13 +62,27 @@ describe("shared Pi skills", () => {
     ).toContain("# Reverse")
   })
 
-  it("rejects symlinks while copying skill assets", async () => {
+  it("rejects symlinks while copying skill assets", async (context) => {
     const root = await fixture()
     await writeFile(join(root, "outside.txt"), "secret")
-    await symlink(
-      join(root, "outside.txt"),
-      join(root, ".pi", "skills", "reverse", "linked.txt"),
-    )
+    try {
+      await symlink(
+        join(root, "outside.txt"),
+        join(root, ".pi", "skills", "reverse", "linked.txt"),
+      )
+    } catch (error) {
+      if (
+        process.platform === "win32" &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "EPERM"
+      ) {
+        context.skip()
+        return
+      }
+      throw error
+    }
     const { skills } = await discoverProjectSkillsWithDiagnostics(root)
     await expect(
       materializeSkills(skills, join(root, "workspace")),

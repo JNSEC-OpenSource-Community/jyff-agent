@@ -1,5 +1,4 @@
 const excludedPiAiDependencies = [
-  "@anthropic-ai/sdk",
   "@aws-sdk/client-bedrock-runtime",
   "@google/genai",
   "@mistralai/mistralai",

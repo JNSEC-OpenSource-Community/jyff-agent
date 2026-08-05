@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { createFileModelAuthentication } from "../src/model-authentication.ts"
 import { startWebUi, type WebUiServer } from "../src/server.ts"
 import type { DashboardControlPlane } from "../src/types.ts"
 import {
@@ -8,9 +12,13 @@ import {
 } from "./fake-project.ts"
 
 const servers: WebUiServer[] = []
+const roots: string[] = []
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()))
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  )
 })
 
 describe("WebUI HTTP server", () => {
@@ -160,6 +168,95 @@ describe("WebUI HTTP server", () => {
     expect(project.refreshCalls).toBe(1)
   })
 
+  it("通过模型凭据 API 导入、列出和移除凭据且不泄露原文", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-auth-server-"))
+    roots.push(root)
+    const authentication = await createFileModelAuthentication({
+      storagePath: join(root, "auth.json"),
+      importPath: join(root, "mounted-auth.json"),
+    })
+    const server = await startWebUi({
+      project: new FakeDashboardProject(),
+      modelAuthentication: authentication,
+      modelConfiguration: new FakeModelConfiguration(),
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    const imported = await fetch(`${server.url}/api/model-auth/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        json: JSON.stringify({ OPENAI_API_KEY: "server-test-secret" }),
+      }),
+    })
+    expect(imported.status).toBe(200)
+    const importedBody = await imported.text()
+    expect(importedBody).toContain('"provider":"openai"')
+    expect(importedBody).not.toContain("server-test-secret")
+
+    const listed = await fetch(`${server.url}/api/model-auth`)
+    const listedBody = await listed.text()
+    expect(listedBody).toContain('"credentialType":"api_key"')
+    expect(listedBody).not.toContain("server-test-secret")
+
+    const removed = await fetch(
+      `${server.url}/api/model-auth/providers/openai/logout`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    )
+    expect(removed.status).toBe(200)
+    expect(await authentication.hasCredential("openai")).toBe(false)
+  })
+
+  it("允许无需预输入凭据的浏览器和 Device Code 登录", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-auth-login-server-"))
+    roots.push(root)
+    const authentication = await createFileModelAuthentication({
+      storagePath: join(root, "auth.json"),
+    })
+    const startLogin = vi
+      .spyOn(authentication, "startLogin")
+      .mockImplementation(async ({ provider, method }) => ({
+        id: `${provider}-${method}`,
+        provider: "openai-codex",
+        method: method === "oauth_device" ? "oauth_device" : "oauth_browser",
+        status: "running",
+        updatedAt: "2026-08-04T00:00:00.000Z",
+      }))
+    const server = await startWebUi({
+      project: new FakeDashboardProject(),
+      modelAuthentication: authentication,
+      modelConfiguration: new FakeModelConfiguration(),
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    for (const method of ["oauth_browser", "oauth_device"]) {
+      const response = await fetch(`${server.url}/api/model-auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "openai-codex", method }),
+      })
+      expect(response.status).toBe(202)
+    }
+    expect(startLogin).toHaveBeenNthCalledWith(1, {
+      provider: "openai-codex",
+      method: "oauth_browser",
+    })
+    expect(startLogin).toHaveBeenNthCalledWith(2, {
+      provider: "openai-codex",
+      method: "oauth_device",
+    })
+  })
+
   it("通过 SSE 立即发送当前快照", async () => {
     const project = new FakeDashboardProject()
     const server = await startWebUi({
@@ -209,7 +306,43 @@ describe("WebUI HTTP server", () => {
     expect(update).toContain("run-misc-1")
   })
 
-  it("提供自主启停、人工调度和取消 API", async () => {
+  it("慢速平台故障只记录一次并退避，恢复后更新健康状态", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const project = new FakeDashboardProject()
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 250,
+    })
+    servers.push(server)
+    project.overviewDelayMs = 600
+    project.overviewError = new Error("upstream timeout")
+
+    await new Promise((resolve) => setTimeout(resolve, 950))
+    const degraded = (await (await fetch(`${server.url}/health`)).json()) as {
+      platformSync: { status: string; consecutiveFailures: number }
+    }
+    expect(degraded.platformSync).toMatchObject({
+      status: "degraded",
+      consecutiveFailures: 1,
+    })
+    expect(warning).toHaveBeenCalledTimes(1)
+
+    project.overviewDelayMs = 0
+    project.overviewError = undefined
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    const recovered = (await (await fetch(`${server.url}/health`)).json()) as {
+      platformSync: { status: string; lastError: string | null }
+    }
+    expect(recovered.platformSync).toMatchObject({
+      status: "ok",
+      lastError: null,
+    })
+    warning.mockRestore()
+  })
+
+  it("提供自主启停、并发设置、人工调度和取消 API", async () => {
     const scheduler = new FakeDashboardScheduler()
     const server = await startWebUi({
       project: new FakeDashboardProject(),
@@ -228,8 +361,27 @@ describe("WebUI HTTP server", () => {
 
     expect((await post("/api/scheduler/auto/start")).status).toBe(200)
     expect(scheduler.snapshot().autoEnabled).toBe(true)
+    scheduler.value.queued.push({
+      challengeId: "misc-1",
+      source: "manual",
+      enqueuedAt: "2026-07-29T12:00:00.000Z",
+      position: 1,
+    })
     expect((await post("/api/scheduler/auto/pause")).status).toBe(200)
     expect(scheduler.snapshot().autoEnabled).toBe(false)
+    expect(scheduler.snapshot().queued).toEqual([])
+
+    expect(
+      (await post("/api/scheduler/concurrency", { maxConcurrent: 4 })).status,
+    ).toBe(200)
+    expect(scheduler.snapshot().maxConcurrent).toBe(4)
+    const invalidConcurrency = await post("/api/scheduler/concurrency", {
+      maxConcurrent: 0,
+    })
+    expect(invalidConcurrency.status).toBe(400)
+    expect(await invalidConcurrency.json()).toMatchObject({
+      error: "invalid_scheduler_configuration",
+    })
 
     const dispatched = await post("/api/challenges/misc-1/dispatch")
     expect(dispatched.status).toBe(200)
@@ -272,7 +424,6 @@ describe("WebUI HTTP server", () => {
         modelId: "solver-model",
         baseUrl: "https://models.example.test/v1/",
         contextWindow: 64_000,
-        maxTokens: 4_096,
         thinkingEnabled: true,
         reasoningEffort: "high",
         apiKey,
@@ -303,7 +454,6 @@ describe("WebUI HTTP server", () => {
         modelId: "solver-model",
         baseUrl: "file:///tmp/model",
         contextWindow: 1_024,
-        maxTokens: 2_048,
         thinkingEnabled: false,
         reasoningEffort: "max",
       }),
@@ -318,7 +468,6 @@ describe("WebUI HTTP server", () => {
         modelId: "solver-model",
         baseUrl: "",
         contextWindow: 1_024,
-        maxTokens: 2_048,
         thinkingEnabled: false,
         reasoningEffort: "ultra",
       }),
@@ -422,6 +571,67 @@ describe("WebUI HTTP server", () => {
     // message 路由不落入 dispatch|cancel 正则(不要求 scheduler)
     const withoutScheduler = await post("/api/challenges/pwn-1/dispatch", {})
     expect(withoutScheduler.status).toBe(503)
+  })
+
+  it("详情包含 SubAgent，并提供 steer/cancel 控制 API", async () => {
+    const project = new FakeDashboardProject()
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+    const post = (path: string, body: unknown = {}) =>
+      fetch(`${server.url}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+    const details = await fetch(`${server.url}/api/challenges/pwn-1`)
+    expect(await details.json()).toMatchObject({
+      runs: [
+        {
+          id: "run-pwn-1",
+          subagents: [
+            {
+              id: "worker-pwn-1",
+              role: "pwn",
+              status: "running",
+              activeTool: "bash",
+            },
+          ],
+        },
+      ],
+    })
+
+    const steered = await post(
+      "/api/runs/run-pwn-1/subagents/worker-pwn-1/steer",
+      { message: "先验证泄漏稳定性" },
+    )
+    expect(steered.status).toBe(200)
+    expect(await steered.json()).toMatchObject({
+      id: "worker-pwn-1",
+      description: expect.stringContaining("先验证泄漏稳定性"),
+    })
+
+    expect(
+      (
+        await post("/api/runs/run-pwn-1/subagents/worker-pwn-1/steer", {
+          message: "   ",
+        })
+      ).status,
+    ).toBe(400)
+
+    const cancelled = await post(
+      "/api/runs/run-pwn-1/subagents/worker-pwn-1/cancel",
+    )
+    expect(cancelled.status).toBe(200)
+    expect(await cancelled.json()).toMatchObject({
+      id: "worker-pwn-1",
+      status: "cancelled",
+    })
   })
 
   it("会话复盘导出:无 run 404;指定不存在 run 404;200 返回 Markdown 与附件头", async () => {

@@ -127,5 +127,29 @@ export interface PlatformPlugin {
   connect(options: PlatformConnectOptions): Promise<PlatformProject>
 }
 
+/**
+ * Platform adapters mark failures that are safe to retry without charging an
+ * Agent attempt. Keep the check structural so Core does not depend on a
+ * concrete platform error class.
+ */
+export function isRetryablePlatformError(error: unknown): boolean {
+  if (
+    error &&
+    typeof error === "object" &&
+    (error as { retryable?: unknown }).retryable === true
+  ) {
+    return true
+  }
+  if (error instanceof AggregateError) {
+    return (
+      error.errors.length > 0 &&
+      error.errors.every((item) => isRetryablePlatformError(item))
+    )
+  }
+  if (!error || typeof error !== "object") return false
+  const cause = (error as { cause?: unknown }).cause
+  return cause !== undefined && isRetryablePlatformError(cause)
+}
+
 export * from "./ctfd.ts"
 export * from "./gzctf.ts"

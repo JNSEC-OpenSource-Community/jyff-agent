@@ -18,13 +18,17 @@ ARG PYCDC_SHA256
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN sed -i \
-		-e 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
-		-e 's|http://security.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install --no-install-recommends -y ca-certificates \
+    && sed -i \
+        -e 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+        -e 's|http://security.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
         /etc/apt/sources.list.d/ubuntu.sources \
-    && apt-get -o Acquire::Retries=5 update \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y \
-        build-essential ca-certificates cmake meson ninja-build pkg-config \
+        build-essential cmake meson ninja-build pkg-config \
         python3 python3-yaml wget xz-utils zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -120,14 +124,14 @@ COPY --from=re-builder /opt/re-tools /opt/re-tools
 
 COPY requirements-ctf.txt /tmp/requirements-ctf.txt
 RUN python3 -m venv /opt/ctf-venv \
-    && python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && python -m pip install --no-cache-dir --upgrade pip setuptools==80.10.2 wheel \
     && python -m pip install --no-cache-dir -r /tmp/requirements-ctf.txt \
     && rm -f /tmp/requirements-ctf.txt
 
 # angr/Frida 对底层依赖有严格约束，独立环境避免影响 pwntools 的 Python 依赖。
 COPY requirements-re.txt /tmp/requirements-re.txt
 RUN python3 -m venv /opt/re-venv \
-    && /opt/re-venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/re-venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools==80.10.2 wheel \
     && /opt/re-venv/bin/python -m pip install --no-cache-dir -r /tmp/requirements-re.txt \
     && printf '#!/bin/sh\nexec /opt/re-venv/bin/python "$@"\n' > /usr/local/bin/angr-python \
     && chmod 0755 /usr/local/bin/angr-python \

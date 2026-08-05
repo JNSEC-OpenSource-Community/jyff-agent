@@ -8,11 +8,12 @@
   },
   "scripts": {
     "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
+    "build:webui": "pnpm --filter @ctf-agent/webui build:client",
     "check": "biome check .",
     "test": "vitest run",
     "test:runner": "vitest run packages/core/test/runner/contest-runner.test.ts",
     "test:watch": "vitest",
-    "webui": "node --experimental-transform-types packages/webui/src/main.ts",
+    "webui": "pnpm build:webui && node --experimental-transform-types packages/webui/src/main.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
     "@types/node": "^24.10.1",
+    "esbuild": "0.28.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

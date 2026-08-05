@@ -31,73 +31,46 @@ export interface SolverToolOptions {
   onTerminalSubmission(submission: FlagSubmission): void
 }
 
-/** Every capability closure is bound to one challenge and one Docker environment. */
-export function createSolverTools(options: SolverToolOptions): AgentTool[] {
-  const env = new DockerExecutionEnv(options.sandbox)
+export interface SubagentToolOptions {
+  capability: ChallengeCapability
+  sandbox: Sandbox
+  cwd: string
+}
+
+export interface SandboxToolOptions {
+  sandbox: Sandbox
+  cwd?: string
+}
+
+/** Container-native tools reusable by the main Solver and isolated worker sessions. */
+export function createSandboxTools(options: SandboxToolOptions): AgentTool[] {
+  const env = new DockerExecutionEnv(options.sandbox, { cwd: options.cwd })
   const context: ExecutionToolContext = { env }
   const rtk = new RtkRewriter(env)
-  const tools: AgentTool[] = [
+  return [
     bindExecutionTool(createBashTool({ prepare: rtk.prepare() }), context),
     bindExecutionTool(createReadTool(), context),
     bindExecutionTool(createWriteTool(), context),
     bindExecutionTool(createEditTool(), context),
-    {
-      name: "list",
-      label: "List Workspace Directory",
-      description:
-        "List a directory below /workspace. Prefer read when inspecting files.",
-      parameters: Type.Object({ path: Type.String() }),
-      executionMode: "sequential",
-      async execute(_id, params, signal) {
-        const listed = await env.listDir(
-          (params as { path: string }).path,
-          signal,
-        )
-        if (!listed.ok)
-          throw new Error(listed.error.message, { cause: listed.error })
-        return result({
-          entries: listed.value.map(({ name, kind, size }) => ({
-            name,
-            type: kind,
-            size,
-          })),
-        })
-      },
-    },
-    {
-      name: "ctf_challenge_info",
-      label: "Challenge Info",
-      description: "Get the current challenge description and attachments.",
-      parameters: Type.Object({}),
-      executionMode: "sequential",
-      async execute() {
-        return result(await options.capability.getInfo())
-      },
-    },
-    {
-      name: "ctf_download_attachment",
-      label: "Download Attachment",
-      description: "Download an attachment into the current Docker workspace.",
-      parameters: Type.Object({ attachmentId: Type.String() }),
-      executionMode: "sequential",
-      async execute(_id, params, signal) {
-        const { attachmentId } = params as { attachmentId: string }
-        const downloaded =
-          await options.capability.downloadAttachment(attachmentId)
-        const path = attachmentPath(
-          downloaded.attachment.id,
-          downloaded.attachment.name,
-        )
-        const saved = await env.writeFile(path, downloaded.content, signal)
-        if (!saved.ok)
-          throw new Error(saved.error.message, { cause: saved.error })
-        return result({
-          attachment: downloaded.attachment,
-          path,
-          bytes: downloaded.content.byteLength,
-        })
-      },
-    },
+    createListTool(env),
+  ]
+}
+
+/** Workers can inspect/download the challenge, but cannot submit or own remote-instance lifecycle. */
+export function createSubagentTools(options: SubagentToolOptions): AgentTool[] {
+  const env = new DockerExecutionEnv(options.sandbox, { cwd: options.cwd })
+  return [
+    ...createSandboxTools(options),
+    ...createChallengeReadTools(options.capability, env),
+  ]
+}
+
+/** Every capability closure is bound to one challenge and one Docker environment. */
+export function createSolverTools(options: SolverToolOptions): AgentTool[] {
+  const env = new DockerExecutionEnv(options.sandbox)
+  const tools: AgentTool[] = [
+    ...createSandboxTools(options),
+    ...createChallengeReadTools(options.capability, env),
     {
       name: "ctf_submit_flag",
       label: "Submit Flag",
@@ -162,6 +135,74 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
   return tools
 }
 
+function createListTool(env: DockerExecutionEnv): AgentTool {
+  return {
+    name: "list",
+    label: "List Workspace Directory",
+    description:
+      "List a directory below /workspace. Prefer read when inspecting files.",
+    parameters: Type.Object({ path: Type.String() }),
+    executionMode: "sequential",
+    async execute(_id, params, signal) {
+      const listed = await env.listDir(
+        (params as { path: string }).path,
+        signal,
+      )
+      if (!listed.ok)
+        throw new Error(listed.error.message, { cause: listed.error })
+      return result({
+        entries: listed.value.map(({ name, kind, size }) => ({
+          name,
+          type: kind,
+          size,
+        })),
+      })
+    },
+  }
+}
+
+function createChallengeReadTools(
+  capability: ChallengeCapability,
+  env: DockerExecutionEnv,
+): AgentTool[] {
+  return [
+    {
+      name: "ctf_challenge_info",
+      label: "Challenge Info",
+      description: "Get the current challenge description and attachments.",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      async execute() {
+        return result(await capability.getInfo())
+      },
+    },
+    {
+      name: "ctf_download_attachment",
+      label: "Download Attachment",
+      description:
+        "Download an attachment into /workspace/attachments shared by this challenge's agents.",
+      parameters: Type.Object({ attachmentId: Type.String() }),
+      executionMode: "sequential",
+      async execute(_id, params, signal) {
+        const { attachmentId } = params as { attachmentId: string }
+        const downloaded = await capability.downloadAttachment(attachmentId)
+        const path = attachmentPath(
+          downloaded.attachment.id,
+          downloaded.attachment.name,
+        )
+        const saved = await env.writeFile(path, downloaded.content, signal)
+        if (!saved.ok)
+          throw new Error(saved.error.message, { cause: saved.error })
+        return result({
+          attachment: downloaded.attachment,
+          path,
+          bytes: downloaded.content.byteLength,
+        })
+      },
+    },
+  ]
+}
+
 function bindExecutionTool<TParameters extends TSchema, TDetails>(
   tool: AgentHarnessTool<ExecutionToolContext, TParameters, TDetails>,
   context: ExecutionToolContext,
@@ -179,7 +220,7 @@ function attachmentPath(id: string, name: string): string {
   const basename =
     sanitizeSegment(posix.basename(name.replaceAll("\\", "/"))) ||
     "download.bin"
-  return `attachments/${safeId}/${basename}`
+  return `/workspace/attachments/${safeId}/${basename}`
 }
 
 function sanitizeSegment(value: string): string {

@@ -13,6 +13,7 @@ import type {
   RunEvent,
   RunFilter,
   RunRecord,
+  SubagentRecord,
 } from "@ctf-agent/core"
 
 export type DashboardChallengeStatus =
@@ -72,6 +73,7 @@ export interface DashboardSnapshot {
 
 export interface DashboardRun extends RunRecord {
   events: RunEvent[]
+  subagents: SubagentRecord[]
 }
 
 export interface ChallengeDetails {
@@ -90,6 +92,8 @@ export interface DashboardProject {
   environments(): Promise<RemoteEnvironment[]>
   runs(filter?: RunFilter): RunRecord[]
   runEvents(runId: string): RunEvent[]
+  latestRunEvent(runId: string): RunEvent | undefined
+  subagents(runId: string): SubagentRecord[]
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   schedulerAttemptCount(challengeId: string): number
@@ -106,6 +110,12 @@ export interface DashboardProject {
     challengeId: string,
     level: string,
   ): Promise<{ runId: string }>
+  steerSubagent(
+    runId: string,
+    subagentId: string,
+    message: string,
+  ): Promise<SubagentRecord>
+  cancelSubagent(runId: string, subagentId: string): Promise<SubagentRecord>
 }
 
 export interface DashboardScheduler {
@@ -113,6 +123,7 @@ export interface DashboardScheduler {
   reconcile(): Promise<ContestSchedulerSnapshot>
   startAuto(): Promise<ContestSchedulerSnapshot>
   pauseAuto(): ContestSchedulerSnapshot
+  setMaxConcurrent(maxConcurrent: number): Promise<ContestSchedulerSnapshot>
   dispatch(
     challengeId: string,
     options?: { force?: boolean },
@@ -141,9 +152,8 @@ export interface ModelConfigurationView {
   modelId: string
   baseUrl: string
   contextWindow: number
-  maxTokens: number
   apiKeyConfigured: boolean
-  apiKeySource: "secret-store" | "none"
+  apiKeySource: "secret-store" | "provider-credential" | "none"
   /** 思维链开关(模型级配置,下次创建 solver 生效)。 */
   thinkingEnabled: boolean
   /** 思考强度档位(当前模型支持的档位之一,见 supportedThinkingLevels)。 */
@@ -161,7 +171,6 @@ export interface ModelConfigurationUpdate {
   modelId: string
   baseUrl: string
   contextWindow: number
-  maxTokens: number
   thinkingEnabled: boolean
   reasoningEffort: string
   passthroughThinking: boolean
@@ -174,4 +183,97 @@ export interface DashboardModelConfiguration {
   update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView>
+}
+
+export type ModelAuthProviderId = "openai-codex" | "openai" | "anthropic"
+export type ModelAuthMethodId =
+  | "oauth_browser"
+  | "oauth_device"
+  | "oauth_token"
+  | "api_key"
+export type ModelAuthCredentialType = "oauth" | "api_key"
+
+export interface ModelAuthMethodView {
+  id: ModelAuthMethodId
+  label: string
+  description: string
+  requiresSecret?: boolean
+}
+
+export interface ModelAuthModelView {
+  id: string
+  name: string
+  contextWindow: number
+  reasoning: boolean
+}
+
+export interface ModelAuthProviderView {
+  id: ModelAuthProviderId
+  name: string
+  description: string
+  configured: boolean
+  credentialType?: ModelAuthCredentialType
+  methods: ModelAuthMethodView[]
+  models: ModelAuthModelView[]
+}
+
+export interface ModelAuthenticationView {
+  providers: ModelAuthProviderView[]
+  importPath: string
+  importFileAvailable: boolean
+}
+
+export type ModelAuthLoginStatus =
+  | "running"
+  | "awaiting_input"
+  | "success"
+  | "error"
+  | "cancelled"
+
+export interface ModelAuthPromptView {
+  type: "text" | "secret" | "select" | "manual_code"
+  message: string
+  placeholder?: string
+  options?: { id: string; label: string; description?: string }[]
+}
+
+export interface ModelAuthLoginSessionView {
+  id: string
+  provider: ModelAuthProviderId
+  method: ModelAuthMethodId
+  status: ModelAuthLoginStatus
+  authUrl?: string
+  instructions?: string
+  deviceCode?: {
+    userCode: string
+    verificationUri: string
+    expiresInSeconds?: number
+  }
+  progress?: string
+  prompt?: ModelAuthPromptView
+  error?: string
+  updatedAt: string
+}
+
+export interface ModelAuthImportResult {
+  imported: { provider: ModelAuthProviderId; type: ModelAuthCredentialType }[]
+  source: "upload" | "file"
+}
+
+export interface DashboardModelAuthentication {
+  readonly models: import("@earendil-works/pi-ai").Models
+  snapshot(): Promise<ModelAuthenticationView>
+  hasCredential(provider: string): boolean
+  credentialType(provider: string): ModelAuthCredentialType | undefined
+  startLogin(input: {
+    provider: string
+    method: string
+    secret?: string
+  }): Promise<ModelAuthLoginSessionView>
+  loginSession(sessionId: string): ModelAuthLoginSessionView
+  submitPrompt(sessionId: string, value: string): ModelAuthLoginSessionView
+  cancelLogin(sessionId: string): ModelAuthLoginSessionView
+  logout(provider: string): Promise<ModelAuthenticationView>
+  importJson(raw: string): Promise<ModelAuthImportResult>
+  importFile(): Promise<ModelAuthImportResult>
 }

@@ -50,7 +50,7 @@ export async function buildDashboardSnapshot(
       .find((run) => ACTIVE.has(run.status))
     const queued = queuedByChallenge.get(challenge.id)
     const schedulerActive = activeByChallenge.get(challenge.id)
-    const lastEvent = latest ? project.runEvents(latest.id).at(-1) : undefined
+    const lastEvent = latest ? project.latestRunEvent(latest.id) : undefined
     const blackboard = blackboardByChallenge.get(challenge.id)
     const status = challengeStatus(
       challenge.solved === true,
@@ -135,15 +135,18 @@ export async function buildChallengeDetails(
   project: DashboardProject,
   challengeId: string,
   scheduler?: DashboardScheduler,
+  currentSnapshot?: DashboardSnapshot,
 ): Promise<ChallengeDetails | undefined> {
-  const snapshot = await buildDashboardSnapshot(project, scheduler)
+  const snapshot =
+    currentSnapshot ?? (await buildDashboardSnapshot(project, scheduler))
   const challenge = snapshot.challenges.find(
     (candidate) => candidate.id === challengeId,
   )
   if (!challenge) return undefined
   const runs = project.runs({ challengeId }).map((run) => ({
     ...run,
-    events: project.runEvents(run.id),
+    events: compactTimelineEvents(project.runEvents(run.id)),
+    subagents: project.subagents(run.id),
   }))
   return {
     generatedAt: new Date().toISOString(),
@@ -157,6 +160,48 @@ export async function buildChallengeDetails(
           environment.status !== "stopped",
       ) ?? null,
   }
+}
+
+const TIMELINE_THINKING_MAX_CHARACTERS = 8_000
+
+/**
+ * Older builds persisted every reasoning delta as one row. Collapse adjacent
+ * deltas per turn and bound their UI payload; raw events remain untouched for
+ * full session export.
+ */
+function compactTimelineEvents(events: RunEvent[]): RunEvent[] {
+  const compacted: RunEvent[] = []
+  for (const event of events) {
+    const text = event.type === "agent_thinking" ? eventText(event) : undefined
+    const previous = compacted.at(-1)
+    if (
+      text !== undefined &&
+      previous?.type === "agent_thinking" &&
+      eventText(previous) !== undefined
+    ) {
+      const previousText = eventText(previous) ?? ""
+      const combined = previousText + text
+      previous.data = {
+        ...(isRecord(previous.data) ? previous.data : {}),
+        text: combined.slice(0, TIMELINE_THINKING_MAX_CHARACTERS),
+        ...(combined.length > TIMELINE_THINKING_MAX_CHARACTERS
+          ? { truncated: true }
+          : {}),
+      }
+      continue
+    }
+    compacted.push({ ...event })
+  }
+  return compacted
+}
+
+function eventText(event: RunEvent): string | undefined {
+  if (!isRecord(event.data)) return undefined
+  return typeof event.data.text === "string" ? event.data.text : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function groupRuns(runs: RunRecord[]): Map<string, RunRecord[]> {
