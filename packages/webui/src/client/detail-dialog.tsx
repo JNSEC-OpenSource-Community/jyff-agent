@@ -257,7 +257,8 @@ function DetailContent(props: {
   onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
   onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
 }) {
-  const { challenge, runs, blackboard, environment, writeup } = props.details
+  const { challenge, runs, blackboard, environment, writeup, tldr } =
+    props.details
   const submission = acceptedSubmission(runs)
   return (
     <>
@@ -317,6 +318,18 @@ function DetailContent(props: {
               onCancel={props.onCancel}
             />
           ))
+        )}
+      </DetailSection>
+      <DetailSection
+        title="TLDR"
+        count={tldr ? relativeTime(tldr.updatedAt) : "未生成"}
+      >
+        {tldr?.content ? (
+          <pre className="tldr-preview">{tldr.content}</pre>
+        ) : (
+          <div className="detail-empty">
+            {tldr?.error ?? "尚未生成题目摘要。"}
+          </div>
         )}
       </DetailSection>
       <DetailSection

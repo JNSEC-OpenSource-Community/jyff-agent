@@ -10,6 +10,7 @@ import type {
   RunFilter,
   RunRecord,
   SubagentRecord,
+  TldrRecord,
 } from "@ctf-agent/core"
 import type {
   DashboardModelConfiguration,
@@ -265,6 +266,9 @@ export class FakeDashboardProject implements DashboardProject {
 
   blackboardStats(): BlackboardStats[] {
     return this.statsValues
+  }
+  tldr(_challengeId: string): TldrRecord | undefined {
+    return undefined
   }
   async challengeWriteup(challengeId: string) {
     return {

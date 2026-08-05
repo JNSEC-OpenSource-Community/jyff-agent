@@ -760,6 +760,20 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     if (
       method === "GET" &&
+      /^\/api\/challenges\/[^/]+\/tldr$/.test(url.pathname)
+    ) {
+      const project = currentProject()
+      requireProject(project)
+      const encodedId = url.pathname
+        .slice("/api/challenges/".length)
+        .slice(0, -"/tldr".length)
+      const challengeId = decodeURIComponent(encodedId)
+      sendJson(response, 200, { tldr: project.tldr(challengeId) ?? null })
+      return
+    }
+
+    if (
+      method === "GET" &&
       /^\/api\/challenges\/[^/]+\/writeup$/.test(url.pathname)
     ) {
       const project = currentProject()

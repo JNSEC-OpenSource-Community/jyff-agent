@@ -14,6 +14,7 @@ import type {
   RunFilter,
   RunRecord,
   SubagentRecord,
+  TldrRecord,
 } from "@ctf-agent/core"
 
 export type DashboardChallengeStatus =
@@ -97,6 +98,7 @@ export interface ChallengeDetails {
   blackboard: BlackboardSummary
   environment: RemoteEnvironment | null
   writeup: ChallengeWriteup
+  tldr: TldrRecord | null
 }
 
 export interface DashboardProject {
@@ -112,6 +114,7 @@ export interface DashboardProject {
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   challengeWriteup(challengeId: string): Promise<ChallengeWriteup>
+  tldr(challengeId: string): TldrRecord | undefined
   schedulerAttemptCount(challengeId: string): number
   sessionInterruptionCount(challengeId: string): number
   /**

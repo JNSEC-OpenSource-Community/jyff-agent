@@ -5,7 +5,10 @@ import type {
   SandboxExecOptions,
 } from "@ctf-agent/sandbox"
 import { describe, expect, it } from "vitest"
-import { createSolverTools } from "../../../src/solver/sandbox/tools.js"
+import {
+  createReadonlySandboxTools,
+  createSolverTools,
+} from "../../../src/solver/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {
   readonly id = "sandbox"
@@ -105,6 +108,11 @@ function tool(
 }
 
 describe("Solver tools", () => {
+  it("readonly tools expose only read and list", () => {
+    const tools = createReadonlySandboxTools({ sandbox: new FakeSandbox() })
+    expect(tools.map((tool) => tool.name).sort()).toEqual(["list", "read"])
+  })
+
   it("没有远程环境 capability 时不注入实例工具", () => {
     const tools = createSolverTools({
       capability: capability(false),

@@ -3,6 +3,7 @@ import { join, resolve } from "node:path"
 import {
   type AgentSkill,
   CtfSolverAgent,
+  CtfTldrAgent,
   type DiscoveredSubagentRoles,
   discoverProjectSkillsWithDiagnostics,
   discoverSubagentRoles,
@@ -250,6 +251,105 @@ export class Project {
       "session.jsonl",
     )
   }
+  async refreshTldr(
+    challengeId: string,
+    agent: AgentOptions,
+  ): Promise<NonNullable<ReturnType<RunStore["tldr"]>>> {
+    const model = agent.initialState?.model
+    if (!model) throw new Error("TLDR Agent 缺少可用模型")
+    const workspace = challengeWorkspacePath(this.agentDirectory, challengeId)
+    const sessionPath = this.tldrSessionPath(challengeId)
+    await mkdir(join(workspace, "tldr"), { recursive: true })
+    let sandbox: Sandbox | undefined
+    try {
+      const capability = await this.platform.bindChallenge(challengeId)
+      const challenge = await capability.getInfo()
+      sandbox = await this.sandboxFactory({
+        projectId: this.config.project.id,
+        runId: `tldr-${challengeId}`,
+        image: this.config.sandbox.image,
+        workspace,
+        workspaceMount: this.workspaceMount?.({
+          runId: `tldr-${challengeId}`,
+          workspace,
+          relativeWorkspace: `challenges/${challengeWorkspaceKey(challengeId)}/workspace`,
+        }),
+        privileged: this.config.sandbox.privileged,
+        networkMode: this.config.sandbox.networkMode,
+      })
+      const blackboard = injectBlackboard(this.runStore, challengeId)
+      const announcements = challengeAnnouncementsPrompt(
+        this.runStore.challengeAnnouncements(challengeId),
+      )
+      const initialMessages: AgentMessage[] = [
+        {
+          role: "user",
+          content: challengeContextPrompt(
+            challenge,
+            challenge.attachments.map((attachment) => ({
+              id: attachment.id,
+              name: attachment.name,
+              size: attachment.size ?? 0,
+              path: `/workspace/${attachment.name}`,
+            })),
+          ),
+          timestamp: Date.now(),
+        },
+        ...(blackboard
+          ? [
+              {
+                role: "user" as const,
+                content: blackboard,
+                timestamp: Date.now(),
+              },
+            ]
+          : []),
+        { role: "user", content: announcements, timestamp: Date.now() },
+      ]
+      const existing = this.runStore.tldr(challengeId)
+      if (existing?.content) {
+        initialMessages.push({
+          role: "user",
+          content: `<existing_tldr trust="untrusted">${existing.content}</existing_tldr>`,
+          timestamp: Date.now(),
+        })
+      }
+      const tldr = await CtfTldrAgent.create({
+        projectId: this.config.project.id,
+        challenge,
+        sessionPath,
+        agent,
+        sandbox,
+        initialMessages,
+      })
+      try {
+        const response = await tldr.prompt(
+          "Generate a current concise TLDR from the supplied challenge data and read-only workspace inspection. Update the existing summary when present.",
+        )
+        const text = extractAssistantText(response)
+        if (!text) throw new Error("TLDR Agent returned no summary")
+        return this.runStore.upsertTldr({
+          challengeId,
+          content: text,
+          model: model.id,
+          sessionPath,
+          error: null,
+        })
+      } finally {
+        await tldr.close()
+      }
+    } catch (error) {
+      return this.runStore.upsertTldr({
+        challengeId,
+        model: model.id,
+        sessionPath,
+        error: errorText(error),
+      })
+    } finally {
+      await sandbox?.close()
+    }
+  }
+
   async challengeWriteup(challengeId: string): Promise<{
     validation: WriteupValidationResult
     content: string | null

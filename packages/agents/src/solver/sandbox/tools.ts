@@ -55,6 +55,14 @@ export function createSandboxTools(options: SandboxToolOptions): AgentTool[] {
 }
 
 /** Workers share the prepared workspace, but cannot submit or own remote-instance lifecycle. */
+export function createReadonlySandboxTools(
+  options: SandboxToolOptions,
+): AgentTool[] {
+  const env = new DockerExecutionEnv(options.sandbox, { cwd: options.cwd })
+  const context: ExecutionToolContext = { env }
+  return [bindExecutionTool(createReadTool(), context), createListTool(env)]
+}
+
 export function createSubagentTools(options: SubagentToolOptions): AgentTool[] {
   return createSandboxTools(options)
 }

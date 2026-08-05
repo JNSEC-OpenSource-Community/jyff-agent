@@ -2330,6 +2330,18 @@ summary:focus-visible,
   font-size: 12px;
 }
 
+.tldr-preview {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  color: var(--text);
+  font: 12px / 1.6 var(--mono);
+  white-space: pre-wrap;
+}
+
 .writeup-preview {
   max-height: 360px;
   overflow: auto;
