@@ -4,11 +4,12 @@ import { join } from "node:path"
 import type {
   AgentOptions,
   AgentTool,
+  CompactResult,
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
 import { Type } from "typebox"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   BaseAgent,
   type BaseAgentOptions,
@@ -56,7 +57,13 @@ class TestAgent extends BaseAgent {
   static async open(options: BaseAgentOptions) {
     return new TestAgent(await prepareBaseAgent(options), {
       compaction: options.compaction,
+      compactionInstructions: options.compactionInstructions,
+      compactionHooks: options.compactionHooks,
     })
+  }
+
+  mockCompact(result: CompactResult) {
+    return vi.spyOn(this.harness, "compact").mockResolvedValue(result)
   }
 }
 
@@ -125,6 +132,71 @@ describe("BaseAgent native session", () => {
       ),
     ).toBe(true)
     expect(entries.some((entry) => entry.type === "compaction")).toBe(true)
+  })
+
+  it("exposes context pressure without mutating the session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "base-agent-pressure-"))
+    roots.push(root)
+    const agent = await TestAgent.open({
+      session: {
+        path: join(root, "session.jsonl"),
+        id: "pressure-run",
+        cwd: root,
+      },
+      models: modelsFromAgentOptions(legacy, model),
+      model,
+      initialMessages: [
+        { role: "user", content: "short history", timestamp: 1 },
+      ],
+      compaction: false,
+    })
+
+    const entriesBefore = await agent.session.getEntries()
+    const pressure = await agent.contextPressure()
+    const entriesAfter = await agent.session.getEntries()
+
+    expect(pressure).toMatchObject({
+      contextWindow: model.contextWindow,
+      shouldCompact: false,
+    })
+    expect(pressure.tokens).toBeGreaterThan(0)
+    expect(pressure.usableContext).toBe(
+      pressure.contextWindow - pressure.reserveTokens,
+    )
+    expect(entriesAfter).toEqual(entriesBefore)
+  })
+
+  it("runs compaction lifecycle hooks around the configured CTF instructions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "base-agent-compact-hook-"))
+    roots.push(root)
+    const order: string[] = []
+    const result: CompactResult = {
+      summary: "summary",
+      tokensBefore: 10,
+    }
+    const agent = await TestAgent.open({
+      session: {
+        path: join(root, "session.jsonl"),
+        id: "compact-hook-run",
+        cwd: root,
+      },
+      models: modelsFromAgentOptions(legacy, model),
+      model,
+      compactionInstructions: "CTF compact instructions",
+      compactionHooks: {
+        before: () => {
+          order.push("before")
+        },
+        after: () => {
+          order.push("after")
+        },
+      },
+    })
+    const compact = agent.mockCompact(result)
+
+    await expect(agent.compact()).resolves.toBe(result)
+    expect(compact).toHaveBeenCalledWith("CTF compact instructions")
+    expect(order).toEqual(["before", "after"])
   })
 
   it("does not attempt impossible default compaction for a small-context model", async () => {

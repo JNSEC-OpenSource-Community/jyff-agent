@@ -46,14 +46,14 @@ SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver
 创建全新 Solver 时，`Project` 将最新黑板快照作为初始 user 数据消息注入：
 
 ```xml
-<untrusted_challenge_blackboard encoding="json">
+<challenge_blackboard encoding="json">
   {"snapshot":"..."}
-</untrusted_challenge_blackboard>
+</challenge_blackboard>
 ```
 
 固定的 system prompt 明确说明这段内容不可信。动态快照不会拼进 system prompt。自动注入最多 16,000 字符，主动读取最多 64,000 字符；发生截断时会提示 Solver 再次调用读取工具。
 
-同一题因为 Session 中断而创建全新 Run 时，新 Solver 会读取同一题目的黑板，因此关键进度应及时记录，而不能只留在即将结束的会话里。
+同一题因为 Session block 而创建全新 Run 时，新 Solver 会读取同一题目的黑板，因此关键进度应及时记录，而不能只留在即将结束的会话里。
 
 ## 实现位置
 

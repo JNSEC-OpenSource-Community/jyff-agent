@@ -29,6 +29,8 @@ export interface BaseAgentOptions {
   promptTemplates?: readonly PromptTemplate[]
   initialMessages?: readonly AgentMessage[]
   compaction?: boolean
+  compactionInstructions?: string
+  compactionHooks?: CompactionLifecycleHooks
 }
 
 export interface PreparedBaseAgent {
@@ -38,6 +40,29 @@ export interface PreparedBaseAgent {
   restored: boolean
   systemPrompt: string
   messages: AgentMessage[]
+}
+
+export interface ContextPressure {
+  tokens: number
+  contextWindow: number
+  reserveTokens: number
+  usableContext: number
+  shouldCompact: boolean
+}
+
+export interface CompactionLifecycleHooks {
+  before?: (pressure: ContextPressure) => Promise<void> | void
+  after?: (
+    result: CompactResult,
+    pressure: ContextPressure,
+  ) => Promise<void> | void
+}
+
+export interface BaseAgentRuntimeOptions {
+  /** Retains the legacy prompt-time automatic check until Core owns turn supervision. */
+  compaction?: boolean
+  compactionInstructions?: string
+  compactionHooks?: CompactionLifecycleHooks
 }
 
 export async function prepareBaseAgent(
@@ -100,11 +125,13 @@ export abstract class BaseAgent {
     isStreaming: boolean
   }
   private readonly autoCompaction: boolean
+  private readonly compactionInstructions?: string
+  private readonly compactionHooks?: CompactionLifecycleHooks
   private queuedMessages = 0
 
   protected constructor(
     prepared: PreparedBaseAgent,
-    options: { compaction?: boolean } = {},
+    options: BaseAgentRuntimeOptions = {},
   ) {
     this.harness = prepared.harness
     this.session = prepared.session
@@ -112,6 +139,8 @@ export abstract class BaseAgent {
     this.restored = prepared.restored
     this.systemPrompt = prepared.systemPrompt
     this.autoCompaction = options.compaction !== false
+    this.compactionInstructions = options.compactionInstructions
+    this.compactionHooks = options.compactionHooks
     this.state = {
       systemPrompt: prepared.systemPrompt,
       model: prepared.harness.getModel(),
@@ -209,8 +238,30 @@ export abstract class BaseAgent {
   async setActiveTools(toolNames: string[]): Promise<void> {
     await this.harness.setActiveTools(toolNames)
   }
+  async contextPressure(): Promise<ContextPressure> {
+    const messages = await this.getMessages()
+    const tokens = estimateContextTokens(messages).tokens
+    const contextWindow = this.model.contextWindow
+    const reserveTokens = DEFAULT_COMPACTION_SETTINGS.reserveTokens
+    const usableContext = contextWindow - reserveTokens
+    return {
+      tokens,
+      contextWindow,
+      reserveTokens,
+      usableContext,
+      shouldCompact:
+        usableContext > 0 &&
+        shouldCompact(tokens, contextWindow, DEFAULT_COMPACTION_SETTINGS),
+    }
+  }
   async compact(customInstructions?: string): Promise<CompactResult> {
-    return this.harness.compact(customInstructions)
+    const pressure = await this.contextPressure()
+    await this.compactionHooks?.before?.(pressure)
+    const result = await this.harness.compact(
+      customInstructions ?? this.compactionInstructions,
+    )
+    await this.compactionHooks?.after?.(result, pressure)
+    return result
   }
   async navigateTree(
     targetId: string,
@@ -235,21 +286,9 @@ export abstract class BaseAgent {
 
   private async compactIfNeeded(): Promise<void> {
     if (!this.autoCompaction) return
-    const messages = await this.getMessages()
-    const tokens = estimateContextTokens(messages).tokens
-    // Pi's native defaults assume a context window larger than reserveTokens.
-    // A smaller model must still be allowed to run instead of compacting an empty/short session.
-    const usableContext =
-      this.model.contextWindow - DEFAULT_COMPACTION_SETTINGS.reserveTokens
-    if (
-      usableContext > 0 &&
-      shouldCompact(
-        tokens,
-        this.model.contextWindow,
-        DEFAULT_COMPACTION_SETTINGS,
-      )
-    ) {
-      await this.harness.compact()
-    }
+    const pressure = await this.contextPressure()
+    // Pi's defaults assume a context window larger than reserveTokens. A
+    // smaller model must still run instead of compacting an empty session.
+    if (pressure.shouldCompact) await this.compact()
   }
 }

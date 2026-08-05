@@ -168,7 +168,7 @@ WebUI 可执行入口还支持：
 | `--auth-file` | `/auth.json` | WebUI“读取 auth.json”使用的导入路径 |
 | `--auto-start` | 关闭 | 已有完整配置时启动自主调度 |
 
-一次 prompt 对应一个 Run 和一个全新 Pi session。若模型正常结束、输出被截断或 provider/WebSocket 异常时仍未提交 Flag，系统会关闭旧 Solver 与 SubAgent，统计一次中断并创建全新的 Run/session，以“最终 flag 尚未提交，请继续解题”继续。中断次数超过阈值后题目进入 `blocked`，等待人工重启；`interrupted`/`blocked` 不消耗常规 attempt 预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，上下文接近窗口时仍使用 Pi compaction 保留关键进度。
+一次 prompt 对应一个 Run 和一个全新 Pi session。若模型正常结束、输出被截断或 provider/WebSocket 异常时仍未提交 Flag，系统会关闭旧 Solver 与 SubAgent，统计一次中断并创建全新的 Run/session，以英文 continuation prompt 继续。中断次数超过阈值后题目进入 `blocked`，等待人工重启；`interrupted`/`blocked` 不消耗常规 attempt 预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，上下文接近窗口时仍使用 Pi compaction 保留关键进度。当前固定 Solver/SubAgent/compaction 提示词已集中为版本化英文占位文案，最终策略正文仍等待人类审阅。
 
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 

@@ -13,6 +13,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vitest"
+import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/index.ts"
 import {
   ContestScheduler,
   type ContestSchedulerError,
@@ -202,7 +203,7 @@ describe("ContestScheduler", () => {
           join(dirname(runs[1]?.workspace ?? ""), "session.jsonl"),
           "utf8",
         )
-        expect(continuedSession).toContain("最终 flag 尚未提交，请继续解题")
+        expect(continuedSession).toContain(INCOMPLETE_CONTINUATION_PROMPT)
         expect(project.sessionInterruptionCount(item.id)).toBe(1)
         expect(project.schedulerAttemptCount(item.id)).toBe(1)
       } finally {

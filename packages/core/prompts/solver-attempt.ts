@@ -1,1 +1,1 @@
-export const INCOMPLETE_CONTINUATION_PROMPT = "最终 flag 尚未提交，请继续解题"
+export { INCOMPLETE_CONTINUATION_PROMPT } from "@ctf-agent/agents/prompts"

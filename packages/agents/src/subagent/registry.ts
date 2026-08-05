@@ -38,7 +38,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "general-purpose",
     displayName: "General",
-    description: "通用 CTF 探索 worker，适合跨方向调查和结果复核。",
+    description:
+      "General CTF investigation worker for bounded cross-domain research and result verification.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.generalPurpose}`,
     thinkingLevel: "medium",
     enabled: true,
@@ -47,7 +48,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "pwn",
     displayName: "Pwn",
-    description: "分析二进制保护、漏洞原语、libc 约束并构造可复现利用链。",
+    description:
+      "Analyze binary protections, vulnerability primitives, libc constraints, and reproducible exploitation chains.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.pwn}`,
     thinkingLevel: "high",
     enabled: true,
@@ -56,7 +58,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "reverse",
     displayName: "Reverse",
-    description: "执行静态/动态逆向、反混淆、协议和自定义 VM 分析。",
+    description:
+      "Perform static and dynamic reverse engineering, deobfuscation, protocol analysis, and custom VM analysis.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.reverse}`,
     thinkingLevel: "high",
     enabled: true,
@@ -65,7 +68,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "web",
     displayName: "Web",
-    description: "分析 HTTP 应用、鉴权、注入、请求链和业务逻辑漏洞。",
+    description:
+      "Analyze HTTP applications, authentication, injection, request chains, and business-logic vulnerabilities.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.web}`,
     thinkingLevel: "medium",
     enabled: true,
@@ -74,7 +78,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "crypto",
     displayName: "Crypto",
-    description: "识别密码学构造、弱参数、数学关系并编写求解脚本。",
+    description:
+      "Identify cryptographic constructions, weak parameters, mathematical relations, and scriptable solutions.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.crypto}`,
     thinkingLevel: "high",
     enabled: true,
@@ -83,7 +88,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "misc",
     displayName: "Misc",
-    description: "处理取证、隐写、流量、文件格式、编码和综合杂项任务。",
+    description:
+      "Handle forensics, steganography, traffic, file formats, encodings, and other mixed tasks.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.misc}`,
     thinkingLevel: "medium",
     enabled: true,
@@ -92,7 +98,8 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
     name: "reviewer",
     displayName: "Reviewer",
-    description: "复核其他 Agent 的证据、脚本和候选解，主动寻找错误假设。",
+    description:
+      "Review other Agents' evidence, scripts, and candidate solutions while actively challenging assumptions.",
     systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.reviewer}`,
     thinkingLevel: "low",
     enabled: true,

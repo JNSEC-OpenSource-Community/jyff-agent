@@ -7,7 +7,10 @@ import type {
   Skill,
 } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
-import { subagentTaskContextPrompt } from "../../prompts/index.ts"
+import {
+  CTF_COMPACTION_PROMPT,
+  subagentTaskContextPrompt,
+} from "../../prompts/index.ts"
 import {
   type AgentSkill,
   BaseAgent,
@@ -52,7 +55,10 @@ export class CtfSubagent extends BaseAgent {
     options: CreateCtfSubagentOptions,
     prepared: PreparedBaseAgent,
   ) {
-    super(prepared, { compaction: options.compaction !== false })
+    super(prepared, {
+      compaction: options.compaction !== false,
+      compactionInstructions: CTF_COMPACTION_PROMPT,
+    })
     this.id = options.subagentId
     this.runId = options.runId
     this.role = options.role

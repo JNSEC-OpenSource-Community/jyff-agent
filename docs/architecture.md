@@ -48,7 +48,7 @@ packages/
 7. 装配 Solver 的容器工具、平台工具、黑板工具与 SubAgent 工具；
 8. 用 Pi 原生 append-only JSONL session 运行并持久化消息树。
 
-题目描述和黑板快照均按不可信数据处理，动态内容不会进入 system prompt。Solver 默认 `thinkingLevel=medium`，再使用 Pi 的 `clampThinkingLevel` 按模型能力映射。SubAgent 的 thinkingLevel 由角色 registry 自己决定。
+题目描述和黑板快照均按不可信数据处理，动态内容不会进入 system prompt。固定 Solver、SubAgent、continuation 和 CTF compaction 提示词使用版本化英文占位文案，并明确要求 Agent 使用英语 reasoning；题目原文、Flag、路径、命令和协议 payload 保留原文。最终 Solver 策略和角色正文仍由人类审阅替换。Solver 默认 `thinkingLevel=medium`，再使用 Pi 的 `clampThinkingLevel` 按模型能力映射。SubAgent 的 thinkingLevel 由角色 registry 自己决定。
 
 容器文件工具不限制到 `/workspace`；`bash`、`read`、`write`、`edit` 和 `list` 可访问 sandbox 内任意绝对路径，包括 `/tmp`。这不会给予 Agent 宿主机文件访问权，宿主机只负责 Docker bind/volume 和控制面状态。
 
@@ -57,7 +57,7 @@ packages/
 一次模型 prompt 对应一个 Solver Run 和一个 Pi session。只有成功提交 Flag 才算完成；模型正常停止、长度截断、provider/WebSocket 错误都记为一次 Session 中断。调度器关闭旧 Solver（同时停止其 SubAgent），创建全新的 Run/session，并使用固定提示词继续：
 
 ```text
-最终 flag 尚未提交，请继续解题
+The correct final flag has not been submitted. Continue solving the challenge.
 ```
 
 中断计数按 challenge 持久化在 `challenge_runtime_state`。默认允许 3 次；当计数超过 `maxSessionInterruptions` 时，题目进入 `blocked`，不再自动调度，等待 WebUI 人工重启。人工强制派发会清除该题的中断计数和 blocked 状态。

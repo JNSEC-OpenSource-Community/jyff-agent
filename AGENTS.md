@@ -27,27 +27,15 @@ docs/               当前架构与扩展协议
 - `packages/agents/src/subagent/registry.ts`：SubAgent 角色；
 - `packages/sandbox/docker/Dockerfile`：solver 工具镜像。
 
-## 必须保持的边界
-
-- 依赖方向保持 `webui → core → agents/platform/sandbox`；`agents` 不得依赖 `core`、Project 或 SQLite。
-- 平台层暴露绑定单题的 `ChallengeCapability`；不要让 Solver 用任意 challenge ID 操作其他题。
-- 完整对话只保存在 Pi JSONL session；SQLite 保存 Run/事件/调度/SubAgent 摘要/黑板，不复制 transcript。
-- Agent 的 shell 和文件工具必须经 `DockerExecutionEnv`，不能在宿主机执行。容器内路径目前不做 `/workspace` scope 限制。
-- 题目元数据通过结构化 `<challenge_context>` 初始消息提供，附件在 Solver 创建时自动下载；不要重新增加 ChallengeReadTools。
-- Solver 默认 thinkingLevel 为 `medium`，使用 Pi 的 `clampThinkingLevel` 做模型映射。SubAgent thinkingLevel 只在角色 registry/frontmatter 中配置，不从 Solver 继承。
-- Session 未提交 Flag 就结束时，关闭旧 Solver/SubAgent 并创建全新 Run/session；中断计数超过阈值后保持 `blocked`，只能由人工强制派发重置。
-- SubAgent 不提交 Flag、不管理远端实例、不直接写黑板。派发 prompt 必须符合 `packages/core/prompts/project.ts` 的占位协议。
-
 ## 开发规范
 
+- 使用中文编写必要的注释
 - 使用 Node.js 22.19+、仓库锁定的 pnpm 11；不要绕过 workspace 依赖。
 - TypeScript 保持 strict、ESM 和显式 `.ts` 相对导入风格；公共类型从包 `src/index.ts` 导出。
 - 用 Biome 格式化/检查。尽量做小而集中的改动，不在同一提交混入无关重构。
 - 修改行为时，在所属包的 `test/` 中补或更新 Vitest 测试；优先测试公开行为和失败边界，不复制实现细节。
-- 修改 RunStore schema 时保留 `CREATE TABLE IF NOT EXISTS` 和旧数据库迁移，跨表状态变更使用事务。
-- 修改 React 源码后运行 WebUI build；`packages/webui/src/client/app.js` 是构建产物，不要手工编辑。
-- 修改 Dockerfile 中下载的第三方二进制/字典时固定版本并校验 checksum，同时更新 `packages/sandbox/docker/THIRD_PARTY_TOOLS.md`。
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
+- 多进行 git commit，commit message 遵循 gitmoji + conventional 混合规范，如 `✨ feat(solver): add a new feature`
 
 ## 验证命令
 

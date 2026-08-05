@@ -12,6 +12,10 @@ import type {
 } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
 import {
+  CTF_COMPACTION_PROMPT,
+  SOLVER_SYSTEM_PROMPT,
+} from "../../../prompts/index.ts"
+import {
   type AgentSkill,
   BaseAgent,
   DEFAULT_SOLVER_THINKING_LEVEL,
@@ -115,7 +119,10 @@ export class CtfSolverAgent extends BaseAgent {
     options: CreateCtfSolverAgentOptions,
     prepared: PreparedBaseAgent,
   ) {
-    super(prepared, { compaction: options.features?.compaction !== false })
+    super(prepared, {
+      compaction: options.features?.compaction !== false,
+      compactionInstructions: CTF_COMPACTION_PROMPT,
+    })
     this.projectId = options.identity.projectId
     this.runId = options.identity.runId
     this.workspace = options.identity.workspace
@@ -167,7 +174,12 @@ export class CtfSolverAgent extends BaseAgent {
       },
       models: modelsFromAgentOptions(options.agent, model),
       model,
-      systemPrompt: options.agent.initialState?.systemPrompt,
+      systemPrompt: [
+        SOLVER_SYSTEM_PROMPT,
+        options.agent.initialState?.systemPrompt,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       thinkingLevel:
         options.agent.initialState?.thinkingLevel ??
         DEFAULT_SOLVER_THINKING_LEVEL,
