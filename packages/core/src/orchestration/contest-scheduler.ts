@@ -551,7 +551,8 @@ export class ContestScheduler {
           if (active.cancelRequested) return
           solver = await this.project.createSolver(active.challenge.id, {
             agent,
-            compaction: this.options.compaction,
+            // Supervisor 统一管理 compact 边界，BaseAgent 不得隐式 compact。
+            compaction: false,
             attempt: active.attempt,
             source,
           })
@@ -564,6 +565,76 @@ export class ContestScheduler {
             await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
             return
           }
+        }
+        const pressure = await solver.contextPressure()
+        if (pressure.shouldCompact) {
+          const runtime = this.project.challengeRuntimeState(
+            active.challenge.id,
+          )
+          const eventKey = `${solver.runId}:compact:${this.project.runEvents(solver.runId).length}`
+          const canCompact =
+            !runtime.blocked &&
+            runtime.blockScore + 2 <= runtime.effectiveBlockThreshold
+          if (!canCompact) {
+            const blockEvent = this.project.recordChallengeBlockEvent({
+              challengeId: active.challenge.id,
+              runId: solver.runId,
+              eventKey,
+              delta: 2,
+              reason: "context_pressure",
+              compactPerformed: false,
+            })
+            this.project.appendRunEvent(solver.runId, "solver_compaction", {
+              eventKey,
+              compactPerformed: false,
+              scoreAfter: blockEvent.scoreAfter,
+            })
+            await solver.close(
+              "blocked",
+              "Context pressure exceeded the block threshold before compaction",
+            )
+            solver = undefined
+            active.solver = undefined
+            return
+          }
+          try {
+            await solver.compact()
+          } catch (error) {
+            const blockEvent = this.project.recordChallengeBlockEvent({
+              challengeId: active.challenge.id,
+              runId: solver.runId,
+              eventKey,
+              delta: 2,
+              reason: "compaction_failed",
+              compactPerformed: false,
+            })
+            this.project.appendRunEvent(
+              solver.runId,
+              "block_finalization_failed",
+              {
+                eventKey,
+                scoreAfter: blockEvent.scoreAfter,
+                error: errorText(error),
+              },
+            )
+            await solver.close("blocked", errorText(error))
+            solver = undefined
+            active.solver = undefined
+            return
+          }
+          const blockEvent = this.project.recordChallengeBlockEvent({
+            challengeId: active.challenge.id,
+            runId: solver.runId,
+            eventKey,
+            delta: 2,
+            reason: "context_pressure",
+            compactPerformed: true,
+          })
+          this.project.appendRunEvent(solver.runId, "solver_compaction", {
+            eventKey,
+            compactPerformed: true,
+            scoreAfter: blockEvent.scoreAfter,
+          })
         }
         const prompt = continuation
           ? INCOMPLETE_CONTINUATION_PROMPT

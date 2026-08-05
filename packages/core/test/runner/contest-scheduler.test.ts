@@ -250,6 +250,70 @@ describe("ContestScheduler", () => {
     },
   )
 
+  it("在 compact 边界记录 delta=2 并继续同一 Run", async () => {
+    const item = challenge(97)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({
+      provider: "compact-boundary",
+      models: [
+        {
+          id: "compact-model",
+          contextWindow: 22_000,
+          maxTokens: 4_096,
+        },
+      ],
+    })
+    faux.setResponses([
+      fauxAssistantMessage("开始分析。"),
+      fauxAssistantMessage("compact summary"),
+      fauxAssistantMessage(
+        fauxToolCall(
+          "ctf_submit_flag",
+          { flag: item.flag },
+          { id: "compact-submit" },
+        ),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("已提交。"),
+    ])
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: {
+          model: faux.getModel(),
+          thinkingLevel: "off",
+          messages: [
+            { role: "user", content: "x".repeat(20_000), timestamp: 1 },
+          ],
+        },
+      }),
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () =>
+          project.isChallengeSolved(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+      expect(project.runs({ challengeId: item.id })).toHaveLength(1)
+      expect(project.challengeBlockEvents(item.id)).toEqual([
+        expect.objectContaining({ delta: 1, reason: "model_stop" }),
+        expect.objectContaining({
+          delta: 2,
+          reason: "context_pressure",
+          compactPerformed: true,
+        }),
+      ])
+      expect(faux.state.callCount).toBe(3)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("连续 Session 中断超过阈值后 blocked，并可由人工 force 重置", async () => {
     const item = challenge(98)
     const tracker = new SandboxTracker()
