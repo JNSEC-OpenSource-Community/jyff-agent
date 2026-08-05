@@ -24,7 +24,7 @@ function solverFixture(stopReasons: string[]) {
 }
 
 describe("runSolverPrompt continuation control", () => {
-  it("reduces excessive thinking after repeated length truncation and keeps the same run alive", async () => {
+  it("keeps the configured thinking level after repeated length truncation", async () => {
     const solver = solverFixture(["length", "length", "submitted"])
 
     await runSolverPrompt({
@@ -35,7 +35,7 @@ describe("runSolverPrompt continuation control", () => {
     })
 
     expect(solver.prompt).toHaveBeenCalledTimes(3)
-    expect(solver.setThinkingLevel).toHaveBeenCalledWith("high")
+    expect(solver.setThinkingLevel).not.toHaveBeenCalled()
     expect(solver.submission).toEqual({ status: "accepted" })
   })
 

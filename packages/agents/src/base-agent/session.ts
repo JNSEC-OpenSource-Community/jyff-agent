@@ -8,16 +8,11 @@ import {
 } from "@earendil-works/pi-agent-core"
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node"
 import type { Api, Model, Models } from "@earendil-works/pi-ai"
-
-const THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-])
+import {
+  DEFAULT_SOLVER_THINKING_LEVEL,
+  isThinkingLevel,
+  resolveThinkingLevel,
+} from "./thinking.ts"
 
 export interface NativeSessionOptions {
   path: string
@@ -47,14 +42,15 @@ export interface OpenedAgentSession {
 function restoredThinkingLevel(
   value: string,
   fallback: ThinkingLevel,
+  model: Model<Api>,
 ): ThinkingLevel {
-  if (!THINKING_LEVELS.has(value as ThinkingLevel)) {
+  if (!isThinkingLevel(value)) {
     throw new SessionError(
       "invalid_session",
       `Session contains unsupported thinking level: ${value}`,
     )
   }
-  return (value as ThinkingLevel) || fallback
+  return resolveThinkingLevel(model, value || fallback)
 }
 
 /** Create a Pi JSONL session, or reopen and restore its persisted runtime settings. */
@@ -67,6 +63,10 @@ export async function openAgentSession(
     throw new SessionError("storage", exists.error.message, exists.error)
 
   if (!exists.value) {
+    const thinkingLevel = resolveThinkingLevel(
+      options.model,
+      options.thinkingLevel ?? DEFAULT_SOLVER_THINKING_LEVEL,
+    )
     const storage = await JsonlSessionStorage.create(
       env,
       options.session.path,
@@ -80,14 +80,14 @@ export async function openAgentSession(
     for (const message of options.initialMessages ?? [])
       await session.appendMessage(message)
     await session.appendModelChange(options.model.provider, options.model.id)
-    await session.appendThinkingLevelChange(options.thinkingLevel ?? "off")
+    await session.appendThinkingLevelChange(thinkingLevel)
     await session.appendActiveToolsChange([
       ...(options.activeToolNames ?? options.tools.map((tool) => tool.name)),
     ])
     return {
       session,
       model: options.model,
-      thinkingLevel: options.thinkingLevel ?? "off",
+      thinkingLevel,
       activeToolNames: [
         ...(options.activeToolNames ?? options.tools.map((tool) => tool.name)),
       ],
@@ -116,7 +116,8 @@ export async function openAgentSession(
     model,
     thinkingLevel: restoredThinkingLevel(
       context.thinkingLevel,
-      options.thinkingLevel ?? "off",
+      options.thinkingLevel ?? DEFAULT_SOLVER_THINKING_LEVEL,
+      model,
     ),
     activeToolNames,
     restored: true,

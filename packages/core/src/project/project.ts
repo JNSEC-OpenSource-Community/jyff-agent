@@ -6,7 +6,9 @@ import {
   type DiscoveredSubagentRoles,
   discoverProjectSkillsWithDiagnostics,
   discoverSubagentRoles,
+  isThinkingLevel,
   materializeSkills,
+  resolveThinkingLevel,
   type SolverCloseDetails,
   type SubagentRole,
 } from "@ctf-agent/agents"
@@ -329,22 +331,23 @@ export class Project {
     challengeId: string,
     level: ThinkingLevel,
   ): Promise<{ runId: string }> {
-    if (!VALID_THINKING_LEVELS.has(level)) {
+    if (!isThinkingLevel(level)) {
       throw Object.assign(new Error(`不支持的思考强度: ${level}`), {
         code: "invalid_level",
       })
     }
     for (const solver of [...this.solvers].reverse()) {
       if (solver.challenge.id !== challengeId || solver.isClosed) continue
+      const resolvedLevel = resolveThinkingLevel(solver.model, level)
       try {
         this.runStore.appendEvent(solver.runId, "thinking_level_update", {
-          level,
+          level: resolvedLevel,
           ts: new Date().toISOString(),
         })
       } catch {
         throw noActiveRunError()
       }
-      await solver.setThinkingLevel(level)
+      await solver.setThinkingLevel(resolvedLevel)
       return { runId: solver.runId }
     }
     throw noActiveRunError()
@@ -752,17 +755,6 @@ function subagentUnavailable(runId: string): Error {
     },
   )
 }
-
-/** pi 思考强度档位全集(与 pi-agent-core ThinkingLevel 一致,含 off)。 */
-const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-])
 
 function injectBlackboard(runStore: RunStore, challengeId: string): string {
   const summary = runStore.getBlackboardSummary(challengeId)

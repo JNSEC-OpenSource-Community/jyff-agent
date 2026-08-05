@@ -116,8 +116,7 @@ export class CtfSubagent extends BaseAgent {
           containerCwd: options.containerCwd,
         }),
       ].join("\n\n"),
-      thinkingLevel:
-        options.role.thinkingLevel ?? options.agent.initialState?.thinkingLevel,
+      thinkingLevel: options.role.thinkingLevel,
       tools,
       skills: piSkills(options.skills ?? []),
       compaction: options.compaction !== false,

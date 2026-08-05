@@ -15,6 +15,7 @@ import type {
   Sandbox,
 } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import type { Model } from "@earendil-works/pi-ai"
 import { afterEach, describe, expect, it } from "vitest"
 import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
@@ -38,10 +39,24 @@ class FakeSandbox implements Sandbox {
   }
 }
 
+const model: Model<"openai-completions"> = {
+  id: "reasoning-model",
+  name: "Reasoning model",
+  api: "openai-completions",
+  provider: "test",
+  baseUrl: "https://invalid.test",
+  reasoning: true,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 64_000,
+  maxTokens: 4_096,
+}
+
 const agentOptions = {
   streamFn: (() => {
     throw new Error("本测试不调用模型")
   }) as AgentOptions["streamFn"],
+  initialState: { model },
 } satisfies AgentOptions
 
 async function fixture(): Promise<string> {
@@ -368,13 +383,13 @@ describe("Project.setThinkingLevel(运行中切换思考强度)", () => {
     try {
       const delivered = await project.setThinkingLevel("warmup-flag", "max")
       expect(delivered).toEqual({ runId: solver.runId })
-      expect(solver.state.thinkingLevel).toBe("max")
+      expect(solver.state.thinkingLevel).toBe("high")
 
       const event = project
         .runEvents(solver.runId)
         .find((event) => event.type === "thinking_level_update")
       expect(event).toBeDefined()
-      expect(event?.data).toMatchObject({ level: "max" })
+      expect(event?.data).toMatchObject({ level: "high" })
     } finally {
       await solver.close()
       await project.close()

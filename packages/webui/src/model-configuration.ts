@@ -1,11 +1,16 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { SecretStore } from "@ctf-agent/core"
+import {
+  DEFAULT_SOLVER_THINKING_LEVEL,
+  isThinkingLevel,
+  type SecretStore,
+} from "@ctf-agent/core"
 import type { AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
 import {
   type Api,
   type Context,
+  clampThinkingLevel,
   getModel,
   getSupportedThinkingLevels,
   type Model,
@@ -19,9 +24,11 @@ import type {
 } from "./types.ts"
 
 const MODEL_API_KEY_SECRET = "CTF_MODEL_API_KEY"
-const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"]
 const PASSTHROUGH_THINKING_MAP = Object.fromEntries(
-  THINKING_LEVELS.map((level) => [level, level]),
+  ["minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [
+    level,
+    level,
+  ]),
 )
 const SOLVER_SYSTEM_PROMPT = [
   "你是自主 CTF Solver。所有命令和文件操作必须使用 Docker sandbox tools。",
@@ -102,8 +109,9 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
         : secretConfigured
           ? "secret-store"
           : "none",
-      thinkingEnabled: this.values.thinkingEnabled ?? false,
-      reasoningEffort: this.values.reasoningEffort ?? "max",
+      thinkingEnabled: this.values.thinkingEnabled ?? true,
+      reasoningEffort:
+        this.values.reasoningEffort ?? DEFAULT_SOLVER_THINKING_LEVEL,
       passthroughThinking: this.values.passthroughThinking ?? false,
       supportedThinkingLevels: model
         ? getSupportedThinkingLevels(model).filter((level) => level !== "off")
@@ -161,9 +169,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
           )) as AgentOptions["streamFn"],
         initialState: {
           model,
-          thinkingLevel: this.values.thinkingEnabled
-            ? normalizeThinkingLevel(this.values.reasoningEffort)
-            : "off",
+          thinkingLevel: configuredThinkingLevel(model, this.values),
           systemPrompt: SOLVER_SYSTEM_PROMPT,
         },
       }
@@ -175,9 +181,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
         requestedProvider === provider ? apiKey : undefined,
       initialState: {
         model,
-        thinkingLevel: this.values.thinkingEnabled
-          ? normalizeThinkingLevel(this.values.reasoningEffort)
-          : "off",
+        thinkingLevel: configuredThinkingLevel(model, this.values),
         systemPrompt: SOLVER_SYSTEM_PROMPT,
       },
     }
@@ -274,7 +278,7 @@ function resolveModel(
   const modelId = configuration.modelId ?? ""
   const baseUrl = configuration.baseUrl?.replace(/\/+$/, "") ?? ""
   const contextWindow = configuration.contextWindow ?? 64_000
-  const reasoning = configuration.thinkingEnabled ?? false
+  const reasoning = configuration.thinkingEnabled ?? true
 
   if (baseUrl) {
     const thinkingLevelMap =
@@ -372,10 +376,15 @@ function deepseekThinkingLevelMap(
   }
 }
 
-function normalizeThinkingLevel(value: string | undefined): ThinkingLevel {
-  return THINKING_LEVELS.includes(value ?? "")
-    ? (value as ThinkingLevel)
-    : "high"
+function configuredThinkingLevel(
+  model: Model<Api>,
+  configuration: StoredModelConfiguration,
+): ThinkingLevel {
+  if (configuration.thinkingEnabled === false) return "off"
+  const requested = isThinkingLevel(configuration.reasoningEffort)
+    ? configuration.reasoningEffort
+    : DEFAULT_SOLVER_THINKING_LEVEL
+  return clampThinkingLevel(model, requested)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

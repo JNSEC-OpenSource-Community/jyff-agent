@@ -18,6 +18,36 @@ afterEach(async () => {
 })
 
 describe("file model configuration", () => {
+  it("旧配置未声明 thinking 时默认启用 medium", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-thinking-default-"))
+    roots.push(root)
+    const storagePath = join(root, "model-config.json")
+    const secretStore = await FileSecretStore.open(join(root, "secrets.json"))
+    await writeFile(
+      storagePath,
+      JSON.stringify({
+        provider: "custom-openai",
+        modelId: "reasoning-model",
+        baseUrl: "https://models.example.test/v1",
+        contextWindow: 64_000,
+      }),
+    )
+    await secretStore.set({ CTF_MODEL_API_KEY: "secret-key" })
+
+    const configuration = await createFileModelConfiguration({
+      storagePath,
+      secretStore,
+    })
+
+    expect(configuration.snapshot()).toMatchObject({
+      thinkingEnabled: true,
+      reasoningEffort: "medium",
+    })
+    expect(configuration.createAgentOptions().initialState?.thinkingLevel).toBe(
+      "medium",
+    )
+  })
+
   it("只把 API Key 写入 Secret Store", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-config-"))
     roots.push(root)
@@ -117,6 +147,8 @@ describe("file model configuration", () => {
     expect(configuration.snapshot()).toMatchObject({
       configured: false,
       apiKeyConfigured: false,
+      thinkingEnabled: true,
+      reasoningEffort: "medium",
       supportedThinkingLevels: [],
     })
     expect(() => configuration.createAgentOptions()).toThrow("未配置 Model ID")

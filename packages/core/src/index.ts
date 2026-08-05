@@ -1,3 +1,7 @@
+export {
+  DEFAULT_SOLVER_THINKING_LEVEL,
+  isThinkingLevel,
+} from "@ctf-agent/agents"
 export * from "@ctf-agent/platform"
 export * from "../prompts/index.ts"
 export * from "./agent/thinking.ts"

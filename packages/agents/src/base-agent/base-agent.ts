@@ -15,6 +15,7 @@ import {
 } from "@earendil-works/pi-agent-core"
 import type { Api, ImageContent, Model, Models } from "@earendil-works/pi-ai"
 import { type NativeSessionOptions, openAgentSession } from "./session.ts"
+import { resolveThinkingLevel } from "./thinking.ts"
 
 export interface BaseAgentOptions {
   session: NativeSessionOptions
@@ -191,7 +192,7 @@ export abstract class BaseAgent {
     return this.harness.subscribe(listener)
   }
   async setThinkingLevel(level: ThinkingLevel): Promise<void> {
-    await this.harness.setThinkingLevel(level)
+    await this.harness.setThinkingLevel(resolveThinkingLevel(this.model, level))
   }
   async setModel(model: Model<Api>): Promise<void> {
     await this.harness.setModel(model)

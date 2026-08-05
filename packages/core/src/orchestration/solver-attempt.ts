@@ -4,8 +4,6 @@ import {
   LENGTH_CONTINUATION_PROMPT,
 } from "../../prompts/solver-attempt.ts"
 
-const LENGTHS_BEFORE_THINKING_REDUCTION = 2
-
 export class ChallengeTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
     super(`Solver 超过单次时限 ${timeoutMs}ms`)
@@ -68,45 +66,15 @@ async function runUntilTerminalSubmission(options: {
 }): Promise<void> {
   const { solver } = options
   let response = await solver.prompt(options.prompt)
-  let consecutiveLengthStops = 0
-
   while (!hasTerminalSubmission(solver)) {
     if (response.stopReason === "error" || response.stopReason === "aborted") {
       return
-    }
-    if (response.stopReason === "length") {
-      consecutiveLengthStops++
-      if (consecutiveLengthStops >= LENGTHS_BEFORE_THINKING_REDUCTION) {
-        const reduced = reducedThinkingLevel(solver.thinkingLevel)
-        if (reduced !== solver.thinkingLevel) {
-          await solver.setThinkingLevel(reduced)
-        }
-        consecutiveLengthStops = 0
-      }
-    } else {
-      consecutiveLengthStops = 0
     }
     response = await solver.prompt(
       response.stopReason === "length"
         ? LENGTH_CONTINUATION_PROMPT
         : INCOMPLETE_CONTINUATION_PROMPT,
     )
-  }
-}
-
-function reducedThinkingLevel(
-  level: CtfSolverAgent["thinkingLevel"],
-): CtfSolverAgent["thinkingLevel"] {
-  switch (level) {
-    case "max":
-    case "xhigh":
-      return "high"
-    case "high":
-      return "medium"
-    case "medium":
-      return "low"
-    default:
-      return level
   }
 }
 

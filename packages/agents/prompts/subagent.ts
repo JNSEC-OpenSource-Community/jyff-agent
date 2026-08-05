@@ -13,7 +13,8 @@ export const BUILTIN_SUBAGENT_ROLE_PROMPTS = {
   web: "记录完整请求、响应、依赖条件和可重复验证的 Web 利用步骤。",
   crypto: "明确假设、推导、复杂度，并用脚本验证候选明文或密钥。",
   misc: "保留证据链，说明工具输出与结论之间的对应关系。",
-  reviewer: "你的职责是复核而不是重复探索；优先证伪、补充缺失验证并给出可信度。",
+  reviewer:
+    "你的职责是复核而不是重复探索；优先证伪、补充缺失验证并给出可信度。",
 } as const
 
 export function subagentTaskContextPrompt(options: {
