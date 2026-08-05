@@ -247,6 +247,7 @@ function App() {
       }
       const force =
         challenge.status === "solved" ||
+        challenge.status === "blocked" ||
         Boolean(
           snapshot?.scheduler &&
             challenge.schedulerAttempts >= snapshot.scheduler.maxAttempts,
@@ -575,8 +576,12 @@ function SchedulerConsole(props: {
           </strong>
         </div>
         <div>
-          <span>重试上限</span>
-          <strong>{scheduler?.maxAttempts ?? "—"}</strong>
+          <span>重试 / 中断上限</span>
+          <strong>
+            {scheduler
+              ? `${scheduler.maxAttempts}/${scheduler.maxSessionInterruptions}`
+              : "—"}
+          </strong>
         </div>
       </div>
       <div className="scheduler-actions">
@@ -937,13 +942,15 @@ function ChallengeRow(props: {
       ? { label: "查看", details: true, disabled: false }
       : active
         ? { label: "取消", details: false, disabled: false }
-        : exhausted
-          ? { label: "已耗尽", details: false, disabled: true }
-          : {
-              label: challenge.schedulerAttempts > 0 ? "重试" : "调度",
-              details: false,
-              disabled: false,
-            }
+        : challenge.status === "blocked"
+          ? { label: "人工重启", details: false, disabled: false }
+          : exhausted
+            ? { label: "已耗尽", details: false, disabled: true }
+            : {
+                label: challenge.schedulerAttempts > 0 ? "重试" : "调度",
+                details: false,
+                disabled: false,
+              }
   return (
     <div
       className="challenge-row"
@@ -976,7 +983,7 @@ function ChallengeRow(props: {
         <small>
           {challenge.attempts === 0
             ? "尚无运行记录"
-            : `${challenge.attempts} 次尝试`}
+            : `${challenge.attempts} 次尝试 · ${challenge.sessionInterruptions} 次中断`}
         </small>
       </span>
       <span className="knowledge" role="cell">

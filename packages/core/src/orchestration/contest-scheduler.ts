@@ -4,13 +4,14 @@ import {
   isRetryablePlatformError,
 } from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
 import type { RunSource } from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
 import {
   ChallengeTimeoutError,
   hasTerminalSubmission,
-  latestAgentError,
   runSolverPrompt,
+  sessionInterruptionMessage,
 } from "./solver-attempt.ts"
 
 export type SchedulerQueueSource = Extract<
@@ -22,6 +23,7 @@ export type SchedulerPhase = "preparing" | "running" | "cancelling"
 export interface ContestSchedulerOptions {
   maxConcurrent: number
   maxAttempts?: number
+  maxSessionInterruptions?: number
   challengeTimeoutMs?: number
   abortGraceMs?: number
   retryDelayMs?: number
@@ -73,6 +75,7 @@ export interface ContestSchedulerSnapshot {
   autoEnabled: boolean
   maxConcurrent: number
   maxAttempts: number
+  maxSessionInterruptions: number
   queued: SchedulerQueueEntry[]
   active: SchedulerActiveEntry[]
   lastError?: string
@@ -86,7 +89,8 @@ export class ContestSchedulerError extends Error {
       | "already_queued"
       | "already_active"
       | "already_solved"
-      | "attempts_exhausted",
+      | "attempts_exhausted"
+      | "blocked",
     message: string,
   ) {
     super(message)
@@ -116,7 +120,7 @@ interface ActiveItem {
 }
 
 const DEFAULT_PROMPT =
-  "解决当前 CTF 题目。获取题目信息和附件，必要时启动远程实例，找到并提交 Flag。持续实际执行分析和验证，不要以计划、下一步说明或尚未执行的动作结束；除非已经提交正确 Flag 或遇到无法绕过的外部阻塞，否则继续调用工具推进。"
+  "解决当前 CTF 题目。检查初始题目信息和已下载附件，必要时启动远程实例，找到并提交 Flag。持续实际执行分析和验证，不要以计划、下一步说明或尚未执行的动作结束；除非已经提交正确 Flag 或遇到无法绕过的外部阻塞，否则继续调用工具推进。"
 
 /**
  * 长驻的混合调度控制面：
@@ -143,6 +147,10 @@ export class ContestScheduler {
     this.maxConcurrent = options.maxConcurrent
     positiveInteger(options.maxAttempts ?? 2, "maxAttempts")
     positiveInteger(
+      options.maxSessionInterruptions ?? 3,
+      "maxSessionInterruptions",
+    )
+    positiveInteger(
       options.challengeTimeoutMs ?? 30 * 60_000,
       "challengeTimeoutMs",
     )
@@ -164,6 +172,7 @@ export class ContestScheduler {
       autoEnabled: this.autoEnabled,
       maxConcurrent: this.maxConcurrent,
       maxAttempts: this.options.maxAttempts ?? 2,
+      maxSessionInterruptions: this.options.maxSessionInterruptions ?? 3,
       queued: this.queue.map((item, index) => ({
         challengeId: item.challenge.id,
         source: item.source,
@@ -225,6 +234,7 @@ export class ContestScheduler {
     for (const challenge of challenges) {
       if (challenge.solved || this.project.isChallengeSolved(challenge.id))
         continue
+      if (this.project.isChallengeBlocked(challenge.id)) continue
       if (this.hasChallenge(challenge.id)) continue
       if (
         this.project.schedulerAttemptCount(challenge.id) >=
@@ -276,6 +286,12 @@ export class ContestScheduler {
         "该题已经解出；重新验证需要显式 force",
       )
     }
+    if (this.project.isChallengeBlocked(challengeId) && !options.force) {
+      throw new ContestSchedulerError(
+        "blocked",
+        "该题因连续 Session 异常中断已暂停；需要人工 force 重新派发",
+      )
+    }
     const attempts = this.project.schedulerAttemptCount(challengeId)
     if (attempts >= (this.options.maxAttempts ?? 2) && !options.force) {
       throw new ContestSchedulerError(
@@ -283,6 +299,7 @@ export class ContestScheduler {
         `该题调度尝试已达到上限 ${this.options.maxAttempts ?? 2}`,
       )
     }
+    if (options.force) this.project.resetSessionInterruptions(challengeId)
     this.queue.push({
       challenge,
       source: "manual",
@@ -389,64 +406,98 @@ export class ContestScheduler {
   }
 
   private async runItem(active: ActiveItem): Promise<void> {
-    let solver: CtfSolverAgent | undefined
     const schedulerAttemptsBefore = this.project.schedulerAttemptCount(
       active.challenge.id,
     )
     let failureReason: SolverCloseReason | undefined
     let failureMessage: string | undefined
     let retryableFailure = false
-    try {
+    let continuation = false
+
+    while (!active.cancelRequested && !this.shuttingDown) {
+      let solver: CtfSolverAgent | undefined
+      active.attempt = this.project.nextAttempt(active.challenge.id)
+      const source: SchedulerQueueSource = continuation
+        ? "retry"
+        : active.source
+      active.source = source
       const context: SchedulerAttemptContext = {
         challenge: active.challenge,
         attempt: active.attempt,
-        source: active.source,
+        source,
       }
-      const agent = await this.options.createAgentOptions(context)
-      if (active.cancelRequested) return
-      solver = await this.project.createSolver(active.challenge.id, {
-        agent,
-        compaction: this.options.compaction,
-        attempt: active.attempt,
-        source: active.source,
-      })
-      this.lastError = undefined
-      active.solver = solver
-      active.runId = solver.runId
-      active.phase = "running"
-      if (active.cancelRequested) {
-        await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
-        return
+      try {
+        const agent = await this.options.createAgentOptions(context)
+        if (active.cancelRequested) return
+        solver = await this.project.createSolver(active.challenge.id, {
+          agent,
+          compaction: this.options.compaction,
+          attempt: active.attempt,
+          source,
+        })
+        this.lastError = undefined
+        active.solver = solver
+        active.runId = solver.runId
+        active.phase = "running"
+        if (active.cancelRequested) {
+          await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
+          return
+        }
+        const prompt = continuation
+          ? INCOMPLETE_CONTINUATION_PROMPT
+          : typeof this.options.prompt === "function"
+            ? await this.options.prompt(context)
+            : (this.options.prompt ?? DEFAULT_PROMPT)
+        const outcome = await runSolverPrompt({
+          solver,
+          prompt,
+          timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
+          abortGraceMs: this.options.abortGraceMs ?? 5_000,
+        })
+        if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
+          await solver.close("submitted")
+          return
+        }
+
+        const interruptionCount =
+          this.project.sessionInterruptionCount(active.challenge.id) + 1
+        const maximum = this.options.maxSessionInterruptions ?? 3
+        const blocked = interruptionCount > maximum
+        const message = sessionInterruptionMessage(
+          outcome.stopReason,
+          outcome.error,
+          interruptionCount,
+          maximum,
+          blocked,
+        )
+        await solver.close(blocked ? "blocked" : "interrupted", message)
+        solver = undefined
+        active.solver = undefined
+        if (blocked) {
+          this.lastError = `${active.challenge.title}: ${message}`
+          return
+        }
+        continuation = true
+        active.runId = null
+        active.phase = "preparing"
+      } catch (error) {
+        retryableFailure = isRetryablePlatformError(error)
+        failureReason = active.cancelRequested
+          ? "cancelled"
+          : error instanceof ChallengeTimeoutError
+            ? "timed_out"
+            : "failed"
+        failureMessage = errorText(error)
+        if (solver && !solver.isClosed) {
+          await solver.close(failureReason, failureMessage)
+        }
+        break
+      } finally {
+        active.solver = undefined
       }
-      const prompt =
-        typeof this.options.prompt === "function"
-          ? await this.options.prompt(context)
-          : (this.options.prompt ?? DEFAULT_PROMPT)
-      await runSolverPrompt({
-        solver,
-        prompt,
-        timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
-        abortGraceMs: this.options.abortGraceMs ?? 5_000,
-      })
-      if (hasTerminalSubmission(solver)) {
-        await solver.close("submitted")
-        return
-      }
-      throw new Error(
-        (await latestAgentError(solver)) ?? "Agent 已结束，但没有提交正确 Flag",
-      )
-    } catch (error) {
-      retryableFailure = isRetryablePlatformError(error)
-      failureReason = active.cancelRequested
-        ? "cancelled"
-        : error instanceof ChallengeTimeoutError
-          ? "timed_out"
-          : "failed"
-      failureMessage = errorText(error)
-      if (solver) await solver.close(failureReason, failureMessage)
-    } finally {
-      active.solver = undefined
     }
+
+    if (active.cancelRequested || this.shuttingDown) return
 
     const schedulerAttemptsAfter = this.project.schedulerAttemptCount(
       active.challenge.id,

@@ -11,6 +11,7 @@ export const STATUS_LABELS: Record<DashboardChallengeStatus | string, string> =
     timed_out: "已超时",
     cancelled: "已取消",
     interrupted: "已中断",
+    blocked: "需人工介入",
     closed: "已关闭",
     completed: "已完成",
     aborted: "已终止",
@@ -30,6 +31,8 @@ export const EVENT_LABELS: Record<string, string> = {
   flag_submitted: "Flag 提交结果",
   run_finished: "本次尝试结束",
   run_interrupted: "运行异常中断",
+  run_blocked: "连续中断，已暂停",
+  session_interruptions_reset: "人工重置中断计数",
   run_updated: "运行状态更新",
   subagent_created: "SubAgent 已创建",
   subagent_started: "SubAgent 开始工作",
@@ -47,8 +50,6 @@ export const TOOL_LABELS: Record<string, string> = {
   write: "写入文件",
   edit: "编辑文件",
   list: "浏览目录",
-  ctf_challenge_info: "获取题目信息",
-  ctf_download_attachment: "下载附件",
   ctf_submit_flag: "提交 Flag",
   ctf_instance_start: "启动远程环境",
   ctf_instance_destroy: "关闭远程环境",
@@ -126,7 +127,13 @@ export function matchesStatus(
 ): boolean {
   if (filter === "active") return actual === "preparing" || actual === "running"
   if (filter === "failed") {
-    return ["failed", "timed_out", "cancelled", "interrupted"].includes(actual)
+    return [
+      "failed",
+      "timed_out",
+      "cancelled",
+      "interrupted",
+      "blocked",
+    ].includes(actual)
   }
   return actual === filter
 }
@@ -142,6 +149,7 @@ export function sortChallenges(
     failed: 3,
     timed_out: 3,
     interrupted: 3,
+    blocked: 3,
     cancelled: 3,
     pending: 4,
     closed: 5,

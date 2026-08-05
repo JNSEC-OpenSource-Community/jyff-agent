@@ -145,7 +145,7 @@ describe("Solver tools", () => {
     )
   })
 
-  it("文件、附件与 RTK 改写均通过 sandbox 执行，不触碰宿主机文件工具", async () => {
+  it("文件操作与 RTK 改写均通过 sandbox 执行，不触碰宿主机文件工具", async () => {
     const sandbox = new FakeSandbox()
     const tools = createSolverTools({
       capability: capability(),
@@ -156,9 +156,6 @@ describe("Solver tools", () => {
     await tool("write", tools).execute("write", {
       path: "notes/a.txt",
       content: "x",
-    })
-    await tool("ctf_download_attachment", tools).execute("download", {
-      attachmentId: "flag",
     })
     const bash = await tool("bash", tools).execute("bash", {
       command: "grep MOCK flag.txt",
@@ -179,11 +176,6 @@ describe("Solver tools", () => {
           path: "/workspace/notes/a.txt",
           base64: "eA==",
         }),
-        expect.objectContaining({
-          op: "write",
-          path: "/workspace/attachments/flag/flag.bin",
-          base64: "AP8B",
-        }),
       ]),
     )
     const bashCommands = sandbox.calls
@@ -195,6 +187,17 @@ describe("Solver tools", () => {
       "rg MOCK",
     ])
     expect(bash.content).toEqual([{ type: "text", text: "sandbox output" }])
+  })
+
+  it("不再向 Solver 暴露题目读取和附件下载工具", () => {
+    const names = createSolverTools({
+      capability: capability(),
+      sandbox: new FakeSandbox(),
+      onTerminalSubmission: () => {},
+    }).map((item) => item.name)
+
+    expect(names).not.toContain("ctf_challenge_info")
+    expect(names).not.toContain("ctf_download_attachment")
   })
 
   it("提交成功会通知 Agent 在本轮结束后回收容器", async () => {

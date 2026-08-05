@@ -16,6 +16,7 @@ const FAILED = new Set<DashboardChallengeStatus>([
   "timed_out",
   "cancelled",
   "interrupted",
+  "blocked",
 ])
 
 export async function buildDashboardSnapshot(
@@ -76,6 +77,7 @@ export async function buildDashboardSnapshot(
       dispatchSource:
         schedulerActive?.source ?? queued?.source ?? latest?.source ?? null,
       schedulerAttempts: project.schedulerAttemptCount(challenge.id),
+      sessionInterruptions: project.sessionInterruptionCount(challenge.id),
       evidence: blackboard?.evidence ?? 0,
       openOpportunities: blackboard?.openOpportunities ?? 0,
       concludedOpportunities: blackboard?.concludedOpportunities ?? 0,
@@ -297,6 +299,8 @@ function progressLabel(
       return "任务已取消"
     case "interrupted":
       return "进程异常中断"
+    case "blocked":
+      return "连续中断，等待人工介入"
     case "closed":
       return "尝试已手动关闭"
   }
@@ -315,8 +319,6 @@ function humanToolName(tool: string): string {
     write: "写入文件",
     edit: "编辑文件",
     list: "浏览目录",
-    ctf_challenge_info: "题目信息",
-    ctf_download_attachment: "下载附件",
     ctf_submit_flag: "提交 Flag",
     ctf_instance_start: "启动远程环境",
     ctf_instance_destroy: "关闭远程环境",

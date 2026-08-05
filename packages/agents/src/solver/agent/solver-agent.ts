@@ -14,6 +14,7 @@ import type { Model } from "@earendil-works/pi-ai"
 import {
   type AgentSkill,
   BaseAgent,
+  DEFAULT_SOLVER_THINKING_LEVEL,
   modelsFromAgentOptions,
   type PreparedBaseAgent,
   prepareBaseAgent,
@@ -49,6 +50,8 @@ export type SolverCloseReason =
   | "failed"
   | "timed_out"
   | "cancelled"
+  | "interrupted"
+  | "blocked"
 
 export interface SolverCloseDetails {
   reason: SolverCloseReason
@@ -165,7 +168,9 @@ export class CtfSolverAgent extends BaseAgent {
       models: modelsFromAgentOptions(options.agent, model),
       model,
       systemPrompt: options.agent.initialState?.systemPrompt,
-      thinkingLevel: options.agent.initialState?.thinkingLevel,
+      thinkingLevel:
+        options.agent.initialState?.thinkingLevel ??
+        DEFAULT_SOLVER_THINKING_LEVEL,
       tools,
       skills: piSkills(options.features?.skills ?? []),
       initialMessages: options.agent.initialState?.messages,

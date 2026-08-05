@@ -272,6 +272,23 @@ export class FakeDashboardProject implements DashboardProject {
         ["auto", "manual", "retry"].includes(run.source),
     ).length
   }
+  sessionInterruptionCount(challengeId: string): number {
+    const resetAt = Math.max(
+      ...this.runValues
+        .filter((run) => run.challengeId === challengeId)
+        .flatMap((run) =>
+          (this.eventValues.get(run.id) ?? [])
+            .filter((event) => event.type === "session_interruptions_reset")
+            .map((event) => Date.parse(event.createdAt)),
+        ),
+    )
+    return this.runValues.filter(
+      (run) =>
+        run.challengeId === challengeId &&
+        ["interrupted", "blocked"].includes(run.status) &&
+        Date.parse(run.updatedAt) > resetAt,
+    ).length
+  }
 }
 
 export class FakeDashboardScheduler implements DashboardScheduler {
@@ -280,6 +297,7 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     autoEnabled: false,
     maxConcurrent: 2,
     maxAttempts: 2,
+    maxSessionInterruptions: 3,
     queued: [],
     active: [],
   }

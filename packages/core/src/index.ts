@@ -1,3 +1,7 @@
+export {
+  DEFAULT_SOLVER_THINKING_LEVEL,
+  isThinkingLevel,
+} from "@ctf-agent/agents"
 export * from "@ctf-agent/platform"
 export * from "../prompts/index.ts"
 export * from "./agent/thinking.ts"
@@ -10,5 +14,6 @@ export * from "./orchestration/contest-runner.ts"
 export * from "./orchestration/contest-scheduler.ts"
 export * from "./orchestration/solver-attempt.ts"
 export * from "./persistence/run-store.ts"
+export * from "./project/attachments.ts"
 export * from "./project/config.ts"
 export * from "./project/project.ts"

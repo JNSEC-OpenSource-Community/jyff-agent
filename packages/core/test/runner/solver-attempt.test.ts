@@ -24,35 +24,51 @@ function solverFixture(stopReasons: string[]) {
 }
 
 describe("runSolverPrompt continuation control", () => {
-  it("reduces excessive thinking after repeated length truncation and keeps the same run alive", async () => {
-    const solver = solverFixture(["length", "length", "submitted"])
+  it("将未提交 Flag 的正常结束交给新 Session 续跑", async () => {
+    const solver = solverFixture(["length"])
 
-    await runSolverPrompt({
+    const outcome = await runSolverPrompt({
       solver: solver as unknown as CtfSolverAgent,
       prompt: "solve",
       timeoutMs: 5_000,
       abortGraceMs: 10,
     })
 
-    expect(solver.prompt).toHaveBeenCalledTimes(3)
-    expect(solver.setThinkingLevel).toHaveBeenCalledWith("high")
+    expect(outcome).toEqual({ kind: "interrupted", stopReason: "length" })
+    expect(solver.prompt).toHaveBeenCalledTimes(1)
+    expect(solver.setThinkingLevel).not.toHaveBeenCalled()
+  })
+
+  it("提交成功时返回 terminal outcome", async () => {
+    const solver = solverFixture(["submitted"])
+
+    const outcome = await runSolverPrompt({
+      solver: solver as unknown as CtfSolverAgent,
+      prompt: "solve",
+      timeoutMs: 5_000,
+      abortGraceMs: 10,
+    })
+
+    expect(outcome).toEqual({ kind: "submitted", stopReason: "stop" })
+    expect(solver.prompt).toHaveBeenCalledTimes(1)
     expect(solver.submission).toEqual({ status: "accepted" })
   })
 
-  it("keeps continuing past the former limit until the same run submits", async () => {
-    const solver = solverFixture([
-      ...Array.from({ length: 20 }, () => "stop"),
-      "submitted",
-    ])
+  it("将模型流抛错归类为可续跑的 Session 中断", async () => {
+    const solver = solverFixture([])
+    solver.prompt.mockRejectedValueOnce(new Error("websocket disconnected"))
 
-    await runSolverPrompt({
-      solver: solver as unknown as CtfSolverAgent,
-      prompt: "solve",
-      timeoutMs: 5_000,
-      abortGraceMs: 10,
+    await expect(
+      runSolverPrompt({
+        solver: solver as unknown as CtfSolverAgent,
+        prompt: "solve",
+        timeoutMs: 5_000,
+        abortGraceMs: 10,
+      }),
+    ).resolves.toEqual({
+      kind: "interrupted",
+      stopReason: "error",
+      error: "websocket disconnected",
     })
-
-    expect(solver.prompt).toHaveBeenCalledTimes(21)
-    expect(solver.submission).toEqual({ status: "accepted" })
   })
 })

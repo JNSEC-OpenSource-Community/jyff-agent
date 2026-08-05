@@ -1070,13 +1070,15 @@ summary:focus-visible,
 .status-failed,
 .status-timed_out,
 .status-cancelled,
-.status-interrupted {
+.status-interrupted,
+.status-blocked {
   color: var(--coral);
 }
 .status-failed::before,
 .status-timed_out::before,
 .status-cancelled::before,
-.status-interrupted::before {
+.status-interrupted::before,
+.status-blocked::before {
   background: var(--coral);
 }
 .status-closed {

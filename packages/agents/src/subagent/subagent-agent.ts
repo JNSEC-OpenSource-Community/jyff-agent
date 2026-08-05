@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import type { ChallengeCapability, ChallengeInfo } from "@ctf-agent/platform"
+import type { ChallengeInfo } from "@ctf-agent/platform"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type {
   AgentMessage,
@@ -25,7 +25,6 @@ export interface CreateCtfSubagentOptions {
   subagentId: string
   containerCwd: string
   challenge: ChallengeInfo
-  capability: ChallengeCapability
   sandbox: Sandbox
   agent: AgentOptions
   role: SubagentRole
@@ -66,7 +65,6 @@ export class CtfSubagent extends BaseAgent {
     const models = modelsFromAgentOptions(options.agent, fallbackModel)
     const model = resolveRoleModel(models, fallbackModel, options.role.model)
     const allTools = createSubagentTools({
-      capability: options.capability,
       sandbox: options.sandbox,
       cwd: options.containerCwd,
     })
@@ -116,8 +114,7 @@ export class CtfSubagent extends BaseAgent {
           containerCwd: options.containerCwd,
         }),
       ].join("\n\n"),
-      thinkingLevel:
-        options.role.thinkingLevel ?? options.agent.initialState?.thinkingLevel,
+      thinkingLevel: options.role.thinkingLevel,
       tools,
       skills: piSkills(options.skills ?? []),
       compaction: options.compaction !== false,

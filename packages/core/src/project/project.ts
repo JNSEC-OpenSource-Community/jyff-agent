@@ -6,7 +6,9 @@ import {
   type DiscoveredSubagentRoles,
   discoverProjectSkillsWithDiagnostics,
   discoverSubagentRoles,
+  isThinkingLevel,
   materializeSkills,
+  resolveThinkingLevel,
   type SolverCloseDetails,
   type SubagentRole,
 } from "@ctf-agent/agents"
@@ -35,6 +37,8 @@ import type {
 import {
   BLACKBOARD_SYSTEM_GUIDANCE,
   blackboardSnapshotPrompt,
+  CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
+  challengeContextPrompt,
   subagentDelegationPrompt,
 } from "../../prompts/index.ts"
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
@@ -56,6 +60,7 @@ import {
   type RunStatus,
   RunStore,
 } from "../persistence/run-store.ts"
+import { downloadChallengeAttachments } from "./attachments.ts"
 import {
   findProjectRoot,
   loadProjectConfig,
@@ -276,6 +281,15 @@ export class Project {
   schedulerAttemptCount(challengeId: string): number {
     return this.runStore.schedulerAttemptCount(challengeId)
   }
+  sessionInterruptionCount(challengeId: string): number {
+    return this.runStore.sessionInterruptionCount(challengeId)
+  }
+  isChallengeBlocked(challengeId: string): boolean {
+    return this.runStore.isChallengeBlocked(challengeId)
+  }
+  resetSessionInterruptions(challengeId: string): void {
+    this.runStore.resetSessionInterruptions(challengeId)
+  }
   blackboard(challengeId: string) {
     return this.runStore.getBlackboardSummary(challengeId)
   }
@@ -329,22 +343,23 @@ export class Project {
     challengeId: string,
     level: ThinkingLevel,
   ): Promise<{ runId: string }> {
-    if (!VALID_THINKING_LEVELS.has(level)) {
+    if (!isThinkingLevel(level)) {
       throw Object.assign(new Error(`不支持的思考强度: ${level}`), {
         code: "invalid_level",
       })
     }
     for (const solver of [...this.solvers].reverse()) {
       if (solver.challenge.id !== challengeId || solver.isClosed) continue
+      const resolvedLevel = resolveThinkingLevel(solver.model, level)
       try {
         this.runStore.appendEvent(solver.runId, "thinking_level_update", {
-          level,
+          level: resolvedLevel,
           ts: new Date().toISOString(),
         })
       } catch {
         throw noActiveRunError()
       }
-      await solver.setThinkingLevel(level)
+      await solver.setThinkingLevel(resolvedLevel)
       return { runId: solver.runId }
     }
     throw noActiveRunError()
@@ -436,13 +451,26 @@ export class Project {
         privileged: this.config.sandbox.privileged,
         networkMode: this.config.sandbox.networkMode,
       })
+      const downloadedAttachments = await downloadChallengeAttachments({
+        capability,
+        attachments: challenge.attachments,
+        sandbox,
+      })
+      const challengeMessages: AgentMessage[] = resumed
+        ? []
+        : [
+            {
+              role: "user",
+              content: challengeContextPrompt(challenge, downloadedAttachments),
+              timestamp: Date.now(),
+            },
+          ]
 
       subagentManager = new CtfSubagentManager({
         projectId: this.config.project.id,
         runId,
         runDirectory,
         challenge,
-        capability,
         sandbox,
         agent: options.agent,
         roles: this.subagentRoles,
@@ -494,6 +522,7 @@ export class Project {
             ],
             systemPrompt: [
               options.agent.initialState?.systemPrompt,
+              CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
               BLACKBOARD_SYSTEM_GUIDANCE,
               subagentDelegationPrompt(subagentManager.availableRoles()),
             ]
@@ -501,6 +530,7 @@ export class Project {
               .join("\n\n"),
             messages: [
               ...(options.agent.initialState?.messages ?? []),
+              ...challengeMessages,
               ...blackboardMessages,
             ],
           },
@@ -510,6 +540,12 @@ export class Project {
         onClosed: async (details) => {
           this.solvers.delete(solver)
           this.subagentManagers.delete(runId)
+          const eventType =
+            details.reason === "interrupted"
+              ? "run_interrupted"
+              : details.reason === "blocked"
+                ? "run_blocked"
+                : "run_finished"
           const updated = this.runStore.updateRun(
             runId,
             {
@@ -522,7 +558,7 @@ export class Project {
                   : null,
               finishedAt: new Date().toISOString(),
             },
-            "run_finished",
+            eventType,
             details,
           )
           await this.persistRecord(updated, runDirectory)
@@ -730,6 +766,10 @@ function runStatus(details: SolverCloseDetails): RunStatus {
       return "cancelled"
     case "manual":
       return "closed"
+    case "interrupted":
+      return "interrupted"
+    case "blocked":
+      return "blocked"
   }
 }
 
@@ -752,17 +792,6 @@ function subagentUnavailable(runId: string): Error {
     },
   )
 }
-
-/** pi 思考强度档位全集(与 pi-agent-core ThinkingLevel 一致,含 off)。 */
-const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-])
 
 function injectBlackboard(runStore: RunStore, challengeId: string): string {
   const summary = runStore.getBlackboardSummary(challengeId)

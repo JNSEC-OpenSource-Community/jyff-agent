@@ -41,6 +41,8 @@ describe("SubAgent role registry", () => {
       ]),
     )
     expect(resolveSubagentRole(discovered.roles, " PWN ")?.name).toBe("pwn")
+    expect(discovered.roles.get("pwn")?.thinkingLevel).toBe("high")
+    expect(discovered.roles.get("reviewer")?.thinkingLevel).toBe("low")
     expect(resolveSubagentRole(discovered.roles, "pw")).toBeUndefined()
     expect(discovered.diagnostics).toEqual([])
   })

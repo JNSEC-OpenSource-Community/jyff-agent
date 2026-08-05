@@ -7,7 +7,14 @@ export const SUBAGENT_SHARED_SYSTEM_PROMPT = [
 ].join("\n")
 
 export const BUILTIN_SUBAGENT_ROLE_PROMPTS = {
-  explorer: ""
+  generalPurpose: "",
+  pwn: "重点进行漏洞定位、崩溃复现、信息泄露与利用链验证。",
+  reverse: "优先产出程序行为、关键函数、算法和可自动化求解路径。",
+  web: "记录完整请求、响应、依赖条件和可重复验证的 Web 利用步骤。",
+  crypto: "明确假设、推导、复杂度，并用脚本验证候选明文或密钥。",
+  misc: "保留证据链，说明工具输出与结论之间的对应关系。",
+  reviewer:
+    "你的职责是复核而不是重复探索；优先证伪、补充缺失验证并给出可信度。",
 } as const
 
 export function subagentTaskContextPrompt(options: {

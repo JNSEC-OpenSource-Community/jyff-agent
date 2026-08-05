@@ -8,6 +8,7 @@
 - GZCTF 插件：用户名密码或 `GZCTF_Token` Cookie 登录、比赛题目与实例管理；
 - 并发调度：自动、人工、重试、取消、超时和 attempt 上限；
 - 每题独立 Docker sandbox；
+- 题目上下文结构化注入、附件自动下载；
 - Pi 原生 JSONL session 保存、恢复、分支与 compaction；
 - 每个 Run 独立的 SubAgent fleet：专业角色、并发队列、后台通知与 steer/resume/cancel；
 - SQLite RunStore、完整工具时间线和跨 attempt 黑板；
@@ -15,7 +16,7 @@
 
 ## 使用 Docker Compose 启动
 
-要求 Docker Engine、Docker Compose v2，以及至少约 10 GB 的可用磁盘空间。solver 镜像包含 Rizin、GDB、angr、Frida、QEMU、交叉编译器和多版本 JDK，首次构建会比较久。
+要求 Docker Engine、Docker Compose v2，以及至少约 10 GB 的可用磁盘空间。solver 镜像包含 Rizin、GDB、angr、Frida、QEMU、交叉编译器、多版本 JDK、ffuf、OneListForAll 字典和 hashcat，首次构建会比较久。
 
 ```bash
 # 1. 构建 Solver 工具镜像
@@ -29,7 +30,7 @@ curl http://127.0.0.1:3000/health
 docker compose -f compose.webui.yaml ps
 ```
 
-浏览器打开 <http://127.0.0.1:3000>。
+本机浏览器打开 <http://127.0.0.1:3000>；远端浏览器使用服务器可达 IP 或域名的 3000 端口。
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
@@ -38,15 +39,16 @@ docker compose -f compose.webui.yaml ps
 3. 先“测试连接”，成功后再“保存并连接”；
 4. 人工调度单题，或开启自主调度整场比赛。
 
-Compose 只使用 `CTF_AGENT_WEBUI_PORT` 和 `CTF_AGENT_CHALLENGE_TIMEOUT_MS` 两个可选环境变量（默认分别为 `3000` 和 `1800000`）；不会从环境注入模型或平台凭据。其余业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
+Compose 只使用 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 `CTF_AGENT_MAX_SESSION_INTERRUPTIONS` 三个可选环境变量（默认分别为 `3000`、`1800000` 和 `3`）；不会从环境注入模型或平台凭据。其余业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
 
 ```text
 .ctf-agent/
 ├── secrets.json          # API Key、Token、密码或 Cookie，权限 0600
 ├── auth.json             # Pi Provider OAuth / API Key 凭据，权限 0600
 ├── model-config.json     # 非敏感模型参数
+├── scheduler-config.json # 动态调度并发配置
 ├── project-config.json   # 平台、比赛和 sandbox 配置
-├── runs.sqlite           # Run、事件、调度与黑板
+├── runs.sqlite           # Run、事件、SubAgent、调度状态与黑板
 └── runs/<run-id>/
     ├── session.jsonl     # Pi 原生 session tree
     ├── subagents/<id>/
@@ -79,7 +81,7 @@ wsl -d kali-linux -- bash -lc `
   'cd /mnt/e/dev/my-projects/ctf-agent && docker compose -f compose.webui.yaml up -d --build'
 ```
 
-WebUI 仅映射到宿主机 `127.0.0.1:3000`。WSL2 通常可由 Windows 浏览器直接访问该地址。Codex 和 Claude OAuth 回调分别使用仅绑定本机的 `1455`、`53692` 端口。
+WebUI 映射到宿主机 `0.0.0.0:3000`，可从外部网络访问；WSL2 端口转发和主机防火墙仍需允许相应流量。Codex 和 Claude OAuth 回调分别使用仅绑定本机的 `1455`、`53692` 端口。
 
 ## 模型认证
 
@@ -125,11 +127,11 @@ packages/
 
 依赖方向保持为 `webui → core → agents/platform/sandbox`。`agents` 不依赖 Project 或 SQLite，因此后续可以在同一包中增加其他职能 Agent，并复用 BaseAgent 的 session、skills、模型和生命周期能力。
 
-每个 Solver 只拿到当前题目的 `ChallengeCapability`，无法通过任意 `challengeId` 越权操作其他题。`bash`、`read`、`write`、`edit` 和附件工具都绑定到当前 Docker workspace；宿主机只持有受信任的控制面状态。
+每个 Solver 只拿到当前题目的 `ChallengeCapability`，无法通过任意 `challengeId` 操作其他题。题目信息以结构化 XML 初始消息注入，附件在 Solver 启动时自动下载到 `/workspace/attachments`。`bash`、`read`、`write`、`edit` 和 `list` 可访问 sandbox 内任意路径（包括 `/tmp`），但不能访问宿主机文件；宿主机只持有控制面状态和 workspace 挂载。
 
 详细设计：
 
-- [Solver 与 Pi Coding Agent 审计](docs/solver-audit.md)
+- [系统架构](docs/architecture.md)
 - [Blackboard 规范](docs/blackboard-spec.md)
 - [SubAgent 架构与自定义角色](docs/subagents.md)
 - [平台插件说明](docs/platform-plugins.md)
@@ -146,7 +148,7 @@ pnpm typecheck
 pnpm test
 
 # 本机启动；需要本机 Docker
-pnpm webui -- --root . --host 127.0.0.1 --port 3000
+pnpm webui -- --root . --host 0.0.0.0 --port 3000
 ```
 
 WebUI 可执行入口还支持：
@@ -154,24 +156,25 @@ WebUI 可执行入口还支持：
 | 参数 | 默认值 | 含义 |
 |---|---:|---|
 | `--root` | 当前目录 | 项目根目录，状态写入其 `.ctf-agent` |
-| `--host` | `127.0.0.1` | HTTP 监听地址 |
+| `--host` | `0.0.0.0` | HTTP 监听地址 |
 | `--port` | `3000` | HTTP 端口 |
 | `--poll-interval-ms` | `1000` | SSE 快照轮询周期 |
 | `--max-concurrent` | `2` | 最大并发 Solver 数 |
 | `--max-attempts` | `2` | 每题调度 attempt 上限 |
+| `--max-session-interruptions` | `3` | 未提交 Flag 的 Session 中断阈值；超过后 blocked |
 | `--challenge-timeout-ms` | `1800000` | 单次挑战硬超时 |
 | `--retry-delay-ms` | `2000` | 重试间隔 |
 | `--workspace-volume` | 无 | 容器部署时供 Solver 挂载的 Docker volume |
 | `--auth-file` | `/auth.json` | WebUI“读取 auth.json”使用的导入路径 |
 | `--auto-start` | 关闭 | 已有完整配置时启动自主调度 |
 
-单次 Run 在上述挑战超时内会持续自动续跑；模型提前正常结束或单轮输出被提供方截断，都不会再消耗固定次数预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，实际单轮能力由模型提供方决定；上下文接近模型窗口时仍使用 Pi compaction 保留关键进度。
+一次 prompt 对应一个 Run 和一个全新 Pi session。若模型正常结束、输出被截断或 provider/WebSocket 异常时仍未提交 Flag，系统会关闭旧 Solver 与 SubAgent，统计一次中断并创建全新的 Run/session，以“最终 flag 尚未提交，请继续解题”继续。中断次数超过阈值后题目进入 `blocked`，等待人工重启；`interrupted`/`blocked` 不消耗常规 attempt 预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，上下文接近窗口时仍使用 Pi compaction 保留关键进度。
 
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 
 ## 安全说明
 
 - WebUI 不会在读取 API 中回传凭据明文；Provider 凭据使用 Pi `CredentialStore`，平台和通用端点密钥使用 `FileSecretStore`。
-- HTTP 服务暂不内置用户认证。不要把 3000 端口直接暴露到公网；跨主机访问应放在带 TLS 和认证的反向代理后。
+- HTTP 服务暂不内置用户认证。默认的 `0.0.0.0:3000` 会接受外部连接；公网部署应使用防火墙限制来源，或放在带 TLS 和认证的反向代理后。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。

@@ -65,6 +65,19 @@ MULTI-ARCH AND KERNEL BASICS
   aarch64-linux-gnu-objdump -d ./chall-aarch64
   gcc -m32 ./exploit.c -o ./exploit32
 
+WEB ENUMERATION
+  ffuf -noninteractive -w "$ONELISTFORALL" -u 'http://target/FUZZ' -of json -o /workspace/ffuf.json
+  ffuf -noninteractive -w /usr/share/wordlists/onelistforallmicro.txt -u 'http://target/FUZZ'
+
+  ONELISTFORALL points to /usr/share/wordlists/onelistforallshort.txt. Use the
+  smaller micro list for quick checks and the short list for broader fuzzing.
+
+PASSWORD RECOVERY
+  hashcat --example-hashes
+  hashcat -m 0 ./hashes.txt ./wordlist.txt --status --status-json
+
+  Select the hash mode explicitly and prefer machine-readable status output.
+
 REVERSE ENGINEERING (JSON-FIRST)
   ctf-re-preflight ./chall -o /workspace/preflight --timeout 180
   ctf-re-preflight ./chall -o /workspace/preflight-quick --quick
@@ -123,7 +136,7 @@ PYTHON AUTOMATION
   ptrace capability depending on how the container is launched.
 
 CORE
-  bash, curl, wget, git, jq, sqlite3, ripgrep
+  bash, curl, wget, git, jq, sqlite3, ripgrep, ffuf, hashcat
 NETWORK
   nc, socat, openssl
 BUILD AND PATCH

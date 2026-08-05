@@ -26,6 +26,7 @@ export type DashboardChallengeStatus =
   | "timed_out"
   | "cancelled"
   | "interrupted"
+  | "blocked"
   | "closed"
 
 export interface DashboardChallenge {
@@ -44,6 +45,7 @@ export interface DashboardChallenge {
   queuePosition: number | null
   dispatchSource: RunRecord["source"] | null
   schedulerAttempts: number
+  sessionInterruptions: number
   evidence: number
   openOpportunities: number
   concludedOpportunities: number
@@ -97,6 +99,7 @@ export interface DashboardProject {
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   schedulerAttemptCount(challengeId: string): number
+  sessionInterruptionCount(challengeId: string): number
   /**
    * 向某题当前活跃的 solver 发送人工消息(题目级对话框)。
    * 无活跃 solver 时 reject 一个带 code:"no_active_run" 的 Error。

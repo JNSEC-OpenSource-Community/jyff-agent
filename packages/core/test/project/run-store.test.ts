@@ -276,6 +276,44 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("持久化 Session 中断计数和 blocked，并支持人工重置", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "interrupted",
+      challengeId: "web-blocked",
+      workspace: "a",
+      attempt: 1,
+      source: "auto",
+    })
+    store.updateRun("interrupted", {
+      status: "interrupted",
+      closeReason: "interrupted",
+    })
+    store.createRun({
+      id: "blocked",
+      challengeId: "web-blocked",
+      workspace: "b",
+      attempt: 2,
+      source: "retry",
+    })
+    store.updateRun("blocked", {
+      status: "blocked",
+      closeReason: "blocked",
+    })
+
+    expect(store.sessionInterruptionCount("web-blocked")).toBe(2)
+    expect(store.isChallengeBlocked("web-blocked")).toBe(true)
+    expect(store.schedulerAttemptCount("web-blocked")).toBe(0)
+
+    store.resetSessionInterruptions("web-blocked")
+    expect(store.sessionInterruptionCount("web-blocked")).toBe(0)
+    expect(store.isChallengeBlocked("web-blocked")).toBe(false)
+    expect(store.events("blocked").at(-1)?.type).toBe(
+      "session_interruptions_reset",
+    )
+    store.close()
+  })
+
   it("打开旧数据库时自动补充 run source 字段", async () => {
     const { path, store } = await storeFixture()
     store.close()

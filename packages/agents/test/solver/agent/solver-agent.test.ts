@@ -4,16 +4,31 @@ import { join } from "node:path"
 import type { ChallengeCapability } from "@ctf-agent/platform"
 import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import type { Model } from "@earendil-works/pi-ai"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   CtfSolverAgent,
   type SolverCloseDetails,
 } from "../../../src/solver/agent/solver-agent.js"
 
+const model: Model<"openai-completions"> = {
+  id: "reasoning-model",
+  name: "Reasoning model",
+  api: "openai-completions",
+  provider: "test",
+  baseUrl: "https://invalid.test",
+  reasoning: true,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 64_000,
+  maxTokens: 4_096,
+}
+
 const agent = {
   streamFn: (() => {
     throw new Error("本测试不调用模型")
   }) as AgentOptions["streamFn"],
+  initialState: { model },
 } satisfies AgentOptions
 
 const roots: string[] = []
@@ -100,6 +115,7 @@ describe("CtfSolverAgent 强制清理", () => {
       },
     })
 
+    expect(solver.thinkingLevel).toBe("medium")
     await solver.close("failed", "模型故障")
     expect(log).toEqual(["subagents", "instance", "sandbox", "persist"])
     expect(details).toEqual({
@@ -149,12 +165,15 @@ describe("CtfSolverAgent 强制清理", () => {
       },
       capability: challengeCapability(log),
       sandbox: new OrderedSandbox(log),
-      agent: { ...agent, initialState: { thinkingLevel: "high" } },
+      agent: {
+        ...agent,
+        initialState: { ...agent.initialState, thinkingLevel: "high" },
+      },
     })
 
     expect(solver.state.thinkingLevel).toBe("high")
     await solver.setThinkingLevel("max")
-    expect(solver.state.thinkingLevel).toBe("max")
+    expect(solver.state.thinkingLevel).toBe("high")
     await solver.setThinkingLevel("off")
     expect(solver.state.thinkingLevel).toBe("off")
     await solver.close("manual")

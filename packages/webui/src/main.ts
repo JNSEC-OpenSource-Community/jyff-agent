@@ -17,6 +17,7 @@ interface WebUiProcessOptions {
   pollIntervalMs: number
   maxConcurrent: number
   maxAttempts: number
+  maxSessionInterruptions: number
   challengeTimeoutMs: number
   retryDelayMs: number
   workspaceVolume?: string
@@ -62,6 +63,7 @@ const controlPlane = await ControlPlane.create({
     new ContestScheduler(project, {
       maxConcurrent: schedulerConfiguration.snapshot(),
       maxAttempts: options.maxAttempts,
+      maxSessionInterruptions: options.maxSessionInterruptions,
       challengeTimeoutMs: options.challengeTimeoutMs,
       retryDelayMs: options.retryDelayMs,
       availability: () => {
@@ -144,6 +146,7 @@ function parseOptions(args: string[]): WebUiProcessOptions {
     "--poll-interval-ms",
     "--max-concurrent",
     "--max-attempts",
+    "--max-session-interruptions",
     "--challenge-timeout-ms",
     "--retry-delay-ms",
     "--workspace-volume",
@@ -154,7 +157,7 @@ function parseOptions(args: string[]): WebUiProcessOptions {
   }
   return {
     root: resolve(values.get("--root") ?? process.cwd()),
-    host: values.get("--host") ?? "127.0.0.1",
+    host: values.get("--host") ?? "0.0.0.0",
     port: positiveInteger(values, "--port", 3_000, 65_535),
     pollIntervalMs: positiveInteger(
       values,
@@ -164,6 +167,12 @@ function parseOptions(args: string[]): WebUiProcessOptions {
     ),
     maxConcurrent: positiveInteger(values, "--max-concurrent", 2, 64),
     maxAttempts: positiveInteger(values, "--max-attempts", 2, 100),
+    maxSessionInterruptions: positiveInteger(
+      values,
+      "--max-session-interruptions",
+      3,
+      100,
+    ),
     challengeTimeoutMs: positiveInteger(
       values,
       "--challenge-timeout-ms",

@@ -106,7 +106,7 @@ RUN apt-get -o Acquire::Retries=5 update \
     binutils-mipsel-linux-gnu binutils-multiarch binutils-riscv64-linux-gnu binwalk bison \
     build-essential busybox-static cabextract checksec cmake coreutils cpio curl \
     device-tree-compiler dwarves elfutils ent file findutils flex ffmpeg foremost \
-    g++-13-multilib gcc-13-multilib gifsicle \
+    g++-13-multilib gcc-13-multilib gifsicle hashcat \
     gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-mipsel-linux-gnu \
     gcc-riscv64-linux-gnu gdb gdb-multiarch gdbserver git imagemagick jq libelf-dev \
     libarchive-tools libffi-dev libgmp-dev libc6-dbg libc6-dev-i386 \
@@ -118,6 +118,34 @@ RUN apt-get -o Acquire::Retries=5 update \
     sox sqlite3 squashfs-tools steghide stegseek stegsnow strace tar tesseract-ocr \
     unzip valgrind wabt webp wget xxd xz-utils yara zbar-tools zip zstd \
     && rm -rf /var/lib/apt/lists/*
+
+ARG FFUF_VERSION=2.1.0
+ARG FFUF_LINUX_AMD64_SHA256=fc2c82736c14dcbea4daf3d3cf3878c1c4773008ba45c2bc0fceba7d17b40bb5
+RUN wget -q --tries=5 \
+    "https://github.com/ffuf/ffuf/releases/download/v${FFUF_VERSION}/ffuf_${FFUF_VERSION}_linux_amd64.tar.gz" \
+    -O /tmp/ffuf.tar.gz \
+    && echo "${FFUF_LINUX_AMD64_SHA256}  /tmp/ffuf.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/ffuf.tar.gz -C /tmp ffuf \
+    && install -m 0755 /tmp/ffuf /usr/local/bin/ffuf \
+    && rm -f /tmp/ffuf /tmp/ffuf.tar.gz
+
+# OneListForAll 的完整生成流水线需要约 15GB；镜像固定安装上游直接维护的
+# micro 与 short 词表，并让默认路径指向更完整的 short 版本。
+ARG ONELISTFORALL_COMMIT=32292ee62433c246826946824471d9b878b016c8
+ARG ONELISTFORALL_MICRO_SHA256=a1f0cc2e9ee61dc2d7ae2679cbe1a10915d92d8fd848a1102907506954693b7a
+ARG ONELISTFORALL_SHORT_SHA256=cabd3c58dc3de24ba3d18ac6ea5ff20e0bcdf352a915609f4f55bf46c9b0ebb1
+RUN mkdir -p /usr/share/wordlists \
+    && wget -q --tries=5 \
+    "https://raw.githubusercontent.com/six2dez/OneListForAll/${ONELISTFORALL_COMMIT}/onelistforallmicro.txt" \
+    -O /usr/share/wordlists/onelistforallmicro.txt \
+    && wget -q --tries=5 \
+    "https://raw.githubusercontent.com/six2dez/OneListForAll/${ONELISTFORALL_COMMIT}/onelistforallshort.txt" \
+    -O /usr/share/wordlists/onelistforallshort.txt \
+    && echo "${ONELISTFORALL_MICRO_SHA256}  /usr/share/wordlists/onelistforallmicro.txt" | sha256sum -c - \
+    && echo "${ONELISTFORALL_SHORT_SHA256}  /usr/share/wordlists/onelistforallshort.txt" | sha256sum -c - \
+    && ln -s onelistforallshort.txt /usr/share/wordlists/onelistforall.txt
+
+ENV ONELISTFORALL=/usr/share/wordlists/onelistforall.txt
 
 COPY --from=re-builder /opt/rizin /opt/rizin
 COPY --from=re-builder /opt/re-tools /opt/re-tools

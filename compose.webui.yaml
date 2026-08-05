@@ -13,12 +13,14 @@ services:
       - "3000"
       - --challenge-timeout-ms
       - "${CTF_AGENT_CHALLENGE_TIMEOUT_MS:-1800000}"
+      - --max-session-interruptions
+      - "${CTF_AGENT_MAX_SESSION_INTERRUPTIONS:-3}"
       - --auth-file
       - /auth.json
       - --workspace-volume
       - ctf-agent-data
     ports:
-      - "127.0.0.1:${CTF_AGENT_WEBUI_PORT:-3000}:3000"
+      - "0.0.0.0:${CTF_AGENT_WEBUI_PORT:-3000}:3000"
       - "127.0.0.1:1455:1455"
       - "127.0.0.1:53692:53692"
     environment:

@@ -7,6 +7,10 @@ import {
   BUILTIN_SUBAGENT_ROLE_PROMPTS,
   SUBAGENT_SHARED_SYSTEM_PROMPT,
 } from "../../prompts/index.ts"
+import {
+  DEFAULT_SUBAGENT_THINKING_LEVEL,
+  isThinkingLevel,
+} from "../base-agent/thinking.ts"
 
 export interface SubagentRole {
   name: string
@@ -15,7 +19,7 @@ export interface SubagentRole {
   systemPrompt: string
   tools?: readonly string[]
   model?: string
-  thinkingLevel?: ThinkingLevel
+  thinkingLevel: ThinkingLevel
   enabled: boolean
   source: "builtin" | "project"
 }
@@ -30,25 +34,70 @@ export interface DiscoveredSubagentRoles {
   diagnostics: SubagentRoleDiagnostic[]
 }
 
-const THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-])
-
 const DEFAULT_ROLES: readonly SubagentRole[] = [
   {
-    name: "Explorer",
-    displayName: "Explorer",
-    description: "持续探索某方向内容，给出详细报告。",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.explorer}`,
+    name: "general-purpose",
+    displayName: "General",
+    description: "通用 CTF 探索 worker，适合跨方向调查和结果复核。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.generalPurpose}`,
+    thinkingLevel: "medium",
     enabled: true,
     source: "builtin",
-  }
+  },
+  {
+    name: "pwn",
+    displayName: "Pwn",
+    description: "分析二进制保护、漏洞原语、libc 约束并构造可复现利用链。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.pwn}`,
+    thinkingLevel: "high",
+    enabled: true,
+    source: "builtin",
+  },
+  {
+    name: "reverse",
+    displayName: "Reverse",
+    description: "执行静态/动态逆向、反混淆、协议和自定义 VM 分析。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.reverse}`,
+    thinkingLevel: "high",
+    enabled: true,
+    source: "builtin",
+  },
+  {
+    name: "web",
+    displayName: "Web",
+    description: "分析 HTTP 应用、鉴权、注入、请求链和业务逻辑漏洞。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.web}`,
+    thinkingLevel: "medium",
+    enabled: true,
+    source: "builtin",
+  },
+  {
+    name: "crypto",
+    displayName: "Crypto",
+    description: "识别密码学构造、弱参数、数学关系并编写求解脚本。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.crypto}`,
+    thinkingLevel: "high",
+    enabled: true,
+    source: "builtin",
+  },
+  {
+    name: "misc",
+    displayName: "Misc",
+    description: "处理取证、隐写、流量、文件格式、编码和综合杂项任务。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.misc}`,
+    thinkingLevel: "medium",
+    enabled: true,
+    source: "builtin",
+  },
+  {
+    name: "reviewer",
+    displayName: "Reviewer",
+    description: "复核其他 Agent 的证据、脚本和候选解，主动寻找错误假设。",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.reviewer}`,
+    thinkingLevel: "low",
+    enabled: true,
+    source: "builtin",
+  },
 ]
 
 /** Load built-ins and project overrides from .agents/agents and .pi/agents. */
@@ -118,9 +167,13 @@ function parseRole(name: string, source: string): SubagentRole {
     frontmatter ? source.slice(frontmatter[0].length) : source
   ).trim()
   const thinking = stringValue(values.thinking)
-  if (thinking && !THINKING_LEVELS.has(thinking as ThinkingLevel)) {
+  if (thinking && !isThinkingLevel(thinking)) {
     throw new Error(`不支持的 thinking 档位: ${thinking}`)
   }
+  const thinkingLevel: ThinkingLevel =
+    thinking && isThinkingLevel(thinking)
+      ? thinking
+      : DEFAULT_SUBAGENT_THINKING_LEVEL
   const tools = listValue(values.tools)
   const model = stringValue(values.model)
   return {
@@ -132,7 +185,7 @@ function parseRole(name: string, source: string): SubagentRole {
       .join("\n\n"),
     ...(tools ? { tools } : {}),
     ...(model ? { model } : {}),
-    ...(thinking ? { thinkingLevel: thinking as ThinkingLevel } : {}),
+    thinkingLevel,
     enabled: values.enabled !== false,
     source: "project",
   }
