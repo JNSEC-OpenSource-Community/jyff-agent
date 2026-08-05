@@ -137,7 +137,7 @@ describe("ContestScheduler", () => {
       errorMessage: "websocket disconnected",
     },
   ])(
-    "$label 时关闭旧 Session 并在全新 Run 中续跑",
+    "$label 时按分类在同一 Run 续跑或创建新 Run",
     async ({ stopReason, errorMessage }) => {
       const item = challenge(99)
       const tracker = new SandboxTracker()
@@ -154,14 +154,12 @@ describe("ContestScheduler", () => {
             provider: `continuation-${stopReason}`,
           })
           faux.setResponses(
-            sessions === 1
+            sessions === 1 && stopReason !== "error"
               ? [
                   fauxAssistantMessage("分析尚未完成。", {
                     stopReason,
                     ...(errorMessage ? { errorMessage } : {}),
                   }),
-                ]
-              : [
                   fauxAssistantMessage(
                     fauxToolCall(
                       "ctf_submit_flag",
@@ -171,7 +169,25 @@ describe("ContestScheduler", () => {
                     { stopReason: "toolUse" },
                   ),
                   fauxAssistantMessage("已提交。"),
-                ],
+                ]
+              : sessions === 1
+                ? [
+                    fauxAssistantMessage("分析尚未完成。", {
+                      stopReason,
+                      ...(errorMessage ? { errorMessage } : {}),
+                    }),
+                  ]
+                : [
+                    fauxAssistantMessage(
+                      fauxToolCall(
+                        "ctf_submit_flag",
+                        { flag: item.flag },
+                        { id: `continued-submit-${stopReason}` },
+                      ),
+                      { stopReason: "toolUse" },
+                    ),
+                    fauxAssistantMessage("已提交。"),
+                  ],
           )
           return {
             streamFn: faux.streamSimple as AgentOptions["streamFn"],
@@ -189,29 +205,41 @@ describe("ContestScheduler", () => {
         )
 
         const runs = project.runs({ challengeId: item.id })
-        expect(runs).toEqual([
-          expect.objectContaining({
-            attempt: 1,
-            status: stopReason === "error" ? "failed" : "interrupted",
-            closeReason: stopReason === "error" ? "failed" : "interrupted",
-          }),
-          expect.objectContaining({
-            attempt: 2,
-            status: "solved",
-            closeReason: "submitted",
-          }),
-        ])
+        expect(runs).toEqual(
+          stopReason === "error"
+            ? [
+                expect.objectContaining({
+                  attempt: 1,
+                  status: "failed",
+                  closeReason: "failed",
+                }),
+                expect.objectContaining({
+                  attempt: 2,
+                  status: "solved",
+                  closeReason: "submitted",
+                }),
+              ]
+            : [
+                expect.objectContaining({
+                  attempt: 1,
+                  status: "solved",
+                  closeReason: "submitted",
+                }),
+              ],
+        )
+        const continuedRun = runs.at(stopReason === "error" ? 1 : 0)
         const continuedSession = await readFile(
           join(
-            dirname(dirname(dirname(runs[1]?.workspace ?? ""))),
+            dirname(dirname(dirname(continuedRun?.workspace ?? ""))),
             "runs",
-            runs[1]?.id ?? "missing",
+            continuedRun?.id ?? "missing",
             "session.jsonl",
           ),
           "utf8",
         )
         expect(continuedSession).toContain(INCOMPLETE_CONTINUATION_PROMPT)
-        expect(project.sessionInterruptionCount(item.id)).toBe(
+        expect(project.sessionInterruptionCount(item.id)).toBe(0)
+        expect(project.challengeBlockEvents(item.id)).toHaveLength(
           stopReason === "error" ? 0 : 1,
         )
         expect(project.schedulerAttemptCount(item.id)).toBe(1)
@@ -251,10 +279,10 @@ describe("ContestScheduler", () => {
       )
 
       expect(project.runs({ challengeId: item.id })).toEqual([
-        expect.objectContaining({ status: "interrupted" }),
         expect.objectContaining({ status: "blocked", closeReason: "blocked" }),
       ])
-      expect(project.sessionInterruptionCount(item.id)).toBe(2)
+      expect(project.sessionInterruptionCount(item.id)).toBe(1)
+      expect(project.challengeBlockEvents(item.id)).toHaveLength(2)
       expect(project.isChallengeBlocked(item.id)).toBe(true)
       expect(project.schedulerAttemptCount(item.id)).toBe(0)
       await expect(scheduler.dispatch(item.id)).rejects.toMatchObject({
@@ -268,7 +296,7 @@ describe("ContestScheduler", () => {
           project.isChallengeSolved(item.id) &&
           scheduler.snapshot().active.length === 0,
       )
-      expect(project.sessionInterruptionCount(item.id)).toBe(2)
+      expect(project.sessionInterruptionCount(item.id)).toBe(1)
       expect(project.challengeRuntimeState(item.id)).toMatchObject({
         revivalCount: 1,
         effectiveBlockThreshold: 12,

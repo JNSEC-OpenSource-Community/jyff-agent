@@ -389,6 +389,14 @@ export class Project {
   challengeRuntimeState(challengeId: string) {
     return this.runStore.challengeRuntimeState(challengeId)
   }
+  recordChallengeBlockEvent(
+    input: Parameters<RunStore["recordChallengeBlockEvent"]>[0],
+  ) {
+    return this.runStore.recordChallengeBlockEvent(input)
+  }
+  challengeBlockEvents(challengeId: string) {
+    return this.runStore.challengeBlockEvents(challengeId)
+  }
   blackboard(challengeId: string) {
     return this.runStore.getBlackboardSummary(challengeId)
   }

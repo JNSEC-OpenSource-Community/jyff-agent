@@ -523,6 +523,8 @@ export class ContestScheduler {
     let failureMessage: string | undefined
     let retryableFailure = false
     let continuation = active.source === "retry"
+    let solver: CtfSolverAgent | undefined
+    let sameRunStops = 0
 
     if (
       active.lane === "blocked" &&
@@ -532,39 +534,47 @@ export class ContestScheduler {
     }
 
     while (!active.cancelRequested && !this.shuttingDown) {
-      let solver: CtfSolverAgent | undefined
-      active.attempt = this.project.nextAttempt(active.challenge.id)
-      const source: SchedulerQueueSource = continuation
-        ? "retry"
-        : active.source
-      active.source = source
-      const context: SchedulerAttemptContext = {
-        challenge: active.challenge,
-        attempt: active.attempt,
-        source,
-      }
+      let context: SchedulerAttemptContext | undefined
       try {
-        const agent = await this.options.createAgentOptions(context)
-        if (active.cancelRequested) return
-        solver = await this.project.createSolver(active.challenge.id, {
-          agent,
-          compaction: this.options.compaction,
-          attempt: active.attempt,
-          source,
-        })
-        this.lastError = undefined
-        active.solver = solver
-        active.runId = solver.runId
-        active.phase = "running"
-        this.project.removeSchedulerChallenge(active.challenge.id)
-        if (active.cancelRequested) {
-          await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
-          return
+        if (!solver) {
+          active.attempt = this.project.nextAttempt(active.challenge.id)
+          const source: SchedulerQueueSource = continuation
+            ? "retry"
+            : active.source
+          active.source = source
+          context = {
+            challenge: active.challenge,
+            attempt: active.attempt,
+            source,
+          }
+          const agent = await this.options.createAgentOptions(context)
+          if (active.cancelRequested) return
+          solver = await this.project.createSolver(active.challenge.id, {
+            agent,
+            compaction: this.options.compaction,
+            attempt: active.attempt,
+            source,
+          })
+          this.lastError = undefined
+          active.solver = solver
+          active.runId = solver.runId
+          active.phase = "running"
+          this.project.removeSchedulerChallenge(active.challenge.id)
+          if (active.cancelRequested) {
+            await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
+            return
+          }
         }
         const prompt = continuation
           ? INCOMPLETE_CONTINUATION_PROMPT
           : typeof this.options.prompt === "function"
-            ? await this.options.prompt(context)
+            ? await this.options.prompt(
+                context ?? {
+                  challenge: active.challenge,
+                  attempt: active.attempt,
+                  source: active.source,
+                },
+              )
             : (this.options.prompt ?? DEFAULT_PROMPT)
         const outcome = await runSolverPrompt({
           solver,
@@ -600,10 +610,30 @@ export class ContestScheduler {
           return
         }
 
+        sameRunStops += 1
         const interruptionCount =
-          this.project.sessionInterruptionCount(active.challenge.id) + 1
+          this.project.sessionInterruptionCount(active.challenge.id) +
+          sameRunStops
         const maximum = this.options.maxSessionInterruptions ?? 3
-        const blocked = interruptionCount > maximum
+        const eventKey = `${solver.runId}:stop:${this.project.runEvents(solver.runId).length}`
+        const blockEvent = this.project.recordChallengeBlockEvent({
+          challengeId: active.challenge.id,
+          runId: solver.runId,
+          eventKey,
+          delta: classification.blockDelta,
+          reason: classification.kind,
+          compactPerformed: false,
+        })
+        this.project.appendRunEvent(solver.runId, "solver_stop", {
+          eventKey,
+          reason: classification.kind,
+          blockDelta: classification.blockDelta,
+          blocked: this.project.isChallengeBlocked(active.challenge.id),
+        })
+        const blocked =
+          blockEvent.scoreAfter > blockEvent.threshold ||
+          this.project.isChallengeBlocked(active.challenge.id) ||
+          interruptionCount > maximum
         const message = sessionInterruptionMessage(
           outcome.stopReason,
           outcome.error,
@@ -611,16 +641,15 @@ export class ContestScheduler {
           maximum,
           blocked,
         )
-        await solver.close(blocked ? "blocked" : "interrupted", message)
-        solver = undefined
-        active.solver = undefined
         if (blocked) {
+          await solver.close("blocked", message)
+          solver = undefined
+          active.solver = undefined
           this.lastError = `${active.challenge.title}: ${message}`
           return
         }
         continuation = true
-        active.runId = null
-        active.phase = "preparing"
+        active.phase = "running"
       } catch (error) {
         const classification = classifySolverStop({
           error,
@@ -635,12 +664,59 @@ export class ContestScheduler {
             ? "timed_out"
             : "failed"
         failureMessage = classification.detail ?? errorText(error)
+        if (
+          solver &&
+          classification.blockDelta === 1 &&
+          !active.cancelRequested &&
+          !this.shuttingDown
+        ) {
+          const eventKey = `${solver.runId}:stop:${this.project.runEvents(solver.runId).length}`
+          const blockEvent = this.project.recordChallengeBlockEvent({
+            challengeId: active.challenge.id,
+            runId: solver.runId,
+            eventKey,
+            delta: classification.blockDelta,
+            reason: classification.kind,
+            compactPerformed: false,
+          })
+          this.project.appendRunEvent(solver.runId, "solver_stop", {
+            eventKey,
+            reason: classification.kind,
+            blockDelta: classification.blockDelta,
+            blocked: this.project.isChallengeBlocked(active.challenge.id),
+          })
+          sameRunStops += 1
+          const interruptionCount =
+            this.project.sessionInterruptionCount(active.challenge.id) +
+            sameRunStops
+          const maximum = this.options.maxSessionInterruptions ?? 3
+          if (
+            blockEvent.scoreAfter <= blockEvent.threshold &&
+            !this.project.isChallengeBlocked(active.challenge.id) &&
+            interruptionCount <= maximum
+          ) {
+            continuation = true
+            failureReason = undefined
+            failureMessage = undefined
+            retryableFailure = false
+            continue
+          }
+          failureReason = "blocked"
+          failureMessage = sessionInterruptionMessage(
+            classification.kind,
+            failureMessage,
+            interruptionCount,
+            maximum,
+            true,
+          )
+        }
         if (solver && !solver.isClosed) {
           await solver.close(failureReason, failureMessage)
+          solver = undefined
         }
         break
       } finally {
-        active.solver = undefined
+        if (!solver) active.solver = undefined
       }
     }
 
