@@ -16,6 +16,7 @@ import type {
   SubagentRecord,
   TldrRecord,
 } from "@ctf-agent/core"
+import type { AgentOptions } from "@earendil-works/pi-agent-core"
 
 export type DashboardChallengeStatus =
   | "queued"
@@ -115,6 +116,7 @@ export interface DashboardProject {
   blackboardStats(): BlackboardStats[]
   challengeWriteup(challengeId: string): Promise<ChallengeWriteup>
   tldr(challengeId: string): TldrRecord | undefined
+  refreshTldr(challengeId: string, agent: AgentOptions): Promise<TldrRecord>
   schedulerAttemptCount(challengeId: string): number
   sessionInterruptionCount(challengeId: string): number
   /**
@@ -208,6 +210,7 @@ export interface ModelConfigurationUpdate {
 
 export interface DashboardModelConfiguration {
   snapshot(): ModelConfigurationView
+  createAgentOptions(): AgentOptions
   update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView>

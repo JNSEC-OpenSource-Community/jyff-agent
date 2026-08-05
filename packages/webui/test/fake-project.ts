@@ -12,6 +12,7 @@ import type {
   SubagentRecord,
   TldrRecord,
 } from "@ctf-agent/core"
+import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type {
   DashboardModelConfiguration,
   DashboardProject,
@@ -270,6 +271,19 @@ export class FakeDashboardProject implements DashboardProject {
   tldr(_challengeId: string): TldrRecord | undefined {
     return undefined
   }
+  async refreshTldr(
+    _challengeId: string,
+    _agent: AgentOptions,
+  ): Promise<TldrRecord> {
+    return {
+      challengeId: "",
+      content: "",
+      model: "",
+      sessionPath: "",
+      updatedAt: now,
+      error: "not implemented in fake",
+    }
+  }
   async challengeWriteup(challengeId: string) {
     return {
       validation: {
@@ -398,6 +412,10 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
 
   snapshot(): ModelConfigurationView {
     return structuredClone(this.value)
+  }
+
+  createAgentOptions(): AgentOptions {
+    throw new Error("Fake model transport is not configured")
   }
 
   async update(

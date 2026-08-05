@@ -66,6 +66,19 @@ export function DetailDialog(props: DetailDialogProps) {
     }
   }
 
+  async function refreshTldr() {
+    if (!challenge || props.operationPending) return
+    try {
+      await controlPost(
+        `/api/challenges/${encodeURIComponent(challenge.id)}/tldr/refresh`,
+      )
+      props.toast("TLDR 已更新")
+      await props.onRefresh()
+    } catch (error) {
+      props.toast(`TLDR 更新失败：${errorMessage(error)}`, true)
+    }
+  }
+
   async function setThinkingLevel(level: string) {
     if (!challenge || !level) return
     try {
@@ -211,6 +224,8 @@ export function DetailDialog(props: DetailDialogProps) {
               }
               onSteer={steer}
               onCancel={cancel}
+              onRefreshTldr={refreshTldr}
+              tldrPending={props.operationPending}
             />
           )}
         </div>
@@ -256,6 +271,8 @@ function DetailContent(props: {
   onMessage: (id: string, value: string) => void
   onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
   onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onRefreshTldr: () => Promise<void>
+  tldrPending: boolean
 }) {
   const { challenge, runs, blackboard, environment, writeup, tldr } =
     props.details
@@ -324,6 +341,17 @@ function DetailContent(props: {
         title="TLDR"
         count={tldr ? relativeTime(tldr.updatedAt) : "未生成"}
       >
+        <div className="writeup-actions">
+          <button
+            className="outline-button"
+            type="button"
+            disabled={props.tldrPending}
+            onClick={() => void props.onRefreshTldr()}
+          >
+            {tldr ? "更新 TLDR" : "生成 TLDR"}
+          </button>
+          {tldr ? <span>{tldr.model}</span> : null}
+        </div>
         {tldr?.content ? (
           <pre className="tldr-preview">{tldr.content}</pre>
         ) : (

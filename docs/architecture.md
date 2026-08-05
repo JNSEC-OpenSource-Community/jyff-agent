@@ -89,7 +89,7 @@ ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；bas
 
 生产 Scheduler 在 accepted/already_solved 后进入 `writing_writeup`，保留同一 Solver/session 但将 active tools 限制为 `read/write/edit/list`。Solver 必须把英文可复现 writeup 写入题目 workspace，校验失败时最多继续专用 writeup turn，不增加 block score；通过校验后才以 solved 关闭并销毁 sandbox。测试调度器可显式关闭该流程以隔离生命周期测试。
 
-题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，进程重启后以 SQLite 与该 JSONL 作为恢复依据。
+题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，进程重启后以 SQLite 与该 JSONL 作为恢复依据。`CtfTldrAgent` 仅提供 `read/list`，题目、黑板、公告和已有 TLDR 作为不可信数据注入；Project 使用临时 sandbox 挂载同一题目 workspace，生成完成后销毁内存 Agent 和 sandbox。WebUI 详情可查看状态并触发 `/api/challenges/:id/tldr/refresh` 更新。
 
 Solver 停止原因经过 `classifySolverStop` 归一化：网络断连、Provider 5xx/429 和显式 retryable 错误不增加 block score，记录 `run_transient_failure` 后按基础设施退避重试；认证/配置错误不重试。模型自然停止、长度耗尽、协议异常和 prompt timeout 在未超过阈值时记录幂等 block event，并在同一 Run/session 追加 continuation prompt；超过阈值才关闭为 blocked。取消、进程关闭和已提交结果不计入 block。
 

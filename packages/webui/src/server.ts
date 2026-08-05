@@ -759,6 +759,35 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     }
 
     if (
+      method === "POST" &&
+      /^\/api\/challenges\/[^/]+\/tldr\/refresh$/.test(url.pathname)
+    ) {
+      const project = currentProject()
+      requireProject(project)
+      const modelConfiguration = options.modelConfiguration
+      if (!modelConfiguration?.snapshot().configured) {
+        throw new HttpRequestError(
+          503,
+          "model_unavailable",
+          "模型尚未配置，无法生成 TLDR",
+        )
+      }
+      const encodedId = url.pathname
+        .slice("/api/challenges/".length)
+        .slice(0, -"/tldr/refresh".length)
+      const challengeId = decodeURIComponent(encodedId)
+      const tldr = await project.refreshTldr(
+        challengeId,
+        modelConfiguration.createAgentOptions(),
+      )
+      if (tldr.challengeId !== challengeId) {
+        throw new HttpRequestError(404, "challenge_not_found", "题目不存在")
+      }
+      sendJson(response, 200, { tldr })
+      return
+    }
+
+    if (
       method === "GET" &&
       /^\/api\/challenges\/[^/]+\/tldr$/.test(url.pathname)
     ) {
