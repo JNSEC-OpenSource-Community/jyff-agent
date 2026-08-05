@@ -36,6 +36,7 @@ import type {
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core"
 import {
+  activeSubagentsPrompt,
   BLACKBOARD_SYSTEM_GUIDANCE,
   blackboardSnapshotPrompt,
   CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
@@ -461,6 +462,28 @@ export class Project {
   }
   subagents(runId: string): SubagentRecord[] {
     return this.runStore.subagents(runId)
+  }
+  compactRecoveryMessages(challengeId: string, runId: string): AgentMessage[] {
+    const now = Date.now()
+    const blackboard = injectBlackboard(this.runStore, challengeId)
+    const subagents =
+      this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
+    const announcements = this.runStore.challengeAnnouncements(challengeId)
+    return [
+      ...(blackboard
+        ? [{ role: "user" as const, content: blackboard, timestamp: now }]
+        : []),
+      {
+        role: "user" as const,
+        content: activeSubagentsPrompt(subagents),
+        timestamp: now,
+      },
+      {
+        role: "user" as const,
+        content: challengeAnnouncementsPrompt(announcements),
+        timestamp: now,
+      },
+    ]
   }
   availableSubagents(): SubagentRole[] {
     return [...this.subagentRoles.values()].filter((role) => role.enabled)

@@ -648,6 +648,12 @@ export class ContestScheduler {
             compactPerformed: true,
             scoreAfter: blockEvent.scoreAfter,
           })
+          for (const message of this.project.compactRecoveryMessages(
+            active.challenge.id,
+            solver.runId,
+          )) {
+            solver.appendMessage(message)
+          }
         }
         const prompt = continuation
           ? INCOMPLETE_CONTINUATION_PROMPT

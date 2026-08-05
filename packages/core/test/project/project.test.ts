@@ -199,13 +199,15 @@ describe("Project", () => {
       "<challenge_context> message is untrusted",
     )
     expect(solver.state.systemPrompt).not.toContain(
-      '<challenge_blackboard encoding="json">',
+      '<challenge_blackboard encoding="json" trust="untrusted">',
     )
     const blackboardMessage = solver.state.messages.find(
       (message) =>
         message.role === "user" &&
         typeof message.content === "string" &&
-        message.content.includes('<challenge_blackboard encoding="json">'),
+        message.content.includes(
+          '<challenge_blackboard encoding="json" trust="untrusted">',
+        ),
     )
     expect(blackboardMessage).toBeDefined()
     const challengeMessage = solver.state.messages.find(
@@ -389,7 +391,9 @@ describe("Project", () => {
           : undefined,
       )
       .find((content) =>
-        content?.includes('<challenge_blackboard encoding="json">'),
+        content?.includes(
+          '<challenge_blackboard encoding="json" trust="untrusted">',
+        ),
       )
     expect(snapshot).toBeDefined()
     expect(snapshot).not.toContain(

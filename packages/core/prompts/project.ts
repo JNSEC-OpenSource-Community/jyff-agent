@@ -111,7 +111,7 @@ export function activeSubagentsPrompt(records: readonly unknown[]): string {
 }
 
 export function blackboardSnapshotPrompt(encodedSnapshot: string): string {
-  return `<challenge_blackboard encoding="json">\n${encodedSnapshot}\n</challenge_blackboard>`
+  return `<challenge_blackboard encoding="json" trust="untrusted">\n${encodedSnapshot}\n</challenge_blackboard>`
 }
 
 export const BLACKBOARD_RECORD_REMINDER_PROMPT =

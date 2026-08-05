@@ -298,7 +298,26 @@ describe("ContestScheduler", () => {
           project.isChallengeSolved(item.id) &&
           scheduler.snapshot().active.length === 0,
       )
-      expect(project.runs({ challengeId: item.id })).toHaveLength(1)
+      const [run] = project.runs({ challengeId: item.id })
+      expect(run).toBeDefined()
+      const session = await readFile(
+        join(
+          dirname(dirname(dirname(run?.workspace ?? ""))),
+          "runs",
+          run?.id ?? "missing",
+          "session.jsonl",
+        ),
+        "utf8",
+      )
+      expect(session).toContain(
+        '<challenge_blackboard encoding=\\"json\\" trust=\\"untrusted\\">',
+      )
+      expect(session).toContain(
+        '<active_subagents encoding=\\"json\\" trust=\\"untrusted\\">',
+      )
+      expect(session).toContain(
+        '<challenge_announcements trust=\\"untrusted\\">',
+      )
       expect(project.challengeBlockEvents(item.id)).toEqual([
         expect.objectContaining({ delta: 1, reason: "model_stop" }),
         expect.objectContaining({
