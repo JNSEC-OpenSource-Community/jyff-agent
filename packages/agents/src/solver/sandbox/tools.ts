@@ -131,8 +131,7 @@ function createListTool(env: DockerExecutionEnv): AgentTool {
   return {
     name: "list",
     label: "List Workspace Directory",
-    description:
-      "List a directory below /workspace. Prefer read when inspecting files.",
+    description: "List a directory in the container. Prefer read for files.",
     parameters: Type.Object({ path: Type.String() }),
     executionMode: "sequential",
     async execute(_id, params, signal) {

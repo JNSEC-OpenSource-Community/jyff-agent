@@ -26,31 +26,13 @@ const FILE_HELPER = String.raw`
 import base64, json, os, shutil, stat, sys
 from pathlib import Path
 
-ROOT = Path('/workspace').resolve()
-
-def inside(path):
-    try:
-        path.relative_to(ROOT)
-        return True
-    except ValueError:
-        return False
-
 def addressed(raw):
     if not isinstance(raw, str) or not raw.startswith('/') or '\\' in raw:
         raise ValueError('path must be an absolute POSIX path')
-    path = Path(os.path.normpath(raw))
-    if not inside(path):
-        raise PermissionError('path escapes /workspace')
-    parent = path.parent.resolve()
-    if not inside(parent):
-        raise PermissionError('path parent escapes /workspace')
-    return path
+    return Path(os.path.normpath(raw))
 
 def resolved_file(raw):
-    path = addressed(raw).resolve()
-    if not inside(path):
-        raise PermissionError('path or symlink escapes /workspace')
-    return path
+    return addressed(raw).resolve()
 
 def info(path):
     value = path.lstat()
@@ -91,7 +73,6 @@ try:
         path = addressed(raw)
         path.parent.mkdir(parents=True, exist_ok=True)
         resolved = path.resolve()
-        if not inside(resolved): raise PermissionError('path or symlink escapes /workspace')
         data = base64.b64decode(payload['base64'], validate=True)
         with resolved.open('ab' if op == 'append' else 'wb') as output:
             output.write(data)
@@ -104,7 +85,6 @@ try:
         value = [info(child) for child in sorted(path.iterdir(), key=lambda item: item.name)]
     elif op == 'canonical':
         path = addressed(raw).resolve(strict=True)
-        if not inside(path): raise PermissionError('path or symlink escapes /workspace')
         value = str(path)
     elif op == 'exists':
         path = addressed(raw)
@@ -396,11 +376,6 @@ export class DockerExecutionEnv implements ExecutionEnv {
       )
     }
     const absolute = posix.resolve(this.cwd, path)
-    if (absolute !== WORKSPACE && !absolute.startsWith(`${WORKSPACE}/`)) {
-      return err(
-        new FileError("permission_denied", "Path escapes /workspace", absolute),
-      )
-    }
     return ok(absolute)
   }
 
@@ -467,9 +442,6 @@ function executionCwd(value: string | undefined): string {
     throw new Error("Docker execution cwd must use POSIX separators")
   }
   const cwd = posix.resolve(WORKSPACE, value)
-  if (cwd !== WORKSPACE && !cwd.startsWith(`${WORKSPACE}/`)) {
-    throw new Error("Docker execution cwd escapes /workspace")
-  }
   return cwd
 }
 
