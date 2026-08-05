@@ -221,6 +221,16 @@ describe("GZCTF platform contract", () => {
         solved: false,
       },
     ])
+    expect(await project.listAnnouncements()).toEqual([
+      {
+        id: "1",
+        title: "新提示",
+        content: "web · hint",
+        publishedAt: new Date(1_700_000_000_000).toISOString(),
+        kind: "hint",
+        rawType: "NewHint",
+      },
+    ])
 
     const challenge = await project.bindChallenge("12")
     expect(await challenge.getInfo()).toMatchObject({

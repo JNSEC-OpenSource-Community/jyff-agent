@@ -1,6 +1,7 @@
 import { webcrypto } from "node:crypto"
 import type {
   Announcement,
+  AnnouncementKind,
   Attachment,
   ChallengeCapability,
   ChallengeInfo,
@@ -862,6 +863,15 @@ interface GZCTFContainer {
   entry?: string
 }
 
+const noticeKinds: Record<string, AnnouncementKind> = {
+  Normal: "normal",
+  FirstBlood: "solve_broadcast",
+  SecondBlood: "solve_broadcast",
+  ThirdBlood: "solve_broadcast",
+  NewHint: "hint",
+  NewChallenge: "new_challenge",
+}
+
 const noticeTitles: Record<string, string> = {
   Normal: "比赛公告",
   FirstBlood: "一血",
@@ -1162,6 +1172,8 @@ class GZCTFProject implements PlatformProject {
       title: noticeTitles[notice.type] ?? notice.type,
       content: notice.values.join(" · "),
       publishedAt: new Date(notice.time).toISOString(),
+      kind: noticeKinds[notice.type] ?? "unknown",
+      rawType: notice.type,
     }))
   }
 

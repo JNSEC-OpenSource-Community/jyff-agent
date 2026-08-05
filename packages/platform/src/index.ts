@@ -21,11 +21,20 @@ export interface ChallengeInfo extends ChallengeSummary {
   environmentGuide?: string
 }
 
+export type AnnouncementKind =
+  | "normal"
+  | "hint"
+  | "new_challenge"
+  | "solve_broadcast"
+  | "unknown"
+
 export interface Announcement {
   id: string
   title: string
   content: string
   publishedAt: string
+  kind?: AnnouncementKind
+  rawType?: string
 }
 
 export interface ContestOverview {

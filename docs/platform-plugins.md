@@ -34,7 +34,8 @@ from this Secret Store; environment variables are not a credential fallback.
 Enter `CTFD_TOKEN` in the WebUI. The adapter uses CTFd's official `Token` authorization
 scheme and supports challenge listing/detail, signed attachment downloads, notifications, and flag
 attempts. Core CTFd has no standard per-player container lifecycle API, so this adapter does not
-invent one.
+invent one. CTFd notification types are not stable enough to classify at the adapter boundary, so
+notifications are emitted with `kind: "unknown"` for Core's conservative classifier.
 
 ## GZCTF
 
@@ -78,6 +79,18 @@ If automated login is blocked by CAPTCHA, log in with a browser and select Cooki
 `GZCTF_COOKIE` may contain the Cookie value alone or `GZCTF_Token=<value>`. The account must already
 belong to a team participating in the configured game. The adapter supports challenge metadata,
 attachments, asynchronous flag judgement, and native start/status/destroy container operations.
+GZCTF notice types are normalized without matching challenges: `FirstBlood`, `SecondBlood`, and
+`ThirdBlood` become `solve_broadcast`; `NewHint` becomes `hint`; `NewChallenge` becomes
+`new_challenge`; the original value remains in `rawType` for diagnostics.
+
+## Announcement data boundary
+
+`Announcement.kind` is an optional normalized platform fact (`normal`, `hint`, `new_challenge`,
+`solve_broadcast`, or `unknown`). Platform adapters do not decide which challenge an announcement
+belongs to. Core first filters explicit solve broadcasts and conservative title/action patterns,
+then performs deterministic NFKC/case/whitespace-normalized full-title or tokenized challenge-ID
+matching. Very short titles require quoting or brackets, and duplicate normalized titles remain
+ambiguous matches rather than being silently assigned to one challenge.
 Remote-environment enumeration includes instances observed by the current plugin process because
 GZCTF exposes challenge-scoped status but no player-wide instance-list endpoint.
 

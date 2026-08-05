@@ -437,6 +437,7 @@ class CTFdProject implements PlatformProject {
       title: item.title,
       content: item.content,
       publishedAt: item.date,
+      kind: "unknown",
     }))
   }
 
