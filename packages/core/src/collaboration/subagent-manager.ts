@@ -19,6 +19,7 @@ import type {
   AgentToolResult,
 } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
+import { subagentCompletionNotificationPrompt } from "../../prompts/index.ts"
 import { extractAssistantText } from "../agent/thinking.ts"
 
 export type SubagentStatus =
@@ -124,6 +125,29 @@ export class CtfSubagentManager {
     return availableSubagentRoles(this.options.roles)
   }
 
+  /** Reattach persisted terminal workers so their JSONL sessions can be resumed. */
+  restore(records: readonly SubagentRecord[]): void {
+    for (const record of records) {
+      if (record.runId !== this.options.runId || this.records.has(record.id))
+        continue
+      if (record.status !== "interrupted") continue
+      const role = resolveSubagentRole(this.options.roles, record.role)
+      if (!role) continue
+      let resolve!: (value: SubagentRecord) => void
+      const promise = new Promise<SubagentRecord>((done) => {
+        resolve = done
+      })
+      this.records.set(record.id, {
+        record: snapshot(record),
+        role,
+        promise,
+        resolve,
+        resultConsumed: false,
+        hardAborted: false,
+      })
+    }
+  }
+
   spawn(input: {
     role: string
     prompt: string
@@ -193,7 +217,7 @@ export class CtfSubagentManager {
     background: boolean,
   ): Promise<SubagentRecord> {
     const managed = this.records.get(id)
-    if (!managed?.agent || !TERMINAL.has(managed.record.status)) {
+    if (!managed || !TERMINAL.has(managed.record.status)) {
       throw new Error(`SubAgent ${id} 不存在、尚未完成或会话不可恢复`)
     }
     const nextPrompt = boundedText(prompt, "prompt", 32_000)
@@ -215,7 +239,7 @@ export class CtfSubagentManager {
     if (background && this.runningBackground >= this.maxConcurrent) {
       this.queue.push({ managed, prompt: nextPrompt })
     } else {
-      this.launch(managed, nextPrompt, false)
+      this.launch(managed, nextPrompt, !managed.agent)
     }
     return background ? snapshot(managed.record) : await managed.promise
   }
@@ -433,9 +457,7 @@ export class CtfSubagentManager {
       status: record.status,
       output: (record.result ?? record.error ?? "No output").slice(0, 16_000),
     })
-    await parent.followUp(
-      `<task-notification encoding="json">\n${payload}\n</task-notification>`,
-    )
+    await parent.followUp(subagentCompletionNotificationPrompt(payload))
   }
 }
 

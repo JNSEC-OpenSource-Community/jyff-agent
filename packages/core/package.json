@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./prompts": "./prompts/index.ts"
   },
   "dependencies": {
     "@ctf-agent/agents": "workspace:*",

@@ -116,10 +116,16 @@ def analyses(symbol: str) -> list[Analysis]:
         "-A",
     ]
     return [
-        Analysis("file", lambda target, _out: ["file", "-b", "--", str(target)], "file.txt"),
+        Analysis(
+            "file", lambda target, _out: ["file", "-b", "--", str(target)], "file.txt"
+        ),
         Analysis(
             "checksec",
-            lambda target, _out: ["/usr/bin/checksec", "--output=json", f"--file={target}"],
+            lambda target, _out: [
+                "/usr/bin/checksec",
+                "--output=json",
+                f"--file={target}",
+            ],
             "checksec.json",
             json_output=True,
             enabled=lambda target: has_magic(target, b"\x7fELF"),
@@ -167,7 +173,12 @@ def analyses(symbol: str) -> list[Analysis]:
         ),
         Analysis(
             "binwalk",
-            lambda target, out: ["binwalk", "--csv", f"--log={out / 'binwalk.csv'}", str(target)],
+            lambda target, out: [
+                "binwalk",
+                "--csv",
+                f"--log={out / 'binwalk.csv'}",
+                str(target),
+            ],
             "binwalk.txt",
         ),
         Analysis(
@@ -204,7 +215,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Static RE pre-analysis with per-tool timeouts and machine-readable results."
     )
-    parser.add_argument("target", type=Path, help="binary, bytecode, firmware, or WASM file")
+    parser.add_argument(
+        "target", type=Path, help="binary, bytecode, firmware, or WASM file"
+    )
     parser.add_argument("-o", "--output", type=Path, help="output directory")
     parser.add_argument(
         "--timeout",
@@ -236,7 +249,11 @@ def main() -> int:
     if not target.is_file():
         raise SystemExit(f"target is not a regular file: {target}")
 
-    output_dir = (args.output or Path.cwd() / f"{target.name}.re-preflight").expanduser().resolve()
+    output_dir = (
+        (args.output or Path.cwd() / f"{target.name}.re-preflight")
+        .expanduser()
+        .resolve()
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     configured_analyses = analyses(args.symbol)
     reserved_outputs = {output_dir / "summary.json", output_dir / "binwalk.csv"}
@@ -266,7 +283,9 @@ def main() -> int:
         if args.quick and analysis.heavy:
             results[analysis.name] = {"status": "skipped_quick_mode"}
             continue
-        results[analysis.name] = run_analysis(analysis, target, output_dir, args.timeout)
+        results[analysis.name] = run_analysis(
+            analysis, target, output_dir, args.timeout
+        )
 
     counts: dict[str, int] = {}
     for result in results.values():
@@ -276,8 +295,14 @@ def main() -> int:
     manifest["counts"] = counts
 
     manifest_path = output_dir / "summary.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"output": str(output_dir), "summary": str(manifest_path), "counts": counts}))
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(
+        json.dumps(
+            {"output": str(output_dir), "summary": str(manifest_path), "counts": counts}
+        )
+    )
     return 0
 
 

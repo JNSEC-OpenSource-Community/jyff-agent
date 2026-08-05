@@ -139,6 +139,65 @@ describe("CtfSubagentManager", () => {
     await manager.close()
   })
 
+  it("可从重启后 interrupted 记录恢复 JSONL 会话", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-restore-"))
+    roots.push(root)
+    const discovered = await discoverSubagentRoles(root)
+    const sandbox = new MemorySandbox()
+    const firstCore = createFauxCore({ provider: "subagent-restore" })
+    firstCore.setResponses([fauxAssistantMessage("first investigation")])
+    const first = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-restore",
+      runDirectory: root,
+      challenge,
+      capability,
+      sandbox,
+      agent: {
+        streamFn: firstCore.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: firstCore.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+    })
+    const created = first.spawn({
+      role: "reverse",
+      prompt: "inspect the binary",
+      description: "initial inspection",
+      background: false,
+    })
+    const completed = await first.wait(created.id)
+    await first.close()
+
+    const resumedCore = createFauxCore({ provider: "subagent-restore" })
+    resumedCore.setResponses([fauxAssistantMessage("continued from JSONL")])
+    const resumed = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-restore",
+      runDirectory: root,
+      challenge,
+      capability,
+      sandbox,
+      agent: {
+        streamFn: resumedCore.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: resumedCore.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+    })
+    resumed.restore([{ ...completed, status: "interrupted" }])
+
+    const result = await resumed.resume(
+      created.id,
+      "continue the investigation",
+      false,
+    )
+    expect(result).toMatchObject({
+      id: created.id,
+      status: "completed",
+      result: "continued from JSONL",
+    })
+    await resumed.close()
+  })
+
   it("暴露兼容工具名，并拒绝不存在的角色", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-subagent-tools-"))
     roots.push(root)

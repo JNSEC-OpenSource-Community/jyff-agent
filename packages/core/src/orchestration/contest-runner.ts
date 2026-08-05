@@ -37,8 +37,8 @@ export interface ContestRunnerOptions {
   ): AgentOptions | Promise<AgentOptions>
   compaction?: CreateSolverOptions["compaction"]
   prompt?:
-    | string
-    | ((context: ContestRunnerAttemptContext) => string | Promise<string>)
+  | string
+  | ((context: ContestRunnerAttemptContext) => string | Promise<string>)
   selectChallenge?: (challenge: ChallengeSummary) => boolean | Promise<boolean>
 }
 
@@ -51,10 +51,10 @@ export interface ChallengeRunResult {
   runIds: string[]
   error?: string
   reason?:
-    | "platform_solved"
-    | "store_solved"
-    | "filtered"
-    | "attempts_exhausted"
+  | "platform_solved"
+  | "store_solved"
+  | "filtered"
+  | "attempts_exhausted"
 }
 
 export interface ContestRunSummary {

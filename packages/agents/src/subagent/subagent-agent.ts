@@ -7,6 +7,7 @@ import type {
   Skill,
 } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
+import { subagentTaskContextPrompt } from "../../prompts/index.ts"
 import {
   type AgentSkill,
   BaseAgent,
@@ -107,14 +108,13 @@ export class CtfSubagent extends BaseAgent {
       model,
       systemPrompt: [
         options.role.systemPrompt,
-        [
-          "当前任务上下文：",
-          `- 题目：${options.challenge.title} (${options.challenge.id})`,
-          `- 分类：${options.challenge.category}`,
-          `- 分值：${options.challenge.score}`,
-          `- 你的容器工作目录：${options.containerCwd}`,
-          "共享附件位于 /workspace/attachments；不要覆盖其他 worker 的独立目录。",
-        ].join("\n"),
+        subagentTaskContextPrompt({
+          title: options.challenge.title,
+          id: options.challenge.id,
+          category: options.challenge.category,
+          score: options.challenge.score,
+          containerCwd: options.containerCwd,
+        }),
       ].join("\n\n"),
       thinkingLevel:
         options.role.thinkingLevel ?? options.agent.initialState?.thinkingLevel,

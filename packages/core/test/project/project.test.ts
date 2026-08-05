@@ -16,6 +16,7 @@ import type {
 } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { afterEach, describe, expect, it } from "vitest"
+import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
 import { testPlatform } from "../fake-platform.ts"
 
@@ -199,6 +200,47 @@ describe("Project", () => {
       "run_finished",
     ])
     await project.close()
+  })
+
+  it("重启后可从 interrupted Run 的 session.jsonl 恢复 Solver", async () => {
+    const root = await fixture()
+    const first = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    const solver = await first.createSolver("warmup-flag", {
+      agent: agentOptions,
+    })
+    const runId = solver.runId
+    await first.close()
+
+    const store = await RunStore.open(join(root, ".ctf-agent", "runs.sqlite"))
+    store.updateRun(runId, {
+      status: "interrupted",
+      closeReason: "interrupted",
+      finishedAt: new Date().toISOString(),
+    })
+    store.close()
+
+    const restarted = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const resumed = await restarted.resumeSolver(runId, {
+        agent: agentOptions,
+      })
+      expect(resumed.runId).toBe(runId)
+      expect(resumed.restored).toBe(true)
+      const resumedRun = restarted.runs().find((run) => run.id === runId)
+      expect(resumedRun?.status).toBe("running")
+      expect(resumedRun?.closeReason).toBeUndefined()
+      await resumed.close()
+    } finally {
+      await restarted.close()
+    }
   })
 
   it("后续 attempt 将黑板作为有界的不可信数据消息注入", async () => {

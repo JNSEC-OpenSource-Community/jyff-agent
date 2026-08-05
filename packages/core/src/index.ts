@@ -1,4 +1,5 @@
 export * from "@ctf-agent/platform"
+export * from "../prompts/index.ts"
 export * from "./agent/thinking.ts"
 export * from "./collaboration/blackboard.ts"
 export * from "./collaboration/subagent-manager.ts"

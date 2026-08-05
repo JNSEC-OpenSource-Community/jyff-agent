@@ -1,5 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
+import { BLACKBOARD_RECORD_REMINDER_PROMPT } from "../../prompts/index.ts"
 import {
   BLACKBOARD_DESCRIPTION_MAX_LENGTH,
   BLACKBOARD_SOURCE_MAX_ITEMS,
@@ -76,9 +77,7 @@ export function serializeBlackboard(
     lines.push("")
   }
 
-  lines.push(
-    "Use ctf_blackboard_record to add new evidence or opportunities as you discover them.",
-  )
+  lines.push(BLACKBOARD_RECORD_REMINDER_PROMPT)
   const text = lines.join("\n")
   const maxCharacters = Math.max(
     0,
