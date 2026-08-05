@@ -520,6 +520,11 @@ export class Project {
   isChallengeBlocked(challengeId: string): boolean {
     return this.runStore.isChallengeBlocked(challengeId)
   }
+  forceChallengeBlocked(
+    input: Parameters<RunStore["forceChallengeBlocked"]>[0],
+  ): void {
+    this.runStore.forceChallengeBlocked(input)
+  }
   resetSessionInterruptions(challengeId: string): void {
     this.runStore.resetSessionInterruptions(challengeId)
   }

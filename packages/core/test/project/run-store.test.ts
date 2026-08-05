@@ -581,6 +581,14 @@ describe("RunStore", () => {
     expect(replay).toEqual(blocked)
     expect(store.challengeBlockEvents("crypto-score")).toHaveLength(5)
     expect(store.challengeRuntimeState("crypto-score").blockScore).toBe(9)
+    store.updateRun("score-run", {
+      status: "blocked",
+      closeReason: "blocked",
+    })
+    expect(store.challengeRuntimeState("crypto-score")).toMatchObject({
+      blockScore: 9,
+      sessionInterruptions: 0,
+    })
     store.close()
   })
 

@@ -364,7 +364,7 @@ describe("ContestScheduler", () => {
       expect(project.runs({ challengeId: item.id })).toEqual([
         expect.objectContaining({ status: "blocked", closeReason: "blocked" }),
       ])
-      expect(project.sessionInterruptionCount(item.id)).toBe(1)
+      expect(project.sessionInterruptionCount(item.id)).toBe(0)
       expect(project.challengeBlockEvents(item.id)).toHaveLength(2)
       const blockedRun = project.runs({ challengeId: item.id })[0]
       expect(
@@ -373,6 +373,7 @@ describe("ContestScheduler", () => {
         expect.arrayContaining(["run_blocking", "block_finalization_failed"]),
       )
       expect(project.isChallengeBlocked(item.id)).toBe(true)
+      expect(project.challengeRuntimeState(item.id).blockScore).toBe(2)
       expect(project.schedulerAttemptCount(item.id)).toBe(0)
       await expect(scheduler.dispatch(item.id)).rejects.toMatchObject({
         code: "blocked",
@@ -385,7 +386,7 @@ describe("ContestScheduler", () => {
           project.isChallengeSolved(item.id) &&
           scheduler.snapshot().active.length === 0,
       )
-      expect(project.sessionInterruptionCount(item.id)).toBe(1)
+      expect(project.sessionInterruptionCount(item.id)).toBe(0)
       expect(project.challengeRuntimeState(item.id)).toMatchObject({
         revivalCount: 1,
         effectiveBlockThreshold: 12,

@@ -917,12 +917,16 @@ export class ContestScheduler {
   }
 
   private async finalizeBlockedRun(
-    _active: ActiveItem,
+    active: ActiveItem,
     solver: CtfSolverAgent,
     trigger: string,
   ): Promise<void> {
     let finalizationError: string | undefined
     try {
+      this.project.forceChallengeBlocked({
+        challengeId: active.challenge.id,
+        runId: solver.runId,
+      })
       await this.project.markRunBlocking(solver.runId, trigger)
       const records = await this.project.finalizeSubagents(
         solver.runId,

@@ -1036,7 +1036,11 @@ export class RunStore {
         : patch.finishedAt
     const status = patch.status ?? current.status
 
+    const hasBlockLedger = this.database
+      .prepare("SELECT 1 FROM challenge_block_events WHERE run_id = ? LIMIT 1")
+      .get(id)
     const recordsSessionInterruption =
+      !hasBlockLedger &&
       (closeReason === "interrupted" || closeReason === "blocked") &&
       current.closeReason !== "interrupted" &&
       current.closeReason !== "blocked"
@@ -1634,6 +1638,36 @@ export class RunStore {
       `)
       .all(challengeId) as unknown as ChallengeBlockEventRow[]
     return rows.map(challengeBlockEventFromRow)
+  }
+
+  forceChallengeBlocked(input: {
+    challengeId: string
+    runId: string
+    blockedAt?: string
+  }): void {
+    this.assertOpen()
+    const timestamp = input.blockedAt ?? new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      this.assertRunBelongsToChallenge(input.runId, input.challengeId)
+      this.database
+        .prepare(`
+          INSERT INTO challenge_runtime_state (
+            challenge_id, session_interruptions, blocked, block_score,
+            blocked_at, blocked_run_id, updated_at
+          ) VALUES (?, 0, 1, 0, ?, ?, ?)
+          ON CONFLICT(challenge_id) DO UPDATE SET
+            blocked = 1,
+            blocked_at = COALESCE(blocked_at, excluded.blocked_at),
+            blocked_run_id = COALESCE(blocked_run_id, excluded.blocked_run_id),
+            updated_at = excluded.updated_at
+        `)
+        .run(input.challengeId, timestamp, input.runId, timestamp)
+      this.database.exec("COMMIT")
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
   }
 
   isChallengeBlocked(challengeId: string): boolean {
