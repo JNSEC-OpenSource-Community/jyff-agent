@@ -412,8 +412,7 @@ export class Project {
           matchType: match.matchType,
           matchedValue: match.matchedValue,
         })
-        if (!created) continue
-        linked += 1
+        if (created) linked += 1
         if (options.steerActive === false) continue
         const message = challengeAnnouncementsPrompt([
           {
@@ -428,12 +427,34 @@ export class Project {
           if (solver.challenge.id !== match.challengeId || solver.isClosed) {
             continue
           }
-          await solver.steer(message)
-          this.runStore.appendEvent(solver.runId, "announcement_steered", {
+          const queued = this.runStore.enqueueAnnouncementDelivery({
+            challengeId: match.challengeId,
             announcementKey: revision.key,
-            matchType: match.matchType,
+            runId: solver.runId,
           })
-          steered += 1
+          if (!queued) continue
+          try {
+            await solver.steer(message)
+            this.runStore.observeAnnouncementDelivery({
+              challengeId: match.challengeId,
+              announcementKey: revision.key,
+              runId: solver.runId,
+              status: "delivered",
+            })
+            this.runStore.appendEvent(solver.runId, "announcement_steered", {
+              announcementKey: revision.key,
+              matchType: match.matchType,
+            })
+            steered += 1
+          } catch (error) {
+            this.runStore.observeAnnouncementDelivery({
+              challengeId: match.challengeId,
+              announcementKey: revision.key,
+              runId: solver.runId,
+              status: "failed",
+              error: errorText(error),
+            })
+          }
         }
       }
     }

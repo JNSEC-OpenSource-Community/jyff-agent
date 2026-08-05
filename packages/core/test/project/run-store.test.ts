@@ -328,6 +328,44 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("公告 delivery outbox 对 Run 幂等，并允许 failed 重试", async () => {
+    const { store } = await storeFixture()
+    store.persistContestAnnouncement({
+      key: "notice:revision",
+      platformAnnouncementId: "notice",
+      revisionHash: "revision",
+      title: "Hint",
+      content: "Cookie Jar",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+      kind: "hint",
+    })
+    store.createRun({
+      id: "delivery-run",
+      challengeId: "web-1",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    const input = {
+      challengeId: "web-1",
+      announcementKey: "notice:revision",
+      runId: "delivery-run",
+    }
+    expect(store.enqueueAnnouncementDelivery(input)).toBe(true)
+    expect(store.enqueueAnnouncementDelivery(input)).toBe(false)
+    expect(
+      store.observeAnnouncementDelivery({
+        ...input,
+        status: "failed",
+        error: "busy",
+      }),
+    ).toMatchObject({ status: "failed", attempts: 1, lastError: "busy" })
+    expect(store.enqueueAnnouncementDelivery(input)).toBe(true)
+    expect(store.announcementDeliveries("web-1")).toEqual([
+      expect.objectContaining({ status: "queued", attempts: 1 }),
+    ])
+    store.close()
+  })
+
   it("持久化题目级 TLDR 并在更新时覆盖旧错误", async () => {
     const { path, store } = await storeFixture()
     expect(

@@ -235,6 +235,17 @@ export interface PersistContestAnnouncement {
   seenAt?: string
 }
 
+export interface AnnouncementDeliveryRecord {
+  challengeId: string
+  announcementKey: string
+  runId: string
+  status: "queued" | "delivered" | "failed"
+  attempts: number
+  queuedAt: string | null
+  observedAt: string | null
+  lastError: string | null
+}
+
 export interface ChallengeAnnouncementRecord extends ContestAnnouncementRecord {
   challengeId: string
   matchType: string
@@ -375,6 +386,17 @@ interface ContestAnnouncementRow {
   last_seen_at: string
 }
 
+interface AnnouncementDeliveryRow {
+  challenge_id: string
+  announcement_key: string
+  run_id: string
+  status: "queued" | "delivered" | "failed"
+  attempts: number
+  queued_at: string | null
+  observed_at: string | null
+  last_error: string | null
+}
+
 interface ChallengeAnnouncementRow extends ContestAnnouncementRow {
   challenge_id: string
   match_type: string
@@ -458,6 +480,21 @@ function tldrFromRow(row: TldrRow): TldrRecord {
     sessionPath: row.session_path,
     updatedAt: row.updated_at,
     error: row.error,
+  }
+}
+
+function announcementDeliveryFromRow(
+  row: AnnouncementDeliveryRow,
+): AnnouncementDeliveryRecord {
+  return {
+    challengeId: row.challenge_id,
+    announcementKey: row.announcement_key,
+    runId: row.run_id,
+    status: row.status,
+    attempts: row.attempts,
+    queuedAt: row.queued_at,
+    observedAt: row.observed_at,
+    lastError: row.last_error,
   }
 }
 
@@ -1200,6 +1237,82 @@ export class RunStore {
       .prepare("SELECT * FROM challenge_tldr WHERE challenge_id = ?")
       .get(challengeId) as unknown as TldrRow | undefined
     return row ? tldrFromRow(row) : undefined
+  }
+
+  enqueueAnnouncementDelivery(input: {
+    challengeId: string
+    announcementKey: string
+    runId: string
+    queuedAt?: string
+  }): boolean {
+    this.assertOpen()
+    this.assertRunBelongsToChallenge(input.runId, input.challengeId)
+    const result = this.database
+      .prepare(`
+        INSERT INTO announcement_deliveries (
+          challenge_id, announcement_key, run_id, status, attempts, queued_at
+        ) VALUES (?, ?, ?, 'queued', 0, ?)
+        ON CONFLICT(challenge_id, announcement_key, run_id) DO UPDATE SET
+          status = 'queued', queued_at = excluded.queued_at,
+          last_error = NULL
+        WHERE announcement_deliveries.status = 'failed'
+      `)
+      .run(
+        input.challengeId,
+        input.announcementKey,
+        input.runId,
+        input.queuedAt ?? new Date().toISOString(),
+      )
+    return Number(result.changes) === 1
+  }
+
+  observeAnnouncementDelivery(input: {
+    challengeId: string
+    announcementKey: string
+    runId: string
+    status: "delivered" | "failed"
+    error?: string | null
+    observedAt?: string
+  }): AnnouncementDeliveryRecord {
+    this.assertOpen()
+    const observedAt = input.observedAt ?? new Date().toISOString()
+    this.database
+      .prepare(`
+        UPDATE announcement_deliveries
+        SET status = ?, attempts = attempts + 1, observed_at = ?, last_error = ?
+        WHERE challenge_id = ? AND announcement_key = ? AND run_id = ?
+      `)
+      .run(
+        input.status,
+        observedAt,
+        input.error ?? null,
+        input.challengeId,
+        input.announcementKey,
+        input.runId,
+      )
+    const row = this.database
+      .prepare(`
+        SELECT * FROM announcement_deliveries
+        WHERE challenge_id = ? AND announcement_key = ? AND run_id = ?
+      `)
+      .get(
+        input.challengeId,
+        input.announcementKey,
+        input.runId,
+      ) as unknown as AnnouncementDeliveryRow
+    return announcementDeliveryFromRow(row)
+  }
+
+  announcementDeliveries(challengeId: string): AnnouncementDeliveryRecord[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT * FROM announcement_deliveries
+        WHERE challenge_id = ?
+        ORDER BY queued_at ASC, announcement_key ASC, run_id ASC
+      `)
+      .all(challengeId) as unknown as AnnouncementDeliveryRow[]
+    return rows.map(announcementDeliveryFromRow)
   }
 
   persistContestAnnouncement(
