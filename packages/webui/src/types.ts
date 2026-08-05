@@ -80,12 +80,23 @@ export interface DashboardRun extends RunRecord {
   subagents: SubagentRecord[]
 }
 
+export interface ChallengeWriteup {
+  validation: {
+    valid: boolean
+    path: string
+    errors: string[]
+    size: number
+  }
+  content: string | null
+}
+
 export interface ChallengeDetails {
   generatedAt: string
   challenge: DashboardChallenge
   runs: DashboardRun[]
   blackboard: BlackboardSummary
   environment: RemoteEnvironment | null
+  writeup: ChallengeWriteup
 }
 
 export interface DashboardProject {
@@ -100,6 +111,7 @@ export interface DashboardProject {
   subagents(runId: string): SubagentRecord[]
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
+  challengeWriteup(challengeId: string): Promise<ChallengeWriteup>
   schedulerAttemptCount(challengeId: string): number
   sessionInterruptionCount(challengeId: string): number
   /**

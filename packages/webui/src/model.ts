@@ -166,6 +166,7 @@ export async function buildChallengeDetails(
           environment.challengeId === challengeId &&
           environment.status !== "stopped",
       ) ?? null,
+    writeup: await project.challengeWriteup(challengeId),
   }
 }
 

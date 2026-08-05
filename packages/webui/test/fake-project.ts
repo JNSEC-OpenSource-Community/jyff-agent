@@ -266,6 +266,17 @@ export class FakeDashboardProject implements DashboardProject {
   blackboardStats(): BlackboardStats[] {
     return this.statsValues
   }
+  async challengeWriteup(challengeId: string) {
+    return {
+      validation: {
+        valid: false,
+        path: `/workspace/${challengeId}/writeup.md`,
+        errors: ["writeup.md does not exist"],
+        size: 0,
+      },
+      content: null,
+    }
+  }
   schedulerAttemptCount(challengeId: string): number {
     return this.runValues.filter(
       (run) =>

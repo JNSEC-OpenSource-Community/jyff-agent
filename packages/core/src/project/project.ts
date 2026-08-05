@@ -1,4 +1,4 @@
-import { mkdir, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
   type AgentSkill,
@@ -58,6 +58,10 @@ import {
   classifyAnnouncement,
   matchAnnouncementChallenges,
 } from "../orchestration/announcement-matcher.ts"
+import {
+  validateChallengeWriteup,
+  type WriteupValidationResult,
+} from "../orchestration/writeup-validator.ts"
 import {
   type EnqueueSchedulerChallenge,
   type MoveSchedulerChallenge,
@@ -232,6 +236,18 @@ export class Project {
 
   get agentDirectory(): string {
     return join(this.root, ".ctf-agent")
+  }
+  async challengeWriteup(challengeId: string): Promise<{
+    validation: WriteupValidationResult
+    content: string | null
+  }> {
+    const workspace = challengeWorkspacePath(this.agentDirectory, challengeId)
+    const validation = await validateChallengeWriteup(workspace)
+    if (!validation.valid) return { validation, content: null }
+    return {
+      validation,
+      content: await readFile(validation.path, "utf8"),
+    }
   }
 
   async refresh(): Promise<ContestOverview> {

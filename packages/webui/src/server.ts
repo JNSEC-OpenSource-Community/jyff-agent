@@ -758,6 +758,35 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    if (
+      method === "GET" &&
+      /^\/api\/challenges\/[^/]+\/writeup$/.test(url.pathname)
+    ) {
+      const project = currentProject()
+      requireProject(project)
+      const encodedId = url.pathname
+        .slice("/api/challenges/".length)
+        .slice(0, -"/writeup".length)
+      const challengeId = decodeURIComponent(encodedId)
+      const writeup = await project.challengeWriteup(challengeId)
+      if (!writeup.validation.valid || !writeup.content) {
+        sendJson(response, 409, {
+          error: "writeup_unavailable",
+          validation: writeup.validation,
+        })
+        return
+      }
+      const body = Buffer.from(writeup.content, "utf8")
+      response.writeHead(200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": `attachment; filename="writeup-${filenameSafe(challengeId)}.md"`,
+        "Cache-Control": "no-store",
+        "Content-Length": body.byteLength,
+      })
+      response.end(body)
+      return
+    }
+
     if (method === "GET" && url.pathname.startsWith("/api/challenges/")) {
       const project = currentProject()
       requireProject(project)

@@ -257,7 +257,7 @@ function DetailContent(props: {
   onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
   onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
 }) {
-  const { challenge, runs, blackboard, environment } = props.details
+  const { challenge, runs, blackboard, environment, writeup } = props.details
   const submission = acceptedSubmission(runs)
   return (
     <>
@@ -317,6 +317,32 @@ function DetailContent(props: {
               onCancel={props.onCancel}
             />
           ))
+        )}
+      </DetailSection>
+      <DetailSection
+        title="Writeup"
+        count={writeup.validation.valid ? "已校验" : "未完成"}
+      >
+        {writeup.validation.valid && writeup.content ? (
+          <>
+            <div className="writeup-actions">
+              <a
+                className="control-button export-link"
+                href={`/api/challenges/${encodeURIComponent(challenge.id)}/writeup`}
+                download
+              >
+                下载 Markdown
+              </a>
+              <span>{writeup.validation.size.toLocaleString()} bytes</span>
+            </div>
+            <pre className="writeup-preview">
+              {writeup.content.slice(0, 24_000)}
+            </pre>
+          </>
+        ) : (
+          <div className="detail-empty">
+            {writeup.validation.errors.join("；") || "Writeup 尚未生成。"}
+          </div>
         )}
       </DetailSection>
       <DetailSection

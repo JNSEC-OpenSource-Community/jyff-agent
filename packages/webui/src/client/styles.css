@@ -2321,6 +2321,27 @@ summary:focus-visible,
   opacity: 0.64;
 }
 
+.writeup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.writeup-preview {
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  color: var(--text);
+  font: 12px / 1.6 var(--mono);
+  white-space: pre-wrap;
+}
+
 .detail-empty {
   padding: 24px 14px;
   color: var(--dim);
