@@ -65,6 +65,10 @@ import {
 } from "../persistence/run-store.ts"
 import { downloadChallengeAttachments } from "./attachments.ts"
 import {
+  challengeWorkspaceKey,
+  challengeWorkspacePath,
+} from "./challenge-workspace.ts"
+import {
   findProjectRoot,
   loadProjectConfig,
   type ProjectConfig,
@@ -419,9 +423,14 @@ export class Project {
     if (this.closed) throw new Error("Project 已关闭")
     const runId = resumed?.id ?? newRunId()
     const runDirectory = join(this.agentDirectory, "runs", runId)
-    const workspace = resumed?.workspace ?? join(runDirectory, "workspace")
-    // 仅此处在宿主机创建持久化 bind mount；Solver 的文件与系统操作都进入容器。
-    await mkdir(workspace, { recursive: true })
+    const workspace =
+      resumed?.workspace ??
+      challengeWorkspacePath(this.agentDirectory, challengeId)
+    // Run session 与题目级持久 workspace 分离；后者跨复活复用。
+    await Promise.all([
+      mkdir(runDirectory, { recursive: true }),
+      mkdir(workspace, { recursive: true }),
+    ])
     if (!resumed) {
       const record = this.runStore.createRun({
         id: runId,
@@ -469,7 +478,7 @@ export class Project {
         workspaceMount: this.workspaceMount?.({
           runId,
           workspace,
-          relativeWorkspace: `runs/${runId}/workspace`,
+          relativeWorkspace: `challenges/${challengeWorkspaceKey(challengeId)}/workspace`,
         }),
         privileged: this.config.sandbox.privileged,
         networkMode: this.config.sandbox.networkMode,

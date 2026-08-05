@@ -200,7 +200,12 @@ describe("ContestScheduler", () => {
           }),
         ])
         const continuedSession = await readFile(
-          join(dirname(runs[1]?.workspace ?? ""), "session.jsonl"),
+          join(
+            dirname(dirname(dirname(runs[1]?.workspace ?? ""))),
+            "runs",
+            runs[1]?.id ?? "missing",
+            "session.jsonl",
+          ),
           "utf8",
         )
         expect(continuedSession).toContain(INCOMPLETE_CONTINUATION_PROMPT)

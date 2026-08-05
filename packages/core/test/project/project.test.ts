@@ -327,6 +327,8 @@ describe("Project", () => {
     const second = await project.createSolver("warmup-flag", {
       agent: agentOptions,
     })
+    expect(second.workspace).toBe(first.workspace)
+    expect(second.workspace).toContain(join("challenges", ""))
     const snapshot = second.state.messages
       .map((message) =>
         message.role === "user" && typeof message.content === "string"

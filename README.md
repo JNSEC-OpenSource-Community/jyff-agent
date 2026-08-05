@@ -49,11 +49,12 @@ Compose 只使用 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 
 ├── scheduler-config.json # 动态调度并发配置
 ├── project-config.json   # 平台、比赛和 sandbox 配置
 ├── runs.sqlite           # Run、事件、SubAgent、调度状态与黑板
-└── runs/<run-id>/
-    ├── session.jsonl     # Pi 原生 session tree
-    ├── subagents/<id>/
-    │   └── session.jsonl # 每个 worker 的独立可恢复会话
-    └── workspace/        # Solver 产物
+├── runs/<run-id>/
+│   ├── session.jsonl     # Pi 原生 session tree
+│   └── subagents/<id>/
+│       └── session.jsonl # 每个 worker 的独立可恢复会话
+└── challenges/<safe-key>/
+    └── workspace/        # 同题复活时复用的附件、脚本、Writeup 和 Solver 产物
 ```
 
 常用运维命令：

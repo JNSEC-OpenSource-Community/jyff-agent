@@ -27,9 +27,10 @@ packages/
 ├── scheduler-config.json
 ├── project-config.json
 ├── runs.sqlite
-└── runs/<run-id>/
-    ├── session.jsonl
-    ├── subagents/<subagent-id>/session.jsonl
+├── runs/<run-id>/
+│   ├── session.jsonl
+│   └── subagents/<subagent-id>/session.jsonl
+└── challenges/<safe-key>/
     └── workspace/
 ```
 
@@ -41,7 +42,7 @@ packages/
 
 1. 将题目 ID 绑定为单题 `ChallengeCapability` 并读取元数据；
 2. 为当前题目创建或复用黑板 origin；
-3. 创建 Run workspace 和 Docker sandbox；
+3. 创建或复用由题目 ID 稳定哈希得到的题目级 workspace，并创建 Docker sandbox；
 4. 自动下载全部附件到容器的 `/workspace/attachments/<文件名>`；
 5. 把题目信息与附件路径编码为 `<challenge_context>` 初始 user 消息；
 6. 创建共享同一 sandbox 的 SubAgent manager；
@@ -74,7 +75,9 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 - Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；
 - SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数和黑板；
-- workspace：附件、脚本、反编译结果和其他解题产物。
+- 题目级 workspace：附件、脚本、反编译结果、`writeup.md` 和其他跨复活保留的解题产物。
+
+题目级目录使用 challenge ID 的 SHA-256 截断值作为 `safe-key`，不会把平台 ID 直接拼入宿主机路径。文件 API 可复用 `resolveWorkspaceArtifact()` 和 symlink containment 检查拒绝路径逃逸。`validateChallengeWriteup()` 已提供 UTF-8、大小和必需标题校验；accepted Flag 后的 `writing_writeup` turn 与延迟 sandbox 清理由后续 lifecycle supervisor 接管，在该接入完成前不得把 validator 的存在误认为交付生命周期已经切换。
 
 不要把完整 transcript 复制到 SQLite，也不要从 `agents` 包反向读取 RunStore。涉及多个控制面事实的更新应继续使用 RunStore 事务，以免 WebUI、调度器和恢复逻辑看到中间状态。
 
