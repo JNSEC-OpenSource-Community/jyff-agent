@@ -215,6 +215,11 @@ export class CtfSolverAgent extends BaseAgent {
     await this.setActiveTools(["read", "write", "edit", "list"])
   }
 
+  /** Writeup 校验失败时关闭不得被 accepted submission 改回 solved。 */
+  discardTerminalSubmissionForWriteupFailure(): void {
+    this.finalSubmission = undefined
+  }
+
   /** Compatibility helper for UIs/runners that need a point-in-time transcript. */
   transcript(): Promise<AgentMessage[]> {
     return this.getMessages()

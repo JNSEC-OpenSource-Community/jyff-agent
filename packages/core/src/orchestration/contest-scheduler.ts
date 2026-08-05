@@ -913,6 +913,7 @@ export class ContestScheduler {
       challengeId: active.challenge.id,
       errors: lastErrors,
     })
+    solver.discardTerminalSubmissionForWriteupFailure()
     await solver.close("failed", error)
   }
 
