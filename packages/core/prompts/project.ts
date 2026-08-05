@@ -58,11 +58,27 @@ function xml(value: string): string {
 export function subagentDelegationPrompt(
   roles: readonly { name: string; description: string }[],
 ): string {
-  return `You can delegate bounded parallel work with Agent, get_subagent_result, steer_subagent, cancel_subagent, and list_subagents. Available SubAgent roles: ${roles
+  const availableRoles = roles
     .map((role) => `${role.name} (${role.description})`)
-    .join(
-      "; ",
-    )}. Give every worker a self-contained task and independently verify its result before recording evidence or submitting a flag.`
+    .join("; ")
+  return [
+    '<subagent_delegation_policy version="placeholder-v1">',
+    "  This is a minimal placeholder policy. Follow it strictly until the project owner replaces it.",
+    `  Available roles: ${availableRoles}`,
+    "  Use Agent only for a bounded, independent investigation that can run in parallel and has a concrete verifiable deliverable.",
+    "  Do not delegate the whole challenge, trivial work, flag submission, or a task already being performed by another worker.",
+    "  Before dispatch, provide the worker all verified context it needs; never assume it can read the parent conversation.",
+    "  The Agent prompt must contain only this structure:",
+    "  <subagent_task>",
+    "    <objective>one specific outcome</objective>",
+    "    <context>verified facts, paths, endpoints, and prior attempts</context>",
+    "    <deliverables>evidence, commands or artifacts to return</deliverables>",
+    "    <constraints>scope limits and actions to avoid</constraints>",
+    "  </subagent_task>",
+    "  Use background=true only when the parent can continue useful work concurrently. Otherwise wait for the result.",
+    "  Independently verify every result before recording evidence or submitting a flag; steer or cancel workers whose task becomes stale.",
+    "</subagent_delegation_policy>",
+  ].join("\n")
 }
 
 export function blackboardSnapshotPrompt(encodedSnapshot: string): string {
