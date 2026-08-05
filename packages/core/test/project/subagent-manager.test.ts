@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  type ChallengeCapability,
   type ChallengeInfo,
   discoverSubagentRoles,
   type Sandbox,
@@ -65,14 +64,6 @@ const challenge: ChallengeInfo = {
   attachments: [],
 }
 
-const capability: ChallengeCapability = {
-  getInfo: async () => challenge,
-  downloadAttachment: async () => {
-    throw new Error("no attachment")
-  },
-  submitFlag: async () => ({ status: "rejected", message: "test" }),
-}
-
 describe("CtfSubagentManager", () => {
   it("以前台任务返回结果，并保留稳定 worker 记录和生命周期", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-subagent-manager-"))
@@ -90,7 +81,6 @@ describe("CtfSubagentManager", () => {
       runId: "run-1",
       runDirectory: root,
       challenge,
-      capability,
       sandbox,
       agent: {
         streamFn: faux.streamSimple as AgentOptions["streamFn"],
@@ -151,7 +141,6 @@ describe("CtfSubagentManager", () => {
       runId: "run-restore",
       runDirectory: root,
       challenge,
-      capability,
       sandbox,
       agent: {
         streamFn: firstCore.streamSimple as AgentOptions["streamFn"],
@@ -175,7 +164,6 @@ describe("CtfSubagentManager", () => {
       runId: "run-restore",
       runDirectory: root,
       challenge,
-      capability,
       sandbox,
       agent: {
         streamFn: resumedCore.streamSimple as AgentOptions["streamFn"],
@@ -208,7 +196,6 @@ describe("CtfSubagentManager", () => {
       runId: "run-2",
       runDirectory: root,
       challenge,
-      capability,
       sandbox: new MemorySandbox(),
       agent: {
         streamFn: faux.streamSimple as AgentOptions["streamFn"],
@@ -258,7 +245,6 @@ describe("CtfSubagentManager", () => {
       runId: "run-queue",
       runDirectory: root,
       challenge,
-      capability,
       sandbox: new MemorySandbox(),
       agent: {
         streamFn: faux.streamSimple as AgentOptions["streamFn"],

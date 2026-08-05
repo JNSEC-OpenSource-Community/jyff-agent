@@ -315,8 +315,6 @@ function humanToolName(tool: string): string {
     write: "写入文件",
     edit: "编辑文件",
     list: "浏览目录",
-    ctf_challenge_info: "题目信息",
-    ctf_download_attachment: "下载附件",
     ctf_submit_flag: "提交 Flag",
     ctf_instance_start: "启动远程环境",
     ctf_instance_destroy: "关闭远程环境",

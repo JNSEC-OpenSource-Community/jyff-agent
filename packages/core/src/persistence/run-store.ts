@@ -261,7 +261,7 @@ function normalizedDescription(value: string, field: string): string {
 function truncateOrigin(value: string): string {
   if (value.length <= BLACKBOARD_ORIGIN_MAX_LENGTH) return value
   const suffix =
-    "\n[Origin truncated; use ctf_challenge_info for the complete challenge description.]"
+    "\n[Origin truncated; consult the initial challenge_context for the complete challenge description.]"
   return value.slice(0, BLACKBOARD_ORIGIN_MAX_LENGTH - suffix.length) + suffix
 }
 

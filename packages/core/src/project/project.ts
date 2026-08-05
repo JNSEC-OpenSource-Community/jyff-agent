@@ -37,6 +37,8 @@ import type {
 import {
   BLACKBOARD_SYSTEM_GUIDANCE,
   blackboardSnapshotPrompt,
+  CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
+  challengeContextPrompt,
   subagentDelegationPrompt,
 } from "../../prompts/index.ts"
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
@@ -58,6 +60,7 @@ import {
   type RunStatus,
   RunStore,
 } from "../persistence/run-store.ts"
+import { downloadChallengeAttachments } from "./attachments.ts"
 import {
   findProjectRoot,
   loadProjectConfig,
@@ -439,13 +442,26 @@ export class Project {
         privileged: this.config.sandbox.privileged,
         networkMode: this.config.sandbox.networkMode,
       })
+      const downloadedAttachments = await downloadChallengeAttachments({
+        capability,
+        attachments: challenge.attachments,
+        sandbox,
+      })
+      const challengeMessages: AgentMessage[] = resumed
+        ? []
+        : [
+            {
+              role: "user",
+              content: challengeContextPrompt(challenge, downloadedAttachments),
+              timestamp: Date.now(),
+            },
+          ]
 
       subagentManager = new CtfSubagentManager({
         projectId: this.config.project.id,
         runId,
         runDirectory,
         challenge,
-        capability,
         sandbox,
         agent: options.agent,
         roles: this.subagentRoles,
@@ -497,6 +513,7 @@ export class Project {
             ],
             systemPrompt: [
               options.agent.initialState?.systemPrompt,
+              CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
               BLACKBOARD_SYSTEM_GUIDANCE,
               subagentDelegationPrompt(subagentManager.availableRoles()),
             ]
@@ -504,6 +521,7 @@ export class Project {
               .join("\n\n"),
             messages: [
               ...(options.agent.initialState?.messages ?? []),
+              ...challengeMessages,
               ...blackboardMessages,
             ],
           },
