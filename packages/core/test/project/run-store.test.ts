@@ -328,6 +328,55 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("幂等持久化公告 revision 和题目关联", async () => {
+    const { path, store } = await storeFixture()
+    const input = {
+      key: "notice-1:hash-a",
+      platformAnnouncementId: "notice-1",
+      revisionHash: "hash-a",
+      title: "New hint",
+      content: "Hint for Cookie Jar",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+      kind: "hint",
+      classificationReason: "platform_kind",
+      seenAt: "2026-01-01T00:01:00.000Z",
+    }
+    store.persistContestAnnouncement(input)
+    store.persistContestAnnouncement({
+      ...input,
+      seenAt: "2026-01-01T00:02:00.000Z",
+    })
+    expect(
+      store.linkChallengeAnnouncement({
+        challengeId: "web-1",
+        announcementKey: input.key,
+        matchType: "title",
+        matchedValue: "Cookie Jar",
+      }),
+    ).toBe(true)
+    expect(
+      store.linkChallengeAnnouncement({
+        challengeId: "web-1",
+        announcementKey: input.key,
+        matchType: "title",
+        matchedValue: "Cookie Jar",
+      }),
+    ).toBe(false)
+    expect(store.challengeAnnouncements("web-1")).toEqual([
+      expect.objectContaining({
+        key: input.key,
+        challengeId: "web-1",
+        lastSeenAt: "2026-01-01T00:02:00.000Z",
+        matchType: "title",
+      }),
+    ])
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.challengeAnnouncements("web-1")).toHaveLength(1)
+    reopened.close()
+  })
+
   it("持久化 normal/blocked 队列、支持乐观锁重排和人工跨 lane 提前", async () => {
     const { path, store } = await storeFixture()
     const normal1 = store.enqueueSchedulerChallenge({

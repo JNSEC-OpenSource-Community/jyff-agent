@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type {
   Announcement,
   AnnouncementKind,
@@ -104,6 +105,23 @@ export function matchAnnouncementChallenges(
     }
   }
   return matches
+}
+
+export function announcementRevision(announcement: Announcement): {
+  key: string
+  revisionHash: string
+} {
+  const revisionHash = createHash("sha256")
+    .update(announcement.title, "utf8")
+    .update("\0")
+    .update(announcement.content, "utf8")
+    .update("\0")
+    .update(announcement.publishedAt, "utf8")
+    .digest("hex")
+  return {
+    revisionHash,
+    key: `${announcement.id}:${revisionHash}`,
+  }
 }
 
 export function normalizeAnnouncementText(value: string): string {

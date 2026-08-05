@@ -190,6 +190,40 @@ export interface MoveSchedulerChallenge {
   overrideBlockedLane?: boolean
 }
 
+export interface ContestAnnouncementRecord {
+  key: string
+  platformAnnouncementId: string
+  revisionHash: string
+  title: string
+  content: string
+  publishedAt: string
+  kind: string
+  classificationReason: string | null
+  ignored: boolean
+  firstSeenAt: string
+  lastSeenAt: string
+}
+
+export interface PersistContestAnnouncement {
+  key: string
+  platformAnnouncementId: string
+  revisionHash: string
+  title: string
+  content: string
+  publishedAt: string
+  kind: string
+  classificationReason?: string
+  ignored?: boolean
+  seenAt?: string
+}
+
+export interface ChallengeAnnouncementRecord extends ContestAnnouncementRecord {
+  challengeId: string
+  matchType: string
+  matchedValue: string
+  linkedAt: string
+}
+
 export interface ChallengeBlockEvent {
   id: number
   challengeId: string
@@ -300,6 +334,27 @@ interface SubagentRow {
   completed_at: string | null
 }
 
+interface ContestAnnouncementRow {
+  announcement_key: string
+  platform_announcement_id: string
+  revision_hash: string
+  title: string
+  content: string
+  published_at: string
+  kind: string
+  classification_reason: string | null
+  ignored: number
+  first_seen_at: string
+  last_seen_at: string
+}
+
+interface ChallengeAnnouncementRow extends ContestAnnouncementRow {
+  challenge_id: string
+  match_type: string
+  matched_value: string
+  linked_at: string
+}
+
 interface SchedulerQueueRow {
   challenge_id: string
   source: RunSource
@@ -366,6 +421,24 @@ function evidenceToSummary(
   row: EvidenceRow,
 ): BlackboardSummary["evidence"][number] {
   return { id: row.id, description: row.description, runId: row.run_id }
+}
+
+function contestAnnouncementFromRow(
+  row: ContestAnnouncementRow,
+): ContestAnnouncementRecord {
+  return {
+    key: row.announcement_key,
+    platformAnnouncementId: row.platform_announcement_id,
+    revisionHash: row.revision_hash,
+    title: row.title,
+    content: row.content,
+    publishedAt: row.published_at,
+    kind: row.kind,
+    classificationReason: row.classification_reason,
+    ignored: row.ignored === 1,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+  }
 }
 
 function schedulerQueueFromRow(row: SchedulerQueueRow): SchedulerQueueRecord {
@@ -641,6 +714,43 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS scheduler_queue_order
         ON scheduler_queue(manual_override DESC, lane, position, enqueued_at);
+
+      CREATE TABLE IF NOT EXISTS contest_announcements (
+        announcement_key TEXT PRIMARY KEY,
+        platform_announcement_id TEXT NOT NULL,
+        revision_hash TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        classification_reason TEXT,
+        ignored INTEGER NOT NULL DEFAULT 0 CHECK (ignored IN (0, 1)),
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS challenge_announcements (
+        challenge_id TEXT NOT NULL,
+        announcement_key TEXT NOT NULL
+          REFERENCES contest_announcements(announcement_key) ON DELETE CASCADE,
+        match_type TEXT NOT NULL,
+        matched_value TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (challenge_id, announcement_key)
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS announcement_deliveries (
+        challenge_id TEXT NOT NULL,
+        announcement_key TEXT NOT NULL
+          REFERENCES contest_announcements(announcement_key) ON DELETE CASCADE,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        queued_at TEXT,
+        observed_at TEXT,
+        last_error TEXT,
+        PRIMARY KEY (challenge_id, announcement_key, run_id)
+      ) STRICT;
     `)
     const runColumns = database
       .prepare("PRAGMA table_info(runs)")
@@ -1002,6 +1112,114 @@ export class RunStore {
       `)
       .get(challengeId) as { count: number } | undefined
     return row?.count ?? 0
+  }
+
+  persistContestAnnouncement(
+    input: PersistContestAnnouncement,
+  ): ContestAnnouncementRecord {
+    this.assertOpen()
+    const seenAt = input.seenAt ?? new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const existing = this.database
+        .prepare(
+          "SELECT * FROM contest_announcements WHERE announcement_key = ?",
+        )
+        .get(input.key) as unknown as ContestAnnouncementRow | undefined
+      if (existing) {
+        if (
+          existing.platform_announcement_id !== input.platformAnnouncementId ||
+          existing.revision_hash !== input.revisionHash
+        ) {
+          throw new Error(`Announcement key collision: ${input.key}`)
+        }
+        this.database
+          .prepare(`
+            UPDATE contest_announcements SET last_seen_at = ?
+            WHERE announcement_key = ?
+          `)
+          .run(seenAt, input.key)
+      } else {
+        this.database
+          .prepare(`
+            INSERT INTO contest_announcements (
+              announcement_key, platform_announcement_id, revision_hash,
+              title, content, published_at, kind, classification_reason,
+              ignored, first_seen_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .run(
+            input.key,
+            input.platformAnnouncementId,
+            input.revisionHash,
+            input.title,
+            input.content,
+            input.publishedAt,
+            input.kind,
+            input.classificationReason ?? null,
+            input.ignored ? 1 : 0,
+            seenAt,
+            seenAt,
+          )
+      }
+      const row = this.database
+        .prepare(
+          "SELECT * FROM contest_announcements WHERE announcement_key = ?",
+        )
+        .get(input.key) as unknown as ContestAnnouncementRow
+      this.database.exec("COMMIT")
+      return contestAnnouncementFromRow(row)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  linkChallengeAnnouncement(input: {
+    challengeId: string
+    announcementKey: string
+    matchType: string
+    matchedValue: string
+    createdAt?: string
+  }): boolean {
+    this.assertOpen()
+    const result = this.database
+      .prepare(`
+        INSERT INTO challenge_announcements (
+          challenge_id, announcement_key, match_type, matched_value, created_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(challenge_id, announcement_key) DO NOTHING
+      `)
+      .run(
+        input.challengeId,
+        input.announcementKey,
+        input.matchType,
+        input.matchedValue,
+        input.createdAt ?? new Date().toISOString(),
+      )
+    return Number(result.changes) === 1
+  }
+
+  challengeAnnouncements(challengeId: string): ChallengeAnnouncementRecord[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT a.*, ca.challenge_id, ca.match_type, ca.matched_value,
+          ca.created_at AS linked_at
+        FROM challenge_announcements ca
+        JOIN contest_announcements a
+          ON a.announcement_key = ca.announcement_key
+        WHERE ca.challenge_id = ? AND a.ignored = 0
+        ORDER BY a.published_at ASC, a.announcement_key ASC
+      `)
+      .all(challengeId) as unknown as ChallengeAnnouncementRow[]
+    return rows.map((row) => ({
+      ...contestAnnouncementFromRow(row),
+      challengeId: row.challenge_id,
+      matchType: row.match_type,
+      matchedValue: row.matched_value,
+      linkedAt: row.linked_at,
+    }))
   }
 
   enqueueSchedulerChallenge(

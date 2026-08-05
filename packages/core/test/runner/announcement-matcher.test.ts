@@ -1,6 +1,7 @@
 import type { Announcement, ChallengeSummary } from "@ctf-agent/platform"
 import { describe, expect, it } from "vitest"
 import {
+  announcementRevision,
   classifyAnnouncement,
   matchAnnouncementChallenges,
   normalizeAnnouncementText,
@@ -25,6 +26,22 @@ function announcement(input: Partial<Announcement>): Announcement {
 }
 
 describe("announcement classification", () => {
+  it("uses a stable key per platform ID and content revision", () => {
+    const first = announcementRevision(
+      announcement({ id: "1", title: "Hint", content: "v1" }),
+    )
+    expect(
+      announcementRevision(
+        announcement({ id: "1", title: "Hint", content: "v1" }),
+      ),
+    ).toEqual(first)
+    expect(
+      announcementRevision(
+        announcement({ id: "1", title: "Hint", content: "v2" }),
+      ).key,
+    ).not.toBe(first.key)
+  })
+
   it("filters platform blood kinds, blood titles, and structured solve actions", () => {
     expect(
       classifyAnnouncement(announcement({ kind: "solve_broadcast" })),
