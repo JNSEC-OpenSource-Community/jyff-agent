@@ -111,12 +111,14 @@ export interface EvidenceRecord {
 }
 
 export type OpportunityStatus = "open" | "concluded"
+export type OpportunityResolution = "confirmed" | "dead_end"
 
 export interface OpportunityRecord {
   id: number
   challengeId: string
   description: string
   status: OpportunityStatus
+  resolution: OpportunityResolution | null
   runId: string
   sourceEvidenceIds: number[]
   targetEvidenceId: number | null
@@ -130,6 +132,7 @@ export interface BlackboardSummary {
     id: number
     description: string
     status: OpportunityStatus
+    resolution: OpportunityResolution | null
     sourceEvidenceIds: number[]
     targetEvidenceId: number | null
   }[]
@@ -238,6 +241,7 @@ interface OpportunityRow {
   challenge_id: string
   description: string
   status: string
+  resolution: string | null
   run_id: string
   target_evidence_id: number | null
   created_at: string
@@ -349,6 +353,7 @@ function opportunityFromRow(
     challengeId: row.challenge_id,
     description: row.description,
     status: row.status as OpportunityStatus,
+    resolution: row.resolution as OpportunityResolution | null,
     runId: row.run_id,
     sourceEvidenceIds,
     targetEvidenceId: row.target_evidence_id,
@@ -574,6 +579,7 @@ export class RunStore {
         description         TEXT NOT NULL,
         status              TEXT NOT NULL DEFAULT 'open'
                             CHECK (status IN ('open', 'concluded')),
+        resolution          TEXT CHECK (resolution IN ('confirmed', 'dead_end')),
         run_id              TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
         target_evidence_id  INTEGER REFERENCES challenge_evidence(id) ON DELETE SET NULL,
         created_at          TEXT NOT NULL,
@@ -643,6 +649,20 @@ export class RunStore {
       database.exec(
         "ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT 'direct'",
       )
+    }
+
+    const opportunityColumns = database
+      .prepare("PRAGMA table_info(challenge_opportunities)")
+      .all() as unknown as Array<{ name: string }>
+    if (!opportunityColumns.some((column) => column.name === "resolution")) {
+      database.exec(
+        "ALTER TABLE challenge_opportunities ADD COLUMN resolution TEXT CHECK (resolution IN ('confirmed', 'dead_end'))",
+      )
+      database.exec(`
+        UPDATE challenge_opportunities
+        SET resolution = 'confirmed'
+        WHERE status = 'concluded' AND resolution IS NULL
+      `)
     }
 
     const runtimeColumns = database
@@ -1686,6 +1706,7 @@ export class RunStore {
         challengeId,
         description: normalized,
         status: "open",
+        resolution: null,
         runId,
         sourceEvidenceIds: deduped,
         targetEvidenceId: null,
@@ -1703,8 +1724,12 @@ export class RunStore {
     opportunityId: number,
     resultDescription: string,
     runId: string,
+    resolution: OpportunityResolution = "confirmed",
   ): { evidence: EvidenceRecord; opportunity: OpportunityRecord } {
     this.assertOpen()
+    if (resolution !== "confirmed" && resolution !== "dead_end") {
+      throw new Error(`Unsupported opportunity resolution: ${resolution}`)
+    }
     const normalized = normalizedDescription(
       resultDescription,
       "resultDescription",
@@ -1743,10 +1768,11 @@ export class RunStore {
       const update = this.database
         .prepare(`
         UPDATE challenge_opportunities
-        SET status = 'concluded', target_evidence_id = ?, concluded_at = ?
+        SET status = 'concluded', resolution = ?, target_evidence_id = ?,
+            concluded_at = ?
         WHERE id = ? AND challenge_id = ? AND status = 'open'
       `)
-        .run(evidenceId, timestamp, opportunityId, challengeId)
+        .run(resolution, evidenceId, timestamp, opportunityId, challengeId)
       if (Number(update.changes) !== 1) {
         throw new Error(`Opportunity ${opportunityId} could not be concluded`)
       }

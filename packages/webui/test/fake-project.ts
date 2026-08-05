@@ -124,6 +124,7 @@ export class FakeDashboardProject implements DashboardProject {
             id: 1,
             description: "Leak libc through puts",
             status: "open",
+            resolution: null,
             sourceEvidenceIds: [1],
             targetEvidenceId: null,
           },

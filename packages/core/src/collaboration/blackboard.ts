@@ -70,8 +70,9 @@ export function serializeBlackboard(
     for (const o of concludedOpportunities) {
       const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ")
       const target = o.targetEvidenceId ? ` → e${o.targetEvidenceId}` : ""
+      const resolution = o.resolution ?? "confirmed"
       lines.push(
-        `- [o${o.id}] from ${sources}${target}: ${JSON.stringify(o.description)}`,
+        `- [o${o.id}] (${resolution}) from ${sources}${target}: ${JSON.stringify(o.description)}`,
       )
     }
     lines.push("")
@@ -126,8 +127,8 @@ export function createBlackboardTools(
       label: "Record to Blackboard",
       description:
         "Record to the shared challenge blackboard. You can record evidence (confirmed findings), " +
-        "declare opportunities (exploration directions from existing evidence), conclude opportunities " +
-        "(record the result of exploring an opportunity), or any combination of these. " +
+        "declare opportunities (experimental directions from existing evidence), conclude opportunities " +
+        "as confirmed or dead_end while atomically recording result Evidence, or combine these operations. " +
         'Evidence must be one object such as {"evidence":{"description":"verified finding"}}; ' +
         "do not pass a string or an array as evidence.",
       parameters: Type.Object({
@@ -154,6 +155,9 @@ export function createBlackboardTools(
         concludeOpportunity: Type.Optional(
           Type.Object({
             opportunityId: Type.Integer({ minimum: 1 }),
+            resolution: Type.Optional(
+              Type.Union([Type.Literal("confirmed"), Type.Literal("dead_end")]),
+            ),
             resultDescription: Type.String({
               minLength: 1,
               maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH,
@@ -168,6 +172,7 @@ export function createBlackboardTools(
           opportunity?: { description: string; sourceEvidenceIds: number[] }
           concludeOpportunity?: {
             opportunityId: number
+            resolution?: "confirmed" | "dead_end"
             resultDescription: string
           }
         }
@@ -218,6 +223,7 @@ export function createBlackboardTools(
               input.concludeOpportunity.opportunityId,
               input.concludeOpportunity.resultDescription,
               runId,
+              input.concludeOpportunity.resolution ?? "confirmed",
             )
             details.concluded = concluded
           } catch (err) {

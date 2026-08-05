@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   BLACKBOARD_DESCRIPTION_MAX_LENGTH,
@@ -261,11 +262,34 @@ describe("RunStore blackboard", () => {
     )
     expect(result.evidence.description).toBe("探索成功，获得 shell")
     expect(result.opportunity.status).toBe("concluded")
+    expect(result.opportunity.resolution).toBe("confirmed")
     expect(result.opportunity.targetEvidenceId).toBe(result.evidence.id)
 
     const summary = store.getBlackboardSummary("chal-1")
     expect(summary.evidence).toHaveLength(2) // origin + 新 evidence
-    expect(summary.opportunities[0]?.status).toBe("concluded")
+    expect(summary.opportunities[0]).toMatchObject({
+      status: "concluded",
+      resolution: "confirmed",
+    })
+
+    const deadEnd = store.recordOpportunity(
+      "chal-1",
+      "run-1",
+      "测试另一条实验方向",
+      [origin.id],
+    )
+    const deadEndResult = store.concludeOpportunity(
+      "chal-1",
+      deadEnd.id,
+      "实验表明该方向不可行",
+      "run-1",
+      "dead_end",
+    )
+    expect(deadEndResult.opportunity).toMatchObject({
+      status: "concluded",
+      resolution: "dead_end",
+      targetEvidenceId: deadEndResult.evidence.id,
+    })
 
     store.close()
   })
@@ -329,6 +353,44 @@ describe("RunStore blackboard", () => {
     expect(summary.evidence).toHaveLength(1)
     expect(summary.opportunities[0]?.status).toBe("open")
     store.close()
+  })
+
+  it("旧库 concluded Opportunity 迁移为 confirmed resolution", async () => {
+    const { store, path } = await storeFixture()
+    store.createRun({
+      id: "legacy-run",
+      challengeId: "legacy-challenge",
+      workspace: "/tmp/legacy",
+      attempt: 1,
+    })
+    const evidence = store.recordEvidence(
+      "legacy-challenge",
+      "legacy-run",
+      "source",
+    )
+    const opportunity = store.recordOpportunity(
+      "legacy-challenge",
+      "legacy-run",
+      "legacy direction",
+      [evidence.id],
+    )
+    store.concludeOpportunity(
+      "legacy-challenge",
+      opportunity.id,
+      "legacy result",
+      "legacy-run",
+    )
+    store.close()
+
+    const legacy = new DatabaseSync(path)
+    legacy.exec("ALTER TABLE challenge_opportunities DROP COLUMN resolution")
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    expect(
+      migrated.getBlackboardSummary("legacy-challenge").opportunities[0],
+    ).toMatchObject({ status: "concluded", resolution: "confirmed" })
+    migrated.close()
   })
 
   it("写入方法拒绝 challenge 与 run 不一致", async () => {

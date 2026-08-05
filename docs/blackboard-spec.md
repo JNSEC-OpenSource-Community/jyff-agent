@@ -7,7 +7,7 @@
 黑板与 Run 共用 `.ctf-agent/runs.sqlite`，由 `RunStore` 负责事务和归属校验：
 
 - `challenge_evidence`：只增不改的证据节点；
-- `challenge_opportunities`：从一组证据出发的探索方向，状态为 `open` 或 `concluded`；
+- `challenge_opportunities`：从一组证据出发、必须经过实验才能判断的探索方向；状态为 `open` 或 `concluded`，结束时 resolution 为 `confirmed` 或 `dead_end`；
 - `challenge_opportunity_sources`：Opportunity 与多个源 Evidence 的关联。
 
 每道题首次创建 Solver 时，`Project` 会幂等创建 origin Evidence，记录题目标题、分类、分值、描述和附件摘要。Evidence 与 Opportunity 均绑定 `challenge_id` 和产生它的 `run_id`，不能跨题关联。
@@ -32,14 +32,15 @@
   },
   "concludeOpportunity": {
     "opportunityId": 2,
-    "resultDescription": "探索结果"
+    "resolution": "dead_end",
+    "resultDescription": "实验过程及确认不可行的结果"
   }
 }
 ```
 
-三个操作均可选，但至少提供一个。每项操作独立返回结果或错误；结束 Opportunity 时，写入结果 Evidence 和更新 Opportunity 会在同一 `BEGIN IMMEDIATE` 事务内完成。
+三个操作均可选，但至少提供一个。每项操作独立返回结果或错误；结束 Opportunity 时，写入结果 Evidence 和更新 Opportunity 会在同一 `BEGIN IMMEDIATE` 事务内完成。`resolution` 省略时兼容为 `confirmed`；标记 `dead_end` 时结果 Evidence 必须描述实际实验及其结果，记录会永久保留以避免复活后的 Solver 重复尝试。
 
-SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver复核后记录，避免未经验证的 worker 输出直接成为共享事实。
+SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver 复核后记录，避免未经验证的 worker 输出直接成为共享事实。无需实验即可排除的方向不应写成 Opportunity；平台公告和提示也必须经过验证后才能成为 Evidence。
 
 ## 自动注入
 

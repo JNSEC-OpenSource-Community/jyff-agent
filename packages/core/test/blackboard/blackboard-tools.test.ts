@@ -17,6 +17,7 @@ describe("serializeBlackboard", () => {
           id: 1,
           description: "尝试通过 %n 写 GOT",
           status: "open",
+          resolution: null,
           sourceEvidenceIds: [1, 3],
           targetEvidenceId: null,
         },
@@ -24,6 +25,7 @@ describe("serializeBlackboard", () => {
           id: 2,
           description: "尝试 format string 读栈",
           status: "concluded",
+          resolution: "dead_end",
           sourceEvidenceIds: [1],
           targetEvidenceId: 4,
         },
@@ -35,7 +37,9 @@ describe("serializeBlackboard", () => {
     expect(text).toContain("## Open Opportunities")
     expect(text).toContain('- [o1] from e1, e3: "尝试通过 %n 写 GOT"')
     expect(text).toContain("## Concluded Opportunities")
-    expect(text).toContain('- [o2] from e1 → e4: "尝试 format string 读栈"')
+    expect(text).toContain(
+      '- [o2] (dead_end) from e1 → e4: "尝试 format string 读栈"',
+    )
     expect(text).toContain("Use ctf_blackboard_record")
   })
 
@@ -70,6 +74,7 @@ describe("serializeBlackboard", () => {
           id: 3,
           description: "三源探索",
           status: "open",
+          resolution: null,
           sourceEvidenceIds: [1, 2, 5],
           targetEvidenceId: null,
         },
@@ -122,6 +127,7 @@ describe("createBlackboardTools", () => {
         challengeId: "c1",
         description: "opp",
         status: "open",
+        resolution: null,
         runId: "r1",
         sourceEvidenceIds: [1],
         targetEvidenceId: null,
@@ -141,6 +147,7 @@ describe("createBlackboardTools", () => {
           challengeId: "c1",
           description: "opp",
           status: "concluded",
+          resolution: "confirmed",
           runId: "r1",
           sourceEvidenceIds: [1],
           targetEvidenceId: 2,
@@ -222,6 +229,7 @@ describe("createBlackboardTools", () => {
         challengeId: "c1",
         description: "opp",
         status: "concluded" as const,
+        resolution: "dead_end" as const,
         runId: "r1",
         sourceEvidenceIds: [1],
         targetEvidenceId: 2,
@@ -239,12 +247,22 @@ describe("createBlackboardTools", () => {
     const result = await recordTool.execute("call", {
       evidence: { description: "证据" },
       opportunity: { description: "机会", sourceEvidenceIds: [1] },
-      concludeOpportunity: { opportunityId: 2, resultDescription: "结论" },
+      concludeOpportunity: {
+        opportunityId: 2,
+        resolution: "dead_end",
+        resultDescription: "结论",
+      },
     })
     const details = result.details as Record<string, unknown>
     expect(details.evidence).toBeDefined()
     expect(details.opportunity).toBeDefined()
     expect(details.concluded).toBeDefined()
-    expect(concludeOpportunity).toHaveBeenCalledWith("c1", 2, "结论", "r1")
+    expect(concludeOpportunity).toHaveBeenCalledWith(
+      "c1",
+      2,
+      "结论",
+      "r1",
+      "dead_end",
+    )
   })
 })
