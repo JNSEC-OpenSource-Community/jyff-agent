@@ -1,6 +1,11 @@
-import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents"
+import {
+  BLOCKED_FINALIZATION_PROMPT,
+  type CtfSolverAgent,
+  type SolverCloseReason,
+} from "@ctf-agent/agents"
 import type { ChallengeSummary } from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import { activeSubagentsPrompt } from "../../prompts/project.ts"
 import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
 import type {
   RunSource,
@@ -589,8 +594,9 @@ export class ContestScheduler {
               compactPerformed: false,
               scoreAfter: blockEvent.scoreAfter,
             })
-            await solver.close(
-              "blocked",
+            await this.finalizeBlockedRun(
+              active,
+              solver,
               "Context pressure exceeded the block threshold before compaction",
             )
             solver = undefined
@@ -617,7 +623,7 @@ export class ContestScheduler {
                 error: errorText(error),
               },
             )
-            await solver.close("blocked", errorText(error))
+            await this.finalizeBlockedRun(active, solver, errorText(error))
             solver = undefined
             active.solver = undefined
             return
@@ -713,7 +719,7 @@ export class ContestScheduler {
           blocked,
         )
         if (blocked) {
-          await solver.close("blocked", message)
+          await this.finalizeBlockedRun(active, solver, message)
           solver = undefined
           active.solver = undefined
           this.lastError = `${active.challenge.title}: ${message}`
@@ -781,7 +787,14 @@ export class ContestScheduler {
             true,
           )
         }
-        if (solver && !solver.isClosed) {
+        if (failureReason === "blocked" && solver && !solver.isClosed) {
+          await this.finalizeBlockedRun(
+            active,
+            solver,
+            failureMessage ?? "blocked",
+          )
+          solver = undefined
+        } else if (solver && !solver.isClosed) {
           await solver.close(failureReason, failureMessage)
           solver = undefined
         }
@@ -833,6 +846,56 @@ export class ContestScheduler {
     } else if (failureMessage && failureReason !== "cancelled") {
       this.lastError = `${active.challenge.title}: ${failureMessage}`
     }
+  }
+
+  private async finalizeBlockedRun(
+    _active: ActiveItem,
+    solver: CtfSolverAgent,
+    trigger: string,
+  ): Promise<void> {
+    let finalizationError: string | undefined
+    try {
+      await this.project.markRunBlocking(solver.runId, trigger)
+      const records = await this.project.finalizeSubagents(
+        solver.runId,
+        "Report your current objective, verified findings, attempted experiments, exact results, artifacts, and next-step recommendation. Stop investigating after this report.",
+        2_000,
+      )
+      solver.appendMessage({
+        role: "user",
+        content: activeSubagentsPrompt(records),
+        timestamp: Date.now(),
+      })
+      const outcome = await runSolverPrompt({
+        solver,
+        prompt: BLOCKED_FINALIZATION_PROMPT,
+        timeoutMs: Math.min(this.options.challengeTimeoutMs ?? 30_000, 30_000),
+        abortGraceMs: this.options.abortGraceMs ?? 5_000,
+      })
+      if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
+        await solver.close("submitted")
+        return
+      }
+      if (outcome.stopReason === "error" || outcome.stopReason === "aborted") {
+        finalizationError =
+          outcome.error ?? `Final turn stopped: ${outcome.stopReason}`
+        this.project.appendRunEvent(solver.runId, "block_finalization_failed", {
+          trigger,
+          error: finalizationError,
+        })
+      }
+    } catch (error) {
+      finalizationError = errorText(error)
+      try {
+        this.project.appendRunEvent(solver.runId, "block_finalization_failed", {
+          trigger,
+          error: finalizationError,
+        })
+      } catch {
+        // 保留原始收尾错误，close callback 仍会持久化 Run 终态。
+      }
+    }
+    await solver.close("blocked", finalizationError ?? trigger)
   }
 
   private enqueueChallenge(

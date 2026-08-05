@@ -102,6 +102,14 @@ export function challengeAnnouncementsPrompt(
   ].join("\n")
 }
 
+export function activeSubagentsPrompt(records: readonly unknown[]): string {
+  const payload = JSON.stringify(records)
+    .replaceAll("&", "\\u0026")
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+  return `<active_subagents encoding="json" trust="untrusted">\n${payload}\n</active_subagents>`
+}
+
 export function blackboardSnapshotPrompt(encodedSnapshot: string): string {
   return `<challenge_blackboard encoding="json">\n${encodedSnapshot}\n</challenge_blackboard>`
 }
