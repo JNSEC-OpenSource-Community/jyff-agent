@@ -146,6 +146,8 @@ describe("ContestScheduler", () => {
       const scheduler = new ContestScheduler(project, {
         maxConcurrent: 1,
         maxAttempts: 1,
+        retryDelayMs: 0,
+        infrastructureRetryDelayMs: 0,
         createAgentOptions: () => {
           sessions++
           const faux = createFauxCore({
@@ -190,8 +192,8 @@ describe("ContestScheduler", () => {
         expect(runs).toEqual([
           expect.objectContaining({
             attempt: 1,
-            status: "interrupted",
-            closeReason: "interrupted",
+            status: stopReason === "error" ? "failed" : "interrupted",
+            closeReason: stopReason === "error" ? "failed" : "interrupted",
           }),
           expect.objectContaining({
             attempt: 2,
@@ -209,7 +211,9 @@ describe("ContestScheduler", () => {
           "utf8",
         )
         expect(continuedSession).toContain(INCOMPLETE_CONTINUATION_PROMPT)
-        expect(project.sessionInterruptionCount(item.id)).toBe(1)
+        expect(project.sessionInterruptionCount(item.id)).toBe(
+          stopReason === "error" ? 0 : 1,
+        )
         expect(project.schedulerAttemptCount(item.id)).toBe(1)
       } finally {
         await scheduler.shutdown()

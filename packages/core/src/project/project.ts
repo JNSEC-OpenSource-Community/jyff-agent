@@ -325,6 +325,9 @@ export class Project {
   latestRunEvent(runId: string): RunEvent | undefined {
     return this.runStore.latestEvent(runId)
   }
+  appendRunEvent(runId: string, type: string, data?: unknown): RunEvent {
+    return this.runStore.appendEvent(runId, type, data)
+  }
   subagents(runId: string): SubagentRecord[] {
     return this.runStore.subagents(runId)
   }

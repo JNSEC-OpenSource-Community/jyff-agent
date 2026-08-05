@@ -1094,7 +1094,7 @@ export class RunStore {
           SELECT 1
           FROM run_events
           WHERE run_events.run_id = runs.id
-            AND run_events.type = 'run_creation_failed'
+            AND run_events.type IN ('run_creation_failed', 'run_transient_failure')
             AND json_extract(run_events.data_json, '$.retryable') = 1
         )
     `)

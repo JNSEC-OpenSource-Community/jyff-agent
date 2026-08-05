@@ -1,8 +1,5 @@
 import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents"
-import {
-  type ChallengeSummary,
-  isRetryablePlatformError,
-} from "@ctf-agent/platform"
+import type { ChallengeSummary } from "@ctf-agent/platform"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
 import type {
@@ -16,6 +13,7 @@ import {
   runSolverPrompt,
   sessionInterruptionMessage,
 } from "./solver-attempt.ts"
+import { classifySolverStop } from "./stop-classifier.ts"
 
 export type SchedulerQueueSource = Extract<
   RunSource,
@@ -524,7 +522,7 @@ export class ContestScheduler {
     let failureReason: SolverCloseReason | undefined
     let failureMessage: string | undefined
     let retryableFailure = false
-    let continuation = false
+    let continuation = active.source === "retry"
 
     if (
       active.lane === "blocked" &&
@@ -579,6 +577,29 @@ export class ContestScheduler {
           return
         }
 
+        const classification = classifySolverStop({
+          stopReason: outcome.stopReason,
+          ...(outcome.error ? { error: outcome.error } : {}),
+        })
+        if (classification.blockDelta === 0) {
+          const message = `${classification.kind}: ${classification.detail ?? outcome.stopReason}`
+          this.project.appendRunEvent(solver.runId, "run_transient_failure", {
+            retryable: classification.retryable,
+            reason: classification.kind,
+          })
+          await solver.close("failed", message)
+          solver = undefined
+          active.solver = undefined
+          if (classification.retryable) {
+            retryableFailure = true
+            failureReason = "failed"
+            failureMessage = message
+            break
+          }
+          this.lastError = `${active.challenge.title}: ${message}`
+          return
+        }
+
         const interruptionCount =
           this.project.sessionInterruptionCount(active.challenge.id) + 1
         const maximum = this.options.maxSessionInterruptions ?? 3
@@ -601,13 +622,19 @@ export class ContestScheduler {
         active.runId = null
         active.phase = "preparing"
       } catch (error) {
-        retryableFailure = isRetryablePlatformError(error)
+        const classification = classifySolverStop({
+          error,
+          ...(active.cancelRequested ? { operatorCancel: true } : {}),
+          ...(error instanceof ChallengeTimeoutError ? { timedOut: true } : {}),
+          ...(this.shuttingDown ? { processShutdown: true } : {}),
+        })
+        retryableFailure = classification.retryable
         failureReason = active.cancelRequested
           ? "cancelled"
           : error instanceof ChallengeTimeoutError
             ? "timed_out"
             : "failed"
-        failureMessage = errorText(error)
+        failureMessage = classification.detail ?? errorText(error)
         if (solver && !solver.isClosed) {
           await solver.close(failureReason, failureMessage)
         }
