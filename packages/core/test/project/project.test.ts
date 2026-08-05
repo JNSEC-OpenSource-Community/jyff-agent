@@ -220,10 +220,8 @@ describe("Project", () => {
       typeof challengeMessage.content === "string"
         ? challengeMessage.content
         : ""
-    expect(challengeContent).toContain(
-      'path="/workspace/attachments/flag.txt/flag.txt"',
-    )
-    expect(sandbox.writes.get("/workspace/attachments/flag.txt/flag.txt")).toBe(
+    expect(challengeContent).toContain('path="/workspace/attachments/flag.txt"')
+    expect(sandbox.writes.get("/workspace/attachments/flag.txt")).toBe(
       Buffer.from("TEST{fixture}").toString("base64"),
     )
     expect(project.blackboard("warmup-flag").evidence).toHaveLength(1)

@@ -1,8 +1,15 @@
 import type { ChallengeInfo } from "@ctf-agent/platform"
 import { describe, expect, it } from "vitest"
 import { challengeContextPrompt } from "../../prompts/project.ts"
+import { challengeAttachmentPath } from "../../src/project/attachments.ts"
 
 describe("challenge context prompt", () => {
+  it("将附件直接放在 /workspace/attachments 下", () => {
+    expect(challengeAttachmentPath("nested\\payload.zip")).toBe(
+      "/workspace/attachments/payload.zip",
+    )
+  })
+
   it("把平台内容转义为结构化的不可信 XML", () => {
     const challenge: ChallengeInfo = {
       id: "web<&",
