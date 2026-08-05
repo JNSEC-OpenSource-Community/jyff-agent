@@ -6,6 +6,8 @@ export const STATUS_LABELS: Record<DashboardChallengeStatus | string, string> =
     pending: "未调度",
     preparing: "准备中",
     running: "执行中",
+    blocking: "正在收尾",
+    writing_writeup: "正在编写 Writeup",
     solved: "已解出",
     failed: "失败",
     timed_out: "已超时",
@@ -67,6 +69,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   auto: "自主调度",
   manual: "人工调度",
   retry: "自动重试",
+  revival: "Blocked 复活",
   test: "专项测试",
 }
 
@@ -125,7 +128,11 @@ export function matchesStatus(
   actual: DashboardChallengeStatus,
   filter: string,
 ): boolean {
-  if (filter === "active") return actual === "preparing" || actual === "running"
+  if (filter === "active") {
+    return ["preparing", "running", "blocking", "writing_writeup"].includes(
+      actual,
+    )
+  }
   if (filter === "failed") {
     return [
       "failed",
@@ -144,6 +151,8 @@ export function sortChallenges(
 ): DashboardChallenge[] {
   const order: Record<DashboardChallengeStatus, number> = {
     running: 0,
+    writing_writeup: 0,
+    blocking: 1,
     preparing: 1,
     queued: 2,
     failed: 3,

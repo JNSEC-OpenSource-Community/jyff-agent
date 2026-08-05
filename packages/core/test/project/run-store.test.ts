@@ -228,6 +228,7 @@ describe("RunStore", () => {
       workspace: "a",
       attempt: 1,
     })
+    store.updateRun("direct", { status: "closed", closeReason: "manual" })
     store.createRun({
       id: "test",
       challengeId: "rev-1",
@@ -235,6 +236,7 @@ describe("RunStore", () => {
       attempt: 2,
       source: "test",
     })
+    store.updateRun("test", { status: "closed", closeReason: "manual" })
     store.createRun({
       id: "manual",
       challengeId: "rev-1",
@@ -242,6 +244,7 @@ describe("RunStore", () => {
       attempt: 3,
       source: "manual",
     })
+    store.updateRun("manual", { status: "closed", closeReason: "manual" })
     store.createRun({
       id: "retry",
       challengeId: "rev-1",
@@ -302,16 +305,180 @@ describe("RunStore", () => {
     })
 
     expect(store.sessionInterruptionCount("web-blocked")).toBe(2)
+    expect(store.challengeRuntimeState("web-blocked")).toMatchObject({
+      blockScore: 2,
+      blocked: true,
+      blockedRunId: "blocked",
+    })
     expect(store.isChallengeBlocked("web-blocked")).toBe(true)
     expect(store.schedulerAttemptCount("web-blocked")).toBe(0)
 
     store.resetSessionInterruptions("web-blocked")
     expect(store.sessionInterruptionCount("web-blocked")).toBe(0)
+    expect(store.challengeRuntimeState("web-blocked")).toMatchObject({
+      blockScore: 0,
+      blocked: false,
+      blockedAt: null,
+      blockedRunId: null,
+    })
     expect(store.isChallengeBlocked("web-blocked")).toBe(false)
     expect(store.events("blocked").at(-1)?.type).toBe(
       "session_interruptions_reset",
     )
     store.close()
+  })
+
+  it("从数据库层拒绝同题创建两个 active Run", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "active-1",
+      challengeId: "same-challenge",
+      workspace: "a",
+      attempt: 1,
+    })
+    expect(() =>
+      store.createRun({
+        id: "active-2",
+        challengeId: "same-challenge",
+        workspace: "b",
+        attempt: 2,
+      }),
+    ).toThrow()
+
+    store.updateRun("active-1", {
+      status: "interrupted",
+      closeReason: "interrupted",
+    })
+    expect(
+      store.createRun({
+        id: "active-2",
+        challengeId: "same-challenge",
+        workspace: "b",
+        attempt: 2,
+      }).id,
+    ).toBe("active-2")
+    store.close()
+  })
+
+  it("以幂等 block event ledger 计分，并仅在 score 大于阈值时 blocked", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "score-run",
+      challengeId: "crypto-score",
+      workspace: "workspace",
+      attempt: 1,
+    })
+
+    for (let index = 1; index <= 4; index += 1) {
+      store.recordChallengeBlockEvent({
+        challengeId: "crypto-score",
+        runId: "score-run",
+        eventKey: `compact:${index}`,
+        delta: 2,
+        reason: "compact_boundary",
+        compactPerformed: true,
+      })
+    }
+    expect(store.challengeRuntimeState("crypto-score")).toMatchObject({
+      blockScore: 8,
+      effectiveBlockThreshold: 8,
+      blocked: false,
+    })
+
+    const blocked = store.recordChallengeBlockEvent({
+      challengeId: "crypto-score",
+      runId: "score-run",
+      eventKey: "stop:5",
+      delta: 1,
+      reason: "model_stop",
+    })
+    expect(blocked).toMatchObject({
+      scoreBefore: 8,
+      scoreAfter: 9,
+      threshold: 8,
+    })
+    expect(store.challengeRuntimeState("crypto-score")).toMatchObject({
+      blockScore: 9,
+      blocked: true,
+      blockedRunId: "score-run",
+    })
+
+    const replay = store.recordChallengeBlockEvent({
+      challengeId: "crypto-score",
+      runId: "score-run",
+      eventKey: "stop:5",
+      delta: 1,
+      reason: "model_stop",
+    })
+    expect(replay).toEqual(blocked)
+    expect(store.challengeBlockEvents("crypto-score")).toHaveLength(5)
+    expect(store.challengeRuntimeState("crypto-score").blockScore).toBe(9)
+    store.close()
+  })
+
+  it("打开旧 runtime state 时迁移 block score 且保留 blocked 事实", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-run-store-legacy-runtime-"))
+    roots.push(root)
+    const path = join(root, "runs.sqlite")
+    const legacy = new DatabaseSync(path)
+    legacy.exec(`
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        challenge_id TEXT NOT NULL,
+        workspace TEXT NOT NULL,
+        attempt INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        close_reason TEXT,
+        error TEXT,
+        cleanup_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT
+      ) STRICT;
+      INSERT INTO runs (
+        id, challenge_id, workspace, attempt, status, close_reason,
+        created_at, updated_at
+      ) VALUES (
+        'legacy-blocked', 'legacy-challenge', 'workspace', 1, 'blocked', 'blocked',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:01:00.000Z'
+      );
+      CREATE TABLE challenge_runtime_state (
+        challenge_id TEXT PRIMARY KEY,
+        session_interruptions INTEGER NOT NULL DEFAULT 0,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO challenge_runtime_state (
+        challenge_id, session_interruptions, blocked, updated_at
+      ) VALUES (
+        'legacy-challenge', 2, 1, '2026-01-01T00:01:00.000Z'
+      );
+    `)
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    expect(migrated.getRun("legacy-blocked")?.source).toBe("direct")
+    expect(migrated.challengeRuntimeState("legacy-challenge")).toEqual({
+      challengeId: "legacy-challenge",
+      blockScore: 9,
+      baseBlockThreshold: 8,
+      revivalCount: 0,
+      effectiveBlockThreshold: 8,
+      blocked: true,
+      blockedAt: "2026-01-01T00:01:00.000Z",
+      blockedRunId: "legacy-blocked",
+      lifecycleGeneration: 0,
+      sessionInterruptions: 2,
+      updatedAt: "2026-01-01T00:01:00.000Z",
+    })
+    migrated.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.challengeRuntimeState("legacy-challenge").blockScore).toBe(
+      9,
+    )
+    reopened.close()
   })
 
   it("打开旧数据库时自动补充 run source 字段", async () => {

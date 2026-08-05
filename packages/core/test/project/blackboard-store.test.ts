@@ -82,6 +82,7 @@ describe("RunStore blackboard", () => {
     expect(origin1.description).toContain("pwn")
     expect(origin1.description).toContain("binary.exe")
     expect(origin1.description).toContain("libc.so")
+    store.updateRun("run-1", { status: "closed", closeReason: "manual" })
 
     // 幂等调用
     store.createRun({

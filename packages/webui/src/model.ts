@@ -10,7 +10,12 @@ import type {
   DashboardStats,
 } from "./types.ts"
 
-const ACTIVE = new Set<RunRecord["status"]>(["preparing", "running"])
+const ACTIVE = new Set<RunRecord["status"]>([
+  "preparing",
+  "running",
+  "blocking",
+  "writing_writeup",
+])
 const FAILED = new Set<DashboardChallengeStatus>([
   "failed",
   "timed_out",
@@ -246,7 +251,10 @@ function dashboardStats(challenges: DashboardChallenge[]): DashboardStats {
       .length,
     active: challenges.filter(
       (challenge) =>
-        challenge.status === "preparing" || challenge.status === "running",
+        challenge.status === "preparing" ||
+        challenge.status === "running" ||
+        challenge.status === "blocking" ||
+        challenge.status === "writing_writeup",
     ).length,
     failed: challenges.filter((challenge) => FAILED.has(challenge.status))
       .length,
@@ -289,6 +297,10 @@ function progressLabel(
       return "正在准备沙箱"
     case "running":
       return "Agent 正在分析"
+    case "blocking":
+      return "正在收集进度并执行 Blocked 收尾"
+    case "writing_writeup":
+      return "Flag 已确认，正在编写 Writeup"
     case "solved":
       return "Flag 已确认"
     case "failed":

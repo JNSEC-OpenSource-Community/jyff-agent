@@ -21,6 +21,8 @@ export type DashboardChallengeStatus =
   | "pending"
   | "preparing"
   | "running"
+  | "blocking"
+  | "writing_writeup"
   | "solved"
   | "failed"
   | "timed_out"

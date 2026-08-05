@@ -12,9 +12,17 @@ export type RunStatus =
   | "cancelled"
   | "closed"
   | "interrupted"
+  | "blocking"
   | "blocked"
+  | "writing_writeup"
 
-export type RunSource = "direct" | "auto" | "manual" | "retry" | "test"
+export type RunSource =
+  | "direct"
+  | "auto"
+  | "manual"
+  | "retry"
+  | "revival"
+  | "test"
 
 export type RunCloseReason =
   | "submitted"
@@ -127,6 +135,45 @@ export interface BlackboardSummary {
   }[]
 }
 
+export interface ChallengeRuntimeState {
+  challengeId: string
+  blockScore: number
+  baseBlockThreshold: number
+  revivalCount: number
+  effectiveBlockThreshold: number
+  blocked: boolean
+  blockedAt: string | null
+  blockedRunId: string | null
+  lifecycleGeneration: number
+  /** Legacy audit field; the v2 supervisor must not write it. */
+  sessionInterruptions: number
+  updatedAt: string | null
+}
+
+export interface RecordChallengeBlockEvent {
+  challengeId: string
+  runId: string
+  eventKey: string
+  delta: 0 | 1 | 2
+  reason: string
+  compactPerformed?: boolean
+  createdAt?: string
+}
+
+export interface ChallengeBlockEvent {
+  id: number
+  challengeId: string
+  runId: string
+  eventKey: string
+  delta: number
+  reason: string
+  scoreBefore: number
+  scoreAfter: number
+  threshold: number
+  compactPerformed: boolean | null
+  createdAt: string
+}
+
 export interface BlackboardStats {
   challengeId: string
   evidence: number
@@ -141,6 +188,9 @@ export interface ChallengeInfoForOrigin {
   description: string
   attachments: { name: string; size?: number }[]
 }
+
+export const DEFAULT_BLOCK_THRESHOLD = 8
+export const BLOCK_THRESHOLD_REVIVAL_INCREMENT = 4
 
 export const BLACKBOARD_DESCRIPTION_MAX_LENGTH = 4_000
 export const BLACKBOARD_ORIGIN_MAX_LENGTH = 8_000
@@ -219,6 +269,33 @@ interface SubagentRow {
   completed_at: string | null
 }
 
+interface ChallengeRuntimeStateRow {
+  challenge_id: string
+  session_interruptions: number
+  blocked: number
+  block_score: number
+  base_block_threshold: number
+  revival_count: number
+  blocked_at: string | null
+  blocked_run_id: string | null
+  lifecycle_generation: number
+  updated_at: string
+}
+
+interface ChallengeBlockEventRow {
+  id: number
+  challenge_id: string
+  run_id: string
+  event_key: string
+  delta: number
+  reason: string
+  score_before: number
+  score_after: number
+  threshold: number
+  compact_performed: number | null
+  created_at: string
+}
+
 interface BlackboardStatsRow {
   challenge_id: string
   evidence_count: number
@@ -247,6 +324,45 @@ function evidenceToSummary(
   row: EvidenceRow,
 ): BlackboardSummary["evidence"][number] {
   return { id: row.id, description: row.description, runId: row.run_id }
+}
+
+function challengeRuntimeStateFromRow(
+  row: ChallengeRuntimeStateRow,
+): ChallengeRuntimeState {
+  return {
+    challengeId: row.challenge_id,
+    blockScore: row.block_score,
+    baseBlockThreshold: row.base_block_threshold,
+    revivalCount: row.revival_count,
+    effectiveBlockThreshold:
+      row.base_block_threshold +
+      row.revival_count * BLOCK_THRESHOLD_REVIVAL_INCREMENT,
+    blocked: row.blocked === 1,
+    blockedAt: row.blocked_at,
+    blockedRunId: row.blocked_run_id,
+    lifecycleGeneration: row.lifecycle_generation,
+    sessionInterruptions: row.session_interruptions,
+    updatedAt: row.updated_at,
+  }
+}
+
+function challengeBlockEventFromRow(
+  row: ChallengeBlockEventRow,
+): ChallengeBlockEvent {
+  return {
+    id: row.id,
+    challengeId: row.challenge_id,
+    runId: row.run_id,
+    eventKey: row.event_key,
+    delta: row.delta,
+    reason: row.reason,
+    scoreBefore: row.score_before,
+    scoreAfter: row.score_after,
+    threshold: row.threshold,
+    compactPerformed:
+      row.compact_performed === null ? null : row.compact_performed === 1,
+    createdAt: row.created_at,
+  }
 }
 
 function normalizedDescription(value: string, field: string): string {
@@ -429,8 +545,33 @@ export class RunStore {
         session_interruptions INTEGER NOT NULL DEFAULT 0
           CHECK (session_interruptions >= 0),
         blocked INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0, 1)),
+        block_score INTEGER NOT NULL DEFAULT 0 CHECK (block_score >= 0),
+        base_block_threshold INTEGER NOT NULL DEFAULT 8
+          CHECK (base_block_threshold >= 0),
+        revival_count INTEGER NOT NULL DEFAULT 0 CHECK (revival_count >= 0),
+        blocked_at TEXT,
+        blocked_run_id TEXT,
+        lifecycle_generation INTEGER NOT NULL DEFAULT 0
+          CHECK (lifecycle_generation >= 0),
         updated_at TEXT NOT NULL
       ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS challenge_block_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        challenge_id TEXT NOT NULL,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        event_key TEXT NOT NULL UNIQUE,
+        delta INTEGER NOT NULL CHECK (delta IN (0, 1, 2)),
+        reason TEXT NOT NULL,
+        score_before INTEGER NOT NULL CHECK (score_before >= 0),
+        score_after INTEGER NOT NULL CHECK (score_after >= 0),
+        threshold INTEGER NOT NULL CHECK (threshold >= 0),
+        compact_performed INTEGER CHECK (compact_performed IN (0, 1)),
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS challenge_block_events_challenge
+        ON challenge_block_events(challenge_id, id);
     `)
     const runColumns = database
       .prepare("PRAGMA table_info(runs)")
@@ -439,6 +580,118 @@ export class RunStore {
       database.exec(
         "ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT 'direct'",
       )
+    }
+
+    const runtimeColumns = database
+      .prepare("PRAGMA table_info(challenge_runtime_state)")
+      .all() as unknown as Array<{ name: string }>
+    const hadBlockScore = runtimeColumns.some(
+      (column) => column.name === "block_score",
+    )
+    const runtimeMigrations = [
+      [
+        "block_score",
+        "ALTER TABLE challenge_runtime_state ADD COLUMN block_score INTEGER NOT NULL DEFAULT 0 CHECK (block_score >= 0)",
+      ],
+      [
+        "base_block_threshold",
+        `ALTER TABLE challenge_runtime_state ADD COLUMN base_block_threshold INTEGER NOT NULL DEFAULT ${DEFAULT_BLOCK_THRESHOLD} CHECK (base_block_threshold >= 0)`,
+      ],
+      [
+        "revival_count",
+        "ALTER TABLE challenge_runtime_state ADD COLUMN revival_count INTEGER NOT NULL DEFAULT 0 CHECK (revival_count >= 0)",
+      ],
+      [
+        "blocked_at",
+        "ALTER TABLE challenge_runtime_state ADD COLUMN blocked_at TEXT",
+      ],
+      [
+        "blocked_run_id",
+        "ALTER TABLE challenge_runtime_state ADD COLUMN blocked_run_id TEXT",
+      ],
+      [
+        "lifecycle_generation",
+        "ALTER TABLE challenge_runtime_state ADD COLUMN lifecycle_generation INTEGER NOT NULL DEFAULT 0 CHECK (lifecycle_generation >= 0)",
+      ],
+    ] as const
+    const existingRuntimeColumns = new Set(
+      runtimeColumns.map((column) => column.name),
+    )
+    database.exec("BEGIN IMMEDIATE")
+    try {
+      for (const [name, sql] of runtimeMigrations) {
+        if (!existingRuntimeColumns.has(name)) database.exec(sql)
+      }
+      if (!hadBlockScore) {
+        database.exec(`
+          UPDATE challenge_runtime_state
+          SET
+            block_score = CASE
+              WHEN blocked = 1 AND session_interruptions <= base_block_threshold
+                THEN base_block_threshold + 1
+              ELSE session_interruptions
+            END,
+            blocked_at = CASE WHEN blocked = 1 THEN updated_at ELSE NULL END,
+            blocked_run_id = CASE WHEN blocked = 1 THEN (
+              SELECT id FROM runs
+              WHERE runs.challenge_id = challenge_runtime_state.challenge_id
+                AND close_reason = 'blocked'
+              ORDER BY attempt DESC
+              LIMIT 1
+            ) ELSE NULL END
+        `)
+      }
+
+      // 旧库可能因崩溃窗口遗留同题多个 active Run。保留最新一个，
+      // 其余标为 interrupted 后再建立数据库级唯一约束。
+      const activeRows = database
+        .prepare(`
+          SELECT id, challenge_id FROM runs
+          WHERE status IN ('preparing', 'running', 'blocking', 'writing_writeup')
+          ORDER BY challenge_id ASC, created_at DESC, id DESC
+        `)
+        .all() as unknown as Array<{ id: string; challenge_id: string }>
+      const activeChallenges = new Set<string>()
+      const migrationTimestamp = new Date().toISOString()
+      const interruptDuplicate = database.prepare(`
+        UPDATE runs
+        SET status = 'interrupted', close_reason = 'interrupted',
+            error = COALESCE(error, ?), updated_at = ?,
+            finished_at = COALESCE(finished_at, ?)
+        WHERE id = ?
+      `)
+      const recordDuplicate = database.prepare(`
+        INSERT INTO run_events (run_id, type, data_json, created_at)
+        VALUES (?, 'run_interrupted', ?, ?)
+      `)
+      for (const row of activeRows) {
+        if (!activeChallenges.has(row.challenge_id)) {
+          activeChallenges.add(row.challenge_id)
+          continue
+        }
+        const message = "数据库迁移修复了同题重复 active Run"
+        interruptDuplicate.run(
+          message,
+          migrationTimestamp,
+          migrationTimestamp,
+          row.id,
+        )
+        recordDuplicate.run(
+          row.id,
+          JSON.stringify({ reason: "duplicate_active_run_migration" }),
+          migrationTimestamp,
+        )
+      }
+      database.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_challenge
+        ON runs(challenge_id)
+        WHERE status IN ('preparing', 'running', 'blocking', 'writing_writeup')
+      `)
+      database.exec("COMMIT")
+    } catch (error) {
+      database.exec("ROLLBACK")
+      database.close()
+      throw error
     }
     return new RunStore(path, database)
   }
@@ -570,16 +823,29 @@ export class RunStore {
         this.database
           .prepare(`
             INSERT INTO challenge_runtime_state (
-              challenge_id, session_interruptions, blocked, updated_at
-            ) VALUES (?, 1, ?, ?)
+              challenge_id, session_interruptions, blocked, block_score,
+              blocked_at, blocked_run_id, updated_at
+            ) VALUES (?, 1, ?, 1, ?, ?, ?)
             ON CONFLICT(challenge_id) DO UPDATE SET
               session_interruptions = session_interruptions + 1,
+              block_score = block_score + 1,
               blocked = excluded.blocked,
+              blocked_at = CASE
+                WHEN excluded.blocked = 1
+                  THEN COALESCE(blocked_at, excluded.blocked_at)
+                ELSE blocked_at
+              END,
+              blocked_run_id = CASE
+                WHEN excluded.blocked = 1 THEN excluded.blocked_run_id
+                ELSE blocked_run_id
+              END,
               updated_at = excluded.updated_at
           `)
           .run(
             current.challengeId,
             closeReason === "blocked" ? 1 : 0,
+            closeReason === "blocked" ? timestamp : null,
+            closeReason === "blocked" ? id : null,
             timestamp,
           )
       }
@@ -655,6 +921,155 @@ export class RunStore {
     return row?.count ?? 0
   }
 
+  challengeRuntimeState(challengeId: string): ChallengeRuntimeState {
+    this.assertOpen()
+    const row = this.database
+      .prepare(`
+        SELECT * FROM challenge_runtime_state
+        WHERE challenge_id = ?
+      `)
+      .get(challengeId) as unknown as ChallengeRuntimeStateRow | undefined
+    if (row) return challengeRuntimeStateFromRow(row)
+    return {
+      challengeId,
+      blockScore: 0,
+      baseBlockThreshold: DEFAULT_BLOCK_THRESHOLD,
+      revivalCount: 0,
+      effectiveBlockThreshold: DEFAULT_BLOCK_THRESHOLD,
+      blocked: false,
+      blockedAt: null,
+      blockedRunId: null,
+      lifecycleGeneration: 0,
+      sessionInterruptions: 0,
+      updatedAt: null,
+    }
+  }
+
+  recordChallengeBlockEvent(
+    input: RecordChallengeBlockEvent,
+  ): ChallengeBlockEvent {
+    this.assertOpen()
+    const eventKey = input.eventKey.trim()
+    const reason = input.reason.trim()
+    if (!eventKey || eventKey.length > 256) {
+      throw new Error("eventKey must contain 1 to 256 characters")
+    }
+    if (!reason || reason.length > 128) {
+      throw new Error("reason must contain 1 to 128 characters")
+    }
+    if (input.delta !== 0 && input.delta !== 1 && input.delta !== 2) {
+      throw new Error("delta must be 0, 1, or 2")
+    }
+    const timestamp = input.createdAt ?? new Date().toISOString()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      this.assertRunBelongsToChallenge(input.runId, input.challengeId)
+      const existing = this.database
+        .prepare(`
+          SELECT * FROM challenge_block_events WHERE event_key = ?
+        `)
+        .get(eventKey) as unknown as ChallengeBlockEventRow | undefined
+      if (existing) {
+        if (
+          existing.challenge_id !== input.challengeId ||
+          existing.run_id !== input.runId
+        ) {
+          throw new Error(
+            `Block event key already belongs to another Run: ${eventKey}`,
+          )
+        }
+        this.database.exec("COMMIT")
+        return challengeBlockEventFromRow(existing)
+      }
+
+      this.database
+        .prepare(`
+          INSERT INTO challenge_runtime_state (
+            challenge_id, session_interruptions, blocked, block_score,
+            base_block_threshold, revival_count, lifecycle_generation, updated_at
+          ) VALUES (?, 0, 0, 0, ?, 0, 0, ?)
+          ON CONFLICT(challenge_id) DO NOTHING
+        `)
+        .run(input.challengeId, DEFAULT_BLOCK_THRESHOLD, timestamp)
+      const state = this.database
+        .prepare(`
+          SELECT * FROM challenge_runtime_state WHERE challenge_id = ?
+        `)
+        .get(input.challengeId) as unknown as ChallengeRuntimeStateRow
+      const threshold =
+        state.base_block_threshold +
+        state.revival_count * BLOCK_THRESHOLD_REVIVAL_INCREMENT
+      const scoreBefore = state.block_score
+      const scoreAfter = scoreBefore + input.delta
+      const blocked = state.blocked === 1 || scoreAfter > threshold
+      const blockedAt = blocked
+        ? (state.blocked_at ?? timestamp)
+        : state.blocked_at
+      const blockedRunId = blocked
+        ? (state.blocked_run_id ?? input.runId)
+        : null
+
+      const result = this.database
+        .prepare(`
+          INSERT INTO challenge_block_events (
+            challenge_id, run_id, event_key, delta, reason,
+            score_before, score_after, threshold, compact_performed, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          input.challengeId,
+          input.runId,
+          eventKey,
+          input.delta,
+          reason,
+          scoreBefore,
+          scoreAfter,
+          threshold,
+          input.compactPerformed === undefined
+            ? null
+            : input.compactPerformed
+              ? 1
+              : 0,
+          timestamp,
+        )
+      this.database
+        .prepare(`
+          UPDATE challenge_runtime_state
+          SET block_score = ?, blocked = ?, blocked_at = ?, blocked_run_id = ?,
+              updated_at = ?
+          WHERE challenge_id = ?
+        `)
+        .run(
+          scoreAfter,
+          blocked ? 1 : 0,
+          blockedAt,
+          blockedRunId,
+          timestamp,
+          input.challengeId,
+        )
+      const event = this.database
+        .prepare("SELECT * FROM challenge_block_events WHERE id = ?")
+        .get(result.lastInsertRowid) as unknown as ChallengeBlockEventRow
+      this.database.exec("COMMIT")
+      return challengeBlockEventFromRow(event)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  challengeBlockEvents(challengeId: string): ChallengeBlockEvent[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT * FROM challenge_block_events
+        WHERE challenge_id = ?
+        ORDER BY id ASC
+      `)
+      .all(challengeId) as unknown as ChallengeBlockEventRow[]
+    return rows.map(challengeBlockEventFromRow)
+  }
+
   isChallengeBlocked(challengeId: string): boolean {
     this.assertOpen()
     const row = this.database
@@ -675,11 +1090,15 @@ export class RunStore {
       this.database
         .prepare(`
           INSERT INTO challenge_runtime_state (
-            challenge_id, session_interruptions, blocked, updated_at
-          ) VALUES (?, 0, 0, ?)
+            challenge_id, session_interruptions, blocked, block_score,
+            blocked_at, blocked_run_id, updated_at
+          ) VALUES (?, 0, 0, 0, NULL, NULL, ?)
           ON CONFLICT(challenge_id) DO UPDATE SET
             session_interruptions = 0,
+            block_score = 0,
             blocked = 0,
+            blocked_at = NULL,
+            blocked_run_id = NULL,
             updated_at = excluded.updated_at
         `)
         .run(challengeId, timestamp)

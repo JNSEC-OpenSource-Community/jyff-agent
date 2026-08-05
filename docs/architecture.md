@@ -77,3 +77,7 @@ The correct final flag has not been submitted. Continue solving the challenge.
 - workspace：附件、脚本、反编译结果和其他解题产物。
 
 不要把完整 transcript 复制到 SQLite，也不要从 `agents` 包反向读取 RunStore。涉及多个控制面事实的更新应继续使用 RunStore 事务，以免 WebUI、调度器和恢复逻辑看到中间状态。
+
+RunStore 已具备 block v2 的持久化基础：`challenge_runtime_state` 保存 `block_score`、基础阈值、复活次数、blocked 来源和 lifecycle generation，`challenge_block_events` 以唯一 `event_key` 幂等记录每次计分及 compact 是否执行。有效阈值为 `base_block_threshold + revival_count * 4`，只有 `score > threshold` 才设置 blocked。数据库使用 partial unique index 保证同一道题最多存在一个 `preparing`、`running`、`blocking` 或 `writing_writeup` Run；打开遗留库时会保留最新 active Run，并把重复项审计为 interrupted。
+
+在 Solver supervisor 接管 turn 生命周期前，现有 Session 中断路径仍会同步维护旧 `session_interruptions` 与 `block_score` 兼容值；新 supervisor 应只写 block event ledger，旧字段只保留审计和迁移用途。
