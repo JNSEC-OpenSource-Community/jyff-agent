@@ -89,6 +89,8 @@ ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；bas
 
 生产 Scheduler 在 accepted/already_solved 后进入 `writing_writeup`，保留同一 Solver/session 但将 active tools 限制为 `read/write/edit/list`。Solver 必须把英文可复现 writeup 写入题目 workspace，校验失败时最多继续专用 writeup turn，不增加 block score；通过校验后才以 solved 关闭并销毁 sandbox。测试调度器可显式关闭该流程以隔离生命周期测试。
 
+题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，进程重启后以 SQLite 与该 JSONL 作为恢复依据。
+
 Solver 停止原因经过 `classifySolverStop` 归一化：网络断连、Provider 5xx/429 和显式 retryable 错误不增加 block score，记录 `run_transient_failure` 后按基础设施退避重试；认证/配置错误不重试。模型自然停止、长度耗尽、协议异常和 prompt timeout 在未超过阈值时记录幂等 block event，并在同一 Run/session 追加 continuation prompt；超过阈值才关闭为 blocked。取消、进程关闭和已提交结果不计入 block。
 
 Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn 前读取 context pressure。compact 边界先以 `delta=2` 预判有效阈值：可 compact 时执行 CTF compact 并写入 `compact_performed=true`，会超阈值时跳过 compact 并直接进入 `blocking`。blocking 阶段会向 running SubAgent 请求 final report，等待短 grace 后将最新 worker snapshot 作为不可信数据注入 Solver，执行一次 `BLOCKED_FINALIZATION_PROMPT` final turn；最终无论成功还是失败都关闭为 blocked，失败追加 `block_finalization_failed`。事件 key 由 Run/session 事件序列稳定派生，崩溃重放不会重复计分。

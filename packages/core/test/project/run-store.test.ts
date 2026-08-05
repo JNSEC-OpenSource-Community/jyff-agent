@@ -328,6 +328,40 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("持久化题目级 TLDR 并在更新时覆盖旧错误", async () => {
+    const { path, store } = await storeFixture()
+    expect(
+      store.upsertTldr({
+        challengeId: "web-1",
+        model: "cheap-model",
+        sessionPath: "/tmp/tldr/session.jsonl",
+        error: "provider unavailable",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject({ content: "", error: "provider unavailable" })
+    expect(
+      store.upsertTldr({
+        challengeId: "web-1",
+        content: "# TLDR\\nConfirmed: cookie is reflected.",
+        model: "cheap-model-v2",
+        sessionPath: "/tmp/tldr/session.jsonl",
+        updatedAt: "2026-01-01T00:02:00.000Z",
+        error: null,
+      }),
+    ).toEqual({
+      challengeId: "web-1",
+      content: "# TLDR\\nConfirmed: cookie is reflected.",
+      model: "cheap-model-v2",
+      sessionPath: "/tmp/tldr/session.jsonl",
+      updatedAt: "2026-01-01T00:02:00.000Z",
+      error: null,
+    })
+    store.close()
+    const reopened = await RunStore.open(path)
+    expect(reopened.tldr("web-1")?.content).toContain("cookie")
+    reopened.close()
+  })
+
   it("幂等持久化公告 revision 和题目关联", async () => {
     const { path, store } = await storeFixture()
     const input = {

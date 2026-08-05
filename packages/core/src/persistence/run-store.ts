@@ -190,6 +190,24 @@ export interface MoveSchedulerChallenge {
   overrideBlockedLane?: boolean
 }
 
+export interface TldrRecord {
+  challengeId: string
+  content: string
+  model: string
+  sessionPath: string
+  updatedAt: string
+  error: string | null
+}
+
+export interface UpsertTldr {
+  challengeId: string
+  content?: string
+  model: string
+  sessionPath: string
+  updatedAt?: string
+  error?: string | null
+}
+
 export interface ContestAnnouncementRecord {
   key: string
   platformAnnouncementId: string
@@ -334,6 +352,15 @@ interface SubagentRow {
   completed_at: string | null
 }
 
+interface TldrRow {
+  challenge_id: string
+  content: string
+  model: string
+  session_path: string
+  updated_at: string
+  error: string | null
+}
+
 interface ContestAnnouncementRow {
   announcement_key: string
   platform_announcement_id: string
@@ -421,6 +448,17 @@ function evidenceToSummary(
   row: EvidenceRow,
 ): BlackboardSummary["evidence"][number] {
   return { id: row.id, description: row.description, runId: row.run_id }
+}
+
+function tldrFromRow(row: TldrRow): TldrRecord {
+  return {
+    challengeId: row.challenge_id,
+    content: row.content,
+    model: row.model,
+    sessionPath: row.session_path,
+    updatedAt: row.updated_at,
+    error: row.error,
+  }
 }
 
 function contestAnnouncementFromRow(
@@ -727,6 +765,15 @@ export class RunStore {
         ignored INTEGER NOT NULL DEFAULT 0 CHECK (ignored IN (0, 1)),
         first_seen_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS challenge_tldr (
+        challenge_id TEXT PRIMARY KEY,
+        content TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL,
+        session_path TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        error TEXT
       ) STRICT;
 
       CREATE TABLE IF NOT EXISTS challenge_announcements (
@@ -1112,6 +1159,43 @@ export class RunStore {
       `)
       .get(challengeId) as { count: number } | undefined
     return row?.count ?? 0
+  }
+
+  upsertTldr(input: UpsertTldr): TldrRecord {
+    this.assertOpen()
+    const updatedAt = input.updatedAt ?? new Date().toISOString()
+    this.database
+      .prepare(`
+        INSERT INTO challenge_tldr (
+          challenge_id, content, model, session_path, updated_at, error
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(challenge_id) DO UPDATE SET
+          content = excluded.content,
+          model = excluded.model,
+          session_path = excluded.session_path,
+          updated_at = excluded.updated_at,
+          error = excluded.error
+      `)
+      .run(
+        input.challengeId,
+        input.content ?? "",
+        input.model,
+        input.sessionPath,
+        updatedAt,
+        input.error ?? null,
+      )
+    const row = this.database
+      .prepare("SELECT * FROM challenge_tldr WHERE challenge_id = ?")
+      .get(input.challengeId) as unknown as TldrRow
+    return tldrFromRow(row)
+  }
+
+  tldr(challengeId: string): TldrRecord | undefined {
+    this.assertOpen()
+    const row = this.database
+      .prepare("SELECT * FROM challenge_tldr WHERE challenge_id = ?")
+      .get(challengeId) as unknown as TldrRow | undefined
+    return row ? tldrFromRow(row) : undefined
   }
 
   persistContestAnnouncement(

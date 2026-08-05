@@ -237,6 +237,19 @@ export class Project {
   get agentDirectory(): string {
     return join(this.root, ".ctf-agent")
   }
+  tldr(challengeId: string) {
+    return this.runStore.tldr(challengeId)
+  }
+  upsertTldr(input: Parameters<RunStore["upsertTldr"]>[0]) {
+    return this.runStore.upsertTldr(input)
+  }
+  tldrSessionPath(challengeId: string): string {
+    return join(
+      challengeWorkspacePath(this.agentDirectory, challengeId),
+      "tldr",
+      "session.jsonl",
+    )
+  }
   async challengeWriteup(challengeId: string): Promise<{
     validation: WriteupValidationResult
     content: string | null
