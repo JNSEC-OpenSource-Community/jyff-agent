@@ -665,7 +665,7 @@ function requestContext(error: unknown, method: string, url: URL): Error {
   if (!(error instanceof GZCTFApiError))
     return error instanceof Error ? error : new Error(String(error))
   return new GZCTFApiError(
-    `${method} ${url.pathname}: ${error.message}`,
+    `${method} ${url.pathname}${url.search}: ${error.message}`,
     error.kind,
     error.status,
     error.details,
