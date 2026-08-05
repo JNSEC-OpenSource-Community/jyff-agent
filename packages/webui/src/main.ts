@@ -157,7 +157,7 @@ function parseOptions(args: string[]): WebUiProcessOptions {
   }
   return {
     root: resolve(values.get("--root") ?? process.cwd()),
-    host: values.get("--host") ?? "127.0.0.1",
+    host: values.get("--host") ?? "0.0.0.0",
     port: positiveInteger(values, "--port", 3_000, 65_535),
     pollIntervalMs: positiveInteger(
       values,

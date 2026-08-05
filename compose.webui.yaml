@@ -20,7 +20,7 @@ services:
       - --workspace-volume
       - ctf-agent-data
     ports:
-      - "127.0.0.1:${CTF_AGENT_WEBUI_PORT:-3000}:3000"
+      - "0.0.0.0:${CTF_AGENT_WEBUI_PORT:-3000}:3000"
       - "127.0.0.1:1455:1455"
       - "127.0.0.1:53692:53692"
     environment:

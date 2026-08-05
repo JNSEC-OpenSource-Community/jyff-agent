@@ -30,7 +30,7 @@ curl http://127.0.0.1:3000/health
 docker compose -f compose.webui.yaml ps
 ```
 
-浏览器打开 <http://127.0.0.1:3000>。
+本机浏览器打开 <http://127.0.0.1:3000>；远端浏览器使用服务器可达 IP 或域名的 3000 端口。
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
@@ -81,7 +81,7 @@ wsl -d kali-linux -- bash -lc `
   'cd /mnt/e/dev/my-projects/ctf-agent && docker compose -f compose.webui.yaml up -d --build'
 ```
 
-WebUI 仅映射到宿主机 `127.0.0.1:3000`。WSL2 通常可由 Windows 浏览器直接访问该地址。Codex 和 Claude OAuth 回调分别使用仅绑定本机的 `1455`、`53692` 端口。
+WebUI 映射到宿主机 `0.0.0.0:3000`，可从外部网络访问；WSL2 端口转发和主机防火墙仍需允许相应流量。Codex 和 Claude OAuth 回调分别使用仅绑定本机的 `1455`、`53692` 端口。
 
 ## 模型认证
 
@@ -148,7 +148,7 @@ pnpm typecheck
 pnpm test
 
 # 本机启动；需要本机 Docker
-pnpm webui -- --root . --host 127.0.0.1 --port 3000
+pnpm webui -- --root . --host 0.0.0.0 --port 3000
 ```
 
 WebUI 可执行入口还支持：
@@ -156,7 +156,7 @@ WebUI 可执行入口还支持：
 | 参数 | 默认值 | 含义 |
 |---|---:|---|
 | `--root` | 当前目录 | 项目根目录，状态写入其 `.ctf-agent` |
-| `--host` | `127.0.0.1` | HTTP 监听地址 |
+| `--host` | `0.0.0.0` | HTTP 监听地址 |
 | `--port` | `3000` | HTTP 端口 |
 | `--poll-interval-ms` | `1000` | SSE 快照轮询周期 |
 | `--max-concurrent` | `2` | 最大并发 Solver 数 |
@@ -175,6 +175,6 @@ WebUI 可执行入口还支持：
 ## 安全说明
 
 - WebUI 不会在读取 API 中回传凭据明文；Provider 凭据使用 Pi `CredentialStore`，平台和通用端点密钥使用 `FileSecretStore`。
-- HTTP 服务暂不内置用户认证。不要把 3000 端口直接暴露到公网；跨主机访问应放在带 TLS 和认证的反向代理后。
+- HTTP 服务暂不内置用户认证。默认的 `0.0.0.0:3000` 会接受外部连接；公网部署应使用防火墙限制来源，或放在带 TLS 和认证的反向代理后。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。
