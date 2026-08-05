@@ -4,6 +4,7 @@ import type {
   PlatformProject,
   PlatformSetupDescriptor,
 } from "@ctf-agent/platform"
+import { AnnouncementPoller } from "../orchestration/announcement-poller.ts"
 import type { ContestScheduler } from "../orchestration/contest-scheduler.ts"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 import { type OpenProjectOptions, Project } from "../project/project.ts"
@@ -56,6 +57,7 @@ export interface ControlPlaneOptions {
   secretStore?: SecretStore
   project?: Omit<OpenProjectOptions, "root" | "platforms" | "resolveSecret">
   createScheduler?: (project: Project) => ContestScheduler | undefined
+  announcementPollIntervalMs?: number
 }
 
 /** Owns configuration and the replaceable Project/Scheduler runtime. */
@@ -68,6 +70,7 @@ export class ControlPlane {
   private config?: ProjectConfig
   private project?: Project
   private scheduler?: ContestScheduler
+  private announcementPoller?: AnnouncementPoller
   private phase: ControlPlanePhase = "unconfigured"
   private lastError: string | null = null
   private updatedAt = new Date().toISOString()
@@ -203,6 +206,8 @@ export class ControlPlane {
     const failures: unknown[] = []
     const scheduler = this.scheduler
     const project = this.project
+    this.announcementPoller?.stop()
+    this.announcementPoller = undefined
     this.scheduler = undefined
     this.project = undefined
     if (scheduler) {
@@ -245,7 +250,24 @@ export class ControlPlane {
         resolveSecret: this.secretResolver(),
       })
       this.project = project
+      try {
+        await project.syncAnnouncements({ steerActive: false })
+      } catch (error) {
+        // 公告 baseline 降级不阻塞 Solver；后续 poll 可以恢复。
+        this.lastError = `公告 baseline 失败: ${errorText(error)}`
+      }
       this.scheduler = this.options.createScheduler?.(project)
+      this.announcementPoller = new AnnouncementPoller({
+        intervalMs: this.options.announcementPollIntervalMs ?? 30_000,
+        poll: async () => {
+          await project.syncAnnouncements()
+        },
+        onError: (error) => {
+          this.lastError = `公告轮询失败: ${errorText(error)}`
+          this.updatedAt = new Date().toISOString()
+        },
+      })
+      this.announcementPoller.start()
       this.setPhase("ready")
       return this.snapshot()
     } catch (error) {

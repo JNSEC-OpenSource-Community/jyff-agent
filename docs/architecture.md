@@ -85,4 +85,6 @@ RunStore 已具备 block v2 的持久化基础：`challenge_runtime_state` 保�
 
 在 Solver supervisor 接管 turn 生命周期前，现有 Session 中断路径仍会同步维护旧 `session_interruptions` 与 `block_score` 兼容值；新 supervisor 应只写 block event ledger，旧字段只保留审计和迁移用途。
 
+ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；baseline 失败只进入降级诊断，不阻塞解题。之后由不重叠的递归 timer 默认每 30 秒同步一次，失败指数退避，断开时停止。公告按平台 ID 与内容 revision hash 持久化，solve broadcast 会被过滤，其余公告经确定性标题/ID 匹配关联题目。新 Solver 从 `challenge_announcements` 获得完整的转义数据消息；新关联公告会以 `steer` 投递给活跃 Solver，并以稳定 announcement key 支持去重。
+
 调度等待队列持久化在 `scheduler_queue`，记录 normal/blocked lane、lane 内位置、人工跨 lane override 和乐观锁版本。自主调度优先填充 normal lane；普通题耗尽后，按 `blocked_at` 顺序加入 blocked revival。领取复活题时保留原 block score，`revival_count` 和 `lifecycle_generation` 各增加 1，因此有效阈值增加 4。人工重排使用版本检查，冲突时拒绝覆盖；数据库队列在进程关闭后保留，显式暂停自主调度或取消排队题目时才删除相应记录。生产默认 Solver 并发数为 8。

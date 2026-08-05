@@ -81,6 +81,27 @@ export function subagentDelegationPrompt(
   ].join("\n")
 }
 
+export function challengeAnnouncementsPrompt(
+  announcements: readonly {
+    key: string
+    title: string
+    content: string
+    publishedAt: string
+    kind: string
+  }[],
+): string {
+  return [
+    '<challenge_announcements trust="untrusted">',
+    ...announcements.flatMap((announcement) => [
+      `  <announcement key="${xml(announcement.key)}" published_at="${xml(announcement.publishedAt)}" kind="${xml(announcement.kind)}">`,
+      `    <title>${xml(announcement.title)}</title>`,
+      `    <content>${xml(announcement.content)}</content>`,
+      "  </announcement>",
+    ]),
+    "</challenge_announcements>",
+  ].join("\n")
+}
+
 export function blackboardSnapshotPrompt(encodedSnapshot: string): string {
   return `<challenge_blackboard encoding="json">\n${encodedSnapshot}\n</challenge_blackboard>`
 }

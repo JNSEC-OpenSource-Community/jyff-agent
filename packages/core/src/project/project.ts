@@ -38,6 +38,7 @@ import {
   BLACKBOARD_SYSTEM_GUIDANCE,
   blackboardSnapshotPrompt,
   CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
+  challengeAnnouncementsPrompt,
   challengeContextPrompt,
   subagentDelegationPrompt,
 } from "../../prompts/index.ts"
@@ -52,6 +53,11 @@ import {
   createSubagentManagerTools,
   type SubagentRecord,
 } from "../collaboration/subagent-manager.ts"
+import {
+  announcementRevision,
+  classifyAnnouncement,
+  matchAnnouncementChallenges,
+} from "../orchestration/announcement-matcher.ts"
 import {
   type EnqueueSchedulerChallenge,
   type MoveSchedulerChallenge,
@@ -237,6 +243,69 @@ export class Project {
   }
   async announcements(): Promise<Announcement[]> {
     return this.platform.listAnnouncements()
+  }
+  async syncAnnouncements(options: { steerActive?: boolean } = {}): Promise<{
+    announcements: number
+    linked: number
+    steered: number
+  }> {
+    const [announcements, challenges] = await Promise.all([
+      this.platform.listAnnouncements(),
+      this.platform.listChallenges(),
+    ])
+    let linked = 0
+    let steered = 0
+    for (const announcement of announcements) {
+      const classification = classifyAnnouncement(announcement)
+      const revision = announcementRevision(announcement)
+      this.runStore.persistContestAnnouncement({
+        key: revision.key,
+        platformAnnouncementId: announcement.id,
+        revisionHash: revision.revisionHash,
+        title: announcement.title,
+        content: announcement.content,
+        publishedAt: announcement.publishedAt,
+        kind: classification.kind,
+        classificationReason: classification.reason,
+        ignored: classification.ignored,
+      })
+      if (classification.ignored) continue
+      for (const match of matchAnnouncementChallenges(
+        announcement,
+        challenges,
+      )) {
+        const created = this.runStore.linkChallengeAnnouncement({
+          challengeId: match.challengeId,
+          announcementKey: revision.key,
+          matchType: match.matchType,
+          matchedValue: match.matchedValue,
+        })
+        if (!created) continue
+        linked += 1
+        if (options.steerActive === false) continue
+        const message = challengeAnnouncementsPrompt([
+          {
+            key: revision.key,
+            title: announcement.title,
+            content: announcement.content,
+            publishedAt: announcement.publishedAt,
+            kind: classification.kind,
+          },
+        ])
+        for (const solver of [...this.solvers]) {
+          if (solver.challenge.id !== match.challengeId || solver.isClosed) {
+            continue
+          }
+          await solver.steer(message)
+          this.runStore.appendEvent(solver.runId, "announcement_steered", {
+            announcementKey: revision.key,
+            matchType: match.matchType,
+          })
+          steered += 1
+        }
+      }
+    }
+    return { announcements: announcements.length, linked, steered }
   }
   availableSkills(): readonly AgentSkill[] {
     return this.skills
@@ -467,6 +536,18 @@ export class Project {
         !resumed && blackboardInject
           ? [{ role: "user", content: blackboardInject, timestamp: Date.now() }]
           : []
+      const persistedAnnouncements =
+        this.runStore.challengeAnnouncements(challengeId)
+      const announcementMessages: AgentMessage[] =
+        !resumed && persistedAnnouncements.length > 0
+          ? [
+              {
+                role: "user",
+                content: challengeAnnouncementsPrompt(persistedAnnouncements),
+                timestamp: Date.now(),
+              },
+            ]
+          : []
 
       // skills 的脚本/参考资料必须在容器内可见，不能把宿主机路径注入给 Agent。
       const skills = await materializeSkills(this.skills, workspace)
@@ -564,6 +645,7 @@ export class Project {
               ...(options.agent.initialState?.messages ?? []),
               ...challengeMessages,
               ...blackboardMessages,
+              ...announcementMessages,
             ],
           },
         },
