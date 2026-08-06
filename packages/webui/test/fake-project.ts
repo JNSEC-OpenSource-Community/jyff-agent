@@ -371,6 +371,7 @@ export class FakeDashboardProject implements DashboardProject {
 }
 
 export class FakeDashboardScheduler implements DashboardScheduler {
+  retryAttemptCalls: Array<{ runId: string; prompt?: string }> = []
   value: ContestSchedulerSnapshot = {
     available: true,
     autoEnabled: false,
@@ -417,6 +418,14 @@ export class FakeDashboardScheduler implements DashboardScheduler {
       position: this.value.queued.length + 1,
       version: 1,
     })
+    return this.snapshot()
+  }
+
+  async retryAttempt(
+    runId: string,
+    options: { prompt?: string } = {},
+  ): Promise<ContestSchedulerSnapshot> {
+    this.retryAttemptCalls.push({ runId, ...options })
     return this.snapshot()
   }
 

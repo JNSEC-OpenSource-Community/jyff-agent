@@ -452,6 +452,26 @@ describe("WebUI HTTP server", () => {
 
     expect((await post("/api/challenges/misc-1/cancel")).status).toBe(200)
     expect(scheduler.snapshot().queued).toHaveLength(0)
+
+    expect((await post("/api/runs/run-pwn-1/retry")).status).toBe(200)
+    expect(
+      (
+        await post("/api/runs/run-pwn-1/retry", {
+          prompt: "Focus on the saved crash input.",
+        })
+      ).status,
+    ).toBe(200)
+    expect(scheduler.retryAttemptCalls).toEqual([
+      { runId: "run-pwn-1" },
+      { runId: "run-pwn-1", prompt: "Focus on the saved crash input." },
+    ])
+    expect(
+      (
+        await post("/api/runs/run-pwn-1/retry", {
+          prompt: "x".repeat(32_001),
+        })
+      ).status,
+    ).toBe(400)
   })
 
   it("保存模型配置且不向浏览器回传 API Key", async () => {

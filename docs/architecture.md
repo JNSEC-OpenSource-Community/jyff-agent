@@ -66,6 +66,8 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 中断计数按 challenge 持久化在 `challenge_runtime_state`。默认允许 3 次；当计数超过 `maxSessionInterruptions` 时，题目进入 `blocked`，不再自动调度，等待 WebUI 人工重启。人工强制派发会清除该题的中断计数和 blocked 状态。
 
+Run 级人工重试与题目级重新派发是两个不同操作。重新派发创建新 Run/attempt；对 `failed`、`timed_out`、`cancelled`、`closed`、`interrupted` 或 `blocked` Run 执行重试时，Scheduler 重新创建 sandbox 并通过 `Project.resumeSolver()` 打开原 Pi JSONL，保留 Run ID、attempt、source 和 workspace。首轮默认使用 `INCOMPLETE_CONTINUATION_PROMPT`，WebUI 可覆盖为最长 32,000 字符的人工提示词；恢复后的 turn 仍经过正常的超时、compaction、blocked 和 Flag 提交监督。
+
 `interrupted` 与 `blocked` Run 不消耗常规 `maxAttempts` 预算；超时、取消、准备失败等走各自终态和重试规则。
 
 ## SubAgent 协作

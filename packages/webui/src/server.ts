@@ -221,7 +221,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const message = error instanceof Error ? error.message : String(error)
       if (error instanceof ContestSchedulerError) {
         const status =
-          error.code === "challenge_not_found"
+          error.code === "challenge_not_found" || error.code === "run_not_found"
             ? 404
             : error.code === "unavailable"
               ? 503
@@ -777,6 +777,29 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         }
         throw error
       }
+      return
+    }
+
+    const retryAttempt = /^\/api\/runs\/([^/]+)\/retry$/.exec(url.pathname)
+    if (method === "POST" && retryAttempt) {
+      const scheduler = currentScheduler()
+      requireScheduler(scheduler)
+      requireJsonRequest(request)
+      const runId = decodeURIComponent(retryAttempt[1] ?? "")
+      const body = await readJsonBody(request, 40_000)
+      const prompt =
+        body.prompt === undefined
+          ? undefined
+          : optionalString(
+              body.prompt,
+              "Prompt",
+              32_000,
+              "invalid_retry_prompt",
+            )
+      await scheduler.retryAttempt(runId, {
+        ...(prompt ? { prompt } : {}),
+      })
+      sendJson(response, 200, await refresh())
       return
     }
 

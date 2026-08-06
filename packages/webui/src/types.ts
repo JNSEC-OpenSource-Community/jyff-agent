@@ -178,6 +178,10 @@ export interface DashboardScheduler {
     challengeId: string,
     options?: { force?: boolean },
   ): Promise<ContestSchedulerSnapshot>
+  retryAttempt(
+    runId: string,
+    options?: { prompt?: string },
+  ): Promise<ContestSchedulerSnapshot>
   reorderQueue(
     challengeId: string,
     options: {

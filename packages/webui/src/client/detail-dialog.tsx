@@ -33,12 +33,23 @@ interface DetailDialogProps {
   toast: (message: string, error?: boolean) => void
 }
 
+const RETRYABLE_ATTEMPT_STATUSES = new Set<string>([
+  "failed",
+  "timed_out",
+  "cancelled",
+  "closed",
+  "interrupted",
+  "blocked",
+])
+
 export function DetailDialog(props: DetailDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [intervention, setIntervention] = useState("")
   const [subagentMessages, setSubagentMessages] = useState<
     Record<string, string>
   >({})
+  const [retryPrompts, setRetryPrompts] = useState<Record<string, string>>({})
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
 
   useEffect(() => {
     const node = dialog.current
@@ -120,6 +131,28 @@ export function DetailDialog(props: DetailDialogProps) {
       await props.onRefresh()
     } catch (error) {
       props.toast(errorMessage(error), true)
+    }
+  }
+
+  async function retryAttempt(run: DashboardRun) {
+    if (retryingRunId || active) return
+    const prompt = retryPrompts[run.id]?.trim()
+    setRetryingRunId(run.id)
+    try {
+      await controlPost(`/api/runs/${encodeURIComponent(run.id)}/retry`, {
+        ...(prompt ? { prompt } : {}),
+      })
+      setRetryPrompts((current) => ({ ...current, [run.id]: "" }))
+      props.toast(
+        prompt
+          ? `Attempt ${run.attempt} 已使用自定义提示词继续`
+          : `Attempt ${run.attempt} 已使用默认继续提示词重试`,
+      )
+      await props.onRefresh()
+    } catch (error) {
+      props.toast(errorMessage(error), true)
+    } finally {
+      setRetryingRunId(null)
     }
   }
 
@@ -217,6 +250,18 @@ export function DetailDialog(props: DetailDialogProps) {
               }
               onSteer={steer}
               onCancel={cancel}
+              retryPrompts={retryPrompts}
+              retryingRunId={retryingRunId}
+              canRetryAttempt={
+                props.schedulerAvailable && !active && !props.operationPending
+              }
+              onRetryPrompt={(runId, value) =>
+                setRetryPrompts((current) => ({
+                  ...current,
+                  [runId]: value,
+                }))
+              }
+              onRetry={retryAttempt}
               onRefreshTldr={refreshTldr}
               tldrPending={props.operationPending}
             />
@@ -264,6 +309,11 @@ function DetailContent(props: {
   onMessage: (id: string, value: string) => void
   onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
   onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  retryPrompts: Record<string, string>
+  retryingRunId: string | null
+  canRetryAttempt: boolean
+  onRetryPrompt: (runId: string, value: string) => void
+  onRetry: (run: DashboardRun) => Promise<void>
   onRefreshTldr: () => Promise<void>
   tldrPending: boolean
 }) {
@@ -326,6 +376,11 @@ function DetailContent(props: {
               onMessage={props.onMessage}
               onSteer={props.onSteer}
               onCancel={props.onCancel}
+              retryPrompt={props.retryPrompts[run.id] ?? ""}
+              retrying={props.retryingRunId === run.id}
+              canRetry={props.canRetryAttempt}
+              onRetryPrompt={props.onRetryPrompt}
+              onRetry={props.onRetry}
             />
           ))
         )}
@@ -434,9 +489,15 @@ function RunCard(props: {
   onMessage: (id: string, value: string) => void
   onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
   onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  retryPrompt: string
+  retrying: boolean
+  canRetry: boolean
+  onRetryPrompt: (runId: string, value: string) => void
+  onRetry: (run: DashboardRun) => Promise<void>
 }) {
   const run = props.run
   const [open, setOpen] = useState(props.initiallyOpen)
+  const retryable = RETRYABLE_ATTEMPT_STATUSES.has(run.status)
   return (
     <details
       className="run-card"
@@ -472,6 +533,31 @@ function RunCard(props: {
           <span className="run-export-link is-disabled">尚无 Agent 对话</span>
         )}
       </summary>
+      {retryable ? (
+        <div className="run-retry-controls">
+          <textarea
+            value={props.retryPrompt}
+            maxLength={32_000}
+            rows={2}
+            disabled={!props.canRetry || props.retrying}
+            placeholder="可选：输入本次继续解题的提示词；留空使用系统默认 continuation prompt"
+            onChange={(event) =>
+              props.onRetryPrompt(run.id, event.target.value)
+            }
+          />
+          <button
+            className="outline-button"
+            type="button"
+            disabled={!props.canRetry || props.retrying}
+            onClick={() => void props.onRetry(run)}
+          >
+            {props.retrying ? "正在恢复…" : "重试此 Attempt"}
+          </button>
+          <small>
+            复用当前 Run、workspace 与 Pi session，不创建新 attempt。
+          </small>
+        </div>
+      ) : null}
       {run.subagents.length > 0 ? (
         <SubagentFleet
           run={run}

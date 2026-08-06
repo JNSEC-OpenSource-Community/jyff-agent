@@ -803,17 +803,23 @@ export class Project {
     return this.createSolverForRun(challengeId, options)
   }
 
-  /**
-   * Reopen an interrupted solver from its persisted JSONL session. The caller
-   * supplies the live model transport again; credentials are intentionally not
-   * persisted with the session.
-   */
+  /** Reopen a terminal Solver on its original Run/workspace/Pi JSONL session. */
   async resumeSolver(
     runId: string,
     options: Omit<CreateSolverOptions, "attempt" | "source">,
   ): Promise<CtfSolverAgent> {
     const run = this.runStore.getRun(runId)
-    if (run?.status !== "interrupted") {
+    if (
+      !run ||
+      ![
+        "failed",
+        "timed_out",
+        "cancelled",
+        "closed",
+        "interrupted",
+        "blocked",
+      ].includes(run.status)
+    ) {
       throw new Error(`Run ${runId} 不存在或当前不可恢复`)
     }
     return this.createSolverForRun(run.challengeId, options, run)
