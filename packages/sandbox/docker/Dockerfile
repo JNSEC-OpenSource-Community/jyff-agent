@@ -106,7 +106,7 @@ RUN apt-get -o Acquire::Retries=5 update \
     binutils-mipsel-linux-gnu binutils-multiarch binutils-riscv64-linux-gnu binwalk bison \
     build-essential busybox-static cabextract checksec cmake coreutils cpio curl \
     device-tree-compiler dwarves elfutils ent file findutils flex ffmpeg foremost \
-    g++-13-multilib gcc-13-multilib gifsicle hashcat \
+    g++-13-multilib gcc-13-multilib gifsicle hashcat iputils-ping \
     gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-mipsel-linux-gnu \
     gcc-riscv64-linux-gnu gdb gdb-multiarch gdbserver git imagemagick jq libelf-dev \
     libarchive-tools libffi-dev libgmp-dev libc6-dbg libc6-dev-i386 \
