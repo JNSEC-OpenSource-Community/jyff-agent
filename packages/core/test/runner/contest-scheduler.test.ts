@@ -309,7 +309,9 @@ describe("ContestScheduler", () => {
         ),
         "utf8",
       )
-      expect(session).toContain('<challenge_blackboard encoding=\\"json\\">')
+      expect(session).not.toContain(
+        '<challenge_blackboard encoding=\\"json\\">',
+      )
       expect(session).toContain('<active_subagents encoding=\\"json\\">')
       expect(session).toContain("<challenge_announcements>")
       expect(project.challengeBlockEvents(item.id)).toEqual([

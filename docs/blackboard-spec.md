@@ -10,7 +10,7 @@
 - `challenge_opportunities`：从一组证据出发、必须经过实验才能判断的探索方向；状态为 `open` 或 `concluded`，结束时 resolution 为 `confirmed` 或 `dead_end`；
 - `challenge_opportunity_sources`：Opportunity 与多个源 Evidence 的关联。
 
-每道题首次创建 Solver 时，`Project` 会幂等创建 origin Evidence，记录题目标题、分类、分值、描述和附件摘要。Evidence 与 Opportunity 均绑定 `challenge_id` 和产生它的 `run_id`，不能跨题关联。
+黑板默认为空，不复制 `<challenge_context>` 中已经提供的标题、分类、分值、描述和附件。只有 Agent 通过黑板工具确认写入的 Evidence 和 Opportunity 才会持久化；两者均绑定 `challenge_id` 和产生它的 `run_id`，不能跨题关联。
 
 关键限制定义在 `packages/core/src/persistence/run-store.ts`：描述最长 4,000 字符，单个 Opportunity 最多引用 32 条 Evidence，每题最多保存 256 条 Evidence 和 256 条 Opportunity。
 
@@ -44,7 +44,7 @@ SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver
 
 ## 自动注入
 
-创建全新 Solver 时，`Project` 将最新黑板快照作为初始 user 数据消息注入：
+创建全新 Solver 时，`Project` 仅在黑板非空时将最新快照作为初始 user 数据消息注入：
 
 ```xml
 <challenge_blackboard encoding="json">
@@ -62,7 +62,7 @@ SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver
 packages/core/src/
 ├── collaboration/blackboard.ts   # 序列化与 Agent tools
 ├── persistence/run-store.ts      # 表、事务、限制和查询
-└── project/project.ts            # origin、快照注入和工具装配
+└── project/project.ts            # 非空快照注入和工具装配
 
 packages/prompts/src/project.ts   # 数据边界和安全提示词
 ```

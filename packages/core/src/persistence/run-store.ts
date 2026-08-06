@@ -285,19 +285,10 @@ export interface BlackboardStats {
   concludedOpportunities: number
 }
 
-export interface ChallengeInfoForOrigin {
-  title: string
-  category: string
-  score: number
-  description: string
-  attachments: { name: string; size?: number }[]
-}
-
 export const DEFAULT_BLOCK_THRESHOLD = 8
 export const BLOCK_THRESHOLD_REVIVAL_INCREMENT = 4
 
 export const BLACKBOARD_DESCRIPTION_MAX_LENGTH = 4_000
-export const BLACKBOARD_ORIGIN_MAX_LENGTH = 8_000
 export const BLACKBOARD_SOURCE_MAX_ITEMS = 32
 export const BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE = 256
 export const BLACKBOARD_MAX_OPPORTUNITIES_PER_CHALLENGE = 256
@@ -619,13 +610,6 @@ function normalizedDescription(value: string, field: string): string {
     )
   }
   return normalized
-}
-
-function truncateOrigin(value: string): string {
-  if (value.length <= BLACKBOARD_ORIGIN_MAX_LENGTH) return value
-  const suffix =
-    "\n[Origin truncated; consult the initial challenge_context for the complete challenge description.]"
-  return value.slice(0, BLACKBOARD_ORIGIN_MAX_LENGTH - suffix.length) + suffix
 }
 
 function runFromRow(row: RunRow): RunRecord {
@@ -2230,72 +2214,6 @@ export class RunStore {
         id: Number(result.lastInsertRowid),
         challengeId,
         description: normalized,
-        runId,
-        createdAt: timestamp,
-      }
-    } catch (error) {
-      this.database.exec("ROLLBACK")
-      throw error
-    }
-  }
-
-  ensureOrigin(
-    challengeId: string,
-    runId: string,
-    challengeInfo: ChallengeInfoForOrigin,
-  ): EvidenceRecord {
-    this.assertOpen()
-    const attachments =
-      challengeInfo.attachments.length > 0
-        ? challengeInfo.attachments
-            .map((a) => `  - ${a.name} (${a.size} bytes)`)
-            .join("\n")
-        : "  (none)"
-    const description = truncateOrigin(
-      [
-        `Title: ${challengeInfo.title}`,
-        `Category: ${challengeInfo.category}`,
-        `Score: ${challengeInfo.score}`,
-        `Description: ${challengeInfo.description}`,
-        `Attachments:`,
-        attachments,
-      ].join("\n"),
-    )
-    const timestamp = new Date().toISOString()
-    this.database.exec("BEGIN IMMEDIATE")
-    try {
-      this.assertRunBelongsToChallenge(runId, challengeId)
-      const existing = this.database
-        .prepare(`
-        SELECT * FROM challenge_evidence WHERE challenge_id = ? ORDER BY id ASC LIMIT 1
-      `)
-        .get(challengeId) as unknown as EvidenceRow | undefined
-      if (existing) {
-        this.database.exec("COMMIT")
-        return {
-          id: existing.id,
-          challengeId: existing.challenge_id,
-          description: existing.description,
-          runId: existing.run_id,
-          createdAt: existing.created_at,
-        }
-      }
-      this.assertChallengeEntryCapacity(
-        "challenge_evidence",
-        challengeId,
-        BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
-      )
-      const result = this.database
-        .prepare(`
-        INSERT INTO challenge_evidence (challenge_id, description, run_id, created_at)
-        VALUES (?, ?, ?, ?)
-      `)
-        .run(challengeId, description, runId, timestamp)
-      this.database.exec("COMMIT")
-      return {
-        id: Number(result.lastInsertRowid),
-        challengeId,
-        description,
         runId,
         createdAt: timestamp,
       }

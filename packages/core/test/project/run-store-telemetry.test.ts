@@ -29,13 +29,11 @@ describe("RunStore dashboard telemetry", () => {
         toolName: "bash",
         args: { command: "[omitted]" },
       })
-      const origin = store.ensureOrigin("challenge-1", "run-1", {
-        title: "Challenge",
-        category: "pwn",
-        score: 500,
-        description: "Test",
-        attachments: [],
-      })
+      const origin = store.recordEvidence(
+        "challenge-1",
+        "run-1",
+        "Confirmed stack overflow",
+      )
       const opportunity = store.recordOpportunity(
         "challenge-1",
         "run-1",

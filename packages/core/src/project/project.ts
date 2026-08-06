@@ -845,17 +845,6 @@ export class Project {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
 
-      // 确保黑板 origin 存在，并准备自动注入内容
-      this.runStore.ensureOrigin(challengeId, runId, {
-        title: challenge.title,
-        category: challenge.category,
-        score: challenge.score,
-        description: challenge.description,
-        attachments: challenge.attachments.map((a) => ({
-          name: a.name,
-          size: a.size,
-        })),
-      })
       const blackboardInject = injectBlackboard(this.runStore, challengeId)
       const blackboardMessages: AgentMessage[] =
         !resumed && blackboardInject

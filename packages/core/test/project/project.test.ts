@@ -201,7 +201,7 @@ describe("Project", () => {
         typeof message.content === "string" &&
         message.content.includes('<challenge_blackboard encoding="json">'),
     )
-    expect(blackboardMessage).toBeDefined()
+    expect(blackboardMessage).toBeUndefined()
     const challengeMessage = solver.state.messages.find(
       (message) =>
         message.role === "user" &&
@@ -218,7 +218,10 @@ describe("Project", () => {
     expect(sandbox.writes.get("/workspace/attachments/flag.txt")).toBe(
       Buffer.from("TEST{fixture}").toString("base64"),
     )
-    expect(project.blackboard("warmup-flag").evidence).toHaveLength(1)
+    expect(project.blackboard("warmup-flag")).toEqual({
+      evidence: [],
+      opportunities: [],
+    })
     expect(received).toMatchObject({
       projectId: "test-project",
       image: "test-image",
@@ -265,6 +268,47 @@ describe("Project", () => {
       "run_finished",
     ])
     await project.close()
+  })
+
+  it("只向后续 Solver 注入非空黑板", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const first = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const record = first.state.tools.find(
+        (tool) => tool.name === "blackboard_record",
+      )
+      if (!record) throw new Error("blackboard_record 工具未创建")
+      await record.execute("record-1", {
+        evidence: { description: "已确认 flag.txt 包含目标字符串" },
+      })
+      await first.close()
+
+      const second = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const blackboardMessages = second.state.messages.flatMap((message) => {
+        if (
+          message.role === "user" &&
+          typeof message.content === "string" &&
+          message.content.includes('<challenge_blackboard encoding="json">')
+        ) {
+          return [message.content]
+        }
+        return []
+      })
+      expect(blackboardMessages).toHaveLength(1)
+      expect(blackboardMessages[0]).toContain("已确认 flag.txt 包含目标字符串")
+      await second.close()
+    } finally {
+      await project.close()
+    }
   })
 
   it("公告通过关键字筛选且经人工批准后才注入新 Solver", async () => {

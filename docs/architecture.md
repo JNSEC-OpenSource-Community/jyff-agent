@@ -42,7 +42,7 @@ packages/
 `Project.createSolver()` 的主要流程：
 
 1. 将题目 ID 绑定为单题 `ChallengeCapability` 并读取元数据；
-2. 为当前题目创建或复用黑板 origin；
+2. 读取当前题目已有的共享黑板；黑板默认保持为空；
 3. 创建或复用由题目 ID 稳定哈希得到的题目级 workspace，并创建 Docker sandbox；
 4. 自动下载全部附件到容器的 `/workspace/attachments/<文件名>`；
 5. 把题目信息与附件路径编码为 `<challenge_context>` 初始 user 消息；
