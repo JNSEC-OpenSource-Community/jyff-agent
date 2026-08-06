@@ -282,6 +282,9 @@ export class FakeDashboardProject implements DashboardProject {
       sessionPath: "",
       updatedAt: now,
       error: "not implemented in fake",
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
     }
   }
   async challengeWriteup(challengeId: string) {

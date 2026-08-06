@@ -1,6 +1,7 @@
 import type { RunEvent, SubagentRecord } from "@ctf-agent/core"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type {
+  AgentCacheStats,
   ChallengeDetails,
   DashboardChallenge,
   DashboardRun,
@@ -350,7 +351,19 @@ function DetailContent(props: {
           >
             {tldr ? "更新 TLDR" : "生成 TLDR"}
           </button>
-          {tldr ? <span>{tldr.model}</span> : null}
+          {tldr ? (
+            <span
+              title={`input ${tldr.inputTokens.toLocaleString()} · cache read ${tldr.cacheReadTokens.toLocaleString()} · cache write ${tldr.cacheWriteTokens.toLocaleString()}`}
+            >
+              {tldr.model} · CACHE{" "}
+              {formatCacheRate({
+                inputTokens: tldr.inputTokens,
+                cacheReadTokens: tldr.cacheReadTokens,
+                cacheWriteTokens: tldr.cacheWriteTokens,
+                cacheRate: cacheRate(tldr.inputTokens, tldr.cacheReadTokens),
+              })}
+            </span>
+          ) : null}
         </div>
         {tldr?.content ? (
           <pre className="tldr-preview">{tldr.content}</pre>
@@ -446,6 +459,12 @@ function RunCard(props: {
             {absoluteTime(run.createdAt)}
           </span>
         </span>
+        <span
+          className="run-cache-rate"
+          title={`input ${run.cache.inputTokens.toLocaleString()} · cache read ${run.cache.cacheReadTokens.toLocaleString()} · cache write ${run.cache.cacheWriteTokens.toLocaleString()}`}
+        >
+          CACHE {formatCacheRate(run.cache)}
+        </span>
         <span className={`status-chip status-${run.status}`}>
           {STATUS_LABELS[run.status] ?? run.status}
         </span>
@@ -535,6 +554,22 @@ function SubagentFleet(props: {
                 <span>
                   <small>TOKENS</small>
                   <strong>{agent.totalTokens.toLocaleString()}</strong>
+                </span>
+                <span
+                  title={`input ${(agent.inputTokens ?? 0).toLocaleString()} · cache read ${(agent.cacheReadTokens ?? 0).toLocaleString()} · cache write ${(agent.cacheWriteTokens ?? 0).toLocaleString()}`}
+                >
+                  <small>CACHE</small>
+                  <strong>
+                    {formatCacheRate({
+                      inputTokens: agent.inputTokens ?? 0,
+                      cacheReadTokens: agent.cacheReadTokens ?? 0,
+                      cacheWriteTokens: agent.cacheWriteTokens ?? 0,
+                      cacheRate: cacheRate(
+                        agent.inputTokens ?? 0,
+                        agent.cacheReadTokens ?? 0,
+                      ),
+                    })}
+                  </strong>
                 </span>
               </div>
               {agent.activeTool ? (
@@ -722,6 +757,19 @@ function groupThinking(events: RunEvent[]): GroupedEvent[] {
   }
   flush()
   return result
+}
+
+function cacheRate(
+  inputTokens: number,
+  cacheReadTokens: number,
+): number | null {
+  const eligibleTokens = inputTokens + cacheReadTokens
+  return eligibleTokens > 0 ? cacheReadTokens / eligibleTokens : null
+}
+
+function formatCacheRate(cache: AgentCacheStats): string {
+  if (cache.cacheRate === null) return "—"
+  return `${(cache.cacheRate * 100).toFixed(1)}%`
 }
 
 function acceptedSubmission(runs: DashboardRun[]): string | undefined {

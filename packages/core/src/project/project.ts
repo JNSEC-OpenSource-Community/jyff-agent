@@ -335,6 +335,9 @@ export class Project {
           model: model.id,
           sessionPath,
           error: null,
+          inputTokens: response.usage.input,
+          cacheReadTokens: response.usage.cacheRead,
+          cacheWriteTokens: response.usage.cacheWrite,
         })
       } finally {
         await tldr.close()
@@ -844,6 +847,9 @@ export class Project {
               turns: subagent.turns,
               toolUses: subagent.toolUses,
               totalTokens: subagent.totalTokens,
+              inputTokens: subagent.inputTokens ?? 0,
+              cacheReadTokens: subagent.cacheReadTokens ?? 0,
+              cacheWriteTokens: subagent.cacheWriteTokens ?? 0,
             })
           } catch (error) {
             this.recordDiagnostic("telemetry", error, runId)

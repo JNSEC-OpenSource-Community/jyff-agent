@@ -1,5 +1,6 @@
 import type { RunEvent, RunRecord } from "@ctf-agent/core"
 import type {
+  AgentCacheStats,
   ChallengeDetails,
   DashboardChallenge,
   DashboardChallengeStatus,
@@ -150,11 +151,15 @@ export async function buildChallengeDetails(
     (candidate) => candidate.id === challengeId,
   )
   if (!challenge) return undefined
-  const runs = project.runs({ challengeId }).map((run) => ({
-    ...run,
-    events: compactTimelineEvents(project.runEvents(run.id)),
-    subagents: project.subagents(run.id),
-  }))
+  const runs = project.runs({ challengeId }).map((run) => {
+    const events = project.runEvents(run.id)
+    return {
+      ...run,
+      events: compactTimelineEvents(events),
+      subagents: project.subagents(run.id),
+      cache: agentCacheStats(events),
+    }
+  })
   return {
     generatedAt: new Date().toISOString(),
     challenge,
@@ -168,6 +173,25 @@ export async function buildChallengeDetails(
       ) ?? null,
     writeup: await project.challengeWriteup(challengeId),
     tldr: project.tldr(challengeId) ?? null,
+  }
+}
+
+export function agentCacheStats(events: readonly RunEvent[]): AgentCacheStats {
+  let inputTokens = 0
+  let cacheReadTokens = 0
+  let cacheWriteTokens = 0
+  for (const event of events) {
+    if (event.type !== "agent_usage" || !isRecord(event.data)) continue
+    inputTokens += nonNegativeNumber(event.data.input)
+    cacheReadTokens += nonNegativeNumber(event.data.cacheRead)
+    cacheWriteTokens += nonNegativeNumber(event.data.cacheWrite)
+  }
+  const eligibleTokens = inputTokens + cacheReadTokens
+  return {
+    inputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    cacheRate: eligibleTokens > 0 ? cacheReadTokens / eligibleTokens : null,
   }
 }
 
@@ -207,6 +231,12 @@ function compactTimelineEvents(events: RunEvent[]): RunEvent[] {
 function eventText(event: RunEvent): string | undefined {
   if (!isRecord(event.data)) return undefined
   return typeof event.data.text === "string" ? event.data.text : undefined
+}
+
+function nonNegativeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -385,6 +385,9 @@ describe("RunStore", () => {
         sessionPath: "/tmp/tldr/session.jsonl",
         updatedAt: "2026-01-01T00:02:00.000Z",
         error: null,
+        inputTokens: 200,
+        cacheReadTokens: 800,
+        cacheWriteTokens: 50,
       }),
     ).toEqual({
       challengeId: "web-1",
@@ -393,6 +396,21 @@ describe("RunStore", () => {
       sessionPath: "/tmp/tldr/session.jsonl",
       updatedAt: "2026-01-01T00:02:00.000Z",
       error: null,
+      inputTokens: 200,
+      cacheReadTokens: 800,
+      cacheWriteTokens: 50,
+    })
+    expect(
+      store.upsertTldr({
+        challengeId: "web-1",
+        model: "cheap-model-v2",
+        sessionPath: "/tmp/tldr/session.jsonl",
+        error: "temporary failure",
+      }),
+    ).toMatchObject({
+      content: "# TLDR\\nConfirmed: cookie is reflected.",
+      cacheReadTokens: 800,
+      error: "temporary failure",
     })
     store.close()
     const reopened = await RunStore.open(path)

@@ -77,9 +77,17 @@ export interface DashboardSnapshot {
   controlPlane: ControlPlaneSnapshot | null
 }
 
+export interface AgentCacheStats {
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  cacheRate: number | null
+}
+
 export interface DashboardRun extends RunRecord {
   events: RunEvent[]
   subagents: SubagentRecord[]
+  cache: AgentCacheStats
 }
 
 export interface ChallengeWriteup {

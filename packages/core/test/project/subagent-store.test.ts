@@ -35,6 +35,9 @@ function record(overrides: Partial<SubagentRecord> = {}): SubagentRecord {
     turns: 2,
     toolUses: 3,
     totalTokens: 4096,
+    inputTokens: 1_024,
+    cacheReadTokens: 3_072,
+    cacheWriteTokens: 128,
     createdAt: "2026-08-04T10:00:00.000Z",
     updatedAt: "2026-08-04T10:01:00.000Z",
     startedAt: "2026-08-04T10:00:01.000Z",
@@ -71,6 +74,9 @@ describe("RunStore SubAgent persistence", () => {
         turns: 4,
         toolUses: 3,
         totalTokens: 4096,
+        inputTokens: 1_024,
+        cacheReadTokens: 3_072,
+        cacheWriteTokens: 128,
       }),
     ])
     store.close()

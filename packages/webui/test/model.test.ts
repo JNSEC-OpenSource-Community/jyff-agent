@@ -1,8 +1,38 @@
 import { describe, expect, it } from "vitest"
-import { buildChallengeDetails, buildDashboardSnapshot } from "../src/model.ts"
+import {
+  agentCacheStats,
+  buildChallengeDetails,
+  buildDashboardSnapshot,
+} from "../src/model.ts"
 import { FakeDashboardProject, FakeDashboardScheduler } from "./fake-project.ts"
 
 describe("WebUI dashboard model", () => {
+  it("按 cacheRead / (input + cacheRead) 聚合 Run 缓存率", () => {
+    const cache = agentCacheStats([
+      {
+        id: 1,
+        runId: "run-1",
+        type: "agent_usage",
+        data: { input: 200, cacheRead: 800, cacheWrite: 50 },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: 2,
+        runId: "run-1",
+        type: "agent_usage",
+        data: { input: 100, cacheRead: 100, cacheWrite: 0 },
+        createdAt: "2026-01-01T00:01:00.000Z",
+      },
+    ])
+    expect(cache).toEqual({
+      inputTokens: 300,
+      cacheReadTokens: 900,
+      cacheWriteTokens: 50,
+      cacheRate: 0.75,
+    })
+    expect(agentCacheStats([]).cacheRate).toBeNull()
+  })
+
   it("合并平台、Run 和黑板数据，生成题目状态与统计", async () => {
     const project = new FakeDashboardProject()
     const snapshot = await buildDashboardSnapshot(project)

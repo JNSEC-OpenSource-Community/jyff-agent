@@ -197,6 +197,9 @@ export interface TldrRecord {
   sessionPath: string
   updatedAt: string
   error: string | null
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
 }
 
 export interface UpsertTldr {
@@ -206,6 +209,9 @@ export interface UpsertTldr {
   sessionPath: string
   updatedAt?: string
   error?: string | null
+  inputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
 }
 
 export interface ContestAnnouncementRecord {
@@ -357,6 +363,9 @@ interface SubagentRow {
   turns: number
   tool_uses: number
   total_tokens: number
+  input_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
   created_at: string
   updated_at: string
   started_at: string | null
@@ -370,6 +379,9 @@ interface TldrRow {
   session_path: string
   updated_at: string
   error: string | null
+  input_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
 }
 
 interface ContestAnnouncementRow {
@@ -480,6 +492,9 @@ function tldrFromRow(row: TldrRow): TldrRecord {
     sessionPath: row.session_path,
     updatedAt: row.updated_at,
     error: row.error,
+    inputTokens: row.input_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheWriteTokens: row.cache_write_tokens,
   }
 }
 
@@ -621,6 +636,9 @@ function subagentFromRow(row: SubagentRow): SubagentRecord {
     turns: row.turns,
     toolUses: row.tool_uses,
     totalTokens: row.total_tokens,
+    inputTokens: row.input_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheWriteTokens: row.cache_write_tokens,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.started_at === null ? {} : { startedAt: row.started_at }),
@@ -701,6 +719,9 @@ export class RunStore {
         turns INTEGER NOT NULL DEFAULT 0,
         tool_uses INTEGER NOT NULL DEFAULT 0,
         total_tokens INTEGER NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         started_at TEXT,
@@ -810,7 +831,10 @@ export class RunStore {
         model TEXT NOT NULL,
         session_path TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        error TEXT
+        error TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0
       ) STRICT;
 
       CREATE TABLE IF NOT EXISTS challenge_announcements (
@@ -843,6 +867,60 @@ export class RunStore {
       database.exec(
         "ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT 'direct'",
       )
+    }
+
+    const subagentColumns = new Set(
+      (
+        database
+          .prepare("PRAGMA table_info(run_subagents)")
+          .all() as unknown as Array<{
+          name: string
+        }>
+      ).map((column) => column.name),
+    )
+    const subagentUsageMigrations = [
+      [
+        "input_tokens",
+        "ALTER TABLE run_subagents ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0)",
+      ],
+      [
+        "cache_read_tokens",
+        "ALTER TABLE run_subagents ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0 CHECK (cache_read_tokens >= 0)",
+      ],
+      [
+        "cache_write_tokens",
+        "ALTER TABLE run_subagents ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0 CHECK (cache_write_tokens >= 0)",
+      ],
+    ] as const
+    for (const [name, sql] of subagentUsageMigrations) {
+      if (!subagentColumns.has(name)) database.exec(sql)
+    }
+
+    const tldrColumns = new Set(
+      (
+        database
+          .prepare("PRAGMA table_info(challenge_tldr)")
+          .all() as unknown as Array<{
+          name: string
+        }>
+      ).map((column) => column.name),
+    )
+    const tldrUsageMigrations = [
+      [
+        "input_tokens",
+        "ALTER TABLE challenge_tldr ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0)",
+      ],
+      [
+        "cache_read_tokens",
+        "ALTER TABLE challenge_tldr ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0 CHECK (cache_read_tokens >= 0)",
+      ],
+      [
+        "cache_write_tokens",
+        "ALTER TABLE challenge_tldr ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0 CHECK (cache_write_tokens >= 0)",
+      ],
+    ] as const
+    for (const [name, sql] of tldrUsageMigrations) {
+      if (!tldrColumns.has(name)) database.exec(sql)
     }
 
     const opportunityColumns = database
@@ -1205,25 +1283,33 @@ export class RunStore {
   upsertTldr(input: UpsertTldr): TldrRecord {
     this.assertOpen()
     const updatedAt = input.updatedAt ?? new Date().toISOString()
+    const existing = this.tldr(input.challengeId)
     this.database
       .prepare(`
         INSERT INTO challenge_tldr (
-          challenge_id, content, model, session_path, updated_at, error
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          challenge_id, content, model, session_path, updated_at, error,
+          input_tokens, cache_read_tokens, cache_write_tokens
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(challenge_id) DO UPDATE SET
           content = excluded.content,
           model = excluded.model,
           session_path = excluded.session_path,
           updated_at = excluded.updated_at,
-          error = excluded.error
+          error = excluded.error,
+          input_tokens = excluded.input_tokens,
+          cache_read_tokens = excluded.cache_read_tokens,
+          cache_write_tokens = excluded.cache_write_tokens
       `)
       .run(
         input.challengeId,
-        input.content ?? "",
+        input.content ?? existing?.content ?? "",
         input.model,
         input.sessionPath,
         updatedAt,
         input.error ?? null,
+        input.inputTokens ?? existing?.inputTokens ?? 0,
+        input.cacheReadTokens ?? existing?.cacheReadTokens ?? 0,
+        input.cacheWriteTokens ?? existing?.cacheWriteTokens ?? 0,
       )
     const row = this.database
       .prepare("SELECT * FROM challenge_tldr WHERE challenge_id = ?")
@@ -1918,8 +2004,9 @@ export class RunStore {
         INSERT INTO run_subagents (
           id, run_id, role, display_name, description, status, background,
           prompt, session_path, container_cwd, result, error, active_tool,
-          turns, tool_uses, total_tokens, created_at, updated_at, started_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          turns, tool_uses, total_tokens, input_tokens, cache_read_tokens,
+          cache_write_tokens, created_at, updated_at, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           role = excluded.role,
           display_name = excluded.display_name,
@@ -1935,6 +2022,9 @@ export class RunStore {
           turns = excluded.turns,
           tool_uses = excluded.tool_uses,
           total_tokens = excluded.total_tokens,
+          input_tokens = excluded.input_tokens,
+          cache_read_tokens = excluded.cache_read_tokens,
+          cache_write_tokens = excluded.cache_write_tokens,
           updated_at = excluded.updated_at,
           started_at = excluded.started_at,
           completed_at = excluded.completed_at
@@ -1956,6 +2046,9 @@ export class RunStore {
         record.turns,
         record.toolUses,
         record.totalTokens,
+        record.inputTokens ?? 0,
+        record.cacheReadTokens ?? 0,
+        record.cacheWriteTokens ?? 0,
         record.createdAt,
         record.updatedAt,
         record.startedAt ?? null,

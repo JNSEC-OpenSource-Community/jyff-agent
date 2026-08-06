@@ -85,11 +85,13 @@ RunStore 已具备 block v2 的持久化基础：`challenge_runtime_state` 保�
 
 在 Solver supervisor 接管 turn 生命周期前，现有 Session 中断路径仍会同步维护旧 `session_interruptions` 与 `block_score` 兼容值；新 supervisor 应只写 block event ledger，旧字段只保留审计和迁移用途。
 
-ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；baseline 失败只进入降级诊断，不阻塞解题。之后由不重叠的递归 timer 默认每 30 秒同步一次，失败指数退避，断开时停止。公告按平台 ID 与内容 revision hash 持久化，solve broadcast 会被过滤，其余公告经确定性标题/ID 匹配关联题目。新 Solver 从 `challenge_announcements` 获得完整的转义数据消息；活跃 Solver 的 steer 先进入 `announcement_deliveries` outbox，按题目、公告 revision 和 Run 幂等排队，成功/失败/attempts 可恢复，失败 delivery 后续 poll 可重试。
+ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；baseline 失败只进入降级诊断，不阻塞解题。之后由不重叠的递归 timer 默认每 30 秒同步一次，失败指数退避，断开时停止。公告按平台 ID 与内容 revision hash 持久化，solve broadcast 会被过滤，其余公告经确定性标题/ID 匹配关联题目。新 Solver 从 `challenge_announcements` 获得完整的转义数据消息；活跃 Solver 的 steer 先进入 `announcement_deliveries` outbox，按题目、公告 revision 和 Run 幂等排队，成功/失败/attempts 可恢复，失败 delivery 后续 poll 可重试。steer 只在消息队列尾部追加公告，不改写既有消息；支持前缀缓存的 Provider 通常仍可复用原有前缀，compact 才会重写会话上下文。
 
 生产 Scheduler 在 accepted/already_solved 后进入 `writing_writeup`，保留同一 Solver/session 但将 active tools 限制为 `read/write/edit/list`。Solver 必须把英文可复现 writeup 写入题目 workspace，校验失败时最多继续专用 writeup turn，不增加 block score；通过校验后才以 solved 关闭并销毁 sandbox；校验失败会清除临时 terminal submission，再以 failed 关闭，不能被 close callback 自动改回 solved。测试调度器可显式关闭该流程以隔离生命周期测试。
 
 题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，进程重启后以 SQLite 与该 JSONL 作为恢复依据。`CtfTldrAgent` 仅提供 `read/list`，题目、黑板、公告和已有 TLDR 作为不可信数据注入；Project 使用临时 sandbox 挂载同一题目 workspace，生成完成后销毁内存 Agent 和 sandbox。WebUI 详情可查看状态并触发 `/api/challenges/:id/tldr/refresh` 更新。
+
+WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`cacheWrite` 单独显示。Solver Run 从持久化 `agent_usage` 聚合；SubAgent 在 worker snapshot 中累计 input/cache read/cache write 并通过兼容迁移列持久化；TLDR 保存最近一次成功生成的 usage。没有可用 usage 或分母为 0 时显示无数据，不显示误导性的 0%。
 
 Solver 停止原因经过 `classifySolverStop` 归一化：网络断连、Provider 5xx/429 和显式 retryable 错误不增加 block score，记录 `run_transient_failure` 后按基础设施退避重试；认证/配置错误不重试。模型自然停止、长度耗尽、协议异常和 prompt timeout 在未超过阈值时记录幂等 block event，并在同一 Run/session 追加 continuation prompt；超过阈值才关闭为 blocked。取消、进程关闭和已提交结果不计入 block。
 

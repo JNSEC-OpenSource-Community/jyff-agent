@@ -2020,13 +2020,20 @@ summary:focus-visible,
 
 .run-card > summary {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   gap: 12px;
   align-items: center;
   min-height: 54px;
   padding: 10px 14px;
   list-style: none;
   cursor: pointer;
+}
+
+.run-cache-rate {
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 /* 单次会话导出(不继承 summary 的 pointer 光标) */
@@ -3026,7 +3033,7 @@ summary:focus-visible,
 
 .subagent-metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line);

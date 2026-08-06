@@ -47,6 +47,9 @@ export interface SubagentRecord {
   turns: number
   toolUses: number
   totalTokens: number
+  inputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
   createdAt: string
   updatedAt: string
   startedAt?: string
@@ -184,6 +187,9 @@ export class CtfSubagentManager {
       turns: 0,
       toolUses: 0,
       totalTokens: 0,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       createdAt: now,
       updatedAt: now,
     }
@@ -399,6 +405,12 @@ export class CtfSubagentManager {
       event.message.usage
     ) {
       managed.record.totalTokens += event.message.usage.totalTokens
+      managed.record.inputTokens =
+        (managed.record.inputTokens ?? 0) + event.message.usage.input
+      managed.record.cacheReadTokens =
+        (managed.record.cacheReadTokens ?? 0) + event.message.usage.cacheRead
+      managed.record.cacheWriteTokens =
+        (managed.record.cacheWriteTokens ?? 0) + event.message.usage.cacheWrite
       changed = true
     }
     if (!changed) return
