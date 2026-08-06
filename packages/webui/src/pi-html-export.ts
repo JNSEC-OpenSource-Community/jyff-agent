@@ -52,3 +52,14 @@ export async function exportPiSessionHtml(
     await rm(outputDirectory, { recursive: true, force: true })
   }
 }
+
+/** 只有至少一条 assistant 消息时，HTML 才包含可供查看的 Agent 对话。 */
+export async function piSessionHasConversation(
+  sessionPath: string,
+): Promise<boolean> {
+  return SessionManager.open(sessionPath)
+    .getEntries()
+    .some(
+      (entry) => entry.type === "message" && entry.message.role === "assistant",
+    )
+}

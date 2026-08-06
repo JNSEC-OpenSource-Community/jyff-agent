@@ -16,7 +16,10 @@ import {
   buildDashboardSnapshot,
   buildEmptyDashboardSnapshot,
 } from "./model.ts"
-import { exportPiSessionHtml } from "./pi-html-export.ts"
+import {
+  exportPiSessionHtml,
+  piSessionHasConversation,
+} from "./pi-html-export.ts"
 import type {
   DashboardControlPlane,
   DashboardModelAuthentication,
@@ -42,6 +45,8 @@ export interface WebUiOptions {
     sessionPath: string,
     metadata?: RunSessionExportMetadata,
   ) => Promise<Buffer>
+  /** 测试可替换原生 Pi session 的对话可用性检查。 */
+  sessionHasConversation?: (sessionPath: string) => Promise<boolean>
 }
 
 export interface WebUiServer {
@@ -103,6 +108,8 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const currentScheduler = (): DashboardScheduler | undefined =>
     options.controlPlane?.currentScheduler() ?? options.scheduler
   const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
+  const sessionHasConversation =
+    options.sessionHasConversation ?? piSessionHasConversation
   const buildCurrentSnapshot = async (): Promise<DashboardSnapshot> => {
     const project = currentProject()
     if (project) {
@@ -773,56 +780,56 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    // HTML session 导出必须在 /api/challenges/ 详情分支之前，否则路径会被吞。
-    const exportMatch = /^\/api\/challenges\/([^/]+)\/export$/.exec(
-      url.pathname,
-    )
-    if (method === "GET" && exportMatch) {
+    const subagentExport =
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/export$/.exec(url.pathname)
+    if (method === "GET" && subagentExport) {
       const project = currentProject()
       requireProject(project)
-      const challengeId = decodeURIComponent(exportMatch[1] ?? "")
-      const runs = project.runs({ challengeId })
-      if (runs.length === 0) {
-        throw new HttpRequestError(404, "no_runs", "该题没有任何 Run 记录")
+      const runId = decodeURIComponent(subagentExport[1] ?? "")
+      const subagentId = decodeURIComponent(subagentExport[2] ?? "")
+      if (!project.runs().some((candidate) => candidate.id === runId)) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
       }
-      const requestedRunId = optionalQueryString(
-        url.searchParams.get("run"),
-        "run",
-        64,
-      )
-      const run = requestedRunId
-        ? runs.find((candidate) => candidate.id === requestedRunId)
-        : [...runs].sort(
-            (left, right) =>
-              Date.parse(right.createdAt) - Date.parse(left.createdAt),
-          )[0]
-      if (!run) {
+      const subagent = project
+        .subagents(runId)
+        .find((candidate) => candidate.id === subagentId)
+      if (!subagent) {
         throw new HttpRequestError(
           404,
-          "run_not_found",
-          `该题不存在 Run: ${requestedRunId}`,
+          "subagent_not_found",
+          `SubAgent 不存在: ${subagentId}`,
         )
       }
-      let body: Buffer
-      try {
-        body = await exportSessionHtml(
+      sendHtml(
+        response,
+        await exportConversationHtml(
+          subagent.sessionPath,
+          undefined,
+          sessionHasConversation,
+          exportSessionHtml,
+        ),
+      )
+      return
+    }
+
+    const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(url.pathname)
+    if (method === "GET" && runExport) {
+      const project = currentProject()
+      requireProject(project)
+      const runId = decodeURIComponent(runExport[1] ?? "")
+      const run = project.runs().find((candidate) => candidate.id === runId)
+      if (!run) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
+      }
+      sendHtml(
+        response,
+        await exportConversationHtml(
           project.runSessionPath(run.id),
           await project.runSessionExportMetadata(run.id),
-        )
-      } catch (error) {
-        throw new HttpRequestError(
-          409,
-          "session_export_failed",
-          `无法导出 Pi 会话: ${errorText(error)}`,
-        )
-      }
-      // 直接以 HTML 页面内联呈现，不强制下载；平台/run 数据因此不会进入响应头。
-      response.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-store",
-        "Content-Length": body.byteLength,
-      })
-      response.end(body)
+          sessionHasConversation,
+          exportSessionHtml,
+        ),
+      )
       return
     }
 
@@ -1055,6 +1062,44 @@ function sendJson(
     "Content-Length": Buffer.byteLength(body),
   })
   response.end(body)
+}
+
+function sendHtml(response: ServerResponse, body: Buffer): void {
+  // 内联页面不带下载文件名，平台、Run 和 SubAgent 数据不会进入响应头。
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Content-Length": body.byteLength,
+  })
+  response.end(body)
+}
+
+async function exportConversationHtml(
+  sessionPath: string,
+  metadata: RunSessionExportMetadata | undefined,
+  hasConversation: (sessionPath: string) => Promise<boolean>,
+  exporter: (
+    sessionPath: string,
+    metadata?: RunSessionExportMetadata,
+  ) => Promise<Buffer>,
+): Promise<Buffer> {
+  try {
+    if (!(await hasConversation(sessionPath))) {
+      throw new HttpRequestError(
+        409,
+        "session_not_ready",
+        "该会话尚未产生 Agent 对话",
+      )
+    }
+    return await exporter(sessionPath, metadata)
+  } catch (error) {
+    if (error instanceof HttpRequestError) throw error
+    throw new HttpRequestError(
+      409,
+      "session_export_failed",
+      `无法导出 Pi 会话: ${errorText(error)}`,
+    )
+  }
 }
 
 function broadcast(
@@ -1355,31 +1400,6 @@ const THINKING_LEVELS = new Set([
   "xhigh",
   "max",
 ])
-
-function optionalQueryString(
-  value: string | null,
-  field: string,
-  maxLength: number,
-): string | undefined {
-  if (value === null) return undefined
-  const text = value.trim()
-  if (text.length === 0) return undefined
-  if (text.length > maxLength) {
-    throw new HttpRequestError(
-      400,
-      "invalid_query",
-      `${field} 长度不能超过 ${maxLength}`,
-    )
-  }
-  if (hasControlCharacter(text)) {
-    throw new HttpRequestError(
-      400,
-      "invalid_query",
-      `${field} 不能包含控制字符`,
-    )
-  }
-  return text
-}
 
 function hasControlCharacter(value: string): boolean {
   return [...value].some((character) => {

@@ -76,7 +76,7 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 ## 持久化职责
 
-- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 对单个 Run 直接调用 Pi HTML 导出器，不从 SQLite 事件重建 transcript，导出以 HTML 页面内联呈现、不强制下载。活跃 Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
+- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 只对明确选择且已经产生 assistant 消息的 attempt/SubAgent session 调用 Pi HTML 导出器，不提供题目级“最新 Run”推断，也不从 SQLite 事件重建 transcript。导出以 HTML 页面内联呈现、不强制下载。活跃 Solver Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
 - SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数和黑板；
 - 题目级 workspace：附件、脚本、反编译结果、`writeup.md` 和其他跨复活保留的解题产物。
 

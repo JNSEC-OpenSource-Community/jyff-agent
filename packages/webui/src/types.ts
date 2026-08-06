@@ -89,8 +89,13 @@ export interface AgentCacheStats {
 
 export interface DashboardRun extends RunRecord {
   events: RunEvent[]
-  subagents: SubagentRecord[]
+  subagents: DashboardSubagent[]
   cache: AgentCacheStats
+  hasConversation: boolean
+}
+
+export interface DashboardSubagent extends SubagentRecord {
+  hasConversation: boolean
 }
 
 export interface ChallengeWriteup {

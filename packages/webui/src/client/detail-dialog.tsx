@@ -1,10 +1,11 @@
-import type { RunEvent, SubagentRecord } from "@ctf-agent/core"
+import type { RunEvent } from "@ctf-agent/core"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type {
   AgentCacheStats,
   ChallengeDetails,
   DashboardChallenge,
   DashboardRun,
+  DashboardSubagent,
 } from "../types.ts"
 import {
   absoluteTime,
@@ -94,7 +95,7 @@ export function DetailDialog(props: DetailDialogProps) {
     }
   }
 
-  async function steer(runId: string, subagent: SubagentRecord) {
+  async function steer(runId: string, subagent: DashboardSubagent) {
     const message = subagentMessages[subagent.id]?.trim()
     if (!message) return
     try {
@@ -110,7 +111,7 @@ export function DetailDialog(props: DetailDialogProps) {
     }
   }
 
-  async function cancel(runId: string, subagent: SubagentRecord) {
+  async function cancel(runId: string, subagent: DashboardSubagent) {
     try {
       await controlPost(
         `/api/runs/${encodeURIComponent(runId)}/subagents/${encodeURIComponent(subagent.id)}/cancel`,
@@ -189,14 +190,6 @@ export function DetailDialog(props: DetailDialogProps) {
                 </select>
               </label>
             ) : null}
-            {challenge && props.details && props.details.runs.length > 0 ? (
-              <a
-                className="control-button export-link"
-                href={`/api/challenges/${encodeURIComponent(challenge.id)}/export`}
-              >
-                查看 HTML
-              </a>
-            ) : null}
             <button
               className="icon-button"
               type="button"
@@ -269,8 +262,8 @@ function DetailContent(props: {
   details: ChallengeDetails
   messages: Record<string, string>
   onMessage: (id: string, value: string) => void
-  onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
-  onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
   onRefreshTldr: () => Promise<void>
   tldrPending: boolean
 }) {
@@ -439,8 +432,8 @@ function RunCard(props: {
   initiallyOpen: boolean
   messages: Record<string, string>
   onMessage: (id: string, value: string) => void
-  onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
-  onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
 }) {
   const run = props.run
   const [open, setOpen] = useState(props.initiallyOpen)
@@ -467,13 +460,17 @@ function RunCard(props: {
         <span className={`status-chip status-${run.status}`}>
           {STATUS_LABELS[run.status] ?? run.status}
         </span>
-        <a
-          className="run-export-link"
-          href={`/api/challenges/${encodeURIComponent(run.challengeId)}/export?run=${encodeURIComponent(run.id)}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          查看 HTML
-        </a>
+        {run.hasConversation ? (
+          <a
+            className="run-export-link"
+            href={`/api/runs/${encodeURIComponent(run.id)}/export`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            查看对话 HTML
+          </a>
+        ) : (
+          <span className="run-export-link is-disabled">尚无 Agent 对话</span>
+        )}
       </summary>
       {run.subagents.length > 0 ? (
         <SubagentFleet
@@ -503,8 +500,8 @@ function SubagentFleet(props: {
   run: DashboardRun
   messages: Record<string, string>
   onMessage: (id: string, value: string) => void
-  onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
-  onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
 }) {
   return (
     <section className="subagent-fleet">
@@ -535,9 +532,23 @@ function SubagentFleet(props: {
                   <strong>{agent.displayName}</strong>
                   <small>{shortId(agent.id)}</small>
                 </div>
-                <span className={`status-chip status-${agent.status}`}>
-                  {STATUS_LABELS[agent.status] ?? agent.status}
-                </span>
+                <div className="subagent-card-actions">
+                  <span className={`status-chip status-${agent.status}`}>
+                    {STATUS_LABELS[agent.status] ?? agent.status}
+                  </span>
+                  {agent.hasConversation ? (
+                    <a
+                      className="run-export-link"
+                      href={`/api/runs/${encodeURIComponent(props.run.id)}/subagents/${encodeURIComponent(agent.id)}/export`}
+                    >
+                      查看对话 HTML
+                    </a>
+                  ) : (
+                    <span className="run-export-link is-disabled">
+                      尚无对话
+                    </span>
+                  )}
+                </div>
               </header>
               <p>{agent.description}</p>
               <div className="subagent-metrics">

@@ -182,4 +182,4 @@ WebUI 可执行入口还支持：
 - HTTP 服务暂不内置用户认证。默认的 `0.0.0.0:3000` 会接受外部连接；公网部署应使用防火墙限制来源，或放在带 TLS 和认证的反向代理后。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。
-- WebUI 的 Pi HTML 会话导出保留原始 JSONL 内容，并附加 Agent 的 system prompt 与工具 schema；页面以 HTML 形式内联呈现，可能包含 Flag、题目数据和工具输出，同样应按敏感数据管理。
+- WebUI 仅从明确的 attempt 或 SubAgent 卡片导出对应 Pi JSONL 对话 HTML，不提供含义模糊的题目级导出；尚无 assistant 消息的会话不可导出。Solver 导出会附加 system prompt 与工具 schema；页面以内联 HTML 呈现，可能包含 Flag、题目数据和工具输出，同样应按敏感数据管理。

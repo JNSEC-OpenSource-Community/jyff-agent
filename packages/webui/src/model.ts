@@ -165,8 +165,18 @@ export async function buildChallengeDetails(
     return {
       ...run,
       events: compactTimelineEvents(events),
-      subagents: project.subagents(run.id),
+      subagents: project.subagents(run.id).map((subagent) => ({
+        ...subagent,
+        hasConversation:
+          subagent.turns > 0 ||
+          subagent.toolUses > 0 ||
+          subagent.totalTokens > 0 ||
+          Boolean(subagent.result),
+      })),
       cache: agentCacheStats(events),
+      hasConversation: events.some((event) =>
+        ["agent_message", "agent_usage", "tool_started"].includes(event.type),
+      ),
     }
   })
   return {
