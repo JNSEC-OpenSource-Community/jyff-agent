@@ -115,11 +115,13 @@ describe("CtfSubagentManager", () => {
     )
     expect(manager.list()).toHaveLength(1)
 
-    const resumed = await manager.resume(
-      created.id,
-      "verify the follow-up",
-      false,
-    )
+    const steered = await manager.steer(created.id, "verify the follow-up")
+    expect(steered).toMatchObject({
+      id: created.id,
+      status: "queued",
+      background: true,
+    })
+    const resumed = await manager.wait(created.id)
     expect(resumed).toMatchObject({
       id: created.id,
       status: "completed",
@@ -171,17 +173,24 @@ describe("CtfSubagentManager", () => {
       },
       roles: discovered.roles,
     })
-    resumed.restore([{ ...completed, status: "interrupted" }])
+    resumed.restore([completed])
 
-    const result = await resumed.resume(
+    const steered = await resumed.steer(
       created.id,
       "continue the investigation",
-      false,
     )
+    expect(steered).toMatchObject({
+      id: created.id,
+      status: "queued",
+      background: true,
+      sessionPath: completed.sessionPath,
+    })
+    const result = await resumed.wait(created.id)
     expect(result).toMatchObject({
       id: created.id,
       status: "completed",
       result: "continued from JSONL",
+      sessionPath: completed.sessionPath,
     })
     await resumed.close()
   })
