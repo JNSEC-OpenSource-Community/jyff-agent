@@ -10,6 +10,7 @@ import {
   type Sandbox,
   type SubagentRole,
 } from "@ctf-agent/agents"
+import { subagentCompletionNotificationPrompt } from "@ctf-agent/prompts"
 import { DockerExecutionEnv } from "@ctf-agent/sandbox"
 import type {
   AgentHarnessEvent,
@@ -18,7 +19,6 @@ import type {
   AgentToolResult,
 } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
-import { subagentCompletionNotificationPrompt } from "../../prompts/index.ts"
 import { extractAssistantText } from "../agent/thinking.ts"
 
 export type SubagentStatus =

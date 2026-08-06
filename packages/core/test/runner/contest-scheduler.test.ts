@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { INCOMPLETE_CONTINUATION_PROMPT } from "@ctf-agent/prompts"
 import type {
   CommandResult,
   DockerSandboxOptions,
@@ -13,7 +14,6 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vitest"
-import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/index.ts"
 import {
   ContestScheduler,
   type ContestSchedulerError,

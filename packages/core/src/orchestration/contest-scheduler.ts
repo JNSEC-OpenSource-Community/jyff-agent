@@ -1,15 +1,12 @@
-import {
-  BLOCKED_FINALIZATION_PROMPT,
-  type CtfSolverAgent,
-  type SolverCloseReason,
-} from "@ctf-agent/agents"
+import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents"
 import type { ChallengeSummary } from "@ctf-agent/platform"
-import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import { activeSubagentsPrompt } from "../../prompts/project.ts"
 import {
+  activeSubagentsPrompt,
+  BLOCKED_FINALIZATION_PROMPT,
   INCOMPLETE_CONTINUATION_PROMPT,
   WRITEUP_PROMPT,
-} from "../../prompts/solver-attempt.ts"
+} from "@ctf-agent/prompts"
+import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type {
   RunSource,
   SchedulerQueueRecord,

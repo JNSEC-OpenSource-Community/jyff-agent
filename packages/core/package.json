@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./prompts": "./prompts/index.ts"
+    ".": "./src/index.ts"
   },
   "dependencies": {
     "@ctf-agent/agents": "workspace:*",
     "@ctf-agent/platform": "workspace:*",
+    "@ctf-agent/prompts": "workspace:*",
     "@ctf-agent/sandbox": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.82.1",
     "typebox": "^1.1.38"

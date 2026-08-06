@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileSecretStore } from "@ctf-agent/core"
+import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import { afterEach, describe, expect, it } from "vitest"
 import { createFileModelAuthentication } from "../src/model-authentication.ts"
 import {
@@ -58,6 +59,7 @@ describe("file model configuration", () => {
     })
     expect(await agent.getApiKey?.("custom-openai")).toBe("secret-key")
     expect(await agent.getApiKey?.("another-provider")).toBeUndefined()
+    expect(agent.initialState?.systemPrompt).toBe(SOLVER_SYSTEM_PROMPT)
 
     const disabledThinking = await configuration.update({
       provider: "custom-openai",

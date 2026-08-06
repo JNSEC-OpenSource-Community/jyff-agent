@@ -8,12 +8,13 @@ CTF Agent 是一个以 WebUI 为控制面的 pnpm/TypeScript monorepo。它把�
 packages/
 ├── platform/  ChallengeCapability 契约与 CTFd、GZCTF 插件
 ├── sandbox/   Docker 生命周期、DockerExecutionEnv、RTK 与 solver 镜像
+├── prompts/   Solver、SubAgent 与项目上下文的共享提示词
 ├── agents/    BaseAgent、Solver/SubAgent、Pi session/skills 和容器工具
 ├── core/      Project、ControlPlane、调度器、RunStore、黑板与 SubAgent manager
 └── webui/     进程入口、HTTP/SSE API、模型配置和 React 客户端
 ```
 
-主要依赖方向是 `webui → core → agents/platform/sandbox`；`agents` 可以依赖 `platform` 与 `sandbox`，但不能依赖 `core`、Project 或 SQLite。跨包公开 API 从各包的 `src/index.ts` 导出。
+主要依赖方向是 `webui → core → agents/platform/sandbox`；`webui`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 可以依赖 `platform` 与 `sandbox`，但不能依赖 `core`、Project 或 SQLite。跨包公开 API 从各包的 `src/index.ts` 导出。
 
 ## 启动与配置
 
@@ -69,7 +70,7 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 每个 Run 拥有独立 fleet，默认最多并发 4 个后台 worker。主 Solver 用 `Agent`、`get_subagent_result`、`steer_subagent`、`cancel_subagent` 和 `list_subagents` 管理 worker。worker 共享题目 sandbox，但默认 cwd 为 `/workspace/subagents/<id>`，有独立 Pi session，不能提交 Flag、管理远端实例或写黑板。
 
-角色来自内置 registry，并可由 `.agents/agents/*.md` 和 `.pi/agents/*.md` 覆盖；后者同名优先。派发策略和 prompt 占位协议见 `packages/core/prompts/project.ts`。
+角色来自内置 registry，并可由 `.agents/agents/*.md` 和 `.pi/agents/*.md` 覆盖；后者同名优先。派发策略和 prompt 占位协议见 `packages/prompts/src/project.ts`。
 
 ## 持久化职责
 

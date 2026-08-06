@@ -1,5 +1,9 @@
 import { join } from "node:path"
 import type { ChallengeInfo } from "@ctf-agent/platform"
+import {
+  CTF_COMPACTION_PROMPT,
+  subagentTaskContextPrompt,
+} from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type {
   AgentMessage,
@@ -7,10 +11,6 @@ import type {
   Skill,
 } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
-import {
-  CTF_COMPACTION_PROMPT,
-  subagentTaskContextPrompt,
-} from "../../prompts/index.ts"
 import {
   type AgentSkill,
   BaseAgent,

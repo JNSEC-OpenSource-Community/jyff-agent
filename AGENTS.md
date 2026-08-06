@@ -11,6 +11,7 @@
 ```text
 packages/platform/  平台契约与 CTFd、GZCTF 插件
 packages/sandbox/   Docker sandbox、ExecutionEnv、RTK、solver Dockerfile
+packages/prompts/   Solver、SubAgent、TLDR 和项目上下文的共享提示词
 packages/agents/    BaseAgent、Pi session/skills、Solver/SubAgent 和工具
 packages/core/      Project、调度器、RunStore、黑板、SubAgent manager
 packages/webui/     进程入口、HTTP/SSE、模型配置、React 客户端

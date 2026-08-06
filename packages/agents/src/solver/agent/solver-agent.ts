@@ -4,6 +4,7 @@ import type {
   ChallengeInfo,
   FlagSubmission,
 } from "@ctf-agent/platform"
+import { CTF_COMPACTION_PROMPT, SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type {
   AgentMessage,
@@ -11,10 +12,6 @@ import type {
   Skill,
 } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import {
-  CTF_COMPACTION_PROMPT,
-  SOLVER_SYSTEM_PROMPT,
-} from "../../../prompts/index.ts"
 import {
   type AgentSkill,
   BaseAgent,
@@ -183,12 +180,8 @@ export class CtfSolverAgent extends BaseAgent {
       },
       models: modelsFromAgentOptions(options.agent, model),
       model,
-      systemPrompt: [
-        SOLVER_SYSTEM_PROMPT,
-        options.agent.initialState?.systemPrompt,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+      systemPrompt:
+        options.agent.initialState?.systemPrompt ?? SOLVER_SYSTEM_PROMPT,
       thinkingLevel:
         options.agent.initialState?.thinkingLevel ??
         DEFAULT_SOLVER_THINKING_LEVEL,

@@ -1,7 +1,7 @@
 import type { CtfSolverAgent, SolverCloseReason } from "@ctf-agent/agents"
 import type { ChallengeSummary } from "@ctf-agent/platform"
+import { INCOMPLETE_CONTINUATION_PROMPT } from "@ctf-agent/prompts"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import { INCOMPLETE_CONTINUATION_PROMPT } from "../../prompts/solver-attempt.ts"
 import type { RunStatus } from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
 import {

@@ -1,8 +1,8 @@
 import { dirname } from "node:path"
 import type { ChallengeInfo } from "@ctf-agent/platform"
+import { TLDR_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core"
-import { TLDR_SYSTEM_PROMPT } from "../prompts/index.ts"
 import {
   BaseAgent,
   modelsFromAgentOptions,

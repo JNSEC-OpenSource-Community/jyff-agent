@@ -28,7 +28,7 @@ SubAgent 是单个 Solver Run 内的专业 worker。主 Solver 负责拆分任�
 
 后台并发默认上限为 4，前台调用不占后台池。后台任务完成后通过结构化 `<task-notification encoding="json">` 通知主 Solver。主 Solver 关闭时，manager 会取消或终止当前 Run 的全部 worker。
 
-派发 prompt 当前受一个基础占位协议约束：只能委派可独立并行、边界清楚且有可验证交付物的任务，不能委派整道题、重复工作或 Flag 提交；prompt 必须使用 `<subagent_task>`，包含 `objective`、`context`、`deliverables` 和 `constraints`。协议定义在 `packages/core/prompts/project.ts`，后续可直接替换。
+派发 prompt 当前受一个基础占位协议约束：只能委派可独立并行、边界清楚且有可验证交付物的任务，不能委派整道题、重复工作或 Flag 提交；prompt 必须使用 `<subagent_task>`，包含 `objective`、`context`、`deliverables` 和 `constraints`。协议定义在 `packages/prompts/src/project.ts`，后续可直接替换。
 
 ## Docker 与能力边界
 

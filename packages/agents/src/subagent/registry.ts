@@ -1,9 +1,9 @@
 import type { Dirent } from "node:fs"
 import { lstat, readdir, readFile } from "node:fs/promises"
 import { basename, join } from "node:path"
+import { SUBAGENT_SHARED_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { parse } from "yaml"
-import { SUBAGENT_SHARED_SYSTEM_PROMPT } from "../../prompts/index.ts"
 import {
   DEFAULT_SUBAGENT_THINKING_LEVEL,
   isThinkingLevel,

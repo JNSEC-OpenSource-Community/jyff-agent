@@ -64,7 +64,7 @@ packages/core/src/
 ├── persistence/run-store.ts      # 表、事务、限制和查询
 └── project/project.ts            # origin、快照注入和工具装配
 
-packages/core/prompts/project.ts  # 数据边界和安全提示词
+packages/prompts/src/project.ts   # 数据边界和安全提示词
 ```
 
 修改黑板协议时，应同步更新 RunStore 测试、黑板工具测试、Project 注入测试和本文档。

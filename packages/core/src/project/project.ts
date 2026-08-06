@@ -23,6 +23,12 @@ import {
   type RemoteEnvironment,
 } from "@ctf-agent/platform"
 import {
+  activeSubagentsPrompt,
+  blackboardSnapshotPrompt,
+  challengeAnnouncementsPrompt,
+  challengeContextPrompt,
+} from "@ctf-agent/prompts"
+import {
   DockerSandbox,
   type DockerSandboxOptions,
   type DockerWorkspaceMount,
@@ -35,12 +41,6 @@ import type {
   AgentOptions,
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core"
-import {
-  activeSubagentsPrompt,
-  blackboardSnapshotPrompt,
-  challengeAnnouncementsPrompt,
-  challengeContextPrompt,
-} from "../../prompts/index.ts"
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
 import {
   BLACKBOARD_INJECTION_MAX_CHARACTERS,

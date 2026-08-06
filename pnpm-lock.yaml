@@ -31,6 +31,9 @@ importers:
       '@ctf-agent/platform':
         specifier: workspace:*
         version: link:../platform
+      '@ctf-agent/prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@ctf-agent/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -55,6 +58,9 @@ importers:
       '@ctf-agent/platform':
         specifier: workspace:*
         version: link:../platform
+      '@ctf-agent/prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@ctf-agent/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -71,6 +77,12 @@ importers:
 
   packages/platform: {}
 
+  packages/prompts:
+    dependencies:
+      '@ctf-agent/platform':
+        specifier: workspace:*
+        version: link:../platform
+
   packages/sandbox:
     dependencies:
       '@earendil-works/pi-agent-core':
@@ -85,6 +97,9 @@ importers:
       '@ctf-agent/platform':
         specifier: workspace:*
         version: link:../platform
+      '@ctf-agent/prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@earendil-works/pi-agent-core':
         specifier: ^0.82.1
         version: 0.82.1
