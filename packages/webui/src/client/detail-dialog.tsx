@@ -193,9 +193,8 @@ export function DetailDialog(props: DetailDialogProps) {
               <a
                 className="control-button export-link"
                 href={`/api/challenges/${encodeURIComponent(challenge.id)}/export`}
-                download
               >
-                导出复盘
+                查看 HTML
               </a>
             ) : null}
             <button
@@ -471,10 +470,9 @@ function RunCard(props: {
         <a
           className="run-export-link"
           href={`/api/challenges/${encodeURIComponent(run.challengeId)}/export?run=${encodeURIComponent(run.id)}`}
-          download
           onClick={(event) => event.stopPropagation()}
         >
-          导出本次
+          查看 HTML
         </a>
       </summary>
       {run.subagents.length > 0 ? (

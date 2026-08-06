@@ -13,6 +13,7 @@ import type {
   RunEvent,
   RunFilter,
   RunRecord,
+  RunSessionExportMetadata,
   SubagentRecord,
   TldrRecord,
 } from "@ctf-agent/core"
@@ -117,6 +118,12 @@ export interface DashboardProject {
   announcements(): Promise<Announcement[]>
   environments(): Promise<RemoteEnvironment[]>
   runs(filter?: RunFilter): RunRecord[]
+  /** 返回已持久化的原生 Pi session，供 HTML 导出读取。 */
+  runSessionPath(runId: string): string
+  /** 返回 Pi HTML 导出所需的 system prompt 和工具元数据。 */
+  runSessionExportMetadata(
+    runId: string,
+  ): Promise<RunSessionExportMetadata | undefined>
   runEvents(runId: string): RunEvent[]
   latestRunEvent(runId: string): RunEvent | undefined
   subagents(runId: string): SubagentRecord[]

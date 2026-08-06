@@ -28,6 +28,7 @@ export interface SolverToolOptions {
   capability: ChallengeCapability
   sandbox: Sandbox
   onTerminalSubmission(submission: FlagSubmission): void
+  submissionRateLimiter?: FlagSubmissionRateLimiter
 }
 
 export interface SubagentToolOptions {
@@ -38,6 +39,48 @@ export interface SubagentToolOptions {
 export interface SandboxToolOptions {
   sandbox: Sandbox
   cwd?: string
+}
+
+export const FLAG_SUBMISSION_WINDOW_MS = 60_000
+export const FLAG_SUBMISSION_LIMIT = 5
+
+/** 平台提交额度耗尽时抛出，避免无意义请求继续打到 CTF 平台。 */
+export class FlagSubmissionRateLimitError extends Error {
+  readonly code = "flag_submission_rate_limited"
+  readonly retryAfterMs: number
+
+  constructor(retryAfterMs: number) {
+    super(
+      `Flag 提交受限：每分钟最多 ${FLAG_SUBMISSION_LIMIT} 次，请在 ${Math.ceil(retryAfterMs / 1_000)} 秒后重试`,
+    )
+    this.name = "FlagSubmissionRateLimitError"
+    this.retryAfterMs = retryAfterMs
+  }
+}
+
+/** 进程内共享的滑动窗口，记录所有已发起的 Flag 提交。 */
+export class FlagSubmissionRateLimiter {
+  private timestamps: number[] = []
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly limit = FLAG_SUBMISSION_LIMIT,
+    private readonly windowMs = FLAG_SUBMISSION_WINDOW_MS,
+  ) {}
+
+  acquire(): void {
+    const now = this.now()
+    this.timestamps = this.timestamps.filter(
+      (timestamp) => now - timestamp < this.windowMs,
+    )
+    const oldestTimestamp = this.timestamps[0]
+    if (oldestTimestamp !== undefined && this.timestamps.length >= this.limit) {
+      throw new FlagSubmissionRateLimitError(
+        oldestTimestamp + this.windowMs - now,
+      )
+    }
+    this.timestamps.push(now)
+  }
 }
 
 /** Container-native tools reusable by the main Solver and isolated worker sessions. */
@@ -69,6 +112,8 @@ export function createSubagentTools(options: SubagentToolOptions): AgentTool[] {
 
 /** Every capability closure is bound to one challenge and one Docker environment. */
 export function createSolverTools(options: SolverToolOptions): AgentTool[] {
+  const submissionRateLimiter =
+    options.submissionRateLimiter ?? new FlagSubmissionRateLimiter()
   const tools: AgentTool[] = [
     ...createSandboxTools(options),
     {
@@ -78,6 +123,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       parameters: Type.Object({ flag: Type.String({ minLength: 1 }) }),
       executionMode: "sequential",
       async execute(_id, params) {
+        submissionRateLimiter?.acquire()
         const submission = await options.capability.submitFlag(
           (params as { flag: string }).flag,
         )

@@ -218,6 +218,23 @@ export class FakeDashboardProject implements DashboardProject {
     })
   }
 
+  runSessionPath(runId: string): string {
+    return `/sessions/${runId}/session.jsonl`
+  }
+
+  async runSessionExportMetadata() {
+    return {
+      systemPrompt: "You are a CTF solver.",
+      tools: [
+        {
+          name: "ctf_submit_flag",
+          description: "Submit a flag.",
+          parameters: { type: "object", properties: {} },
+        },
+      ],
+    }
+  }
+
   runEvents(runId: string): RunEvent[] {
     this.runEventsCalls++
     return this.eventValues.get(runId) ?? []

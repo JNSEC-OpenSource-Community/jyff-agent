@@ -637,13 +637,26 @@ describe("WebUI HTTP server", () => {
     })
   })
 
-  it("会话复盘导出:无 run 404;指定不存在 run 404;200 返回 Markdown 与附件头", async () => {
+  it("Pi 会话导出:无 run 404;指定不存在 run 404;200 返回 HTML 附件", async () => {
     const project = new FakeDashboardProject()
+    const sessionExports: Array<{
+      sessionPath: string
+      systemPrompt?: string
+      toolNames?: string[]
+    }> = []
     const server = await startWebUi({
       project,
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
+      exportSessionHtml: async (sessionPath, metadata) => {
+        sessionExports.push({
+          sessionPath,
+          systemPrompt: metadata?.systemPrompt,
+          toolNames: metadata?.tools.map((tool) => tool.name),
+        })
+        return Buffer.from("<!doctype html><title>Pi Session</title>")
+      },
     })
     servers.push(server)
 
@@ -659,32 +672,40 @@ describe("WebUI HTTP server", () => {
     expect(missingRun.status).toBe(404)
     expect(await missingRun.json()).toMatchObject({ error: "run_not_found" })
 
-    // 存在 run → 200 Markdown 附件
-    const exportAll = await fetch(`${server.url}/api/challenges/pwn-1/export`)
-    expect(exportAll.status).toBe(200)
-    expect(exportAll.headers.get("content-type")).toContain("text/markdown")
-    expect(exportAll.headers.get("content-disposition")).toMatch(
-      /^attachment; filename="session-pwn-1-all-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.md"$/,
+    // 存在 run → 200 内联返回 Pi HTML 页面；未指定时导出最新 Run。
+    const exportLatest = await fetch(
+      `${server.url}/api/challenges/pwn-1/export`,
     )
-    const body = await exportAll.text()
-    expect(body).toContain("# CTF Agent 会话复盘：pwn-1")
-    expect(body).toContain("## Run run-pwn-（attempt 1 · running）")
+    expect(exportLatest.status).toBe(200)
+    expect(exportLatest.headers.get("content-type")).toContain("text/html")
+    expect(exportLatest.headers.get("content-disposition")).toBeNull()
+    expect(await exportLatest.text()).toContain("<title>Pi Session")
+    expect(sessionExports).toEqual([
+      {
+        sessionPath: "/sessions/run-pwn-1/session.jsonl",
+        systemPrompt: "You are a CTF solver.",
+        toolNames: ["ctf_submit_flag"],
+      },
+    ])
 
-    // 指定 run + full 参数同样可用
+    // 指定 Run 同样交由 Pi 的 HTML 导出器处理。
     const single = await fetch(
-      `${server.url}/api/challenges/pwn-1/export?run=run-pwn-1&full=1`,
+      `${server.url}/api/challenges/pwn-1/export?run=run-pwn-1`,
     )
     expect(single.status).toBe(200)
-    expect(single.headers.get("content-disposition")).toMatch(
-      /filename="session-pwn-1-[a-z0-9-]+-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.md"/,
-    )
-    expect(await single.text()).toContain("Run 数：1（指定 run-pwn-1）")
+    expect(single.headers.get("content-disposition")).toBeNull()
+    expect(sessionExports).toHaveLength(2)
+    expect(sessionExports[1]).toMatchObject({
+      sessionPath: "/sessions/run-pwn-1/session.jsonl",
+      systemPrompt: "You are a CTF solver.",
+      toolNames: ["ctf_submit_flag"],
+    })
   })
 
-  it("导出文件名对平台数据做白名单消毒(防 header 注入)", async () => {
+  it("导出响应内联呈现，平台/run 数据不进入任何响应头(防 header 注入)", async () => {
     const project = new FakeDashboardProject()
     project.runValues.push({
-      id: "run-evil-1",
+      id: 'run"evil"1',
       challengeId: 'pwn"1;../evil',
       workspace: "/workspace/run-evil-1",
       attempt: 1,
@@ -698,6 +719,7 @@ describe("WebUI HTTP server", () => {
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
+      exportSessionHtml: async () => Buffer.from("<!doctype html>"),
     })
     servers.push(server)
 
@@ -705,14 +727,9 @@ describe("WebUI HTTP server", () => {
       `${server.url}/api/challenges/${encodeURIComponent('pwn"1;../evil')}/export`,
     )
     expect(response.status).toBe(200)
-    const disposition = response.headers.get("content-disposition")
-    expect(disposition).not.toBeNull()
-    const filename = /filename="([^"]+)"/.exec(disposition ?? "")?.[1]
-    expect(filename).toBeDefined()
-    if (filename === undefined) throw new Error("响应缺少导出文件名")
-    expect(filename).toContain("session-pwn_1_.._evil-all-")
-    expect(filename).not.toContain('"')
-    expect(filename).not.toContain(";")
-    expect(filename).not.toContain("/")
+    // 内联页面不带下载文件名，因此平台/run 数据完全不会出现在响应头。
+    expect(response.headers.get("content-disposition")).toBeNull()
+    expect(response.headers.get("content-type")).toContain("text/html")
+    expect(await response.text()).toContain("<!doctype html>")
   })
 })

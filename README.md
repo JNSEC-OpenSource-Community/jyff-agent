@@ -5,11 +5,12 @@
 目前内置：
 
 - CTFd 插件：题目、附件、公告、Flag 提交；
+- Flag 提交滑动窗口：每个 Solver Run 每分钟最多 5 次；
 - GZCTF 插件：用户名密码或 `GZCTF_Token` Cookie 登录、比赛题目与实例管理；
 - 并发调度：自动、人工、重试、取消、超时和 attempt 上限；
 - 每题独立 Docker sandbox；
 - 题目上下文结构化注入、附件自动下载；
-- Pi 原生 JSONL session 保存、恢复、分支与 compaction；
+- Pi 原生 JSONL session 保存、恢复、分支、compaction 与 HTML 导出；
 - 每个 Run 独立的 SubAgent fleet：专业角色、并发队列、后台通知与 steer/resume/cancel；
 - SQLite RunStore、完整工具时间线和跨 attempt 黑板；
 - React WebUI、HTTP API 与 SSE 实时更新。
@@ -180,3 +181,4 @@ WebUI 可执行入口还支持：
 - HTTP 服务暂不内置用户认证。默认的 `0.0.0.0:3000` 会接受外部连接；公网部署应使用防火墙限制来源，或放在带 TLS 和认证的反向代理后。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。
+- WebUI 的 Pi HTML 会话导出保留原始 JSONL 内容，并附加 Agent 的 system prompt 与工具 schema；页面以 HTML 形式内联呈现，可能包含 Flag、题目数据和工具输出，同样应按敏感数据管理。

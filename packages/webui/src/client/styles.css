@@ -544,7 +544,7 @@ summary:focus-visible,
   margin-right: 7px;
 }
 
-/* 会话复盘导出(详情页头部):链接伪装成按钮 + 明文勾选 */
+/* Pi HTML 会话导出(详情页头部):链接伪装成按钮 */
 .export-wrap {
   display: inline-flex;
   align-items: center;

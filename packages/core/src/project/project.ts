@@ -119,6 +119,16 @@ export interface ProjectDiagnostic {
   runId?: string
 }
 
+/** Pi HTML 导出需要的 AgentState 子集，可跨进程持久化。 */
+export interface RunSessionExportMetadata {
+  systemPrompt: string
+  tools: Array<{
+    name: string
+    description?: string
+    parameters?: unknown
+  }>
+}
+
 export interface CreateSolverOptions {
   agent: AgentOptions
   /** 使用 Pi 原生 session-tree compaction；默认开启。 */
@@ -235,6 +245,34 @@ export class Project {
 
   get agentDirectory(): string {
     return join(this.root, ".ctf-agent")
+  }
+  runSessionPath(runId: string): string {
+    return join(this.agentDirectory, "runs", runId, "session.jsonl")
+  }
+  async runSessionExportMetadata(
+    runId: string,
+  ): Promise<RunSessionExportMetadata | undefined> {
+    const activeSolver = [...this.solvers].find(
+      (solver) => solver.runId === runId && !solver.isClosed,
+    )
+    if (activeSolver) return solverExportMetadata(activeSolver)
+
+    try {
+      const source = await readFile(
+        join(
+          this.agentDirectory,
+          "runs",
+          runId,
+          "session-export-metadata.json",
+        ),
+        "utf8",
+      )
+      return parseSessionExportMetadata(JSON.parse(source))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      this.recordDiagnostic("telemetry", error, runId)
+      return undefined
+    }
   }
   tldr(challengeId: string) {
     return this.runStore.tldr(challengeId)
@@ -1006,6 +1044,7 @@ export class Project {
         resumed ? "run_resumed" : "run_started",
       )
       await this.persistRecord(running, runDirectory)
+      await this.persistSessionExportMetadata(solver, runDirectory)
       this.solvers.add(solver)
       this.subagentManagers.set(runId, subagentManager)
       return solver
@@ -1098,6 +1137,19 @@ export class Project {
     await rename(temporary, target)
   }
 
+  private async persistSessionExportMetadata(
+    solver: CtfSolverAgent,
+    runDirectory: string,
+  ): Promise<void> {
+    const target = join(runDirectory, "session-export-metadata.json")
+    const temporary = `${target}.tmp-${process.pid}`
+    await writeFile(
+      temporary,
+      JSON.stringify(solverExportMetadata(solver), null, 2),
+    )
+    await rename(temporary, target)
+  }
+
   private recordDiagnostic(
     code: ProjectDiagnostic["code"],
     error: unknown,
@@ -1111,6 +1163,55 @@ export class Project {
       ...(runId ? { runId } : {}),
     })
   }
+}
+
+function solverExportMetadata(
+  solver: CtfSolverAgent,
+): RunSessionExportMetadata {
+  return {
+    systemPrompt: solver.state.systemPrompt,
+    tools: solver.tools.map(({ name, description, parameters }) => ({
+      name,
+      ...(description ? { description } : {}),
+      ...(parameters === undefined ? {} : { parameters }),
+    })),
+  }
+}
+
+function parseSessionExportMetadata(
+  value: unknown,
+): RunSessionExportMetadata | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const candidate = value as {
+    systemPrompt?: unknown
+    tools?: unknown
+  }
+  if (
+    typeof candidate.systemPrompt !== "string" ||
+    !Array.isArray(candidate.tools)
+  )
+    return undefined
+  const tools = candidate.tools.flatMap((tool) => {
+    if (!tool || typeof tool !== "object") return []
+    const candidateTool = tool as {
+      name?: unknown
+      description?: unknown
+      parameters?: unknown
+    }
+    if (typeof candidateTool.name !== "string") return []
+    return [
+      {
+        name: candidateTool.name,
+        ...(typeof candidateTool.description === "string"
+          ? { description: candidateTool.description }
+          : {}),
+        ...(candidateTool.parameters === undefined
+          ? {}
+          : { parameters: candidateTool.parameters }),
+      },
+    ]
+  })
+  return { systemPrompt: candidate.systemPrompt, tools }
 }
 
 function runStatus(details: SolverCloseDetails): RunStatus {

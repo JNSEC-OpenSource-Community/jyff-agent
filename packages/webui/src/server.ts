@@ -9,13 +9,14 @@ import {
   ContestSchedulerError,
   type ProjectConfig,
   parseProjectConfig,
+  type RunSessionExportMetadata,
 } from "@ctf-agent/core"
-import { buildSessionMarkdown } from "./export.ts"
 import {
   buildChallengeDetails,
   buildDashboardSnapshot,
   buildEmptyDashboardSnapshot,
 } from "./model.ts"
+import { exportPiSessionHtml } from "./pi-html-export.ts"
 import type {
   DashboardControlPlane,
   DashboardModelAuthentication,
@@ -36,6 +37,11 @@ export interface WebUiOptions {
   schedulerReconcileIntervalMs?: number
   modelConfiguration?: DashboardModelConfiguration
   modelAuthentication?: DashboardModelAuthentication
+  /** 测试可替换 Pi 原生 HTML session 导出器。 */
+  exportSessionHtml?: (
+    sessionPath: string,
+    metadata?: RunSessionExportMetadata,
+  ) => Promise<Buffer>
 }
 
 export interface WebUiServer {
@@ -96,6 +102,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     options.controlPlane?.currentProject() ?? options.project
   const currentScheduler = (): DashboardScheduler | undefined =>
     options.controlPlane?.currentScheduler() ?? options.scheduler
+  const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
   const buildCurrentSnapshot = async (): Promise<DashboardSnapshot> => {
     const project = currentProject()
     if (project) {
@@ -716,7 +723,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    // 会话复盘导出:必须在 /api/challenges/ 详情分支(startsWith)之前,否则路径被吞。
+    // HTML session 导出必须在 /api/challenges/ 详情分支之前，否则路径会被吞。
     const exportMatch = /^\/api\/challenges\/([^/]+)\/export$/.exec(
       url.pathname,
     )
@@ -728,29 +735,40 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       if (runs.length === 0) {
         throw new HttpRequestError(404, "no_runs", "该题没有任何 Run 记录")
       }
-      const runId = optionalQueryString(url.searchParams.get("run"), "run", 64)
-      if (runId) {
-        const exists = runs.some((run) => run.id === runId)
-        if (!exists) {
-          throw new HttpRequestError(
-            404,
-            "run_not_found",
-            `该题不存在 Run: ${runId}`,
-          )
-        }
+      const requestedRunId = optionalQueryString(
+        url.searchParams.get("run"),
+        "run",
+        64,
+      )
+      const run = requestedRunId
+        ? runs.find((candidate) => candidate.id === requestedRunId)
+        : [...runs].sort(
+            (left, right) =>
+              Date.parse(right.createdAt) - Date.parse(left.createdAt),
+          )[0]
+      if (!run) {
+        throw new HttpRequestError(
+          404,
+          "run_not_found",
+          `该题不存在 Run: ${requestedRunId}`,
+        )
       }
-      const markdown = buildSessionMarkdown(project, challengeId, {
-        runId,
-        full: url.searchParams.get("full") === "1",
-      })
-      const safeChallenge = filenameSafe(challengeId)
-      const filename = runId
-        ? `session-${safeChallenge}-${filenameSafe(runId.slice(0, 8))}-${timestampForFilename()}.md`
-        : `session-${safeChallenge}-all-${timestampForFilename()}.md`
-      const body = Buffer.from(markdown, "utf8")
+      let body: Buffer
+      try {
+        body = await exportSessionHtml(
+          project.runSessionPath(run.id),
+          await project.runSessionExportMetadata(run.id),
+        )
+      } catch (error) {
+        throw new HttpRequestError(
+          409,
+          "session_export_failed",
+          `无法导出 Pi 会话: ${errorText(error)}`,
+        )
+      }
+      // 直接以 HTML 页面内联呈现，不强制下载；平台/run 数据因此不会进入响应头。
       response.writeHead(200, {
-        "Content-Type": "text/markdown; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
         "Content-Length": body.byteLength,
       })
@@ -1156,19 +1174,6 @@ function hasCode(error: unknown, code: string): boolean {
 /** Content-Disposition filename 段白名单清洗:平台/run 数据不可信,防 header 注入。 */
 function filenameSafe(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
-}
-
-function timestampForFilename(): string {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, "0")
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join("-")
 }
 
 function requireJsonRequest(request: IncomingMessage): void {

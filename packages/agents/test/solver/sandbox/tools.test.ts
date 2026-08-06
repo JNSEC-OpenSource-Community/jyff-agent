@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest"
 import {
   createReadonlySandboxTools,
   createSolverTools,
+  FlagSubmissionRateLimitError,
+  FlagSubmissionRateLimiter,
 } from "../../../src/solver/sandbox/tools.js"
 
 class FakeSandbox implements Sandbox {
@@ -222,5 +224,38 @@ describe("Solver tools", () => {
     )
     await submit.execute("submit", { flag: "FLAG" })
     expect(submission).toMatchObject({ status: "accepted" })
+  })
+
+  it("Flag 提交以滑动窗口限制为每分钟 5 次", async () => {
+    let now = 1_000
+    let calls = 0
+    const limiter = new FlagSubmissionRateLimiter(() => now)
+    const submit = tool(
+      "ctf_submit_flag",
+      createSolverTools({
+        capability: {
+          ...capability(),
+          submitFlag: async () => {
+            calls++
+            return { status: "rejected", message: "wrong" }
+          },
+        },
+        sandbox: new FakeSandbox(),
+        submissionRateLimiter: limiter,
+        onTerminalSubmission: () => {},
+      }),
+    )
+
+    for (let index = 0; index < 5; index++) {
+      await submit.execute(`submit-${index}`, { flag: `FLAG-${index}` })
+    }
+    await expect(
+      submit.execute("submit-6", { flag: "FLAG-6" }),
+    ).rejects.toBeInstanceOf(FlagSubmissionRateLimitError)
+    expect(calls).toBe(5)
+
+    now += 60_000
+    await submit.execute("submit-after-window", { flag: "FLAG-after-window" })
+    expect(calls).toBe(6)
   })
 })

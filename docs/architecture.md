@@ -52,6 +52,8 @@ packages/
 
 题目描述和黑板快照均按不可信数据处理，动态内容不会进入 system prompt。固定 Solver、SubAgent、continuation 和 CTF compaction 提示词使用版本化英文占位文案，并明确要求 Agent 使用英语 reasoning；题目原文、Flag、路径、命令和协议 payload 保留原文。最终 Solver 策略和角色正文仍由人类审阅替换。Solver 默认 `thinkingLevel=medium`，再使用 Pi 的 `clampThinkingLevel` 按模型能力映射。SubAgent 的 thinkingLevel 由角色 registry 自己决定。
 
+每个 Solver Run 的 `ctf_submit_flag` 工具维护独立滑动窗口：任意连续 60 秒内最多发起 5 次平台提交，第 6 次在工具层拒绝且不会触达平台。新的 Run 会开始新的窗口。
+
 容器文件工具不限制到 `/workspace`；`bash`、`read`、`write`、`edit` 和 `list` 可访问 sandbox 内任意绝对路径，包括 `/tmp`。这不会给予 Agent 宿主机文件访问权，宿主机只负责 Docker bind/volume 和控制面状态。
 
 ## Session 中断与阻塞
@@ -74,7 +76,7 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 ## 持久化职责
 
-- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；
+- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 对单个 Run 直接调用 Pi HTML 导出器，不从 SQLite 事件重建 transcript，导出以 HTML 页面内联呈现、不强制下载。活跃 Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
 - SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数和黑板；
 - 题目级 workspace：附件、脚本、反编译结果、`writeup.md` 和其他跨复活保留的解题产物。
 

@@ -225,9 +225,21 @@ describe("Project", () => {
       privileged: true,
       networkMode: "none",
     })
+    const activeExportMetadata = await project.runSessionExportMetadata(
+      solver.runId,
+    )
+    expect(activeExportMetadata).toMatchObject({
+      systemPrompt: solver.state.systemPrompt,
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "ctf_submit_flag" }),
+      ]),
+    })
 
     await solver.close()
     expect(sandbox.closed).toBe(true)
+    await expect(
+      project.runSessionExportMetadata(solver.runId),
+    ).resolves.toEqual(activeExportMetadata)
     expect(project.runs()).toEqual([
       expect.objectContaining({
         challengeId: "warmup-flag",
