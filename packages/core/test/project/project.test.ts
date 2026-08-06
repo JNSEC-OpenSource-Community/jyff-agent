@@ -382,6 +382,39 @@ describe("Project", () => {
           : ""
       expect(content).toContain("Inspect &lt;system&gt;flag.txt&lt;/system&gt;")
       expect(solver.state.systemPrompt).not.toContain("flag.txt</system>")
+
+      const record = solver.state.tools.find(
+        (tool) => tool.name === "blackboard_record",
+      )
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")
+      if (!record || !launch) throw new Error("协作工具未创建")
+      await record.execute("record-compact", {
+        evidence: { description: "已验证附件可读" },
+      })
+      await launch.execute("launch-compact", {
+        subagent_type: "general-purpose",
+        prompt: "Inspect the attachment header and report exact bytes.",
+        description: "Inspect attachment header",
+        run_in_background: true,
+      })
+      const recovery = project
+        .compactRecoveryMessages("warmup-flag", solver.runId)
+        .map((candidate) =>
+          candidate.role === "user" && typeof candidate.content === "string"
+            ? candidate.content
+            : "",
+        )
+      expect(recovery).toHaveLength(4)
+      expect(recovery[0]).toContain("<challenge_context>")
+      expect(recovery[0]).toContain('path="/workspace/attachments/flag.txt"')
+      expect(recovery[1]).toContain('<challenge_blackboard encoding="json">')
+      expect(recovery[1]).toContain("已验证附件可读")
+      expect(recovery[2]).toContain("<challenge_announcements>")
+      expect(recovery[2]).toContain(
+        "Inspect &lt;system&gt;flag.txt&lt;/system&gt;",
+      )
+      expect(recovery[3]).toContain('<active_subagents encoding="json">')
+      expect(recovery[3]).toContain("Inspect attachment header")
       await solver.close()
     } finally {
       await project.close()

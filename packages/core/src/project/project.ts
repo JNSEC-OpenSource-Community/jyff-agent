@@ -151,6 +151,7 @@ export class Project {
   readonly config: ProjectConfig
   private readonly solvers = new Set<CtfSolverAgent>()
   private readonly subagentManagers = new Map<string, CtfSubagentManager>()
+  private readonly runChallengeContexts = new Map<string, string>()
   private readonly diagnosticLog: ProjectDiagnostic[]
   private closed = false
   private constructor(
@@ -568,22 +569,31 @@ export class Project {
   }
   compactRecoveryMessages(challengeId: string, runId: string): AgentMessage[] {
     const now = Date.now()
+    const challengeContext = this.runChallengeContexts.get(runId)
+    if (!challengeContext) {
+      throw new Error(`Run ${runId} 缺少 compact 恢复所需的题目上下文`)
+    }
     const blackboard = injectBlackboard(this.runStore, challengeId)
     const subagents =
       this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
     const announcements = this.runStore.challengeAnnouncements(challengeId)
     return [
+      {
+        role: "user" as const,
+        content: challengeContext,
+        timestamp: now,
+      },
       ...(blackboard
         ? [{ role: "user" as const, content: blackboard, timestamp: now }]
         : []),
       {
         role: "user" as const,
-        content: activeSubagentsPrompt(subagents),
+        content: challengeAnnouncementsPrompt(announcements),
         timestamp: now,
       },
       {
         role: "user" as const,
-        content: challengeAnnouncementsPrompt(announcements),
+        content: activeSubagentsPrompt(subagents),
         timestamp: now,
       },
     ]
@@ -883,12 +893,17 @@ export class Project {
         attachments: challenge.attachments,
         sandbox,
       })
+      const challengeContext = challengeContextPrompt(
+        challenge,
+        downloadedAttachments,
+      )
+      this.runChallengeContexts.set(runId, challengeContext)
       const challengeMessages: AgentMessage[] = resumed
         ? []
         : [
             {
               role: "user",
-              content: challengeContextPrompt(challenge, downloadedAttachments),
+              content: challengeContext,
               timestamp: Date.now(),
             },
           ]
@@ -970,6 +985,7 @@ export class Project {
         onClosed: async (details) => {
           this.solvers.delete(solver)
           this.subagentManagers.delete(runId)
+          this.runChallengeContexts.delete(runId)
           const eventType =
             details.reason === "interrupted"
               ? "run_interrupted"
@@ -1082,6 +1098,7 @@ export class Project {
       this.subagentManagers.set(runId, subagentManager)
       return solver
     } catch (error) {
+      this.runChallengeContexts.delete(runId)
       const cleanupErrors: string[] = []
       if (subagentManager) {
         try {

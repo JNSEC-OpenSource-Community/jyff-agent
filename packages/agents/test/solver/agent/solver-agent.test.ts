@@ -2,10 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ChallengeCapability } from "@ctf-agent/platform"
+import { CTF_COMPACTION_PROMPT } from "@ctf-agent/prompts"
 import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
-import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import { AgentHarness, type AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   CtfSolverAgent,
   type SolverCloseDetails,
@@ -32,11 +33,12 @@ const agent = {
 } satisfies AgentOptions
 
 const roots: string[] = []
-afterEach(async () =>
-  Promise.all(
+afterEach(async () => {
+  vi.restoreAllMocks()
+  await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  ),
-)
+  )
+})
 
 async function runDirectory(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "solver-agent-"))
@@ -92,6 +94,40 @@ class OrderedSandbox implements Sandbox {
 }
 
 describe("CtfSolverAgent 强制清理", () => {
+  it("将 CTF_COMPACTION_PROMPT 原样传给 Pi compact", async () => {
+    const compact = vi
+      .spyOn(AgentHarness.prototype, "compact")
+      .mockResolvedValue({
+        summary: "compacted investigation",
+        tokensBefore: 1_024,
+      })
+    const log: string[] = []
+    const capability = challengeCapability(log)
+    const solver = await CtfSolverAgent.create({
+      identity: {
+        projectId: "project",
+        runId: "run",
+        runDirectory: await runDirectory(),
+        workspace: "workspace",
+        challenge: await capability.getInfo(),
+      },
+      capability,
+      sandbox: new OrderedSandbox(log),
+      agent,
+    })
+
+    await expect(solver.compact()).resolves.toMatchObject({
+      summary: "compacted investigation",
+    })
+    expect(compact).toHaveBeenCalledExactlyOnceWith(CTF_COMPACTION_PROMPT)
+    expect(CTF_COMPACTION_PROMPT).toContain("<challenge_context>")
+    expect(CTF_COMPACTION_PROMPT).toContain("<challenge_blackboard>")
+    expect(CTF_COMPACTION_PROMPT).toContain("<challenge_announcements>")
+    expect(CTF_COMPACTION_PROMPT).toContain("<active_subagents>")
+    expect(CTF_COMPACTION_PROMPT).not.toContain("active SubAgent tasks")
+    await solver.close("manual")
+  })
+
   it("失败关闭时先回收 SubAgent，再销毁实例、Sandbox 并持久化状态", async () => {
     const log: string[] = []
     let details: SolverCloseDetails | undefined
