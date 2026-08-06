@@ -36,6 +36,7 @@ docs/               当前架构与扩展协议
 - 用 Biome 格式化/检查。尽量做小而集中的改动，不在同一提交混入无关重构。
 - 修改行为时，在所属包的 `test/` 中补或更新 Vitest 测试；优先测试公开行为和失败边界，不复制实现细节。
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
+- 模型配置是 v2 模型池：凭据不进入 `model-config.json`；Solver、TLDR 和 SubAgent role 可独立绑定模型，传入 Agent 时必须保留完整 Pi `Models` registry。全局 Solver 并发量继续由 `scheduler-config.json` 管理。
 - 多进行 git commit，commit message 遵循 gitmoji + conventional 混合规范，如 `✨ feat(solver): add a new feature`, `🐛 fix(core): fix something`
 
 ## 单元测试最佳实践

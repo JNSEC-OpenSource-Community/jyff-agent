@@ -159,6 +159,31 @@ describe("Project", () => {
     }
   })
 
+  it("为新 Run 应用控制面提供的 SubAgent role 模型绑定", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      subagents: {
+        modelForRole: (role) =>
+          role === "explorer" ? "worker-provider/worker-model" : undefined,
+      },
+    })
+    try {
+      expect(project.availableSubagents()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "explorer",
+            model: "worker-provider/worker-model",
+          }),
+        ]),
+      )
+    } finally {
+      await project.close()
+    }
+  })
+
   it("创建题目绑定的 Agent、持久化 workspace，并在 close 后仅删除容器", async () => {
     const root = await fixture()
     const sandbox = new FakeSandbox()

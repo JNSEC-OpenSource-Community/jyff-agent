@@ -37,6 +37,8 @@ packages/
 
 `.pi/ctf-config.json` 只作为旧配置的只读回退。平台配置只保存非敏感字段和 secret 名称，凭据由 Secret Store 单独保存。
 
+`model-config.json` 保存 v2 模型池、默认 Solver 模型、独立 TLDR 模型和 SubAgent role 绑定，不保存密钥。自定义 Provider 的 API Key 按 Provider 隔离在 Secret Store；原生 Provider 继续使用 Pi CredentialStore。控制面为每次调度构造完整 Pi `Models` registry，Solver 选择默认模型，TLDR 选择自己的模型，SubAgent manager 在创建新 Run 时把 WebUI role 绑定覆盖到 registry 角色；未覆盖的角色仍使用 frontmatter 的 `model`。旧版单模型文件和遗留明文 Key 会自动迁移。Solver 最大并发量由独立的 `scheduler-config.json` 管理，可在 WebUI 主控制台即时调整。
+
 ## 一次 Solver Run
 
 `Project.createSolver()` 的主要流程：

@@ -488,23 +488,34 @@ describe("WebUI HTTP server", () => {
 
     const initial = await fetch(`${server.url}/api/model-config`)
     expect(initial.status).toBe(200)
-    expect(await initial.json()).toMatchObject({
-      provider: "openrouter",
-      apiKeyConfigured: false,
-    })
+    const initialConfiguration = await initial.json()
+    expect(initialConfiguration).toMatchObject({ models: [] })
+    expect(initialConfiguration.subagentRoles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "general-purpose" }),
+      ]),
+    )
 
     const apiKey = "secret-model-key"
     const saved = await fetch(`${server.url}/api/model-config`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "https://models.example.test/v1/",
-        contextWindow: 64_000,
-        thinkingEnabled: true,
-        reasoningEffort: "high",
-        apiKey,
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "https://models.example.test/v1/",
+            contextWindow: 64_000,
+            thinkingEnabled: true,
+            reasoningEffort: "high",
+            apiKey,
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: { explorer: "solver" },
       }),
     })
     expect(saved.status).toBe(200)
@@ -512,13 +523,20 @@ describe("WebUI HTTP server", () => {
     expect(savedText).not.toContain(apiKey)
     expect(JSON.parse(savedText)).toMatchObject({
       configuration: {
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "https://models.example.test/v1",
-        apiKeyConfigured: true,
-        apiKeySource: "secret-store",
-        thinkingEnabled: true,
-        reasoningEffort: "high",
+        models: [
+          {
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "https://models.example.test/v1",
+            apiKeyConfigured: true,
+            apiKeySource: "secret-store",
+            thinkingEnabled: true,
+            reasoningEffort: "high",
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: { explorer: "solver" },
         configured: true,
       },
     })
@@ -528,12 +546,20 @@ describe("WebUI HTTP server", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "file:///tmp/model",
-        contextWindow: 1_024,
-        thinkingEnabled: false,
-        reasoningEffort: "max",
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "file:///tmp/model",
+            contextWindow: 1_024,
+            thinkingEnabled: false,
+            reasoningEffort: "max",
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: {},
       }),
     })
     expect(invalid.status).toBe(400)
@@ -542,15 +568,45 @@ describe("WebUI HTTP server", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "",
-        contextWindow: 1_024,
-        thinkingEnabled: false,
-        reasoningEffort: "ultra",
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "",
+            contextWindow: 1_024,
+            thinkingEnabled: false,
+            reasoningEffort: "ultra",
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: {},
       }),
     })
     expect(badEffort.status).toBe(400)
+
+    const missingBinding = await fetch(`${server.url}/api/model-config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "https://models.example.test/v1",
+            contextWindow: 64_000,
+            thinkingEnabled: true,
+            reasoningEffort: "medium",
+          },
+        ],
+        solverModelId: "missing",
+        tldrModelId: "solver",
+        subagentModels: {},
+      }),
+    })
+    expect(missingBinding.status).toBe(400)
   })
 
   it("运行中切换思考强度(200/400/409 契约)", async () => {

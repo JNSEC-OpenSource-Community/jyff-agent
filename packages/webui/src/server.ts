@@ -28,6 +28,8 @@ import type {
   DashboardScheduler,
   DashboardSnapshot,
   ModelConfigurationUpdate,
+  ModelConfigurationView,
+  ModelPoolEntryUpdate,
 } from "./types.ts"
 
 export interface WebUiOptions {
@@ -387,7 +389,11 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     if (method === "GET" && url.pathname === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
-      sendJson(response, 200, options.modelConfiguration.snapshot())
+      sendJson(
+        response,
+        200,
+        modelConfigurationView(options.modelConfiguration, currentProject()),
+      )
       return
     }
 
@@ -395,13 +401,16 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       requireModelConfiguration(options.modelConfiguration)
       requireJsonRequest(request)
       const configuration = await options.modelConfiguration.update(
-        modelConfigurationUpdate(await readJsonBody(request)),
+        modelConfigurationUpdate(await readJsonBody(request, 256_000)),
       )
       const scheduler = currentScheduler()
       if (!configuration.configured) scheduler?.pauseAuto()
       else await scheduler?.reconcile()
       sendJson(response, 200, {
-        configuration,
+        configuration: modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(),
+        ),
         snapshot: await refresh(),
       })
       return
@@ -863,11 +872,17 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const project = currentProject()
       requireProject(project)
       const modelConfiguration = options.modelConfiguration
-      if (!modelConfiguration?.snapshot().configured) {
+      const modelSnapshot = modelConfiguration?.snapshot()
+      const tldrModelId =
+        modelSnapshot?.tldrModelId || modelSnapshot?.solverModelId
+      const tldrModel = modelSnapshot?.models.find(
+        (model) => model.id === tldrModelId,
+      )
+      if (!modelConfiguration || !tldrModel?.configured) {
         throw new HttpRequestError(
           503,
           "model_unavailable",
-          "模型尚未配置，无法生成 TLDR",
+          tldrModel?.unavailableReason ?? "TLDR 模型尚未配置",
         )
       }
       const encodedId = url.pathname
@@ -876,7 +891,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const challengeId = decodeURIComponent(encodedId)
       const tldr = await project.refreshTldr(
         challengeId,
-        modelConfiguration.createAgentOptions(),
+        modelConfiguration.createAgentOptions("tldr"),
       )
       if (tldr.challengeId !== challengeId) {
         throw new HttpRequestError(404, "challenge_not_found", "题目不存在")
@@ -1171,6 +1186,20 @@ function requireProject(
   }
 }
 
+function modelConfigurationView(
+  configuration: DashboardModelConfiguration,
+  project: DashboardProject | undefined,
+): ModelConfigurationView {
+  return {
+    ...configuration.snapshot(),
+    subagentRoles:
+      project?.availableSubagents().map(({ name, displayName }) => ({
+        name,
+        displayName,
+      })) ?? [],
+  }
+}
+
 function requireScheduler(
   scheduler: DashboardScheduler | undefined,
 ): asserts scheduler is DashboardScheduler {
@@ -1334,6 +1363,107 @@ async function readJsonBody(
 function modelConfigurationUpdate(
   body: Record<string, unknown>,
 ): ModelConfigurationUpdate {
+  if (!Array.isArray(body.models) || body.models.length > 64) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_configuration",
+      "Models 必须是最多包含 64 项的数组",
+    )
+  }
+  const models = body.models.map((value, index) => {
+    if (!isRecord(value)) {
+      throw new HttpRequestError(
+        400,
+        "invalid_model_configuration",
+        `Models[${index}] 必须是对象`,
+      )
+    }
+    return modelPoolEntryUpdate(value, index)
+  })
+  const solverModelId = optionalString(body.solverModelId, "Solver Model", 128)
+  const tldrModelId = optionalString(body.tldrModelId, "TLDR Model", 128)
+  const subagentModels: Record<string, string> = {}
+  if (body.subagentModels !== undefined) {
+    if (!isRecord(body.subagentModels)) {
+      throw new HttpRequestError(
+        400,
+        "invalid_model_configuration",
+        "SubAgent Models 必须是对象",
+      )
+    }
+    for (const [role, value] of Object.entries(body.subagentModels)) {
+      const normalizedRole = requiredString(role, "SubAgent Role", 128)
+      subagentModels[normalizedRole] = requiredString(
+        value,
+        `SubAgent ${normalizedRole} Model`,
+        128,
+      )
+    }
+  }
+  const ids = new Set(models.map((model) => model.id))
+  if (ids.size !== models.length) {
+    throw invalidModelConfiguration("模型配置 ID 不能重复")
+  }
+  if (models.length === 0) {
+    if (
+      solverModelId ||
+      tldrModelId ||
+      Object.keys(subagentModels).length > 0
+    ) {
+      throw invalidModelConfiguration("空模型池不能包含 Agent 模型绑定")
+    }
+  } else {
+    if (!ids.has(solverModelId)) {
+      throw invalidModelConfiguration(`Solver 模型不存在: ${solverModelId}`)
+    }
+    if (tldrModelId && !ids.has(tldrModelId)) {
+      throw invalidModelConfiguration(`TLDR 模型不存在: ${tldrModelId}`)
+    }
+    for (const [role, id] of Object.entries(subagentModels)) {
+      if (!ids.has(id)) {
+        throw invalidModelConfiguration(`SubAgent ${role} 的模型不存在: ${id}`)
+      }
+    }
+  }
+  const references = new Set<string>()
+  const providerBaseUrls = new Map<string, string>()
+  for (const model of models) {
+    const reference = `${model.provider}/${model.modelId}`
+    if (references.has(reference)) {
+      throw invalidModelConfiguration(`模型不能重复: ${reference}`)
+    }
+    references.add(reference)
+    const previous = providerBaseUrls.get(model.provider)
+    if (previous !== undefined && previous !== model.baseUrl) {
+      throw invalidModelConfiguration(
+        `同一 Provider 的 Base URL 必须一致: ${model.provider}`,
+      )
+    }
+    providerBaseUrls.set(model.provider, model.baseUrl)
+  }
+  return { models, solverModelId, tldrModelId, subagentModels }
+}
+
+function invalidModelConfiguration(message: string): HttpRequestError {
+  return new HttpRequestError(400, "invalid_model_configuration", message)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function modelPoolEntryUpdate(
+  body: Record<string, unknown>,
+  index: number,
+): ModelPoolEntryUpdate {
+  const id = requiredString(body.id, `Models[${index}] ID`, 128)
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_configuration",
+      "模型配置 ID 只能包含字母、数字、点、下划线和连字符",
+    )
+  }
   const provider = requiredString(body.provider, "Provider", 128)
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) {
     throw new HttpRequestError(
@@ -1402,6 +1532,7 @@ function modelConfigurationUpdate(
     )
   }
   return {
+    id,
     provider,
     modelId,
     baseUrl: baseUrl.replace(/\/+$/, ""),

@@ -12,6 +12,30 @@ import {
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai"
 
+const AGENT_MODELS = Symbol.for("@ctf-agent/agent-options-models")
+
+type AgentOptionsWithModels = AgentOptions & {
+  [AGENT_MODELS]?: Models
+}
+
+/**
+ * Preserve a complete Pi model registry while crossing the legacy AgentOptions
+ * boundary used by the scheduler. This lets Solver, TLDR and SubAgent share the
+ * same configured model pool instead of rebuilding a one-model registry.
+ */
+export function attachModelsToAgentOptions(
+  options: AgentOptions,
+  models: Models,
+): AgentOptions {
+  Object.defineProperty(options, AGENT_MODELS, {
+    value: models,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  })
+  return options
+}
+
 function failureMessage(
   model: Model<Api>,
   error: unknown,
@@ -75,6 +99,8 @@ export function modelsFromAgentOptions(
   options: AgentOptions,
   model: Model<Api>,
 ): Models {
+  const attached = (options as AgentOptionsWithModels)[AGENT_MODELS]
+  if (attached) return attached
   const models = createModels()
   const stream = (
     candidate: Model<Api>,

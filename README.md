@@ -36,7 +36,7 @@ docker compose -f compose.webui.yaml ps
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
-1. 在“模型设置”中登录 Codex / Claude、填写 API Key、导入 `auth.json`，或配置 OpenAI-compatible 端点；
+1. 在“模型设置”中登录 Codex / Claude、填写 API Key、导入 `auth.json`，或配置 OpenAI-compatible 端点；可加入多个模型，并分别绑定 Solver、TLDR 和各类 SubAgent；
 2. 在“比赛平台设置”中选择 CTFd 或 GZCTF，填写站点、比赛与认证信息；
 3. 先“测试连接”，成功后再“保存并连接”；
 4. 人工调度单题，或开启自主调度整场比赛。
@@ -98,6 +98,8 @@ WebUI 映射到宿主机 `0.0.0.0:3000`，可从外部网络访问；WSL2 端口
 | OpenAI-compatible | Provider、Base URL、Model ID、API Key | 旧版通用配置 |
 
 OAuth 和原生 Provider API Key 由 Pi 的 `CredentialStore` 写入具名卷中的 `.ctf-agent/auth.json`，刷新 token 时会原子更新；WebUI 状态接口只返回 Provider、凭据类型和模型清单，不返回凭据原文。
+
+`.ctf-agent/model-config.json` 使用 v2 模型池结构，只保存非敏感模型参数和 Agent 绑定。自定义端点的 API Key 按 Provider 写入 Secret Store；同一 Provider 下的模型共享 Base URL 和凭据。Solver 与 TLDR 各选择一个模型，SubAgent role 可以在 WebUI 中选择模型，也可以留空继承角色 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此 role 绑定不受 Solver 当前模型限制。旧版单模型配置会在读取时自动迁移。Solver 最大并发量仍由主控制台独立设置并写入 `scheduler-config.json`，修改后即时生效。
 
 WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：
 

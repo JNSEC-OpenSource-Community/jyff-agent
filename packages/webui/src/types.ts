@@ -140,6 +140,11 @@ export interface DashboardProject {
   runEvents(runId: string): RunEvent[]
   latestRunEvent(runId: string): RunEvent | undefined
   subagents(runId: string): SubagentRecord[]
+  availableSubagents(): Array<{
+    name: string
+    displayName: string
+    model?: string
+  }>
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   challengeWriteup(challengeId: string): Promise<ChallengeWriteup>
@@ -209,7 +214,8 @@ export interface DashboardControlPlane {
   connect(): Promise<ControlPlaneSnapshot>
 }
 
-export interface ModelConfigurationView {
+export interface ModelPoolEntryView {
+  id: string
   provider: string
   modelId: string
   baseUrl: string
@@ -228,7 +234,8 @@ export interface ModelConfigurationView {
   unavailableReason?: string
 }
 
-export interface ModelConfigurationUpdate {
+export interface ModelPoolEntryUpdate {
+  id: string
   provider: string
   modelId: string
   baseUrl: string
@@ -240,9 +247,30 @@ export interface ModelConfigurationUpdate {
   clearApiKey?: boolean
 }
 
+export interface ModelConfigurationView {
+  models: ModelPoolEntryView[]
+  solverModelId: string
+  tldrModelId: string
+  subagentModels: Record<string, string>
+  /** WebUI 根据当前 Project 动态补充，未连接平台时可以为空。 */
+  subagentRoles?: Array<{ name: string; displayName: string }>
+  /** Solver 当前模型支持的档位，供题目详情中的运行时切换使用。 */
+  supportedThinkingLevels: string[]
+  configured: boolean
+  unavailableReason?: string
+}
+
+export interface ModelConfigurationUpdate {
+  models: ModelPoolEntryUpdate[]
+  solverModelId: string
+  tldrModelId: string
+  subagentModels: Record<string, string>
+}
+
 export interface DashboardModelConfiguration {
   snapshot(): ModelConfigurationView
-  createAgentOptions(): AgentOptions
+  createAgentOptions(target?: "solver" | "tldr"): AgentOptions
+  modelForSubagent(role: string): string | undefined
   update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView>

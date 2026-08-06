@@ -6,13 +6,9 @@ SubAgent 是单个 Solver Run 内的专业 worker。主 Solver 负责拆分任�
 
 | 角色 | thinkingLevel | 适用方向 |
 |---|---:|---|
-| `general-purpose` | `medium` | 通用探索和跨方向调查 |
-| `pwn` | `high` | 漏洞原语与利用链 |
-| `reverse` | `high` | 静态/动态逆向与反混淆 |
-| `web` | `medium` | HTTP、鉴权和 Web 漏洞 |
-| `crypto` | `high` | 密码构造和数学求解 |
-| `misc` | `medium` | 取证、隐写、流量和综合题 |
-| `reviewer` | `low` | 复核证据、脚本和候选解 |
+| `general-purpose` | `high` | 通用探索和跨方向调查 |
+| `explorer` | `max` | 深入浏览代码与攻击面 |
+| `fuzzer` | `medium` | 对有界机会执行模糊测试与黑盒枚举 |
 
 这些档位由 `packages/agents/src/subagent/registry.ts` 单独配置，不继承 Solver 的值。最终档位仍由 Pi 根据所选模型支持范围进行 clamp。
 
@@ -63,8 +59,8 @@ enabled: true
 
 - `display_name`、`description`：WebUI 和主 Solver 可见的角色信息；
 - `tools`：worker 工具白名单，未知工具会让任务明确失败；
-- `model`：`provider/model`，只能选择控制面已注册的模型；
-- `thinking`：`off|minimal|low|medium|high|xhigh|max`，省略时为 `medium`；
+- `model`：`provider/model`，只能选择控制面模型池中已注册的模型；WebUI 可按 role 覆盖，新 Run 生效；
+- `thinking`：`off|minimal|low|medium|high|xhigh|max`，省略时为 `low`；
 - `enabled`：设为 `false` 时不向主 Solver 暴露。
 
 无效角色会被隔离并写入 Project diagnostics，不阻止其他角色启动。SQLite 的 `run_subagents` 保存 worker 状态、会话路径、工作目录、当前工具、turn/tool/token 计数、结果和错误；完整生命周期同时写入 Run 事件时间线，并显示在 WebUI 的 Run 详情中。

@@ -1604,6 +1604,89 @@ summary:focus-visible,
   overflow: auto;
 }
 
+.model-pool,
+.model-assignments {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: rgba(3, 5, 4, 0.24);
+}
+
+.model-pool > header,
+.model-assignments > header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.model-pool header strong,
+.model-pool header small,
+.model-assignments header strong,
+.model-assignments header small {
+  display: block;
+}
+
+.model-pool header small,
+.model-assignments header small {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 9px;
+}
+
+.model-pool-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 7px;
+}
+
+.model-pool-tabs button {
+  min-width: 0;
+  padding: 10px;
+  color: var(--muted);
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.model-pool-tabs button.is-active {
+  color: var(--acid);
+  border-color: rgba(216, 255, 85, 0.38);
+  box-shadow: inset 2px 0 0 var(--acid);
+}
+
+.model-pool-tabs span,
+.model-pool-tabs strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-pool-tabs span {
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.model-pool-tabs strong {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.model-empty {
+  margin: 0 0 24px;
+  padding: 20px;
+  color: var(--dim);
+  text-align: center;
+  border: 1px dashed var(--line);
+}
+
+.model-assignments {
+  margin-top: 24px;
+}
+
 .model-form-grid {
   display: grid;
   grid-template-columns: 1fr 1.35fr;

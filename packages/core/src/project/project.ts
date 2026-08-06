@@ -106,6 +106,8 @@ export interface OpenProjectOptions {
   telemetry?: ProjectTelemetryOptions
   subagents?: {
     maxConcurrent?: number
+    /** WebUI 的模型池可在创建新 Run 时覆盖 role frontmatter 中的 model。 */
+    modelForRole?: (role: string) => string | undefined
   }
 }
 
@@ -168,6 +170,7 @@ export class Project {
     private readonly telemetry: Required<ProjectTelemetryOptions>,
     private readonly subagentRuntime: {
       maxConcurrent: number
+      modelForRole?: (role: string) => string | undefined
     },
     diagnostics: readonly ProjectDiagnostic[],
   ) {
@@ -223,6 +226,9 @@ export class Project {
         },
         {
           maxConcurrent: Math.max(1, options.subagents?.maxConcurrent ?? 4),
+          ...(options.subagents?.modelForRole
+            ? { modelForRole: options.subagents.modelForRole }
+            : {}),
         },
         projectDiagnostics(discovered, discoveredSubagents),
       )
@@ -599,7 +605,9 @@ export class Project {
     ]
   }
   availableSubagents(): SubagentRole[] {
-    return [...this.subagentRoles.values()].filter((role) => role.enabled)
+    return [...this.configuredSubagentRoles().values()].filter(
+      (role) => role.enabled,
+    )
   }
   async steerSubagent(
     runId: string,
@@ -921,7 +929,7 @@ export class Project {
         challenge,
         sandbox,
         agent: options.agent,
-        roles: this.subagentRoles,
+        roles: this.configuredSubagentRoles(),
         skills,
         maxConcurrent: this.subagentRuntime.maxConcurrent,
         onRecord: (subagent, event) => {
@@ -1158,6 +1166,16 @@ export class Project {
       }
       throw error
     }
+  }
+
+  private configuredSubagentRoles(): ReadonlyMap<string, SubagentRole> {
+    if (!this.subagentRuntime.modelForRole) return this.subagentRoles
+    return new Map(
+      [...this.subagentRoles].map(([name, role]) => {
+        const model = this.subagentRuntime.modelForRole?.(name)
+        return [name, model ? { ...role, model } : role]
+      }),
+    )
   }
 
   async close(): Promise<void> {
