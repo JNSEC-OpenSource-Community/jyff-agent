@@ -17,6 +17,8 @@ class FakeSandbox implements Sandbox {
   readonly calls: Array<{ args: string[]; input?: string }> = []
   closed = false
 
+  constructor(private readonly mainOutputChunks = ["sandbox output"]) {}
+
   async exec(
     args: string[],
     options?: SandboxExecOptions,
@@ -51,7 +53,7 @@ class FakeSandbox implements Sandbox {
         return { code: 0, stdout: "rtk 1", stderr: "" }
       if (command?.startsWith("rtk rewrite "))
         return { code: 0, stdout: "rg MOCK", stderr: "" }
-      options?.onStdout?.("sandbox output")
+      for (const chunk of this.mainOutputChunks) options?.onStdout?.(chunk)
       return { code: 0, stdout: "sandbox output", stderr: "" }
     }
     return { code: 1, stdout: "", stderr: "unexpected command" }
@@ -197,6 +199,25 @@ describe("Solver tools", () => {
       "rg MOCK",
     ])
     expect(bash.content).toEqual([{ type: "text", text: "sandbox output" }])
+  })
+
+  it("高频 bash 输出使用批量文件 helper 持久化完整日志", async () => {
+    const sandbox = new FakeSandbox(
+      Array.from({ length: 1_000 }, () => `${"x".repeat(1_024)}\n`),
+    )
+    const tools = createSolverTools({
+      capability: capability(),
+      sandbox,
+      onTerminalSubmission: () => {},
+    })
+
+    await tool("bash", tools).execute("bash-verbose", { command: "verbose" })
+
+    const appendCalls = sandbox.calls.filter((call) => {
+      if (call.args[0] !== "python3") return false
+      return JSON.parse(call.input ?? "{}").op === "append"
+    })
+    expect(appendCalls.length).toBeLessThanOrEqual(3)
   })
 
   it("不再向 Solver 暴露题目读取和附件下载工具", () => {
