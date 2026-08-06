@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   BaseAgent,
   type BaseAgentOptions,
+  DEFAULT_SOLVER_THINKING_LEVEL,
   modelsFromAgentOptions,
   prepareBaseAgent,
 } from "../../src/index.ts"
@@ -23,6 +24,10 @@ afterEach(async () =>
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   ),
 )
+
+it("uses medium as the product default for Solver reasoning", () => {
+  expect(DEFAULT_SOLVER_THINKING_LEVEL).toBe("medium")
+})
 
 const model: Model<"openai-completions"> = {
   id: "test-model",
