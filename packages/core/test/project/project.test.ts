@@ -387,15 +387,24 @@ describe("Project", () => {
         (tool) => tool.name === "blackboard_record",
       )
       const launch = solver.state.tools.find((tool) => tool.name === "Agent")
-      if (!record || !launch) throw new Error("协作工具未创建")
+      const getResult = solver.state.tools.find(
+        (tool) => tool.name === "get_subagent_result",
+      )
+      if (!record || !launch || !getResult) throw new Error("协作工具未创建")
       await record.execute("record-compact", {
         evidence: { description: "已验证附件可读" },
       })
-      await launch.execute("launch-compact", {
+      const launched = await launch.execute("launch-compact", {
         subagent_type: "general-purpose",
         prompt: "Inspect the attachment header and report exact bytes.",
         description: "Inspect attachment header",
         run_in_background: true,
+      })
+      const subagentId = launched.details.id
+      if (typeof subagentId !== "string") throw new Error("SubAgent ID 缺失")
+      await getResult.execute("wait-compact", {
+        agent_id: subagentId,
+        wait: true,
       })
       const recovery = project
         .compactRecoveryMessages("warmup-flag", solver.runId)

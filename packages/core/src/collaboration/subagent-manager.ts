@@ -446,7 +446,7 @@ export class CtfSubagentManager {
     this.emit(managed, event)
     managed.resolve(snapshot(managed.record))
     if (managed.record.background && !managed.resultConsumed) {
-      void this.notifyParent(managed.record)
+      void this.notifyParent(managed.record).catch(() => undefined)
     }
   }
 
