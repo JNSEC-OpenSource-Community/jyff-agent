@@ -328,6 +328,56 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    if (method === "POST" && url.pathname === "/api/announcements/review") {
+      const project = currentProject()
+      requireProject(project)
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      const challengeId = requiredString(
+        body.challengeId,
+        "Challenge ID",
+        512,
+        "invalid_announcement_review",
+      )
+      const announcementKey = requiredString(
+        body.announcementKey,
+        "Announcement key",
+        512,
+        "invalid_announcement_review",
+      )
+      const status = requiredString(
+        body.status,
+        "Status",
+        16,
+        "invalid_announcement_review",
+      )
+      if (status !== "approved" && status !== "rejected") {
+        throw new HttpRequestError(
+          400,
+          "invalid_announcement_review",
+          "公告审核状态必须是 approved 或 rejected",
+        )
+      }
+      try {
+        await project.reviewChallengeAnnouncement(
+          challengeId,
+          announcementKey,
+          status,
+        )
+      } catch (error) {
+        if (hasCode(error, "announcement_candidate_not_found")) {
+          throw new HttpRequestError(
+            404,
+            "announcement_candidate_not_found",
+            errorText(error),
+          )
+        }
+        throw error
+      }
+      sendJson(response, 200, await refresh())
+      return
+    }
+
     if (method === "GET" && url.pathname === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
       sendJson(response, 200, options.modelConfiguration.snapshot())

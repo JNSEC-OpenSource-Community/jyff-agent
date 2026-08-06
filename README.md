@@ -7,6 +7,7 @@
 - CTFd 插件：题目、附件、公告、Flag 提交；
 - Flag 提交滑动窗口：每个 Solver Run 每分钟最多 5 次；
 - GZCTF 插件：用户名密码或 `GZCTF_Token` Cookie 登录、比赛题目与实例管理；
+- 公告关键字筛选与 WebUI 人工批准，只有获批公告进入 Solver 上下文；
 - 并发调度：自动、人工、重试、取消、超时和 attempt 上限；
 - 每题独立 Docker sandbox；
 - 题目上下文结构化注入、附件自动下载；

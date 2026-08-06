@@ -30,10 +30,17 @@ export async function buildDashboardSnapshot(
   scheduler?: DashboardScheduler,
   controlPlane?: DashboardControlPlane,
 ): Promise<DashboardSnapshot> {
-  const [overview, listed, announcements, environments] = await Promise.all([
+  const [
+    overview,
+    listed,
+    announcements,
+    announcementCandidates,
+    environments,
+  ] = await Promise.all([
     project.overview(),
     project.challenges(),
     project.announcements(),
+    project.announcementCandidates(),
     project.environments(),
   ])
   const runs = project.runs()
@@ -101,6 +108,7 @@ export async function buildDashboardSnapshot(
     announcements: [...announcements].sort((left, right) =>
       right.publishedAt.localeCompare(left.publishedAt),
     ),
+    announcementCandidates,
     environments,
     scheduler: schedulerSnapshot,
     controlPlane: controlPlane?.snapshot() ?? null,
@@ -133,6 +141,7 @@ export function buildEmptyDashboardSnapshot(
     challenges: [],
     categories: [],
     announcements: [],
+    announcementCandidates: [],
     environments: [],
     scheduler: null,
     controlPlane: state,

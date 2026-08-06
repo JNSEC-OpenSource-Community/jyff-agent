@@ -267,7 +267,7 @@ describe("Project", () => {
     await project.close()
   })
 
-  it("公告同步幂等关联题目并作为转义后的不可信数据注入新 Solver", async () => {
+  it("公告通过关键字筛选且经人工批准后才注入新 Solver", async () => {
     const root = await fixture()
     const configPath = join(root, ".pi", "ctf-config.json")
     const config = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -299,6 +299,30 @@ describe("Project", () => {
         linked: 0,
         steered: 0,
       })
+      expect(project.announcementCandidates()).toEqual([
+        expect.objectContaining({
+          challengeId: "warmup-flag",
+          approvalStatus: "pending",
+          matchedKeywords: ["hint"],
+        }),
+      ])
+      const pendingSolver = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      expect(
+        pendingSolver.state.messages.some(
+          (candidate) =>
+            candidate.role === "user" &&
+            typeof candidate.content === "string" &&
+            candidate.content.includes("<challenge_announcements"),
+        ),
+      ).toBe(false)
+      await pendingSolver.close()
+      await project.reviewChallengeAnnouncement(
+        "warmup-flag",
+        project.announcementCandidates()[0]?.key ?? "missing",
+        "approved",
+      )
       const solver = await project.createSolver("warmup-flag", {
         agent: agentOptions,
       })

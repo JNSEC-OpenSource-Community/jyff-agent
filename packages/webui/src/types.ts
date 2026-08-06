@@ -2,6 +2,7 @@ import type {
   Announcement,
   BlackboardStats,
   BlackboardSummary,
+  ChallengeAnnouncementRecord,
   ChallengeSummary,
   ContestOverview,
   ContestSchedulerSnapshot,
@@ -73,6 +74,7 @@ export interface DashboardSnapshot {
   challenges: DashboardChallenge[]
   categories: string[]
   announcements: Announcement[]
+  announcementCandidates: ChallengeAnnouncementRecord[]
   environments: RemoteEnvironment[]
   scheduler: ContestSchedulerSnapshot | null
   controlPlane: ControlPlaneSnapshot | null
@@ -116,6 +118,12 @@ export interface DashboardProject {
   overview(): Promise<ContestOverview>
   challenges(): Promise<ChallengeSummary[]>
   announcements(): Promise<Announcement[]>
+  announcementCandidates(): ChallengeAnnouncementRecord[]
+  reviewChallengeAnnouncement(
+    challengeId: string,
+    announcementKey: string,
+    status: "approved" | "rejected",
+  ): Promise<ChallengeAnnouncementRecord>
   environments(): Promise<RemoteEnvironment[]>
   runs(filter?: RunFilter): RunRecord[]
   /** 返回已持久化的原生 Pi session，供 HTML 导出读取。 */

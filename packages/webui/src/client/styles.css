@@ -807,6 +807,34 @@ summary:focus-visible,
   font-size: 9px;
 }
 
+.announcement-review-list {
+  padding: 8px;
+  border-bottom: 1px solid var(--line-bright);
+}
+
+.announcement-review-item {
+  margin-top: 6px;
+  border: 1px solid rgba(216, 255, 85, 0.16);
+  border-radius: 3px;
+}
+
+.announcement-review-item small {
+  display: block;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.announcement-review-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.announcement-review-actions .row-action {
+  justify-self: auto;
+}
+
 .board-heading {
   display: flex;
   align-items: flex-end;

@@ -2,6 +2,7 @@ import type {
   Announcement,
   BlackboardStats,
   BlackboardSummary,
+  ChallengeAnnouncementRecord,
   ChallengeSummary,
   ContestOverview,
   ContestSchedulerSnapshot,
@@ -55,6 +56,12 @@ export class FakeDashboardProject implements DashboardProject {
       publishedAt: "2026-07-29T10:00:00.000Z",
     },
   ]
+  announcementCandidateValues: ChallengeAnnouncementRecord[] = []
+  announcementReviews: Array<{
+    challengeId: string
+    announcementKey: string
+    status: "approved" | "rejected"
+  }> = []
   environmentValues: RemoteEnvironment[] = [
     {
       id: "env-1",
@@ -201,6 +208,28 @@ export class FakeDashboardProject implements DashboardProject {
   }
   async announcements(): Promise<Announcement[]> {
     return this.announcementValues
+  }
+  announcementCandidates(): ChallengeAnnouncementRecord[] {
+    return this.announcementCandidateValues
+  }
+  async reviewChallengeAnnouncement(
+    challengeId: string,
+    announcementKey: string,
+    status: "approved" | "rejected",
+  ): Promise<ChallengeAnnouncementRecord> {
+    this.announcementReviews.push({ challengeId, announcementKey, status })
+    const candidate = this.announcementCandidateValues.find(
+      (item) =>
+        item.challengeId === challengeId && item.key === announcementKey,
+    )
+    if (!candidate) {
+      throw Object.assign(new Error("公告候选不存在"), {
+        code: "announcement_candidate_not_found",
+      })
+    }
+    candidate.approvalStatus = status
+    candidate.reviewedAt = new Date().toISOString()
+    return candidate
   }
   async environments(): Promise<RemoteEnvironment[]> {
     return this.environmentValues

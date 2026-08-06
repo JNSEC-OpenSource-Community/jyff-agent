@@ -18,9 +18,41 @@ export interface AnnouncementChallengeMatch {
   ambiguousTitle: boolean
 }
 
+export interface AnnouncementKeywordFilter {
+  eligible: boolean
+  matchedKeywords: string[]
+  reason: "critical_keyword" | "new_challenge" | "no_critical_keyword"
+}
+
 const BLOOD_TITLE =
   /(?:一血|二血|三血|首杀|\bFirst\s+Blood\b|\bSecond\s+Blood\b|\bThird\s+Blood\b)/iu
 const SOLVE_ACTION = /(?:\bsolved\s+by\b|成功解出|解出了)/iu
+const NEW_CHALLENGE =
+  /(?:\bnew\s+challenge\b|\bchallenge\b.{0,40}\b(?:released|added|available)\b|新(?:增|的)?题|题目.{0,20}(?:上线|发布|开放|上新))/iu
+const CRITICAL_KEYWORDS: ReadonlyArray<{
+  name: string
+  pattern: RegExp
+}> = [
+  { name: "hint", pattern: /(?:\bhints?\b|提示|线索|补充说明)/iu },
+  { name: "fix", pattern: /(?:\bfix(?:ed|es)?\b|\bbugs?\b|修复|更正|勘误)/iu },
+  {
+    name: "update",
+    pattern: /(?:\bupdat(?:e|ed)\b|\bchang(?:e|ed)\b|更新|变更|调整)/iu,
+  },
+  {
+    name: "attachment",
+    pattern: /(?:\battachments?\b|\bdownloads?\b|附件|下载文件)/iu,
+  },
+  {
+    name: "environment",
+    pattern:
+      /(?:\bendpoint\b|\binstance\b|\bservice\b|\bports?\b|\boffline\b|\bunavailable\b|环境|实例|服务|地址|端口|不可用|恢复)/iu,
+  },
+  {
+    name: "credential",
+    pattern: /(?:\bcredentials?\b|\bpassword\b|\btokens?\b|凭据|密码|令牌)/iu,
+  },
+]
 
 export function classifyAnnouncement(
   announcement: Announcement,
@@ -52,6 +84,30 @@ export function classifyAnnouncement(
     kind: announcement.kind ?? "unknown",
     ignored: false,
     reason: announcement.kind ? "platform_kind" : "unclassified",
+  }
+}
+
+/** 仅让可能改变既有题目解法的公告进入人工审批队列。 */
+export function filterAnnouncementKeywords(
+  announcement: Announcement,
+): AnnouncementKeywordFilter {
+  if (announcement.kind === "new_challenge") {
+    return { eligible: false, matchedKeywords: [], reason: "new_challenge" }
+  }
+  const text = `${announcement.title}\n${announcement.content}`
+  const matchedKeywords = CRITICAL_KEYWORDS.filter(({ pattern }) =>
+    pattern.test(text),
+  ).map(({ name }) => name)
+  if (announcement.kind === "hint" && !matchedKeywords.includes("hint")) {
+    matchedKeywords.unshift("hint")
+  }
+  if (matchedKeywords.length > 0) {
+    return { eligible: true, matchedKeywords, reason: "critical_keyword" }
+  }
+  return {
+    eligible: false,
+    matchedKeywords: [],
+    reason: NEW_CHALLENGE.test(text) ? "new_challenge" : "no_critical_keyword",
   }
 }
 

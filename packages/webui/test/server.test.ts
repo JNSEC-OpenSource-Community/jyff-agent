@@ -168,6 +168,61 @@ describe("WebUI HTTP server", () => {
     expect(project.refreshCalls).toBe(1)
   })
 
+  it("通过 WebUI 审核公告后才标记为可发送", async () => {
+    const project = new FakeDashboardProject()
+    project.announcementCandidateValues = [
+      {
+        key: "notice:revision",
+        platformAnnouncementId: "notice",
+        revisionHash: "revision",
+        title: "Cookie Jar hint",
+        content: "Inspect the updated attachment.",
+        publishedAt: "2026-01-01T00:00:00.000Z",
+        kind: "hint",
+        classificationReason: "critical_keyword",
+        ignored: false,
+        firstSeenAt: "2026-01-01T00:00:01.000Z",
+        lastSeenAt: "2026-01-01T00:00:01.000Z",
+        challengeId: "web-1",
+        matchType: "title",
+        matchedValue: "Cookie Jar",
+        matchedKeywords: ["hint", "update", "attachment"],
+        approvalStatus: "pending",
+        reviewedAt: null,
+        linkedAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    const response = await fetch(`${server.url}/api/announcements/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challengeId: "web-1",
+        announcementKey: "notice:revision",
+        status: "approved",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(project.announcementReviews).toEqual([
+      {
+        challengeId: "web-1",
+        announcementKey: "notice:revision",
+        status: "approved",
+      },
+    ])
+    expect(await response.json()).toMatchObject({
+      announcementCandidates: [{ approvalStatus: "approved" }],
+    })
+  })
+
   it("通过模型凭据 API 导入、列出和移除凭据且不泄露原文", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-auth-server-"))
     roots.push(root)

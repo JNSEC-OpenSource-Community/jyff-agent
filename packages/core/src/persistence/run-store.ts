@@ -256,8 +256,13 @@ export interface ChallengeAnnouncementRecord extends ContestAnnouncementRecord {
   challengeId: string
   matchType: string
   matchedValue: string
+  matchedKeywords: string[]
+  approvalStatus: AnnouncementApprovalStatus
+  reviewedAt: string | null
   linkedAt: string
 }
+
+export type AnnouncementApprovalStatus = "pending" | "approved" | "rejected"
 
 export interface ChallengeBlockEvent {
   id: number
@@ -413,6 +418,9 @@ interface ChallengeAnnouncementRow extends ContestAnnouncementRow {
   challenge_id: string
   match_type: string
   matched_value: string
+  matched_keywords_json: string
+  approval_status: AnnouncementApprovalStatus
+  reviewed_at: string | null
   linked_at: string
 }
 
@@ -528,6 +536,26 @@ function contestAnnouncementFromRow(
     ignored: row.ignored === 1,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
+  }
+}
+
+function challengeAnnouncementFromRow(
+  row: ChallengeAnnouncementRow,
+): ChallengeAnnouncementRecord {
+  const parsedKeywords = JSON.parse(row.matched_keywords_json) as unknown
+  return {
+    ...contestAnnouncementFromRow(row),
+    challengeId: row.challenge_id,
+    matchType: row.match_type,
+    matchedValue: row.matched_value,
+    matchedKeywords: Array.isArray(parsedKeywords)
+      ? parsedKeywords.filter(
+          (keyword): keyword is string => typeof keyword === "string",
+        )
+      : [],
+    approvalStatus: row.approval_status,
+    reviewedAt: row.reviewed_at,
+    linkedAt: row.linked_at,
   }
 }
 
@@ -843,6 +871,10 @@ export class RunStore {
           REFERENCES contest_announcements(announcement_key) ON DELETE CASCADE,
         match_type TEXT NOT NULL,
         matched_value TEXT NOT NULL,
+        matched_keywords_json TEXT NOT NULL DEFAULT '[]',
+        approval_status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (approval_status IN ('pending', 'approved', 'rejected')),
+        reviewed_at TEXT,
         created_at TEXT NOT NULL,
         PRIMARY KEY (challenge_id, announcement_key)
       ) STRICT;
@@ -921,6 +953,31 @@ export class RunStore {
     ] as const
     for (const [name, sql] of tldrUsageMigrations) {
       if (!tldrColumns.has(name)) database.exec(sql)
+    }
+
+    const challengeAnnouncementColumns = new Set(
+      (
+        database
+          .prepare("PRAGMA table_info(challenge_announcements)")
+          .all() as unknown as Array<{ name: string }>
+      ).map((column) => column.name),
+    )
+    const announcementApprovalMigrations = [
+      [
+        "matched_keywords_json",
+        "ALTER TABLE challenge_announcements ADD COLUMN matched_keywords_json TEXT NOT NULL DEFAULT '[]'",
+      ],
+      [
+        "approval_status",
+        "ALTER TABLE challenge_announcements ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'pending'",
+      ],
+      [
+        "reviewed_at",
+        "ALTER TABLE challenge_announcements ADD COLUMN reviewed_at TEXT",
+      ],
+    ] as const
+    for (const [name, sql] of announcementApprovalMigrations) {
+      if (!challengeAnnouncementColumns.has(name)) database.exec(sql)
     }
 
     const opportunityColumns = database
@@ -1467,14 +1524,16 @@ export class RunStore {
     announcementKey: string
     matchType: string
     matchedValue: string
+    matchedKeywords?: readonly string[]
     createdAt?: string
   }): boolean {
     this.assertOpen()
     const result = this.database
       .prepare(`
         INSERT INTO challenge_announcements (
-          challenge_id, announcement_key, match_type, matched_value, created_at
-        ) VALUES (?, ?, ?, ?, ?)
+          challenge_id, announcement_key, match_type, matched_value,
+          matched_keywords_json, approval_status, created_at
+        ) VALUES (?, ?, ?, ?, ?, 'pending', ?)
         ON CONFLICT(challenge_id, announcement_key) DO NOTHING
       `)
       .run(
@@ -1482,6 +1541,7 @@ export class RunStore {
         input.announcementKey,
         input.matchType,
         input.matchedValue,
+        JSON.stringify([...new Set(input.matchedKeywords ?? [])]),
         input.createdAt ?? new Date().toISOString(),
       )
     return Number(result.changes) === 1
@@ -1492,21 +1552,77 @@ export class RunStore {
     const rows = this.database
       .prepare(`
         SELECT a.*, ca.challenge_id, ca.match_type, ca.matched_value,
+          ca.matched_keywords_json, ca.approval_status, ca.reviewed_at,
           ca.created_at AS linked_at
         FROM challenge_announcements ca
         JOIN contest_announcements a
           ON a.announcement_key = ca.announcement_key
         WHERE ca.challenge_id = ? AND a.ignored = 0
+          AND ca.approval_status = 'approved'
         ORDER BY a.published_at ASC, a.announcement_key ASC
       `)
       .all(challengeId) as unknown as ChallengeAnnouncementRow[]
-    return rows.map((row) => ({
-      ...contestAnnouncementFromRow(row),
-      challengeId: row.challenge_id,
-      matchType: row.match_type,
-      matchedValue: row.matched_value,
-      linkedAt: row.linked_at,
-    }))
+    return rows.map(challengeAnnouncementFromRow)
+  }
+
+  announcementCandidates(): ChallengeAnnouncementRecord[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT a.*, ca.challenge_id, ca.match_type, ca.matched_value,
+          ca.matched_keywords_json, ca.approval_status, ca.reviewed_at,
+          ca.created_at AS linked_at
+        FROM challenge_announcements ca
+        JOIN contest_announcements a
+          ON a.announcement_key = ca.announcement_key
+        WHERE a.ignored = 0
+        ORDER BY
+          CASE ca.approval_status WHEN 'pending' THEN 0 ELSE 1 END,
+          a.published_at DESC, a.announcement_key ASC
+      `)
+      .all() as unknown as ChallengeAnnouncementRow[]
+    return rows.map(challengeAnnouncementFromRow)
+  }
+
+  reviewChallengeAnnouncement(input: {
+    challengeId: string
+    announcementKey: string
+    status: Exclude<AnnouncementApprovalStatus, "pending">
+    reviewedAt?: string
+  }): ChallengeAnnouncementRecord {
+    this.assertOpen()
+    const result = this.database
+      .prepare(`
+        UPDATE challenge_announcements
+        SET approval_status = ?, reviewed_at = ?
+        WHERE challenge_id = ? AND announcement_key = ?
+      `)
+      .run(
+        input.status,
+        input.reviewedAt ?? new Date().toISOString(),
+        input.challengeId,
+        input.announcementKey,
+      )
+    if (Number(result.changes) !== 1) {
+      throw new Error(
+        `Announcement candidate not found: ${input.challengeId}/${input.announcementKey}`,
+      )
+    }
+    const row = this.database
+      .prepare(`
+        SELECT a.*, ca.challenge_id, ca.match_type, ca.matched_value,
+          ca.matched_keywords_json, ca.approval_status, ca.reviewed_at,
+          ca.created_at AS linked_at
+        FROM challenge_announcements ca
+        JOIN contest_announcements a
+          ON a.announcement_key = ca.announcement_key
+        WHERE ca.challenge_id = ? AND ca.announcement_key = ?
+      `)
+      .get(
+        input.challengeId,
+        input.announcementKey,
+      ) as unknown as ChallengeAnnouncementRow
+    return challengeAnnouncementFromRow(row)
   }
 
   enqueueSchedulerChallenge(

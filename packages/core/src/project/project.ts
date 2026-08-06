@@ -55,6 +55,7 @@ import {
 import {
   announcementRevision,
   classifyAnnouncement,
+  filterAnnouncementKeywords,
   matchAnnouncementChallenges,
 } from "../orchestration/announcement-matcher.ts"
 import {
@@ -62,6 +63,8 @@ import {
   type WriteupValidationResult,
 } from "../orchestration/writeup-validator.ts"
 import {
+  type AnnouncementApprovalStatus,
+  type ChallengeAnnouncementRecord,
   type EnqueueSchedulerChallenge,
   type MoveSchedulerChallenge,
   type RunEvent,
@@ -427,7 +430,9 @@ export class Project {
     let steered = 0
     for (const announcement of announcements) {
       const classification = classifyAnnouncement(announcement)
+      const keywordFilter = filterAnnouncementKeywords(announcement)
       const revision = announcementRevision(announcement)
+      const ignored = classification.ignored || !keywordFilter.eligible
       this.runStore.persistContestAnnouncement({
         key: revision.key,
         platformAnnouncementId: announcement.id,
@@ -436,10 +441,12 @@ export class Project {
         content: announcement.content,
         publishedAt: announcement.publishedAt,
         kind: classification.kind,
-        classificationReason: classification.reason,
-        ignored: classification.ignored,
+        classificationReason: classification.ignored
+          ? classification.reason
+          : keywordFilter.reason,
+        ignored,
       })
-      if (classification.ignored) continue
+      if (ignored) continue
       for (const match of matchAnnouncementChallenges(
         announcement,
         challenges,
@@ -449,54 +456,91 @@ export class Project {
           announcementKey: revision.key,
           matchType: match.matchType,
           matchedValue: match.matchedValue,
+          matchedKeywords: keywordFilter.matchedKeywords,
         })
         if (created) linked += 1
         if (options.steerActive === false) continue
-        const message = challengeAnnouncementsPrompt([
-          {
-            key: revision.key,
-            title: announcement.title,
-            content: announcement.content,
-            publishedAt: announcement.publishedAt,
-            kind: classification.kind,
-          },
-        ])
-        for (const solver of [...this.solvers]) {
-          if (solver.challenge.id !== match.challengeId || solver.isClosed) {
-            continue
-          }
-          const queued = this.runStore.enqueueAnnouncementDelivery({
-            challengeId: match.challengeId,
-            announcementKey: revision.key,
-            runId: solver.runId,
-          })
-          if (!queued) continue
-          try {
-            await solver.steer(message)
-            this.runStore.observeAnnouncementDelivery({
-              challengeId: match.challengeId,
-              announcementKey: revision.key,
-              runId: solver.runId,
-              status: "delivered",
-            })
-            this.runStore.appendEvent(solver.runId, "announcement_steered", {
-              announcementKey: revision.key,
-              matchType: match.matchType,
-            })
-            steered += 1
-          } catch (error) {
-            this.runStore.observeAnnouncementDelivery({
-              challengeId: match.challengeId,
-              announcementKey: revision.key,
-              runId: solver.runId,
-              status: "failed",
-              error: errorText(error),
-            })
-          }
+        const candidate = this.runStore
+          .announcementCandidates()
+          .find(
+            (item) =>
+              item.challengeId === match.challengeId &&
+              item.key === revision.key,
+          )
+        if (candidate?.approvalStatus === "approved") {
+          steered += await this.deliverAnnouncement(candidate)
         }
       }
     }
     return { announcements: announcements.length, linked, steered }
+  }
+  announcementCandidates(): ChallengeAnnouncementRecord[] {
+    return this.runStore.announcementCandidates()
+  }
+  async reviewChallengeAnnouncement(
+    challengeId: string,
+    announcementKey: string,
+    status: Exclude<AnnouncementApprovalStatus, "pending">,
+  ): Promise<ChallengeAnnouncementRecord> {
+    if (
+      !this.runStore
+        .announcementCandidates()
+        .some(
+          (candidate) =>
+            candidate.challengeId === challengeId &&
+            candidate.key === announcementKey,
+        )
+    ) {
+      throw announcementCandidateNotFound(challengeId, announcementKey)
+    }
+    const reviewed = this.runStore.reviewChallengeAnnouncement({
+      challengeId,
+      announcementKey,
+      status,
+    })
+    if (status === "approved") await this.deliverAnnouncement(reviewed)
+    return reviewed
+  }
+
+  private async deliverAnnouncement(
+    announcement: ChallengeAnnouncementRecord,
+  ): Promise<number> {
+    const message = challengeAnnouncementsPrompt([announcement])
+    let delivered = 0
+    for (const solver of [...this.solvers]) {
+      if (solver.challenge.id !== announcement.challengeId || solver.isClosed) {
+        continue
+      }
+      const queued = this.runStore.enqueueAnnouncementDelivery({
+        challengeId: announcement.challengeId,
+        announcementKey: announcement.key,
+        runId: solver.runId,
+      })
+      if (!queued) continue
+      try {
+        await solver.steer(message)
+        this.runStore.observeAnnouncementDelivery({
+          challengeId: announcement.challengeId,
+          announcementKey: announcement.key,
+          runId: solver.runId,
+          status: "delivered",
+        })
+        this.runStore.appendEvent(solver.runId, "announcement_steered", {
+          announcementKey: announcement.key,
+          matchType: announcement.matchType,
+        })
+        delivered += 1
+      } catch (error) {
+        this.runStore.observeAnnouncementDelivery({
+          challengeId: announcement.challengeId,
+          announcementKey: announcement.key,
+          runId: solver.runId,
+          status: "failed",
+          error: errorText(error),
+        })
+      }
+    }
+    return delivered
   }
   availableSkills(): readonly AgentSkill[] {
     return this.skills
@@ -1250,6 +1294,16 @@ function subagentUnavailable(runId: string): Error {
     {
       code: "subagent_unavailable",
     },
+  )
+}
+
+function announcementCandidateNotFound(
+  challengeId: string,
+  announcementKey: string,
+): Error {
+  return Object.assign(
+    new Error(`公告候选不存在: ${challengeId}/${announcementKey}`),
+    { code: "announcement_candidate_not_found" },
   )
 }
 
