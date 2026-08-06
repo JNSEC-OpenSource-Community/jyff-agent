@@ -3,10 +3,7 @@ import { lstat, readdir, readFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { parse } from "yaml"
-import {
-  BUILTIN_SUBAGENT_ROLE_PROMPTS,
-  SUBAGENT_SHARED_SYSTEM_PROMPT,
-} from "../../prompts/index.ts"
+import { SUBAGENT_SHARED_SYSTEM_PROMPT } from "../../prompts/index.ts"
 import {
   DEFAULT_SUBAGENT_THINKING_LEVEL,
   isThinkingLevel,
@@ -40,68 +37,36 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
     displayName: "General",
     description:
       "General CTF investigation worker for bounded cross-domain research and result verification.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.generalPurpose}`,
-    thinkingLevel: "medium",
-    enabled: true,
-    source: "builtin",
-  },
-  {
-    name: "pwn",
-    displayName: "Pwn",
-    description:
-      "Analyze binary protections, vulnerability primitives, libc constraints, and reproducible exploitation chains.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.pwn}`,
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}
+    
+    Investigate the assigned bounded objective and return a reproducible result.`,
     thinkingLevel: "high",
     enabled: true,
     source: "builtin",
   },
   {
-    name: "reverse",
-    displayName: "Reverse",
-    description:
-      "Perform static and dynamic reverse engineering, deobfuscation, protocol analysis, and custom VM analysis.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.reverse}`,
-    thinkingLevel: "high",
+    name: "explorer",
+    displayName: "Explore",
+    description: "Dive into source code and explore specific attack face.",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}
+
+    You are a information security specialist. You excel at thoroughly navigating and exploring codebases.
+    Your role is EXCLUSIVELY to search and analyze existing code to explore the task user provided.`,
+    thinkingLevel: "max",
     enabled: true,
     source: "builtin",
   },
   {
-    name: "web",
-    displayName: "Web",
+    name: "fuzzer",
+    displayName: "Fuzz",
     description:
-      "Analyze HTTP applications, authentication, injection, request chains, and business-logic vulnerabilities.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.web}`,
+      "Fuzz the potential opportunity, use when you need to get some luck from blackbox challenge or while stuck.",
+    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}
+    
+    You are a fuzz specialist. Use tools like fuff or python to explore opportunities of solver's task.
+    Don't get stuck in an endless loop, stop when there's enough results or you cannot get any more useful result.
+    Clear useless fuzzing scripts or other temp files before stop.`,
     thinkingLevel: "medium",
-    enabled: true,
-    source: "builtin",
-  },
-  {
-    name: "crypto",
-    displayName: "Crypto",
-    description:
-      "Identify cryptographic constructions, weak parameters, mathematical relations, and scriptable solutions.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.crypto}`,
-    thinkingLevel: "high",
-    enabled: true,
-    source: "builtin",
-  },
-  {
-    name: "misc",
-    displayName: "Misc",
-    description:
-      "Handle forensics, steganography, traffic, file formats, encodings, and other mixed tasks.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.misc}`,
-    thinkingLevel: "medium",
-    enabled: true,
-    source: "builtin",
-  },
-  {
-    name: "reviewer",
-    displayName: "Reviewer",
-    description:
-      "Review other Agents' evidence, scripts, and candidate solutions while actively challenging assumptions.",
-    systemPrompt: `${SUBAGENT_SHARED_SYSTEM_PROMPT}\n${BUILTIN_SUBAGENT_ROLE_PROMPTS.reviewer}`,
-    thinkingLevel: "low",
     enabled: true,
     source: "builtin",
   },

@@ -16,7 +16,7 @@ afterEach(async () => {
 })
 
 describe("challenge workspace", () => {
-  it("maps an untrusted challenge ID to a stable bounded path", async () => {
+  it("maps an challenge ID to a stable bounded path", async () => {
     const root = await mkdtemp(join(tmpdir(), "challenge-workspace-"))
     roots.push(root)
     const first = challengeWorkspacePath(root, "../../题目/one")

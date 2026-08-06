@@ -84,9 +84,6 @@ export interface ContestRunnerRunOptions {
   signal?: AbortSignal
 }
 
-const DEFAULT_PROMPT =
-  "解决当前 CTF 题目。检查初始题目信息和已下载附件，必要时启动远程实例，找到并提交 Flag。"
-
 /**
  * 比赛级单进程调度器。
  *
@@ -297,7 +294,7 @@ export class ContestRunner {
             ? INCOMPLETE_CONTINUATION_PROMPT
             : typeof this.options.prompt === "function"
               ? await this.options.prompt(context)
-              : (this.options.prompt ?? DEFAULT_PROMPT)
+              : (this.options.prompt ?? "Start solving this CTF challenge.")
           solver = await this.project.createSolver(challenge.id, {
             agent,
             compaction: this.options.compaction,

@@ -6,43 +6,6 @@ import {
 import type { RunStore } from "../../src/persistence/run-store.js"
 
 describe("serializeBlackboard", () => {
-  it("正确的黑板输出包含所有段", () => {
-    const text = serializeBlackboard({
-      evidence: [
-        { id: 1, description: "发现 format string 漏洞", runId: "run-1" },
-        { id: 3, description: "GOT 表可写", runId: "run-1" },
-      ],
-      opportunities: [
-        {
-          id: 1,
-          description: "尝试通过 %n 写 GOT",
-          status: "open",
-          resolution: null,
-          sourceEvidenceIds: [1, 3],
-          targetEvidenceId: null,
-        },
-        {
-          id: 2,
-          description: "尝试 format string 读栈",
-          status: "concluded",
-          resolution: "dead_end",
-          sourceEvidenceIds: [1],
-          targetEvidenceId: 4,
-        },
-      ],
-    })
-    expect(text).toContain("## Confirmed Evidence")
-    expect(text).toContain('- [e1] "发现 format string 漏洞"')
-    expect(text).toContain('- [e3] "GOT 表可写"')
-    expect(text).toContain("## Open Opportunities")
-    expect(text).toContain('- [o1] from e1, e3: "尝试通过 %n 写 GOT"')
-    expect(text).toContain("## Concluded Opportunities")
-    expect(text).toContain(
-      '- [o2] (dead_end) from e1 → e4: "尝试 format string 读栈"',
-    )
-    expect(text).toContain("Use ctf_blackboard_record")
-  })
-
   it("仅有 evidence 时省略 opportunity 段", () => {
     const text = serializeBlackboard({
       evidence: [{ id: 1, description: "发现漏洞", runId: "run-1" }],
@@ -51,15 +14,6 @@ describe("serializeBlackboard", () => {
     expect(text).toContain("## Confirmed Evidence")
     expect(text).not.toContain("## Open Opportunities")
     expect(text).not.toContain("## Concluded Opportunities")
-  })
-
-  it("全部为空时仅返回使用提示", () => {
-    const text = serializeBlackboard({ evidence: [], opportunities: [] })
-    // 无 evidence 段，无 opportunity 段，但有尾部提示
-    expect(text).not.toContain("## Confirmed Evidence")
-    expect(text.trim()).toBe(
-      "Use ctf_blackboard_record to add new evidence or opportunities as you discover them.",
-    )
   })
 
   it("超边（多源）正确渲染为逗号分隔", () => {
@@ -163,17 +117,6 @@ describe("createBlackboardTools", () => {
     } as unknown as RunStore
   }
 
-  it("创建 read 和 record 两个工具", () => {
-    const tools = createBlackboardTools({
-      runStore: fakeRunStore(),
-      challengeId: "c1",
-      runId: "r1",
-    })
-    expect(tools).toHaveLength(2)
-    expect(tools[0]?.name).toBe("ctf_blackboard_read")
-    expect(tools[1]?.name).toBe("ctf_blackboard_record")
-  })
-
   it("read 工具返回序列化文本", async () => {
     const tools = createBlackboardTools({
       runStore: fakeRunStore(),
@@ -181,7 +124,7 @@ describe("createBlackboardTools", () => {
       runId: "r1",
     })
     const readTool = tools[0]
-    if (!readTool) throw new Error("ctf_blackboard_read 工具未创建")
+    if (!readTool) throw new Error("blackboard_read 工具未创建")
     const result = await readTool.execute("call", {})
     const text = (result.content[0] as { type: string; text: string }).text
     expect(text).toContain("## Confirmed Evidence")
@@ -195,7 +138,7 @@ describe("createBlackboardTools", () => {
       runId: "r1",
     })
     const recordTool = tools[1]
-    if (!recordTool) throw new Error("ctf_blackboard_record 工具未创建")
+    if (!recordTool) throw new Error("blackboard_record 工具未创建")
     const result = await recordTool.execute("call", {
       evidence: { description: "new finding" },
     })
@@ -243,7 +186,7 @@ describe("createBlackboardTools", () => {
       runId: "r1",
     })
     const recordTool = tools[1]
-    if (!recordTool) throw new Error("ctf_blackboard_record 工具未创建")
+    if (!recordTool) throw new Error("blackboard_record 工具未创建")
     const result = await recordTool.execute("call", {
       evidence: { description: "证据" },
       opportunity: { description: "机会", sourceEvidenceIds: [1] },

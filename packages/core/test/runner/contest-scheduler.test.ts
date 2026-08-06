@@ -309,15 +309,9 @@ describe("ContestScheduler", () => {
         ),
         "utf8",
       )
-      expect(session).toContain(
-        '<challenge_blackboard encoding=\\"json\\" trust=\\"untrusted\\">',
-      )
-      expect(session).toContain(
-        '<active_subagents encoding=\\"json\\" trust=\\"untrusted\\">',
-      )
-      expect(session).toContain(
-        '<challenge_announcements trust=\\"untrusted\\">',
-      )
+      expect(session).toContain('<challenge_blackboard encoding=\\"json\\">')
+      expect(session).toContain('<active_subagents encoding=\\"json\\">')
+      expect(session).toContain("<challenge_announcements>")
       expect(project.challengeBlockEvents(item.id)).toEqual([
         expect.objectContaining({ delta: 1, reason: "model_stop" }),
         expect.objectContaining({

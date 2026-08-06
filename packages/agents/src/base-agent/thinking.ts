@@ -2,8 +2,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { type Api, clampThinkingLevel, type Model } from "@earendil-works/pi-ai"
 
 /** Match Pi Coding Agent's application-level default. */
-export const DEFAULT_SOLVER_THINKING_LEVEL = "medium" satisfies ThinkingLevel
-export const DEFAULT_SUBAGENT_THINKING_LEVEL = "medium" satisfies ThinkingLevel
+export const DEFAULT_SOLVER_THINKING_LEVEL = "max" satisfies ThinkingLevel
+export const DEFAULT_SUBAGENT_THINKING_LEVEL = "low" satisfies ThinkingLevel
 
 const THINKING_LEVELS = new Set<ThinkingLevel>([
   "off",

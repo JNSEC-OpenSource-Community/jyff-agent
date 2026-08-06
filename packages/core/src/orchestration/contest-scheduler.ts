@@ -139,9 +139,6 @@ interface ActiveItem {
   operation?: Promise<void>
 }
 
-const DEFAULT_PROMPT =
-  "Solve the current CTF challenge. Inspect the initial challenge data and downloaded attachments, start the remote instance when necessary, and find and submit the flag. Keep executing concrete analysis and validation rather than ending with an unexecuted plan. Continue using tools unless the correct flag is accepted or an external blocker cannot be bypassed."
-
 /**
  * 长驻的混合调度控制面：
  * - 自动模式把所有未解题目加入队列；
@@ -665,7 +662,7 @@ export class ContestScheduler {
                   source: active.source,
                 },
               )
-            : (this.options.prompt ?? DEFAULT_PROMPT)
+            : (this.options.prompt ?? "Start solving this CTF challenge.")
         const outcome = await runSolverPrompt({
           solver,
           prompt,

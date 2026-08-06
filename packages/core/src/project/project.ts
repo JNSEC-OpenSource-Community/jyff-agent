@@ -37,12 +37,9 @@ import type {
 } from "@earendil-works/pi-agent-core"
 import {
   activeSubagentsPrompt,
-  BLACKBOARD_SYSTEM_GUIDANCE,
   blackboardSnapshotPrompt,
-  CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
   challengeAnnouncementsPrompt,
   challengeContextPrompt,
-  subagentDelegationPrompt,
 } from "../../prompts/index.ts"
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
 import {
@@ -311,7 +308,7 @@ export class Project {
       if (existing?.content) {
         initialMessages.push({
           role: "user",
-          content: `<existing_tldr trust="untrusted">${existing.content}</existing_tldr>`,
+          content: `<existing_tldr>${existing.content}</existing_tldr>`,
           timestamp: Date.now(),
         })
       }
@@ -882,12 +879,7 @@ export class Project {
               }),
               ...createSubagentManagerTools(subagentManager),
             ],
-            systemPrompt: [
-              options.agent.initialState?.systemPrompt,
-              CHALLENGE_CONTEXT_SYSTEM_GUIDANCE,
-              BLACKBOARD_SYSTEM_GUIDANCE,
-              subagentDelegationPrompt(subagentManager.availableRoles()),
-            ]
+            systemPrompt: [options.agent.initialState?.systemPrompt]
               .filter(Boolean)
               .join("\n\n"),
             messages: [
@@ -1253,7 +1245,7 @@ function tracedToolArgs(
     return { path: clippedText(input.path, 240), content: "[omitted]" }
   if (toolName === "edit")
     return { path: clippedText(input.path, 240), edits: "[omitted]" }
-  if (toolName === "ctf_blackboard_record") {
+  if (toolName === "blackboard_record") {
     return {
       operations: ["evidence", "opportunity", "concludeOpportunity"].filter(
         (key) => input[key] !== undefined,

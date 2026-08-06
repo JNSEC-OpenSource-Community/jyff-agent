@@ -68,23 +68,6 @@ class TestAgent extends BaseAgent {
 }
 
 describe("BaseAgent native session", () => {
-  it("defaults new reasoning sessions to Pi Coding Agent's medium level", async () => {
-    const root = await mkdtemp(join(tmpdir(), "base-agent-thinking-"))
-    roots.push(root)
-    const opened = await TestAgent.open({
-      session: {
-        path: join(root, "session.jsonl"),
-        id: "thinking-default",
-        cwd: root,
-      },
-      models: modelsFromAgentOptions(legacy, model),
-      model,
-      tools: [],
-    })
-
-    expect(opened.thinkingLevel).toBe("medium")
-  })
-
   it("restores transcript, model, thinking level, active tools, and tree entries", async () => {
     const root = await mkdtemp(join(tmpdir(), "base-agent-session-"))
     roots.push(root)

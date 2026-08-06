@@ -1,6 +1,5 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
-import { BLACKBOARD_RECORD_REMINDER_PROMPT } from "../../prompts/index.ts"
 import {
   BLACKBOARD_DESCRIPTION_MAX_LENGTH,
   BLACKBOARD_SOURCE_MAX_ITEMS,
@@ -78,7 +77,6 @@ export function serializeBlackboard(
     lines.push("")
   }
 
-  lines.push(BLACKBOARD_RECORD_REMINDER_PROMPT)
   const text = lines.join("\n")
   const maxCharacters = Math.max(
     0,
@@ -88,7 +86,7 @@ export function serializeBlackboard(
 
   const suffix = [
     "",
-    "[Blackboard snapshot truncated. Call ctf_blackboard_read for the latest bounded snapshot.]",
+    "[Blackboard snapshot truncated. Call blackboard_read for the latest bounded snapshot.]",
   ].join("\n")
   if (suffix.length >= maxCharacters) return suffix.slice(0, maxCharacters)
   return text.slice(0, maxCharacters - suffix.length) + suffix
@@ -107,10 +105,9 @@ export function createBlackboardTools(
 
   return [
     {
-      name: "ctf_blackboard_read",
+      name: "blackboard_read",
       label: "Read Blackboard",
-      description:
-        "Read the current state of the shared challenge blackboard, including all confirmed evidence and open/concluded opportunities.",
+      description: "Read the current state of the shared challenge blackboard.",
       parameters: Type.Object({}),
       executionMode: "sequential",
       async execute() {
@@ -123,12 +120,10 @@ export function createBlackboardTools(
       },
     },
     {
-      name: "ctf_blackboard_record",
+      name: "blackboard_record",
       label: "Record to Blackboard",
       description:
-        "Record to the shared challenge blackboard. You can record evidence (confirmed findings), " +
-        "declare opportunities (experimental directions from existing evidence), conclude opportunities " +
-        "as confirmed or dead_end while atomically recording result Evidence, or combine these operations. " +
+        "Record to the shared challenge blackboard. You can multiple operations. " +
         'Evidence must be one object such as {"evidence":{"description":"verified finding"}}; ' +
         "do not pass a string or an array as evidence.",
       parameters: Type.Object({

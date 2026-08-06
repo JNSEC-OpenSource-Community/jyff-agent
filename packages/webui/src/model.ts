@@ -366,8 +366,8 @@ function humanToolName(tool: string): string {
     ctf_submit_flag: "提交 Flag",
     ctf_instance_start: "启动远程环境",
     ctf_instance_destroy: "关闭远程环境",
-    ctf_blackboard_read: "读取黑板",
-    ctf_blackboard_record: "更新黑板",
+    blackboard_read: "读取黑板",
+    blackboard_record: "更新黑板",
   }
   return labels[tool] ?? tool
 }

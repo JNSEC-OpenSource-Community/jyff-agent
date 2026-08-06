@@ -18,10 +18,10 @@
 
 主 Solver 拥有两个顺序执行的工具：
 
-- `ctf_blackboard_read`：读取当前题目的有界快照；
-- `ctf_blackboard_record`：新增 Evidence、声明 Opportunity，或在产生新 Evidence 的同时结束 Opportunity。
+- `blackboard_read`：读取当前题目的有界快照；
+- `blackboard_record`：新增 Evidence、声明 Opportunity，或在产生新 Evidence 的同时结束 Opportunity。
 
-`ctf_blackboard_record` 的输入结构如下：
+`blackboard_record` 的输入结构如下：
 
 ```json
 {
@@ -52,7 +52,7 @@ SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver
 </challenge_blackboard>
 ```
 
-固定的 system prompt 明确说明这段内容不可信。动态快照不会拼进 system prompt。自动注入最多 16,000 字符，主动读取最多 64,000 字符；发生截断时会提示 Solver 再次调用读取工具。
+动态快照不会拼进 system prompt。自动注入最多 16,000 字符，主动读取最多 64,000 字符；发生截断时会提示 Solver 再次调用读取工具。
 
 同一题因为 Session block 而创建全新 Run 时，新 Solver 会读取同一题目的黑板，因此关键进度应及时记录，而不能只留在即将结束的会话里。
 

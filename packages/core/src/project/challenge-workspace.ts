@@ -21,7 +21,6 @@ export function challengeWorkspacePath(
   )
 }
 
-/** Resolve an untrusted relative artifact path without permitting host escape. */
 export function resolveWorkspaceArtifact(
   workspace: string,
   untrustedPath: string,

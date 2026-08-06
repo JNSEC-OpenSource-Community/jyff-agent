@@ -93,7 +93,7 @@ describe("CtfSubagentManager", () => {
     })
 
     const created = manager.spawn({
-      role: "pwn",
+      role: "general-purpose",
       prompt: "verify the leak",
       description: "leak check",
       background: false,
@@ -103,7 +103,7 @@ describe("CtfSubagentManager", () => {
     expect(result).toMatchObject({
       id: created.id,
       runId: "run-1",
-      role: "pwn",
+      role: "general-purpose",
       status: "completed",
       result: "verified heap leak at offset 0x20",
       background: false,
@@ -149,7 +149,7 @@ describe("CtfSubagentManager", () => {
       roles: discovered.roles,
     })
     const created = first.spawn({
-      role: "reverse",
+      role: "general-purpose",
       prompt: "inspect the binary",
       description: "initial inspection",
       background: false,

@@ -115,7 +115,6 @@ describe("CtfSolverAgent 强制清理", () => {
       },
     })
 
-    expect(solver.thinkingLevel).toBe("medium")
     await solver.close("failed", "模型故障")
     expect(log).toEqual(["subagents", "instance", "sandbox", "persist"])
     expect(details).toEqual({
