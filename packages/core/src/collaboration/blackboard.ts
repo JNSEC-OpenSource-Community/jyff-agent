@@ -229,5 +229,110 @@ export function createBlackboardTools(
         return result(details)
       },
     },
+    {
+      name: "blackboard_manage",
+      label: "Manage Blackboard Entry",
+      description:
+        "Correct or delete one existing blackboard Evidence or Opportunity by ID. " +
+        "Referenced Evidence must not be deleted until its Opportunities are updated or deleted.",
+      parameters: Type.Object({
+        action: Type.Union([
+          Type.Literal("update_evidence"),
+          Type.Literal("delete_evidence"),
+          Type.Literal("update_opportunity"),
+          Type.Literal("delete_opportunity"),
+        ]),
+        evidenceId: Type.Optional(Type.Integer({ minimum: 1 })),
+        opportunityId: Type.Optional(Type.Integer({ minimum: 1 })),
+        description: Type.Optional(
+          Type.String({
+            minLength: 1,
+            maxLength: BLACKBOARD_DESCRIPTION_MAX_LENGTH,
+          }),
+        ),
+        sourceEvidenceIds: Type.Optional(
+          Type.Array(Type.Integer({ minimum: 1 }), {
+            minItems: 1,
+            maxItems: BLACKBOARD_SOURCE_MAX_ITEMS,
+          }),
+        ),
+      }),
+      executionMode: "sequential",
+      async execute(_id, params) {
+        const input = params as {
+          action:
+            | "update_evidence"
+            | "delete_evidence"
+            | "update_opportunity"
+            | "delete_opportunity"
+          evidenceId?: number
+          opportunityId?: number
+          description?: string
+          sourceEvidenceIds?: number[]
+        }
+        try {
+          switch (input.action) {
+            case "update_evidence": {
+              if (input.evidenceId === undefined || !input.description) {
+                throw new Error(
+                  "update_evidence requires evidenceId and description",
+                )
+              }
+              return result({
+                action: input.action,
+                record: runStore.updateEvidence(
+                  challengeId,
+                  input.evidenceId,
+                  input.description,
+                ),
+              })
+            }
+            case "delete_evidence": {
+              if (input.evidenceId === undefined) {
+                throw new Error("delete_evidence requires evidenceId")
+              }
+              return result({
+                action: input.action,
+                record: runStore.deleteEvidence(challengeId, input.evidenceId),
+              })
+            }
+            case "update_opportunity": {
+              if (input.opportunityId === undefined) {
+                throw new Error("update_opportunity requires opportunityId")
+              }
+              return result({
+                action: input.action,
+                record: runStore.updateOpportunity(
+                  challengeId,
+                  input.opportunityId,
+                  {
+                    ...(input.description === undefined
+                      ? {}
+                      : { description: input.description }),
+                    ...(input.sourceEvidenceIds === undefined
+                      ? {}
+                      : { sourceEvidenceIds: input.sourceEvidenceIds }),
+                  },
+                ),
+              })
+            }
+            case "delete_opportunity": {
+              if (input.opportunityId === undefined) {
+                throw new Error("delete_opportunity requires opportunityId")
+              }
+              return result({
+                action: input.action,
+                record: runStore.deleteOpportunity(
+                  challengeId,
+                  input.opportunityId,
+                ),
+              })
+            }
+          }
+        } catch (error) {
+          return result({ action: input.action, error: errorText(error) })
+        }
+      },
+    },
   ]
 }

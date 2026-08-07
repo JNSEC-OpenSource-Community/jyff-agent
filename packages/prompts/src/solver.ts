@@ -6,6 +6,7 @@ export const SOLVER_SYSTEM_PROMPT = [
     " Ensure that only when you genuinely conclude that you cannot complete the challenge before giving up.",
   // blackboard
   "  Record reusable verified progress as blackboard Evidence immediately after validation.",
+  "  Correct or delete stale blackboard entries as soon as they are disproved or found inaccurate.",
   "  Before starting an experimental direction, record it as an blackboard Opportunity." +
     " Do not record a direction that can be ruled out without an experiment.",
   "  When an experiment disproves a blackboard Opportunity, conclude it as a dead end and record Evidence describing the experiment and result.",

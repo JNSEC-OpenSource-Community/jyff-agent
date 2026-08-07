@@ -1475,6 +1475,13 @@ function tracedToolArgs(
       ),
     }
   }
+  if (toolName === "blackboard_manage") {
+    return {
+      action: clippedText(input.action, 64),
+      evidenceId: input.evidenceId,
+      opportunityId: input.opportunityId,
+    }
+  }
   return Object.fromEntries(
     Object.entries(input)
       .slice(0, 8)

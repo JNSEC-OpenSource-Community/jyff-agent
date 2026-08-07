@@ -215,7 +215,11 @@ describe("Project", () => {
     expect(toolNames).not.toContain("ctf_download_attachment")
     expect(toolNames).not.toContain("load_skill")
     expect(toolNames).toEqual(
-      expect.arrayContaining(["blackboard_read", "blackboard_record"]),
+      expect.arrayContaining([
+        "blackboard_read",
+        "blackboard_record",
+        "blackboard_manage",
+      ]),
     )
     expect(solver.state.systemPrompt).toContain("<available_skills>")
     expect(solver.state.systemPrompt).toContain(

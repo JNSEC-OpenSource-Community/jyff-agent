@@ -477,6 +477,16 @@ function opportunityFromRow(
   }
 }
 
+function evidenceRecordFromRow(row: EvidenceRow): EvidenceRecord {
+  return {
+    id: row.id,
+    challengeId: row.challenge_id,
+    description: row.description,
+    runId: row.run_id,
+    createdAt: row.created_at,
+  }
+}
+
 function evidenceToSummary(
   row: EvidenceRow,
 ): BlackboardSummary["evidence"][number] {
@@ -610,6 +620,18 @@ function normalizedDescription(value: string, field: string): string {
     )
   }
   return normalized
+}
+
+function normalizedSourceEvidenceIds(sourceEvidenceIds: number[]): number[] {
+  if (sourceEvidenceIds.length === 0) {
+    throw new Error("sourceEvidenceIds must not be empty")
+  }
+  if (sourceEvidenceIds.length > BLACKBOARD_SOURCE_MAX_ITEMS) {
+    throw new Error(
+      `sourceEvidenceIds must not contain more than ${BLACKBOARD_SOURCE_MAX_ITEMS} items`,
+    )
+  }
+  return [...new Set(sourceEvidenceIds)]
 }
 
 function runFromRow(row: RunRow): RunRecord {
@@ -2223,6 +2245,76 @@ export class RunStore {
     }
   }
 
+  updateEvidence(
+    challengeId: string,
+    evidenceId: number,
+    description: string,
+  ): EvidenceRecord {
+    this.assertOpen()
+    const normalized = normalizedDescription(description, "description")
+    const row = this.database
+      .prepare(`
+        SELECT * FROM challenge_evidence
+        WHERE id = ? AND challenge_id = ?
+      `)
+      .get(evidenceId, challengeId) as unknown as EvidenceRow | undefined
+    if (!row) {
+      throw new Error(
+        `Evidence ${evidenceId} not found for challenge ${challengeId}`,
+      )
+    }
+    this.database
+      .prepare(`
+        UPDATE challenge_evidence SET description = ?
+        WHERE id = ? AND challenge_id = ?
+      `)
+      .run(normalized, evidenceId, challengeId)
+    return evidenceRecordFromRow({ ...row, description: normalized })
+  }
+
+  deleteEvidence(challengeId: string, evidenceId: number): EvidenceRecord {
+    this.assertOpen()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.database
+        .prepare(`
+          SELECT * FROM challenge_evidence
+          WHERE id = ? AND challenge_id = ?
+        `)
+        .get(evidenceId, challengeId) as unknown as EvidenceRow | undefined
+      if (!row) {
+        throw new Error(
+          `Evidence ${evidenceId} not found for challenge ${challengeId}`,
+        )
+      }
+      const reference = this.database
+        .prepare(`
+          SELECT o.id
+          FROM challenge_opportunities o
+          LEFT JOIN challenge_opportunity_sources os ON os.opportunity_id = o.id
+          WHERE o.challenge_id = ?
+            AND (os.evidence_id = ? OR o.target_evidence_id = ?)
+          LIMIT 1
+        `)
+        .get(challengeId, evidenceId, evidenceId) as { id: number } | undefined
+      if (reference) {
+        throw new Error(
+          `Evidence ${evidenceId} is referenced by Opportunity ${reference.id}; update or delete that opportunity first`,
+        )
+      }
+      this.database
+        .prepare(
+          "DELETE FROM challenge_evidence WHERE id = ? AND challenge_id = ?",
+        )
+        .run(evidenceId, challengeId)
+      this.database.exec("COMMIT")
+      return evidenceRecordFromRow(row)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
   recordOpportunity(
     challengeId: string,
     runId: string,
@@ -2231,15 +2323,7 @@ export class RunStore {
   ): OpportunityRecord {
     this.assertOpen()
     const normalized = normalizedDescription(description, "description")
-    if (sourceEvidenceIds.length === 0) {
-      throw new Error("sourceEvidenceIds must not be empty")
-    }
-    if (sourceEvidenceIds.length > BLACKBOARD_SOURCE_MAX_ITEMS) {
-      throw new Error(
-        `sourceEvidenceIds must not contain more than ${BLACKBOARD_SOURCE_MAX_ITEMS} items`,
-      )
-    }
-    const deduped = [...new Set(sourceEvidenceIds)]
+    const deduped = normalizedSourceEvidenceIds(sourceEvidenceIds)
     const timestamp = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
@@ -2249,19 +2333,8 @@ export class RunStore {
         challengeId,
         BLACKBOARD_MAX_OPPORTUNITIES_PER_CHALLENGE,
       )
-      // 校验所有 source evidence 属于同一个 challenge，防止跨题知识串联
-      const placeholders = deduped.map(() => "?").join(", ")
-      const rows = this.database
-        .prepare(`
-        SELECT id FROM challenge_evidence
-        WHERE id IN (${placeholders}) AND challenge_id = ?
-      `)
-        .all(...deduped, challengeId) as unknown as { id: number }[]
-      if (rows.length !== deduped.length) {
-        throw new Error(
-          "One or more source evidence IDs do not belong to this challenge",
-        )
-      }
+      // 校验所有 source evidence 属于同一个 challenge，防止跨题知识串联。
+      this.assertEvidenceBelongsToChallenge(challengeId, deduped)
 
       const result = this.database
         .prepare(`
@@ -2289,6 +2362,124 @@ export class RunStore {
         createdAt: timestamp,
         concludedAt: null,
       }
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  updateOpportunity(
+    challengeId: string,
+    opportunityId: number,
+    input: { description?: string; sourceEvidenceIds?: number[] },
+  ): OpportunityRecord {
+    this.assertOpen()
+    if (
+      input.description === undefined &&
+      input.sourceEvidenceIds === undefined
+    ) {
+      throw new Error("description or sourceEvidenceIds is required")
+    }
+    const normalized =
+      input.description === undefined
+        ? undefined
+        : normalizedDescription(input.description, "description")
+    const sources =
+      input.sourceEvidenceIds === undefined
+        ? undefined
+        : normalizedSourceEvidenceIds(input.sourceEvidenceIds)
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.database
+        .prepare(`
+          SELECT * FROM challenge_opportunities
+          WHERE id = ? AND challenge_id = ?
+        `)
+        .get(opportunityId, challengeId) as unknown as
+        | OpportunityRow
+        | undefined
+      if (!row) {
+        throw new Error(
+          `Opportunity ${opportunityId} not found for challenge ${challengeId}`,
+        )
+      }
+      if (sources) this.assertEvidenceBelongsToChallenge(challengeId, sources)
+      this.database
+        .prepare(`
+          UPDATE challenge_opportunities SET description = ?
+          WHERE id = ? AND challenge_id = ?
+        `)
+        .run(normalized ?? row.description, opportunityId, challengeId)
+      if (sources) {
+        this.database
+          .prepare(
+            "DELETE FROM challenge_opportunity_sources WHERE opportunity_id = ?",
+          )
+          .run(opportunityId)
+        const insertSource = this.database.prepare(`
+          INSERT INTO challenge_opportunity_sources (opportunity_id, evidence_id)
+          VALUES (?, ?)
+        `)
+        for (const evidenceId of sources) {
+          insertSource.run(opportunityId, evidenceId)
+        }
+      }
+      const updated = this.database
+        .prepare("SELECT * FROM challenge_opportunities WHERE id = ?")
+        .get(opportunityId) as unknown as OpportunityRow
+      const sourceRows = this.database
+        .prepare(`
+          SELECT evidence_id FROM challenge_opportunity_sources
+          WHERE opportunity_id = ? ORDER BY evidence_id
+        `)
+        .all(opportunityId) as unknown as OpportunitySourceRow[]
+      this.database.exec("COMMIT")
+      return opportunityFromRow(
+        updated,
+        sourceRows.map((source) => source.evidence_id),
+      )
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  deleteOpportunity(
+    challengeId: string,
+    opportunityId: number,
+  ): OpportunityRecord {
+    this.assertOpen()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.database
+        .prepare(`
+          SELECT * FROM challenge_opportunities
+          WHERE id = ? AND challenge_id = ?
+        `)
+        .get(opportunityId, challengeId) as unknown as
+        | OpportunityRow
+        | undefined
+      if (!row) {
+        throw new Error(
+          `Opportunity ${opportunityId} not found for challenge ${challengeId}`,
+        )
+      }
+      const sourceRows = this.database
+        .prepare(`
+          SELECT evidence_id FROM challenge_opportunity_sources
+          WHERE opportunity_id = ? ORDER BY evidence_id
+        `)
+        .all(opportunityId) as unknown as OpportunitySourceRow[]
+      this.database
+        .prepare(
+          "DELETE FROM challenge_opportunities WHERE id = ? AND challenge_id = ?",
+        )
+        .run(opportunityId, challengeId)
+      this.database.exec("COMMIT")
+      return opportunityFromRow(
+        row,
+        sourceRows.map((source) => source.evidence_id),
+      )
     } catch (error) {
       this.database.exec("ROLLBACK")
       throw error
@@ -2505,6 +2696,24 @@ export class RunStore {
     if (row.challenge_id !== challengeId) {
       throw new Error(
         `Run ${runId} does not belong to challenge ${challengeId}`,
+      )
+    }
+  }
+
+  private assertEvidenceBelongsToChallenge(
+    challengeId: string,
+    evidenceIds: number[],
+  ): void {
+    const placeholders = evidenceIds.map(() => "?").join(", ")
+    const rows = this.database
+      .prepare(`
+        SELECT id FROM challenge_evidence
+        WHERE id IN (${placeholders}) AND challenge_id = ?
+      `)
+      .all(...evidenceIds, challengeId) as unknown as { id: number }[]
+    if (rows.length !== evidenceIds.length) {
+      throw new Error(
+        "One or more source evidence IDs do not belong to this challenge",
       )
     }
   }
