@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { RunSessionExportMetadata } from "@ctf-agent/core"
 import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent"
+import type { DashboardConversation } from "./types.ts"
 
 interface PiHtmlExportModule {
   exportFromFile(inputPath: string, outputPath?: string): Promise<string>
@@ -62,4 +63,19 @@ export async function piSessionHasConversation(
     .some(
       (entry) => entry.type === "message" && entry.message.role === "assistant",
     )
+}
+
+/** 读取当前 Pi 分支上的原生消息，供 WebUI 的 Solver/SubAgent 对话视图复用。 */
+export function readPiSessionConversation(
+  sessionPath: string,
+): DashboardConversation {
+  const messages = SessionManager.open(sessionPath)
+    .getBranch()
+    .filter((entry) => entry.type === "message")
+    .map((entry) => ({
+      entryId: entry.id,
+      timestamp: entry.timestamp,
+      message: entry.message,
+    }))
+  return { messages }
 }

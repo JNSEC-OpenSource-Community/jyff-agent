@@ -379,6 +379,7 @@ export class FakeDashboardProject implements DashboardProject {
 }
 
 export class FakeDashboardScheduler implements DashboardScheduler {
+  dispatchCalls: Array<{ challengeId: string; force?: boolean }> = []
   retryAttemptCalls: Array<{ runId: string; prompt?: string }> = []
   value: ContestSchedulerSnapshot = {
     available: true,
@@ -416,12 +417,16 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     return this.snapshot()
   }
 
-  async dispatch(challengeId: string): Promise<ContestSchedulerSnapshot> {
+  async dispatch(
+    challengeId: string,
+    options: { force?: boolean } = {},
+  ): Promise<ContestSchedulerSnapshot> {
+    this.dispatchCalls.push({ challengeId, ...options })
     this.value.queued.push({
       challengeId,
-      source: "manual",
-      lane: "normal",
-      manualOverride: false,
+      source: options.force ? "revival" : "manual",
+      lane: options.force ? "blocked" : "normal",
+      manualOverride: options.force === true,
       enqueuedAt: now,
       position: this.value.queued.length + 1,
       version: 1,

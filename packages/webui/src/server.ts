@@ -19,17 +19,23 @@ import {
 import {
   exportPiSessionHtml,
   piSessionHasConversation,
+  readPiSessionConversation,
 } from "./pi-html-export.ts"
 import type {
+  AgentModelBindings,
   DashboardControlPlane,
+  DashboardConversation,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardProject,
+  DashboardProjectRuntimeConfiguration,
   DashboardScheduler,
   DashboardSnapshot,
+  DashboardWebUiAuthentication,
   ModelConfigurationUpdate,
   ModelConfigurationView,
   ModelPoolEntryUpdate,
+  ProjectRuntimeConfigurationView,
 } from "./types.ts"
 
 export interface WebUiOptions {
@@ -42,6 +48,12 @@ export interface WebUiOptions {
   schedulerReconcileIntervalMs?: number
   modelConfiguration?: DashboardModelConfiguration
   modelAuthentication?: DashboardModelAuthentication
+  authentication?: DashboardWebUiAuthentication
+  secureCookies?: boolean
+  projectRuntimeConfiguration?: (
+    projectId: string,
+  ) => DashboardProjectRuntimeConfiguration | undefined
+  onProjectDeleted?: (projectId: string) => void | Promise<void>
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
   exportSessionHtml?: (
     sessionPath: string,
@@ -49,6 +61,8 @@ export interface WebUiOptions {
   ) => Promise<Buffer>
   /** 测试可替换原生 Pi session 的对话可用性检查。 */
   sessionHasConversation?: (sessionPath: string) => Promise<boolean>
+  /** 测试可替换原生 Pi session 的结构化对话读取器。 */
+  readSessionConversation?: (sessionPath: string) => DashboardConversation
 }
 
 export interface WebUiServer {
@@ -90,7 +104,7 @@ const STATIC_ASSETS = new Map<string, { file: URL; contentType: string }>([
   [
     "/styles.css",
     {
-      file: new URL("./client/styles.css", import.meta.url),
+      file: new URL("./client/app.css", import.meta.url),
       contentType: "text/css; charset=utf-8",
     },
   ],
@@ -103,26 +117,41 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const host = options.host ?? "127.0.0.1"
   const requestedPort = options.port ?? 3000
   const pollIntervalMs = Math.max(250, options.pollIntervalMs ?? 1_000)
-  const clients = new Set<ServerResponse>()
+  const clients = new Map<ServerResponse, string | undefined>()
   const assets = await loadStaticAssets()
-  const currentProject = (): DashboardProject | undefined =>
-    options.controlPlane?.currentProject() ?? options.project
-  const currentScheduler = (): DashboardScheduler | undefined =>
-    options.controlPlane?.currentScheduler() ?? options.scheduler
+  const currentProject = (projectId?: string): DashboardProject | undefined =>
+    options.controlPlane
+      ? options.controlPlane.currentProject(projectId)
+      : options.project
+  const currentScheduler = (
+    projectId?: string,
+  ): DashboardScheduler | undefined =>
+    options.controlPlane
+      ? options.controlPlane.currentScheduler(projectId)
+      : options.scheduler
+  const currentRuntimeConfiguration = (
+    projectId?: string,
+  ): DashboardProjectRuntimeConfiguration | undefined =>
+    projectId ? options.projectRuntimeConfiguration?.(projectId) : undefined
   const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
   const sessionHasConversation =
     options.sessionHasConversation ?? piSessionHasConversation
-  const buildCurrentSnapshot = async (): Promise<DashboardSnapshot> => {
-    const project = currentProject()
+  const readSessionConversation =
+    options.readSessionConversation ?? readPiSessionConversation
+  const buildCurrentSnapshot = async (
+    projectId?: string,
+  ): Promise<DashboardSnapshot> => {
+    const project = currentProject(projectId)
     if (project) {
       return await buildDashboardSnapshot(
         project,
-        currentScheduler(),
+        currentScheduler(projectId),
         options.controlPlane,
+        projectId,
       )
     }
     if (options.controlPlane) {
-      return buildEmptyDashboardSnapshot(options.controlPlane)
+      return buildEmptyDashboardSnapshot(options.controlPlane, projectId)
     }
     throw new Error("WebUI 当前没有可用的 project")
   }
@@ -185,7 +214,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     broadcast(
       clients,
       "dashboard_error",
-      JSON.stringify({ message, ...syncHealth }),
+      JSON.stringify({
+        message,
+        ...syncHealth,
+      }),
     )
   }
 
@@ -212,6 +244,12 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         pendingRefresh = undefined
       })
     return pendingRefresh
+  }
+
+  const refreshProject = async (
+    projectId?: string,
+  ): Promise<DashboardSnapshot> => {
+    return projectId ? await buildCurrentSnapshot(projectId) : await refresh()
   }
 
   const server = createServer((request, response) => {
@@ -245,19 +283,242 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   ): Promise<void> {
     const method = request.method ?? "GET"
     const url = new URL(request.url ?? "/", "http://localhost")
+    const scopedRoute = projectApiRoute(url.pathname)
+    const projectId = scopedRoute?.projectId
+    const apiPath = scopedRoute?.apiPath ?? url.pathname
+    const sessionToken = cookieValue(request, "ctf_agent_session")
+    const authentication = options.authentication?.snapshot() ?? {
+      enabled: false,
+      username: null,
+    }
+    const authenticated =
+      !authentication.enabled ||
+      options.authentication?.authenticate(sessionToken) === true
 
     if (method === "GET" && url.pathname === "/health") {
+      if (!authenticated) {
+        sendJson(response, 200, {
+          status: "ok",
+          authentication: { ...authentication, authenticated: false },
+        })
+        return
+      }
       sendJson(response, 200, {
         status: "ok",
         generatedAt: latestSnapshot.generatedAt,
         connectedClients: clients.size,
         platformSync: { ...syncHealth },
         controlPlane: options.controlPlane?.snapshot() ?? null,
-        scheduler: currentScheduler()?.snapshot() ?? null,
+        scheduler: currentScheduler(projectId)?.snapshot() ?? null,
+        modelConfiguration: options.modelConfiguration?.snapshot() ?? null,
+        modelAuthentication:
+          (await options.modelAuthentication?.snapshot()) ?? null,
+        authentication: { ...authentication, authenticated },
+      })
+      return
+    }
+
+    if (method === "GET" && url.pathname === "/api/auth") {
+      sendJson(response, 200, { ...authentication, authenticated })
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/auth/login") {
+      if (!options.authentication || !authentication.enabled) {
+        throw new HttpRequestError(
+          409,
+          "authentication_disabled",
+          "WebUI 鉴权未启用",
+        )
+      }
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      try {
+        const session = await options.authentication.login(
+          requiredString(body.username, "用户名", 128, "invalid_login"),
+          requiredString(body.password, "密码", 1_024, "invalid_login"),
+        )
+        response.setHeader(
+          "Set-Cookie",
+          sessionCookie(session.token, options.secureCookies === true),
+        )
+        sendJson(response, 200, {
+          authenticated: true,
+          username: session.username,
+          expiresAt: session.expiresAt,
+        })
+      } catch (error) {
+        throw new HttpRequestError(401, "invalid_credentials", errorText(error))
+      }
+      return
+    }
+
+    if (url.pathname.startsWith("/api/") && !authenticated) {
+      throw new HttpRequestError(401, "authentication_required", "请先登录")
+    }
+
+    if (method === "POST" && url.pathname === "/api/auth/logout") {
+      options.authentication?.logout(sessionToken)
+      response.setHeader(
+        "Set-Cookie",
+        expiredSessionCookie(options.secureCookies === true),
+      )
+      sendJson(response, 200, { authenticated: false })
+      return
+    }
+
+    if (method === "GET" && url.pathname === "/api/global-config") {
+      sendJson(response, 200, {
+        authentication,
         modelConfiguration: options.modelConfiguration?.snapshot() ?? null,
         modelAuthentication:
           (await options.modelAuthentication?.snapshot()) ?? null,
       })
+      return
+    }
+
+    if (
+      method === "POST" &&
+      url.pathname === "/api/global-config/authentication"
+    ) {
+      if (!options.authentication) {
+        throw new HttpRequestError(
+          404,
+          "authentication_unavailable",
+          "当前 WebUI 未配置鉴权存储",
+        )
+      }
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      const enabled = body.enabled === true
+      try {
+        const configured = await options.authentication.configure({
+          enabled,
+          ...(enabled
+            ? {
+                username: requiredString(
+                  body.username,
+                  "用户名",
+                  128,
+                  "invalid_authentication_configuration",
+                ),
+                ...(body.password === undefined
+                  ? {}
+                  : {
+                      password: requiredString(
+                        body.password,
+                        "密码",
+                        1_024,
+                        "invalid_authentication_configuration",
+                      ),
+                    }),
+              }
+            : {}),
+        })
+        sendJson(response, 200, configured)
+      } catch (error) {
+        throw new HttpRequestError(
+          400,
+          "invalid_authentication_configuration",
+          errorText(error),
+        )
+      }
+      return
+    }
+
+    if (method === "GET" && url.pathname === "/api/projects") {
+      requireControlPlane(options.controlPlane)
+      sendJson(response, 200, {
+        projects: options.controlPlane.projectSnapshots(),
+        selectedProjectId: options.controlPlane.snapshot().selectedProjectId,
+      })
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/projects/test") {
+      requireControlPlane(options.controlPlane)
+      requireJsonRequest(request)
+      const input = controlPlaneSetup(await readJsonBody(request))
+      try {
+        sendJson(
+          response,
+          200,
+          await options.controlPlane.testConnection(input),
+        )
+      } catch (error) {
+        throw new HttpRequestError(
+          422,
+          "platform_connection_failed",
+          errorText(error),
+        )
+      }
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/projects") {
+      requireControlPlane(options.controlPlane)
+      requireJsonRequest(request)
+      const input = controlPlaneSetup(await readJsonBody(request))
+      try {
+        await options.controlPlane.applySetup(input)
+      } catch (error) {
+        throw new HttpRequestError(
+          422,
+          "platform_setup_failed",
+          errorText(error),
+        )
+      }
+      sendJson(response, 201, {
+        project: options.controlPlane.snapshot(input.config.project.id),
+        snapshot: await refreshProject(input.config.project.id),
+      })
+      return
+    }
+
+    if (method === "GET" && projectId && apiPath === "/api") {
+      requireControlPlane(options.controlPlane)
+      const snapshot = options.controlPlane.snapshot(projectId)
+      if (snapshot.projectId !== projectId) {
+        throw new HttpRequestError(404, "project_not_found", "Project 不存在")
+      }
+      sendJson(response, 200, snapshot)
+      return
+    }
+
+    if (method === "DELETE" && projectId && apiPath === "/api") {
+      requireControlPlane(options.controlPlane)
+      try {
+        await options.controlPlane.deleteProject(projectId)
+        await options.onProjectDeleted?.(projectId)
+      } catch (error) {
+        const message = errorText(error)
+        if (message.includes("Project 不存在")) {
+          throw new HttpRequestError(404, "project_not_found", message)
+        }
+        throw error
+      }
+      sendJson(response, 200, {
+        controlPlane: options.controlPlane.snapshot(),
+        snapshot: await refresh(),
+      })
+      return
+    }
+
+    if (method === "GET" && projectId && apiPath === "/api/control-plane") {
+      requireControlPlane(options.controlPlane)
+      sendJson(response, 200, options.controlPlane.setupSnapshot(projectId))
+      return
+    }
+
+    if (
+      method === "POST" &&
+      projectId &&
+      apiPath === "/api/control-plane/connect"
+    ) {
+      requireControlPlane(options.controlPlane)
+      requireJsonRequest(request)
+      await options.controlPlane.connect(projectId)
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
@@ -323,22 +584,22 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/snapshot") {
-      sendJson(response, 200, await refresh())
+    if (method === "GET" && apiPath === "/api/snapshot") {
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/refresh") {
+    if (method === "POST" && apiPath === "/api/refresh") {
       requireJsonRequest(request)
-      const project = currentProject()
+      const project = currentProject(projectId)
       if (project) await project.refresh()
-      await currentScheduler()?.reconcile()
-      sendJson(response, 200, await refresh())
+      await currentScheduler(projectId)?.reconcile()
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/announcements/review") {
-      const project = currentProject()
+    if (method === "POST" && apiPath === "/api/announcements/review") {
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const body = await readJsonBody(request)
@@ -383,35 +644,89 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         }
         throw error
       }
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/model-config") {
+    if (method === "GET" && projectId && apiPath === "/api/runtime-config") {
+      const runtime = currentRuntimeConfiguration(projectId)
+      requireProjectRuntimeConfiguration(runtime)
+      requireModelConfiguration(options.modelConfiguration)
+      sendJson(response, 200, {
+        runtime: runtime.snapshot(),
+        models: modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(projectId),
+          runtime.snapshot(),
+        ),
+      })
+      return
+    }
+
+    if (method === "POST" && projectId && apiPath === "/api/runtime-config") {
+      const runtime = currentRuntimeConfiguration(projectId)
+      requireProjectRuntimeConfiguration(runtime)
+      requireModelConfiguration(options.modelConfiguration)
+      requireJsonRequest(request)
+      let configuration: ProjectRuntimeConfigurationView
+      try {
+        configuration = await runtime.update(
+          projectRuntimeConfigurationUpdate(await readJsonBody(request)),
+        )
+      } catch (error) {
+        throw new HttpRequestError(
+          400,
+          "invalid_project_runtime_configuration",
+          errorText(error),
+        )
+      }
+      const scheduler = currentScheduler(projectId)
+      await scheduler?.setMaxConcurrent(configuration.maxConcurrent)
+      const model = options.modelConfiguration.snapshot(configuration)
+      if (!model.configured) scheduler?.pauseAuto()
+      else await scheduler?.reconcile()
+      sendJson(response, 200, {
+        runtime: configuration,
+        models: modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(projectId),
+          configuration,
+        ),
+        snapshot: await refreshProject(projectId),
+      })
+      return
+    }
+
+    if (method === "GET" && apiPath === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
       sendJson(
         response,
         200,
-        modelConfigurationView(options.modelConfiguration, currentProject()),
+        modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(projectId),
+          currentRuntimeConfiguration(projectId)?.snapshot(),
+        ),
       )
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/model-config") {
+    if (method === "POST" && apiPath === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
       requireJsonRequest(request)
       const configuration = await options.modelConfiguration.update(
         modelConfigurationUpdate(await readJsonBody(request, 256_000)),
       )
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       if (!configuration.configured) scheduler?.pauseAuto()
       else await scheduler?.reconcile()
       sendJson(response, 200, {
         configuration: modelConfigurationView(
           options.modelConfiguration,
-          currentProject(),
+          currentProject(projectId),
+          currentRuntimeConfiguration(projectId)?.snapshot(),
         ),
-        snapshot: await refresh(),
+        snapshot: await refreshProject(projectId),
       })
       return
     }
@@ -591,26 +906,26 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/scheduler/auto/start") {
-      const scheduler = currentScheduler()
+    if (method === "POST" && apiPath === "/api/scheduler/auto/start") {
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       await scheduler.startAuto()
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/scheduler/auto/pause") {
-      const scheduler = currentScheduler()
+    if (method === "POST" && apiPath === "/api/scheduler/auto/pause") {
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       scheduler.pauseAuto()
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/scheduler/concurrency") {
-      const scheduler = currentScheduler()
+    if (method === "POST" && apiPath === "/api/scheduler/concurrency") {
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const body = await readJsonBody(request)
@@ -621,13 +936,13 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         "invalid_scheduler_configuration",
       )
       await scheduler.setMaxConcurrent(maxConcurrent)
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    const queueMove = /^\/api\/scheduler\/queue\/([^/]+)$/.exec(url.pathname)
+    const queueMove = /^\/api\/scheduler\/queue\/([^/]+)$/.exec(apiPath)
     if (method === "PATCH" && queueMove) {
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(queueMove[1] ?? "")
@@ -647,15 +962,15 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         ),
         overrideBlockedLane: body.overrideBlockedLane === true,
       })
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
     const action = /^\/api\/challenges\/([^/]+)\/(dispatch|cancel)$/.exec(
-      url.pathname,
+      apiPath,
     )
     if (method === "POST" && action) {
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(action[1] ?? "")
@@ -667,14 +982,14 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       } else {
         await scheduler.cancel(challengeId)
       }
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
     // 题目级对话框:向该题当前活跃的 solver 发送人工消息(走 project,不走调度器)
-    const message = /^\/api\/challenges\/([^/]+)\/message$/.exec(url.pathname)
+    const message = /^\/api\/challenges\/([^/]+)\/message$/.exec(apiPath)
     if (method === "POST" && message) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(message[1] ?? "")
@@ -707,10 +1022,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     // 运行中切换思考强度:向该题当前活跃的 solver 设置 thinkingLevel(下一 turn 生效)
     const thinkingLevel = /^\/api\/challenges\/([^/]+)\/thinking-level$/.exec(
-      url.pathname,
+      apiPath,
     )
     if (method === "POST" && thinkingLevel) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(thinkingLevel[1] ?? "")
@@ -746,11 +1061,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     }
 
     const subagentAction =
-      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/(steer|cancel)$/.exec(
-        url.pathname,
-      )
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/(steer|cancel)$/.exec(apiPath)
     if (method === "POST" && subagentAction) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const runId = decodeURIComponent(subagentAction[1] ?? "")
@@ -789,9 +1102,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    const retryAttempt = /^\/api\/runs\/([^/]+)\/retry$/.exec(url.pathname)
+    const retryAttempt = /^\/api\/runs\/([^/]+)\/retry$/.exec(apiPath)
     if (method === "POST" && retryAttempt) {
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const runId = decodeURIComponent(retryAttempt[1] ?? "")
@@ -808,14 +1121,14 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       await scheduler.retryAttempt(runId, {
         ...(prompt ? { prompt } : {}),
       })
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
     const subagentExport =
-      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/export$/.exec(url.pathname)
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/export$/.exec(apiPath)
     if (method === "GET" && subagentExport) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       const runId = decodeURIComponent(subagentExport[1] ?? "")
       const subagentId = decodeURIComponent(subagentExport[2] ?? "")
@@ -844,9 +1157,37 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(url.pathname)
+    const subagentConversation =
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/conversation$/.exec(apiPath)
+    if (method === "GET" && subagentConversation) {
+      const project = currentProject(projectId)
+      requireProject(project)
+      const runId = decodeURIComponent(subagentConversation[1] ?? "")
+      const subagentId = decodeURIComponent(subagentConversation[2] ?? "")
+      if (!project.runs().some((candidate) => candidate.id === runId)) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
+      }
+      const subagent = project
+        .subagents(runId)
+        .find((candidate) => candidate.id === subagentId)
+      if (!subagent) {
+        throw new HttpRequestError(
+          404,
+          "subagent_not_found",
+          `SubAgent 不存在: ${subagentId}`,
+        )
+      }
+      sendJson(
+        response,
+        200,
+        readConversation(subagent.sessionPath, readSessionConversation),
+      )
+      return
+    }
+
+    const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(apiPath)
     if (method === "GET" && runExport) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       const runId = decodeURIComponent(runExport[1] ?? "")
       const run = project.runs().find((candidate) => candidate.id === runId)
@@ -865,14 +1206,35 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    const runConversation = /^\/api\/runs\/([^/]+)\/conversation$/.exec(apiPath)
+    if (method === "GET" && runConversation) {
+      const project = currentProject(projectId)
+      requireProject(project)
+      const runId = decodeURIComponent(runConversation[1] ?? "")
+      const run = project.runs().find((candidate) => candidate.id === runId)
+      if (!run) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
+      }
+      sendJson(
+        response,
+        200,
+        readConversation(
+          project.runSessionPath(run.id),
+          readSessionConversation,
+        ),
+      )
+      return
+    }
+
     if (
       method === "POST" &&
-      /^\/api\/challenges\/[^/]+\/tldr\/refresh$/.test(url.pathname)
+      /^\/api\/challenges\/[^/]+\/tldr\/refresh$/.test(apiPath)
     ) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       const modelConfiguration = options.modelConfiguration
-      const modelSnapshot = modelConfiguration?.snapshot()
+      const bindings = currentRuntimeConfiguration(projectId)?.snapshot()
+      const modelSnapshot = modelConfiguration?.snapshot(bindings)
       const tldrModelId =
         modelSnapshot?.tldrModelId || modelSnapshot?.solverModelId
       const tldrModel = modelSnapshot?.models.find(
@@ -885,13 +1247,13 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
           tldrModel?.unavailableReason ?? "TLDR 模型尚未配置",
         )
       }
-      const encodedId = url.pathname
+      const encodedId = apiPath
         .slice("/api/challenges/".length)
         .slice(0, -"/tldr/refresh".length)
       const challengeId = decodeURIComponent(encodedId)
       const tldr = await project.refreshTldr(
         challengeId,
-        modelConfiguration.createAgentOptions("tldr"),
+        modelConfiguration.createAgentOptions("tldr", bindings),
       )
       if (tldr.challengeId !== challengeId) {
         throw new HttpRequestError(404, "challenge_not_found", "题目不存在")
@@ -900,13 +1262,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (
-      method === "GET" &&
-      /^\/api\/challenges\/[^/]+\/tldr$/.test(url.pathname)
-    ) {
-      const project = currentProject()
+    if (method === "GET" && /^\/api\/challenges\/[^/]+\/tldr$/.test(apiPath)) {
+      const project = currentProject(projectId)
       requireProject(project)
-      const encodedId = url.pathname
+      const encodedId = apiPath
         .slice("/api/challenges/".length)
         .slice(0, -"/tldr".length)
       const challengeId = decodeURIComponent(encodedId)
@@ -916,11 +1275,11 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     if (
       method === "GET" &&
-      /^\/api\/challenges\/[^/]+\/writeup$/.test(url.pathname)
+      /^\/api\/challenges\/[^/]+\/writeup$/.test(apiPath)
     ) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
-      const encodedId = url.pathname
+      const encodedId = apiPath
         .slice("/api/challenges/".length)
         .slice(0, -"/writeup".length)
       const challengeId = decodeURIComponent(encodedId)
@@ -943,16 +1302,16 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname.startsWith("/api/challenges/")) {
-      const project = currentProject()
+    if (method === "GET" && apiPath.startsWith("/api/challenges/")) {
+      const project = currentProject(projectId)
       requireProject(project)
-      const encodedId = url.pathname.slice("/api/challenges/".length)
+      const encodedId = apiPath.slice("/api/challenges/".length)
       const challengeId = decodeURIComponent(encodedId)
       const details = await buildChallengeDetails(
         project,
         challengeId,
-        currentScheduler(),
-        latestSnapshot,
+        currentScheduler(projectId),
+        projectId ? undefined : latestSnapshot,
       )
       if (!details) {
         sendJson(response, 404, { error: "challenge_not_found" })
@@ -962,7 +1321,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/events") {
+    if (method === "GET" && apiPath === "/api/events") {
       response.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
@@ -970,12 +1329,15 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         "X-Accel-Buffering": "no",
       })
       response.write(": connected\n\n")
-      clients.add(response)
+      clients.set(response, projectId)
+      const eventSnapshot = projectId
+        ? await buildCurrentSnapshot(projectId)
+        : latestSnapshot
       writeEvent(
         response,
         "snapshot",
-        serializedSnapshot,
-        latestSnapshot.generatedAt,
+        projectId ? JSON.stringify(eventSnapshot) : serializedSnapshot,
+        eventSnapshot.generatedAt,
       )
       writeEvent(response, "dashboard_status", JSON.stringify(syncHealth))
       request.once("close", () => clients.delete(response))
@@ -992,6 +1354,18 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         })
         response.end(asset.content)
         return
+      }
+      if (!url.pathname.startsWith("/api/")) {
+        const index = assets.get("/")
+        if (index) {
+          response.writeHead(200, {
+            "Content-Type": index.contentType,
+            "Cache-Control": "no-cache",
+            "Content-Length": index.content.byteLength,
+          })
+          response.end(index.content)
+          return
+        }
       }
     }
 
@@ -1013,6 +1387,31 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     refreshTimer = setTimeout(async () => {
       try {
         await refresh()
+        const scopedProjectIds = new Set(
+          [...clients.values()].filter(
+            (projectId): projectId is string => projectId !== undefined,
+          ),
+        )
+        for (const projectId of scopedProjectIds) {
+          try {
+            const snapshot = await buildCurrentSnapshot(projectId)
+            broadcast(
+              clients,
+              "snapshot",
+              JSON.stringify(snapshot),
+              snapshot.generatedAt,
+              projectId,
+            )
+          } catch (error) {
+            broadcast(
+              clients,
+              "dashboard_error",
+              JSON.stringify({ message: errorText(error) }),
+              undefined,
+              projectId,
+            )
+          }
+        }
       } catch {
         // refresh() already records and broadcasts the failure exactly once.
       } finally {
@@ -1031,7 +1430,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   scheduleRefresh(pollIntervalMs)
 
   const heartbeat = setInterval(() => {
-    for (const client of clients) client.write(": heartbeat\n\n")
+    for (const client of clients.keys()) client.write(": heartbeat\n\n")
   }, 15_000)
   heartbeat.unref()
   const schedulerReconcileDelay = Math.max(
@@ -1042,8 +1441,13 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const scheduleReconcile = (delayMs: number): void => {
     if (!options.scheduler && !options.controlPlane) return
     schedulerReconcileTimer = setTimeout(async () => {
-      const scheduler = currentScheduler()
-      if (scheduler?.snapshot().autoEnabled) {
+      const schedulers = options.controlPlane
+        ? options.controlPlane
+            .projectSnapshots()
+            .map(({ id }) => currentScheduler(id))
+        : [currentScheduler()]
+      for (const scheduler of schedulers) {
+        if (!scheduler?.snapshot().autoEnabled) continue
         try {
           await scheduler.reconcile()
         } catch (error) {
@@ -1066,7 +1470,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       if (refreshTimer) clearTimeout(refreshTimer)
       clearInterval(heartbeat)
       if (schedulerReconcileTimer) clearTimeout(schedulerReconcileTimer)
-      for (const client of clients) client.end()
+      for (const client of clients.keys()) client.end()
       clients.clear()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
@@ -1140,13 +1544,100 @@ async function exportConversationHtml(
   }
 }
 
+function readConversation(
+  sessionPath: string,
+  reader: (sessionPath: string) => DashboardConversation,
+): DashboardConversation {
+  try {
+    const conversation = reader(sessionPath)
+    if (
+      !conversation.messages.some(({ message }) => message.role === "assistant")
+    ) {
+      throw new HttpRequestError(
+        409,
+        "session_not_ready",
+        "该会话尚未产生 Agent 对话",
+      )
+    }
+    return conversation
+  } catch (error) {
+    if (error instanceof HttpRequestError) throw error
+    throw new HttpRequestError(
+      409,
+      "session_read_failed",
+      `无法读取 Pi 会话: ${errorText(error)}`,
+    )
+  }
+}
+
 function broadcast(
-  clients: Set<ServerResponse>,
+  clients: ReadonlyMap<ServerResponse, string | undefined>,
   event: string,
   data: string,
   id?: string,
+  projectId?: string,
 ): void {
-  for (const client of clients) writeEvent(client, event, data, id)
+  for (const [client, subscribedProjectId] of clients) {
+    if (subscribedProjectId === projectId) writeEvent(client, event, data, id)
+  }
+}
+
+function projectApiRoute(
+  pathname: string,
+): { projectId: string; apiPath: string } | undefined {
+  const match = /^\/api\/projects\/([^/]+)(\/.*)?$/.exec(pathname)
+  if (!match) return undefined
+  let projectId: string
+  try {
+    projectId = decodeURIComponent(match[1] ?? "")
+  } catch {
+    throw new HttpRequestError(400, "invalid_project_id", "Project ID 编码无效")
+  }
+  if (!projectId) {
+    throw new HttpRequestError(400, "invalid_project_id", "Project ID 不能为空")
+  }
+  const suffix = match[2] ?? ""
+  return { projectId, apiPath: suffix ? `/api${suffix}` : "/api" }
+}
+
+function cookieValue(
+  request: IncomingMessage,
+  name: string,
+): string | undefined {
+  const cookie = request.headers.cookie
+  if (!cookie) return undefined
+  for (const part of cookie.split(";")) {
+    const separator = part.indexOf("=")
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim())
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function sessionCookie(token: string, secure: boolean): string {
+  return [
+    `ctf_agent_session=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${24 * 60 * 60}`,
+    ...(secure ? ["Secure"] : []),
+  ].join("; ")
+}
+
+function expiredSessionCookie(secure: boolean): string {
+  return [
+    "ctf_agent_session=",
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    "Max-Age=0",
+    ...(secure ? ["Secure"] : []),
+  ].join("; ")
 }
 
 function writeEvent(
@@ -1189,14 +1680,27 @@ function requireProject(
 function modelConfigurationView(
   configuration: DashboardModelConfiguration,
   project: DashboardProject | undefined,
+  bindings?: AgentModelBindings,
 ): ModelConfigurationView {
   return {
-    ...configuration.snapshot(),
+    ...configuration.snapshot(bindings),
     subagentRoles:
       project?.availableSubagents().map(({ name, displayName }) => ({
         name,
         displayName,
       })) ?? [],
+  }
+}
+
+function requireProjectRuntimeConfiguration(
+  configuration: DashboardProjectRuntimeConfiguration | undefined,
+): asserts configuration is DashboardProjectRuntimeConfiguration {
+  if (!configuration) {
+    throw new HttpRequestError(
+      503,
+      "project_runtime_configuration_unavailable",
+      "Project 运行配置尚不可用",
+    )
   }
 }
 
@@ -1358,6 +1862,54 @@ async function readJsonBody(
     throw new HttpRequestError(400, "invalid_json", "请求体必须是 JSON 对象")
   }
   return parsed as Record<string, unknown>
+}
+
+function projectRuntimeConfigurationUpdate(
+  body: Record<string, unknown>,
+): ProjectRuntimeConfigurationView {
+  const solverModelId = optionalString(
+    body.solverModelId,
+    "Solver Model",
+    128,
+    "invalid_project_runtime_configuration",
+  )
+  const tldrModelId = optionalString(
+    body.tldrModelId,
+    "TLDR Model",
+    128,
+    "invalid_project_runtime_configuration",
+  )
+  const maxConcurrent = requiredPositiveInteger(
+    body.maxConcurrent,
+    "调度并发量",
+    64,
+    "invalid_project_runtime_configuration",
+  )
+  const subagentModels: Record<string, string> = {}
+  if (body.subagentModels !== undefined) {
+    if (!isRecord(body.subagentModels)) {
+      throw new HttpRequestError(
+        400,
+        "invalid_project_runtime_configuration",
+        "SubAgent Models 必须是对象",
+      )
+    }
+    for (const [role, value] of Object.entries(body.subagentModels)) {
+      const normalizedRole = requiredString(
+        role,
+        "SubAgent Role",
+        128,
+        "invalid_project_runtime_configuration",
+      )
+      subagentModels[normalizedRole] = requiredString(
+        value,
+        `SubAgent ${normalizedRole} Model`,
+        128,
+        "invalid_project_runtime_configuration",
+      )
+    }
+  }
+  return { solverModelId, tldrModelId, subagentModels, maxConcurrent }
 }
 
 function modelConfigurationUpdate(

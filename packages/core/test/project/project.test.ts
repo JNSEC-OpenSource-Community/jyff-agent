@@ -112,8 +112,10 @@ describe("Project", () => {
   it("控制面传入配置时无需磁盘中的 .pi/ctf-config.json", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-project-config-"))
     roots.push(root)
+    const stateDirectory = join(root, "isolated-state")
     const project = await Project.open({
       root,
+      stateDirectory,
       config: {
         version: 1,
         project: { id: "in-memory", name: "In-memory Config" },
@@ -132,6 +134,10 @@ describe("Project", () => {
         id: "in-memory",
         name: "In-memory Config",
       })
+      expect(project.agentDirectory).toBe(stateDirectory)
+      await expect(
+        access(join(stateDirectory, "runs.sqlite")),
+      ).resolves.toBeUndefined()
     } finally {
       await project.close()
     }

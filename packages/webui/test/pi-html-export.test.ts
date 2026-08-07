@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   exportPiSessionHtml,
   piSessionHasConversation,
+  readPiSessionConversation,
 } from "../src/pi-html-export.ts"
 
 const roots: string[] = []
@@ -68,6 +69,18 @@ describe("exportPiSessionHtml", () => {
     )
 
     await expect(piSessionHasConversation(sessionPath)).resolves.toBe(true)
+    expect(readPiSessionConversation(sessionPath)).toMatchObject({
+      messages: [
+        {
+          entryId: "message-1",
+          message: { role: "user", content: "inspect the binary" },
+        },
+        {
+          entryId: "message-2",
+          message: { role: "assistant" },
+        },
+      ],
+    })
 
     const html = (
       await exportPiSessionHtml(sessionPath, {
@@ -148,5 +161,50 @@ describe("exportPiSessionHtml", () => {
     )
 
     await expect(piSessionHasConversation(sessionPath)).resolves.toBe(false)
+  })
+
+  it("结构化对话只返回当前分支，不混入已放弃分支", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-pi-conversation-"))
+    roots.push(root)
+    const sessionPath = join(root, "session.jsonl")
+    await writeFile(
+      sessionPath,
+      [
+        JSON.stringify({
+          type: "session",
+          version: 3,
+          id: "branched-run",
+          timestamp: "2026-08-01T00:00:00.000Z",
+          cwd: root,
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "root",
+          parentId: null,
+          timestamp: "2026-08-01T00:00:01.000Z",
+          message: { role: "user", content: "start", timestamp: 1 },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "abandoned",
+          parentId: "root",
+          timestamp: "2026-08-01T00:00:02.000Z",
+          message: { role: "user", content: "old branch", timestamp: 2 },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "active",
+          parentId: "root",
+          timestamp: "2026-08-01T00:00:03.000Z",
+          message: { role: "user", content: "new branch", timestamp: 3 },
+        }),
+      ].join("\n"),
+    )
+
+    expect(
+      readPiSessionConversation(sessionPath).messages.map(
+        (message) => message.entryId,
+      ),
+    ).toEqual(["root", "active"])
   })
 })

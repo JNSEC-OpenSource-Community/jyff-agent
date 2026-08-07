@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { createFileWebUiAuthentication } from "../src/authentication.ts"
 import { createFileModelAuthentication } from "../src/model-authentication.ts"
 import { startWebUi, type WebUiServer } from "../src/server.ts"
 import type { DashboardControlPlane } from "../src/types.ts"
@@ -22,10 +23,76 @@ afterEach(async () => {
 })
 
 describe("WebUI HTTP server", () => {
+  it("启用可选鉴权后用 HttpOnly session cookie 保护 API", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-webui-server-auth-"))
+    roots.push(root)
+    const authentication = await createFileWebUiAuthentication(
+      join(root, "global-config.json"),
+    )
+    await authentication.configure({
+      enabled: true,
+      username: "operator",
+      password: "strong-password",
+    })
+    const server = await startWebUi({
+      project: new FakeDashboardProject(),
+      authentication,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    expect((await fetch(`${server.url}/api/snapshot`)).status).toBe(401)
+    const rejected = await fetch(`${server.url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "operator",
+        password: "wrong-password",
+      }),
+    })
+    expect(rejected.status).toBe(401)
+
+    const login = await fetch(`${server.url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "operator",
+        password: "strong-password",
+      }),
+    })
+    expect(login.status).toBe(200)
+    const cookie = login.headers.get("set-cookie")
+    expect(cookie).toContain("HttpOnly")
+    expect(cookie).toContain("SameSite=Strict")
+    expect(
+      (
+        await fetch(`${server.url}/api/snapshot`, {
+          headers: { Cookie: cookie ?? "" },
+        })
+      ).status,
+    ).toBe(200)
+
+    const logout = await fetch(`${server.url}/api/auth/logout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie ?? "",
+      },
+      body: "{}",
+    })
+    expect(logout.status).toBe(200)
+    expect(
+      authentication.authenticate(cookie?.split("=")[1]?.split(";")[0]),
+    ).toBe(false)
+  })
+
   it("未配置时仍可启动，并通过控制面 API 测试和应用平台配置", async () => {
     let project: FakeDashboardProject | undefined
     let phase: "unconfigured" | "ready" = "unconfigured"
     let appliedConfig: unknown
+    const deletedProjects: string[] = []
     const snapshot = () => ({
       phase,
       configured: phase === "ready",
@@ -34,9 +101,26 @@ describe("WebUI HTTP server", () => {
       platformId: phase === "ready" ? "ctfd" : null,
       lastError: null,
       updatedAt: "2026-08-04T00:00:00.000Z",
+      selectedProjectId: phase === "ready" ? "demo" : null,
+      projects:
+        phase === "ready"
+          ? [
+              {
+                id: "demo",
+                name: "Demo CTF",
+                platformId: "ctfd",
+                phase: "ready" as const,
+                lastError: null,
+                createdAt: "2026-08-04T00:00:00.000Z",
+                updatedAt: "2026-08-04T00:00:00.000Z",
+              },
+            ]
+          : [],
     })
     const controlPlane: DashboardControlPlane = {
       snapshot,
+      projectSnapshots: () => snapshot().projects,
+      selectProject: () => snapshot(),
       setupSnapshot: () => ({
         state: snapshot(),
         config: null,
@@ -72,9 +156,35 @@ describe("WebUI HTTP server", () => {
         return snapshot()
       },
       connect: async () => snapshot(),
+      deleteProject: async (projectId) => {
+        deletedProjects.push(projectId)
+        project = undefined
+        phase = "unconfigured"
+        return snapshot()
+      },
+    }
+    let runtimeConfiguration = {
+      solverModelId: "",
+      tldrModelId: "",
+      subagentModels: {},
+      maxConcurrent: 8,
     }
     const server = await startWebUi({
       controlPlane,
+      modelConfiguration: new FakeModelConfiguration(),
+      projectRuntimeConfiguration: (projectId) =>
+        projectId === "demo"
+          ? {
+              snapshot: () => structuredClone(runtimeConfiguration),
+              update: async (configuration) => {
+                runtimeConfiguration = structuredClone(configuration)
+                return structuredClone(runtimeConfiguration)
+              },
+            }
+          : undefined,
+      onProjectDeleted: (projectId) => {
+        deletedProjects.push(`cache:${projectId}`)
+      },
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
@@ -104,7 +214,7 @@ describe("WebUI HTTP server", () => {
         networkMode: "bridge",
       },
     }
-    const tested = await fetch(`${server.url}/api/control-plane/test`, {
+    const tested = await fetch(`${server.url}/api/projects/test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config, secrets: { CTFD_TOKEN: "secret" } }),
@@ -112,17 +222,58 @@ describe("WebUI HTTP server", () => {
     expect(tested.status).toBe(200)
     expect(await tested.json()).toMatchObject({ ok: true })
 
-    const applied = await fetch(`${server.url}/api/control-plane/apply`, {
+    const applied = await fetch(`${server.url}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config, secrets: { CTFD_TOKEN: "secret" } }),
     })
-    expect(applied.status).toBe(200)
+    expect(applied.status).toBe(201)
     expect(appliedConfig).toEqual(config)
     expect(await applied.json()).toMatchObject({
-      setup: { state: { phase: "ready" } },
+      project: { phase: "ready", projectId: "demo" },
       snapshot: { overview: { name: "Test CTF" } },
     })
+    expect(
+      await (await fetch(`${server.url}/api/projects`)).json(),
+    ).toMatchObject({
+      selectedProjectId: "demo",
+      projects: [{ id: "demo", name: "Demo CTF", phase: "ready" }],
+    })
+    expect(
+      await (await fetch(`${server.url}/api/projects/demo/snapshot`)).json(),
+    ).toMatchObject({ overview: { name: "Test CTF" } })
+    expect(
+      await (
+        await fetch(`${server.url}/api/projects/demo/runtime-config`)
+      ).json(),
+    ).toMatchObject({ runtime: { maxConcurrent: 8 } })
+    const runtimeUpdated = await fetch(
+      `${server.url}/api/projects/demo/runtime-config`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          solverModelId: "",
+          tldrModelId: "",
+          subagentModels: {},
+          maxConcurrent: 3,
+        }),
+      },
+    )
+    expect(runtimeUpdated.status).toBe(200)
+    expect(runtimeConfiguration.maxConcurrent).toBe(3)
+
+    const deleted = await fetch(`${server.url}/api/projects/demo`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toMatchObject({
+      controlPlane: { configured: false, projects: [] },
+    })
+    expect(deletedProjects).toEqual(["demo", "cache:demo"])
+    expect((await fetch(`${server.url}/api/projects/demo`)).status).toBe(404)
   })
 
   it("提供健康检查、静态前端、快照、详情和平台刷新 API", async () => {
@@ -144,7 +295,18 @@ describe("WebUI HTTP server", () => {
 
     const home = await fetch(server.url)
     expect(home.headers.get("content-type")).toContain("text/html")
-    expect(await home.text()).toContain("题目作战面板")
+    expect(await home.text()).toContain("正在载入控制面")
+
+    const styles = await fetch(`${server.url}/styles.css`)
+    expect(styles.headers.get("content-type")).toContain("text/css")
+    const compiledCss = await styles.text()
+    expect(compiledCss).toContain("--color-background")
+    expect(compiledCss).not.toContain('@import "tailwindcss"')
+
+    const nestedRoute = await fetch(`${server.url}/projects/demo/settings`)
+    expect(nestedRoute.status).toBe(200)
+    expect(nestedRoute.headers.get("content-type")).toContain("text/html")
+    expect(await nestedRoute.text()).toContain("CTF Agent · Operations")
 
     const snapshot = await fetch(`${server.url}/api/snapshot`)
     const snapshotBody = (await snapshot.json()) as { challenges: unknown[] }
@@ -449,9 +611,20 @@ describe("WebUI HTTP server", () => {
     expect(
       dispatchedBody.challenges.find((item) => item.id === "misc-1")?.status,
     ).toBe("queued")
+    expect(scheduler.dispatchCalls).toEqual([
+      { challengeId: "misc-1", force: false },
+    ])
 
     expect((await post("/api/challenges/misc-1/cancel")).status).toBe(200)
     expect(scheduler.snapshot().queued).toHaveLength(0)
+
+    expect(
+      (await post("/api/challenges/pwn-1/dispatch", { force: true })).status,
+    ).toBe(200)
+    expect(scheduler.dispatchCalls.at(-1)).toEqual({
+      challengeId: "pwn-1",
+      force: true,
+    })
 
     expect((await post("/api/runs/run-pwn-1/retry")).status).toBe(200)
     expect(
@@ -874,6 +1047,93 @@ describe("WebUI HTTP server", () => {
         toolNames: undefined,
       },
     ])
+  })
+
+  it("Run 与 SubAgent 通过同一结构化 API 返回当前 Pi 对话", async () => {
+    const project = new FakeDashboardProject()
+    const reads: string[] = []
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+      readSessionConversation: (sessionPath) => {
+        reads.push(sessionPath)
+        return {
+          messages: [
+            {
+              entryId: "assistant-1",
+              timestamp: "2026-08-01T00:00:00.000Z",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "found offset" }],
+                api: "openai-completions",
+                provider: "test",
+                model: "test-model",
+                usage: {
+                  input: 1,
+                  output: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 2,
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    total: 0,
+                  },
+                },
+                stopReason: "stop",
+                timestamp: 1,
+              },
+            },
+          ],
+        }
+      },
+    })
+    servers.push(server)
+
+    const run = await fetch(`${server.url}/api/runs/run-pwn-1/conversation`)
+    const subagent = await fetch(
+      `${server.url}/api/runs/run-pwn-1/subagents/worker-pwn-1/conversation`,
+    )
+
+    expect(run.status).toBe(200)
+    expect(await run.json()).toMatchObject({
+      messages: [{ message: { role: "assistant" } }],
+    })
+    expect(subagent.status).toBe(200)
+    expect(reads).toEqual([
+      "/sessions/run-pwn-1/session.jsonl",
+      "/sessions/worker-pwn-1/session.jsonl",
+    ])
+  })
+
+  it("尚未产生 assistant 消息时结构化对话也不可查看", async () => {
+    const project = new FakeDashboardProject()
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+      readSessionConversation: () => ({
+        messages: [
+          {
+            entryId: "user-1",
+            timestamp: "2026-08-01T00:00:00.000Z",
+            message: { role: "user", content: "start", timestamp: 1 },
+          },
+        ],
+      }),
+    })
+    servers.push(server)
+
+    const response = await fetch(
+      `${server.url}/api/runs/run-pwn-1/conversation`,
+    )
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: "session_not_ready" })
   })
 
   it("导出响应内联呈现，平台/run 数据不进入任何响应头(防 header 注入)", async () => {

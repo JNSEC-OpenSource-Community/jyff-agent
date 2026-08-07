@@ -6,6 +6,7 @@ import type {
   ChallengeSummary,
   ContestOverview,
   ContestSchedulerSnapshot,
+  ControlPlaneProjectSnapshot,
   ControlPlaneSetupSnapshot,
   ControlPlaneSnapshot,
   PlatformConnectionTest,
@@ -18,7 +19,17 @@ import type {
   SubagentRecord,
   TldrRecord,
 } from "@ctf-agent/core"
-import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import type { AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core"
+
+export interface DashboardConversationMessage {
+  entryId: string
+  timestamp: string
+  message: AgentMessage
+}
+
+export interface DashboardConversation {
+  messages: DashboardConversationMessage[]
+}
 
 export type DashboardChallengeStatus =
   | "queued"
@@ -199,10 +210,12 @@ export interface DashboardScheduler {
 }
 
 export interface DashboardControlPlane {
-  snapshot(): ControlPlaneSnapshot
-  setupSnapshot(): ControlPlaneSetupSnapshot
-  currentProject(): DashboardProject | undefined
-  currentScheduler(): DashboardScheduler | undefined
+  snapshot(projectId?: string): ControlPlaneSnapshot
+  projectSnapshots(): ControlPlaneProjectSnapshot[]
+  setupSnapshot(projectId?: string): ControlPlaneSetupSnapshot
+  selectProject(projectId: string): ControlPlaneSnapshot
+  currentProject(projectId?: string): DashboardProject | undefined
+  currentScheduler(projectId?: string): DashboardScheduler | undefined
   testConnection(input: {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>
@@ -211,7 +224,8 @@ export interface DashboardControlPlane {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>
   }): Promise<ControlPlaneSnapshot>
-  connect(): Promise<ControlPlaneSnapshot>
+  connect(projectId?: string): Promise<ControlPlaneSnapshot>
+  deleteProject(projectId: string): Promise<ControlPlaneSnapshot>
 }
 
 export interface ModelPoolEntryView {
@@ -260,6 +274,23 @@ export interface ModelConfigurationView {
   unavailableReason?: string
 }
 
+export interface AgentModelBindings {
+  solverModelId: string
+  tldrModelId: string
+  subagentModels: Record<string, string>
+}
+
+export interface ProjectRuntimeConfigurationView extends AgentModelBindings {
+  maxConcurrent: number
+}
+
+export interface DashboardProjectRuntimeConfiguration {
+  snapshot(): ProjectRuntimeConfigurationView
+  update(
+    configuration: ProjectRuntimeConfigurationView,
+  ): Promise<ProjectRuntimeConfigurationView>
+}
+
 export interface ModelConfigurationUpdate {
   models: ModelPoolEntryUpdate[]
   solverModelId: string
@@ -268,9 +299,15 @@ export interface ModelConfigurationUpdate {
 }
 
 export interface DashboardModelConfiguration {
-  snapshot(): ModelConfigurationView
-  createAgentOptions(target?: "solver" | "tldr"): AgentOptions
-  modelForSubagent(role: string): string | undefined
+  snapshot(bindings?: AgentModelBindings): ModelConfigurationView
+  createAgentOptions(
+    target?: "solver" | "tldr",
+    bindings?: AgentModelBindings,
+  ): AgentOptions
+  modelForSubagent(
+    role: string,
+    bindings?: AgentModelBindings,
+  ): string | undefined
   update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView>
@@ -367,4 +404,19 @@ export interface DashboardModelAuthentication {
   logout(provider: string): Promise<ModelAuthenticationView>
   importJson(raw: string): Promise<ModelAuthImportResult>
   importFile(): Promise<ModelAuthImportResult>
+}
+
+export interface DashboardWebUiAuthentication {
+  snapshot(): { enabled: boolean; username: string | null }
+  configure(input: {
+    enabled: boolean
+    username?: string
+    password?: string
+  }): Promise<{ enabled: boolean; username: string | null }>
+  login(
+    username: string,
+    password: string,
+  ): Promise<{ token: string; username: string; expiresAt: string }>
+  authenticate(token: string | undefined): boolean
+  logout(token: string | undefined): void
 }

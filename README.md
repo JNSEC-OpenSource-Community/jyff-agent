@@ -11,10 +11,13 @@
 - 并发调度：自动、人工、重试、取消、超时和 attempt 上限；
 - 每题独立 Docker sandbox；
 - 题目上下文结构化注入、附件自动下载；
-- Pi 原生 JSONL session 保存、恢复、分支、compaction 与 HTML 导出；
+- Pi 原生 JSONL session 保存、恢复、分支、compaction、结构化对话读取与 HTML 导出；
 - 每个 Run 独立的 SubAgent fleet：专业角色、并发队列、后台通知与 steer/resume/cancel；
 - SQLite RunStore、完整工具时间线和跨 attempt 黑板；
-- React WebUI、HTTP API 与 SSE 实时更新。
+- 多 Project 控制面：每场比赛拥有独立调度器、数据库、workspace 与运行配置；
+- 可选 WebUI 登录、全局 Provider/模型池配置，以及按 Project 隔离的平台凭据；
+- React 路由式 WebUI、HTTP API 与按 Project 订阅的 SSE 实时更新。
+- shadcn/ui 源码组件、Tailwind CSS v4 与 Iconify 构成的可维护前端组件层。
 
 ## 使用 Docker Compose 启动
 
@@ -36,27 +39,34 @@ docker compose -f compose.webui.yaml ps
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
-1. 在“模型设置”中登录 Codex / Claude、填写 API Key、导入 `auth.json`，或配置 OpenAI-compatible 端点；可加入多个模型，并分别绑定 Solver、TLDR 和各类 SubAgent；
-2. 在“比赛平台设置”中选择 CTFd 或 GZCTF，填写站点、比赛与认证信息；
-3. 先“测试连接”，成功后再“保存并连接”；
-4. 人工调度单题，或开启自主调度整场比赛。
+1. 在“全局配置 → Provider 凭据”中登录 Codex / Claude 或填写 API Key，再在“模型池”加入可用模型；
+2. 从首页创建 Project，选择 CTFd 或 GZCTF 并填写站点、比赛与认证信息；
+3. 先测试连接；成功后系统从比赛名称自动填充 Project ID 和显示名称，再创建并连接；
+4. 在该 Project 的“项目配置”中分别绑定 Solver、TLDR、各类 SubAgent 模型并设置并发数；
+5. 从 Project 首页拖动调度队列、人工派发单题，或开启自主调度整场比赛。
+
+Project 列表提供带二次确认的永久删除操作。删除前系统会停止该 Project 的调度器、Solver 与 SubAgent，然后清理其 Run、Pi 会话、题目 workspace、运行配置和命名空间凭据；其他 Project 与全局模型配置保持不变。
 
 Compose 只使用 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 `CTF_AGENT_MAX_SESSION_INTERRUPTIONS` 三个可选环境变量（默认分别为 `3000`、`1800000` 和 `3`）；不会从环境注入模型或平台凭据。其余业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
 
 ```text
 .ctf-agent/
-├── secrets.json          # API Key、Token、密码或 Cookie，权限 0600
-├── auth.json             # Pi Provider OAuth / API Key 凭据，权限 0600
-├── model-config.json     # 非敏感模型参数
-├── scheduler-config.json # 动态调度并发配置
-├── project-config.json   # 平台、比赛和 sandbox 配置
-├── runs.sqlite           # Run、事件、SubAgent、调度状态与黑板
-├── runs/<run-id>/
-│   ├── session.jsonl     # Pi 原生 session tree
-│   └── subagents/<id>/
-│       └── session.jsonl # 每个 worker 的独立可恢复会话
-└── challenges/<safe-key>/
-    └── workspace/        # 同题复活时复用的附件、脚本、Writeup 和 Solver 产物
+├── global-config.json    # 可选 WebUI 登录策略与 scrypt 密码摘要
+├── project-registry.json # Project ID 到隔离状态目录的注册表
+├── secrets.json          # 全局模型密钥和按 Project 命名空间隔离的平台凭据，权限 0600
+├── auth.json             # 全局 Pi Provider OAuth / API Key 凭据，权限 0600
+├── model-config.json     # 全局非敏感模型池参数
+├── scheduler-config.json # 旧版并发量迁移回退
+├── project-config.json   # 首个/旧版 Project 的平台与 sandbox 配置
+├── runtime-config.json   # 首个/旧版 Project 的模型绑定与并发量
+├── runs.sqlite           # 首个/旧版 Project 的权威运行状态
+├── runs/…、challenges/…  # 首个/旧版 Project 的 session 与 workspace
+└── projects/<project-hash>/
+    ├── project-config.json
+    ├── runtime-config.json
+    ├── runs.sqlite
+    ├── runs/<run-id>/session.jsonl
+    └── challenges/<safe-key>/workspace/
 ```
 
 常用运维命令：
@@ -99,7 +109,7 @@ WebUI 映射到宿主机 `0.0.0.0:3000`，可从外部网络访问；WSL2 端口
 
 OAuth 和原生 Provider API Key 由 Pi 的 `CredentialStore` 写入具名卷中的 `.ctf-agent/auth.json`，刷新 token 时会原子更新；WebUI 状态接口只返回 Provider、凭据类型和模型清单，不返回凭据原文。
 
-`.ctf-agent/model-config.json` 使用 v2 模型池结构，只保存非敏感模型参数和 Agent 绑定。自定义端点的 API Key 按 Provider 写入 Secret Store；同一 Provider 下的模型共享 Base URL 和凭据。Solver 与 TLDR 各选择一个模型，SubAgent role 可以在 WebUI 中选择模型，也可以留空继承角色 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此 role 绑定不受 Solver 当前模型限制。旧版单模型配置会在读取时自动迁移。Solver 最大并发量仍由主控制台独立设置并写入 `scheduler-config.json`，修改后即时生效。
+`.ctf-agent/model-config.json` 使用 v2 全局模型池结构，只保存非敏感模型参数，不保存 Project 的最终角色绑定。自定义端点的 API Key 按 Provider 写入全局 Secret Store；同一 Provider 下的模型共享 Base URL 和凭据。每个 Project 的 `runtime-config.json` 分别选择 Solver、TLDR 和 SubAgent role 模型并保存最大 Solver 并发量；未覆盖的 SubAgent 角色仍使用 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此角色绑定不受 Solver 当前模型限制。旧版单模型配置、全局绑定与 `scheduler-config.json` 只作为自动迁移时的回退值。
 
 WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：
 
@@ -154,7 +164,7 @@ pnpm typecheck
 pnpm test
 
 # 本机启动；需要本机 Docker
-pnpm webui -- --root . --host 0.0.0.0 --port 3000
+pnpm webui --root . --host 0.0.0.0 --port 3000
 ```
 
 WebUI 可执行入口还支持：
@@ -178,12 +188,14 @@ WebUI 可执行入口还支持：
 
 WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”。该操作复用原 Run ID、attempt 编号、workspace 和 Pi JSONL session，不新增 attempt；提示词留空时使用 `INCOMPLETE_CONTINUATION_PROMPT`，也可以提供最长 32,000 字符的自定义继续提示词。
 
+WebUI 使用浏览器路由：`/` 管理全部 Project，`/projects/new` 创建 Project，`/settings` 管理全局凭据、模型池与登录策略，`/projects/:id` 管理一场比赛，`/projects/:id/settings` 管理该比赛的连接与运行配置，`/projects/:id/challenges/:challengeId` 是以对话为核心的题目工作区。Solver 与 SubAgent 复用结构化 Pi session 对话布局；黑板、Attempts 和 Writeup 分页显示，工具与推理块按需展开。
+
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 
 ## 安全说明
 
 - WebUI 不会在读取 API 中回传凭据明文；Provider 凭据使用 Pi `CredentialStore`，平台和通用端点密钥使用 `FileSecretStore`。
-- HTTP 服务暂不内置用户认证。默认的 `0.0.0.0:3000` 会接受外部连接；公网部署应使用防火墙限制来源，或放在带 TLS 和认证的反向代理后。
+- WebUI 登录默认关闭，可在全局配置中启用；启用后 API、SSE 与 session 导出均要求 HttpOnly、SameSite=Strict 会话 Cookie。服务本身不终止 TLS，公网部署仍应放在 HTTPS 反向代理后并限制 Docker socket 暴露。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。
 - WebUI 仅从明确的 attempt 或 SubAgent 卡片导出对应 Pi JSONL 对话 HTML，不提供含义模糊的题目级导出；尚无 assistant 消息的会话不可导出。Solver 导出会附加 system prompt 与工具 schema；页面以内联 HTML 呈现，可能包含 Flag、题目数据和工具输出，同样应按敏感数据管理。

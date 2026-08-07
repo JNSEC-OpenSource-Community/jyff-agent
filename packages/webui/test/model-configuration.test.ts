@@ -238,5 +238,18 @@ describe("file model configuration", () => {
     expect(configuration.modelForSubagent("explorer")).toBe(
       "worker-provider/worker-model",
     )
+
+    const projectBindings = {
+      solverModelId: "worker",
+      tldrModelId: "solver",
+      subagentModels: { explorer: "solver" },
+    }
+    expect(
+      configuration.createAgentOptions("solver", projectBindings).initialState
+        ?.model,
+    ).toMatchObject({ provider: "worker-provider", id: "worker-model" })
+    expect(configuration.modelForSubagent("explorer", projectBindings)).toBe(
+      "custom-openai/solver-model",
+    )
   })
 })
