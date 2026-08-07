@@ -5,6 +5,7 @@ import {
   FileSecretStore,
 } from "@ctf-agent/core"
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
+import { createFileWebUiAuthentication } from "./authentication.ts"
 import { createFileModelAuthentication } from "./model-authentication.ts"
 import { createFileModelConfiguration } from "./model-configuration.ts"
 import { createFileSchedulerConfiguration } from "./scheduler-configuration.ts"
@@ -43,6 +44,9 @@ const schedulerConfiguration = await createFileSchedulerConfiguration({
   storagePath: join(stateDirectory, "scheduler-config.json"),
   fallback: options.maxConcurrent,
 })
+const authentication = await createFileWebUiAuthentication(
+  join(stateDirectory, "global-config.json"),
+)
 const controlPlane = await ControlPlane.create({
   root: options.root,
   platforms: [ctfdPlatform, gzctfPlatform],
@@ -92,6 +96,7 @@ const webui = await startWebUi({
   controlPlane,
   modelAuthentication,
   modelConfiguration,
+  authentication,
   host: options.host,
   port: options.port,
   pollIntervalMs: options.pollIntervalMs,

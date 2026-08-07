@@ -27,6 +27,7 @@ import type {
   DashboardProject,
   DashboardScheduler,
   DashboardSnapshot,
+  DashboardWebUiAuthentication,
   ModelConfigurationUpdate,
   ModelConfigurationView,
   ModelPoolEntryUpdate,
@@ -42,6 +43,8 @@ export interface WebUiOptions {
   schedulerReconcileIntervalMs?: number
   modelConfiguration?: DashboardModelConfiguration
   modelAuthentication?: DashboardModelAuthentication
+  authentication?: DashboardWebUiAuthentication
+  secureCookies?: boolean
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
   exportSessionHtml?: (
     sessionPath: string,
@@ -266,8 +269,23 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     const scopedRoute = projectApiRoute(url.pathname)
     const projectId = scopedRoute?.projectId
     const apiPath = scopedRoute?.apiPath ?? url.pathname
+    const sessionToken = cookieValue(request, "ctf_agent_session")
+    const authentication = options.authentication?.snapshot() ?? {
+      enabled: false,
+      username: null,
+    }
+    const authenticated =
+      !authentication.enabled ||
+      options.authentication?.authenticate(sessionToken) === true
 
     if (method === "GET" && url.pathname === "/health") {
+      if (!authenticated) {
+        sendJson(response, 200, {
+          status: "ok",
+          authentication: { ...authentication, authenticated: false },
+        })
+        return
+      }
       sendJson(response, 200, {
         status: "ok",
         generatedAt: latestSnapshot.generatedAt,
@@ -278,7 +296,116 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         modelConfiguration: options.modelConfiguration?.snapshot() ?? null,
         modelAuthentication:
           (await options.modelAuthentication?.snapshot()) ?? null,
+        authentication: { ...authentication, authenticated },
       })
+      return
+    }
+
+    if (method === "GET" && url.pathname === "/api/auth") {
+      sendJson(response, 200, { ...authentication, authenticated })
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/auth/login") {
+      if (!options.authentication || !authentication.enabled) {
+        throw new HttpRequestError(
+          409,
+          "authentication_disabled",
+          "WebUI 鉴权未启用",
+        )
+      }
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      try {
+        const session = await options.authentication.login(
+          requiredString(body.username, "用户名", 128, "invalid_login"),
+          requiredString(body.password, "密码", 1_024, "invalid_login"),
+        )
+        response.setHeader(
+          "Set-Cookie",
+          sessionCookie(session.token, options.secureCookies === true),
+        )
+        sendJson(response, 200, {
+          authenticated: true,
+          username: session.username,
+          expiresAt: session.expiresAt,
+        })
+      } catch (error) {
+        throw new HttpRequestError(401, "invalid_credentials", errorText(error))
+      }
+      return
+    }
+
+    if (url.pathname.startsWith("/api/") && !authenticated) {
+      throw new HttpRequestError(401, "authentication_required", "请先登录")
+    }
+
+    if (method === "POST" && url.pathname === "/api/auth/logout") {
+      options.authentication?.logout(sessionToken)
+      response.setHeader(
+        "Set-Cookie",
+        expiredSessionCookie(options.secureCookies === true),
+      )
+      sendJson(response, 200, { authenticated: false })
+      return
+    }
+
+    if (method === "GET" && url.pathname === "/api/global-config") {
+      sendJson(response, 200, {
+        authentication,
+        modelConfiguration: options.modelConfiguration?.snapshot() ?? null,
+        modelAuthentication:
+          (await options.modelAuthentication?.snapshot()) ?? null,
+      })
+      return
+    }
+
+    if (
+      method === "POST" &&
+      url.pathname === "/api/global-config/authentication"
+    ) {
+      if (!options.authentication) {
+        throw new HttpRequestError(
+          404,
+          "authentication_unavailable",
+          "当前 WebUI 未配置鉴权存储",
+        )
+      }
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      const enabled = body.enabled === true
+      try {
+        const configured = await options.authentication.configure({
+          enabled,
+          ...(enabled
+            ? {
+                username: requiredString(
+                  body.username,
+                  "用户名",
+                  128,
+                  "invalid_authentication_configuration",
+                ),
+                ...(body.password === undefined
+                  ? {}
+                  : {
+                      password: requiredString(
+                        body.password,
+                        "密码",
+                        1_024,
+                        "invalid_authentication_configuration",
+                      ),
+                    }),
+              }
+            : {}),
+        })
+        sendJson(response, 200, configured)
+      } catch (error) {
+        throw new HttpRequestError(
+          400,
+          "invalid_authentication_configuration",
+          errorText(error),
+        )
+      }
       return
     }
 
@@ -1297,6 +1424,46 @@ function projectApiRoute(
   }
   const suffix = match[2] ?? ""
   return { projectId, apiPath: suffix ? `/api${suffix}` : "/api" }
+}
+
+function cookieValue(
+  request: IncomingMessage,
+  name: string,
+): string | undefined {
+  const cookie = request.headers.cookie
+  if (!cookie) return undefined
+  for (const part of cookie.split(";")) {
+    const separator = part.indexOf("=")
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim())
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function sessionCookie(token: string, secure: boolean): string {
+  return [
+    `ctf_agent_session=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${24 * 60 * 60}`,
+    ...(secure ? ["Secure"] : []),
+  ].join("; ")
+}
+
+function expiredSessionCookie(secure: boolean): string {
+  return [
+    "ctf_agent_session=",
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    "Max-Age=0",
+    ...(secure ? ["Secure"] : []),
+  ].join("; ")
 }
 
 function writeEvent(

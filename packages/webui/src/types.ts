@@ -371,3 +371,18 @@ export interface DashboardModelAuthentication {
   importJson(raw: string): Promise<ModelAuthImportResult>
   importFile(): Promise<ModelAuthImportResult>
 }
+
+export interface DashboardWebUiAuthentication {
+  snapshot(): { enabled: boolean; username: string | null }
+  configure(input: {
+    enabled: boolean
+    username?: string
+    password?: string
+  }): Promise<{ enabled: boolean; username: string | null }>
+  login(
+    username: string,
+    password: string,
+  ): Promise<{ token: string; username: string; expiresAt: string }>
+  authenticate(token: string | undefined): boolean
+  logout(token: string | undefined): void
+}

@@ -1,4 +1,10 @@
 export {
+  createFileWebUiAuthentication,
+  type WebUiAuthentication,
+  type WebUiAuthenticationView,
+  type WebUiLoginSession,
+} from "./authentication.ts"
+export {
   buildChallengeDetails,
   buildDashboardSnapshot,
   buildEmptyDashboardSnapshot,

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { createFileWebUiAuthentication } from "../src/authentication.ts"
 import { createFileModelAuthentication } from "../src/model-authentication.ts"
 import { startWebUi, type WebUiServer } from "../src/server.ts"
 import type { DashboardControlPlane } from "../src/types.ts"
@@ -22,6 +23,71 @@ afterEach(async () => {
 })
 
 describe("WebUI HTTP server", () => {
+  it("启用可选鉴权后用 HttpOnly session cookie 保护 API", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-webui-server-auth-"))
+    roots.push(root)
+    const authentication = await createFileWebUiAuthentication(
+      join(root, "global-config.json"),
+    )
+    await authentication.configure({
+      enabled: true,
+      username: "operator",
+      password: "strong-password",
+    })
+    const server = await startWebUi({
+      project: new FakeDashboardProject(),
+      authentication,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    expect((await fetch(`${server.url}/api/snapshot`)).status).toBe(401)
+    const rejected = await fetch(`${server.url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "operator",
+        password: "wrong-password",
+      }),
+    })
+    expect(rejected.status).toBe(401)
+
+    const login = await fetch(`${server.url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "operator",
+        password: "strong-password",
+      }),
+    })
+    expect(login.status).toBe(200)
+    const cookie = login.headers.get("set-cookie")
+    expect(cookie).toContain("HttpOnly")
+    expect(cookie).toContain("SameSite=Strict")
+    expect(
+      (
+        await fetch(`${server.url}/api/snapshot`, {
+          headers: { Cookie: cookie ?? "" },
+        })
+      ).status,
+    ).toBe(200)
+
+    const logout = await fetch(`${server.url}/api/auth/logout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie ?? "",
+      },
+      body: "{}",
+    })
+    expect(logout.status).toBe(200)
+    expect(
+      authentication.authenticate(cookie?.split("=")[1]?.split(";")[0]),
+    ).toBe(false)
+  })
+
   it("未配置时仍可启动，并通过控制面 API 测试和应用平台配置", async () => {
     let project: FakeDashboardProject | undefined
     let phase: "unconfigured" | "ready" = "unconfigured"
