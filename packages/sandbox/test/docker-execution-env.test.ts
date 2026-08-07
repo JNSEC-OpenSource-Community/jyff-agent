@@ -28,7 +28,7 @@ class FakeSandbox implements Sandbox {
       path: string
       base64?: string
     }
-    if (payload.op === "write") {
+    if (payload.op === "write" || payload.op === "replace") {
       this.files.set(payload.path, Buffer.from(payload.base64 ?? "", "base64"))
     } else if (payload.op === "append") {
       this.files.set(
@@ -84,6 +84,20 @@ describe("DockerExecutionEnv", () => {
     expect(result.ok).toBe(true)
     expect(sandbox.helperOperations("write")).toBe(3)
     expect(sandbox.files.get("/tmp/result.txt")?.toString()).toBe("ready")
+  })
+
+  it("通过原子替换写入可能正被执行的持久化文件", async () => {
+    const sandbox = new FakeSandbox()
+    const result = await new DockerExecutionEnv(sandbox).replaceFile(
+      "/workspace/attachments/chall",
+      "new payload",
+    )
+
+    expect(result.ok).toBe(true)
+    expect(sandbox.helperOperations("replace")).toBe(1)
+    expect(sandbox.files.get("/workspace/attachments/chall")?.toString()).toBe(
+      "new payload",
+    )
   })
 
   it("将高频 bash 完整输出合并为少量容器写入", async () => {

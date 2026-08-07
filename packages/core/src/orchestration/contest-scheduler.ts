@@ -1027,7 +1027,7 @@ export class ContestScheduler {
       await this.project.markRunBlocking(solver.runId, trigger)
       const records = await this.project.finalizeSubagents(
         solver.runId,
-        "Report your current objective, verified findings, attempted experiments, exact results, artifacts, and next-step recommendation. Stop investigating after this report.",
+        "Report your current objective, verified findings, attempted experiments, exact results, artifacts, and next-step recommendation. Terminate processes you started and remove disposable temporary files; list the exact path and purpose of every retained artifact. Stop investigating after this report.",
         2_000,
       )
       solver.appendMessage({

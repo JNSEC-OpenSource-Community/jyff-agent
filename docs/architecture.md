@@ -46,7 +46,7 @@ packages/
 1. 将题目 ID 绑定为单题 `ChallengeCapability` 并读取元数据；
 2. 读取当前题目已有的共享黑板；黑板默认保持为空；
 3. 创建或复用由题目 ID 稳定哈希得到的题目级 workspace，并创建 Docker sandbox；
-4. 自动下载全部附件到容器的 `/workspace/attachments/<文件名>`；
+4. 自动下载全部附件到容器的 `/workspace/attachments/<文件名>`；同题后续 attempt 会复用内容未变化的附件，内容变化时以同目录原子替换刷新，避免覆盖仍被旧进程执行的 inode 时触发 `ETXTBSY`；
 5. 把题目信息与附件路径编码为 `<challenge_context>` 初始 user 消息；
 6. 创建共享同一 sandbox 的 SubAgent manager；
 7. 装配 Solver 的容器工具、平台工具、黑板工具与 SubAgent 工具；
@@ -102,6 +102,6 @@ WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`ca
 
 Solver 停止原因经过 `classifySolverStop` 归一化：网络断连、Provider 5xx/429 和显式 retryable 错误不增加 block score，记录 `run_transient_failure` 后按基础设施退避重试；认证/配置错误不重试。模型自然停止、长度耗尽、协议异常和 prompt timeout 在未超过阈值时记录幂等 block event，并在同一 Run/session 追加 continuation prompt；超过阈值才关闭为 blocked。取消、进程关闭和已提交结果不计入 block。
 
-Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn 前读取 context pressure。compact 边界先以 `delta=2` 预判有效阈值：可 compact 时执行 CTF compact 并写入 `compact_performed=true`，会超阈值时跳过 compact 并直接进入 `blocking`。`CTF_COMPACTION_PROMPT` 只让摘要保留未被权威快照覆盖的 Solver 本地调查状态；该提示词由 `CtfSolverAgent` 传给 Pi `AgentHarness.compact()`。compact 成功后，控制面按题目信息、非空黑板、已批准公告、SubAgent snapshot 的顺序重新注入最新结构化数据，因此各部分不在摘要中重复，compact 期间完成的 worker 结果也会进入下一 turn。blocking 阶段会向 running SubAgent 请求 final report，等待短 grace 后将最新 worker snapshot 作为不可信数据注入 Solver，执行一次 `BLOCKED_FINALIZATION_PROMPT` final turn；最终无论成功还是失败都关闭为 blocked，失败追加 `block_finalization_failed`。因 legacy interruption 上限而进入 blocking 时使用独立的 `forceChallengeBlocked` 生命周期更新，只改变 blocked 事实，不重复增加 block score；存在 ledger 的 Run 也不会再被 close callback 重复计分。事件 key 由 Run/session 事件序列稳定派生，崩溃重放不会重复计分。
+Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn 前读取 context pressure。compact 边界先以 `delta=2` 预判有效阈值：可 compact 时执行 CTF compact 并写入 `compact_performed=true`，会超阈值时跳过 compact 并直接进入 `blocking`。`CTF_COMPACTION_PROMPT` 只让摘要保留未被权威快照覆盖的 Solver 本地调查状态；该提示词由 `CtfSolverAgent` 传给 Pi `AgentHarness.compact()`。compact 成功后，控制面按题目信息、非空黑板、已批准公告、SubAgent snapshot 的顺序重新注入最新结构化数据，因此各部分不在摘要中重复，compact 期间完成的 worker 结果也会进入下一 turn。blocking 阶段会向 running SubAgent 请求 final report，等待短 grace 后将最新 worker snapshot 作为不可信数据注入 Solver，执行一次 `BLOCKED_FINALIZATION_PROMPT` final turn；该收尾要求终止遗留进程、删除临时文件，并把所有保留文件的准确路径与用途记录为 Evidence。最终无论成功还是失败都关闭为 blocked，失败追加 `block_finalization_failed`。因 legacy interruption 上限而进入 blocking 时使用独立的 `forceChallengeBlocked` 生命周期更新，只改变 blocked 事实，不重复增加 block score；存在 ledger 的 Run 也不会再被 close callback 重复计分。事件 key 由 Run/session 事件序列稳定派生，崩溃重放不会重复计分。
 
 调度等待队列持久化在 `scheduler_queue`，记录 normal/blocked lane、lane 内位置、人工跨 lane override 和乐观锁版本。自主调度优先填充 normal lane；普通题耗尽后，按 `blocked_at` 顺序加入 blocked revival。领取复活题时保留原 block score，`revival_count` 和 `lifecycle_generation` 各增加 1，因此有效阈值增加 4。人工重排使用版本检查，冲突时拒绝覆盖；数据库队列在进程关闭后保留，显式暂停自主调度或取消排队题目时才删除相应记录。生产默认 Solver 并发数为 8。

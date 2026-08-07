@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer"
 import { posix } from "node:path"
 import type { Attachment, ChallengeCapability } from "@ctf-agent/platform"
 import { DockerExecutionEnv, type Sandbox } from "@ctf-agent/sandbox"
@@ -26,7 +27,12 @@ export async function downloadChallengeAttachments(options: {
       usedPaths,
     )
     usedPaths.add(path)
-    const saved = await env.writeFile(path, payload.content)
+    const existing = await env.readBinaryFile(path)
+    const unchanged =
+      existing.ok && Buffer.from(existing.value).equals(payload.content)
+    const saved = unchanged
+      ? ({ ok: true, value: undefined } as const)
+      : await env.replaceFile(path, payload.content)
     if (!saved.ok) {
       throw new Error(
         `无法保存题目附件 ${payload.attachment.name}: ${saved.error.message}`,

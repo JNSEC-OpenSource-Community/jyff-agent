@@ -47,6 +47,8 @@ export const BLOCKED_FINALIZATION_PROMPT = [
   "The investigation is now considered stuck.",
   "Record all newly verified progress as Evidence, preserve viable experimental directions as Opportunities, " +
     "and conclude experimentally disproved directions as dead ends with their result Evidence.",
+  "Clean the workspace before stopping: terminate leftover processes and remove disposable temporary files. " +
+    "For every file you intentionally retain, record its exact path and purpose as blackboard Evidence.",
   "Then stop. Do not start another broad investigation.",
 ].join(" ")
 

@@ -43,7 +43,11 @@ class FakeSandbox implements Sandbox {
         path?: string
         base64?: string
       }
-      if (payload.op === "write" && payload.path && payload.base64) {
+      if (
+        (payload.op === "write" || payload.op === "replace") &&
+        payload.path &&
+        payload.base64
+      ) {
         this.writes.set(payload.path, payload.base64)
       }
       return {
