@@ -56,6 +56,7 @@ export interface DockerSandboxResources {
   memoryBytes: number
   memorySwapBytes: number
   pidsLimit: number
+  storageBytes: number
 }
 
 export const DEFAULT_DOCKER_SANDBOX_RESOURCES: Readonly<DockerSandboxResources> =
@@ -64,6 +65,7 @@ export const DEFAULT_DOCKER_SANDBOX_RESOURCES: Readonly<DockerSandboxResources> 
     memoryBytes: 4 * 1024 * 1024 * 1024,
     memorySwapBytes: 4 * 1024 * 1024 * 1024,
     pidsLimit: 512,
+    storageBytes: 20 * 1024 * 1024 * 1024,
   })
 
 export type DockerWorkspaceMount =
@@ -267,6 +269,8 @@ export function dockerSandboxCreateArguments(
     String(resources.memorySwapBytes),
     "--pids-limit",
     String(resources.pidsLimit),
+    "--storage-opt",
+    `size=${resources.storageBytes}`,
     "--mount",
     workspaceMount,
   ]
@@ -327,6 +331,7 @@ function resolveDockerSandboxResources(
   positiveInteger(resources.memoryBytes, "resources.memoryBytes")
   positiveInteger(resources.memorySwapBytes, "resources.memorySwapBytes")
   positiveInteger(resources.pidsLimit, "resources.pidsLimit")
+  positiveInteger(resources.storageBytes, "resources.storageBytes")
   if (resources.memorySwapBytes < resources.memoryBytes) {
     throw new Error(
       "resources.memorySwapBytes must be >= resources.memoryBytes",

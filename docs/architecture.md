@@ -58,7 +58,7 @@ packages/
 
 每个 Solver Run 的 `ctf_submit_flag` 工具维护独立滑动窗口：任意连续 60 秒内最多发起 5 次平台提交，第 6 次在工具层拒绝且不会触达平台。新的 Run 会开始新的窗口。
 
-容器文件工具不限制到 `/workspace`；`bash`、`read`、`write`、`edit` 和 `list` 可访问 sandbox 内任意绝对路径，包括 `/tmp`。这不会给予 Agent 宿主机文件访问权，宿主机只负责 Docker bind/volume 和控制面状态。`DockerSandbox` 为每个 Solver 容器默认传入 `--cpus=2`、4 GiB 的 `--memory/--memory-swap` 和 `--pids-limit=512`；`DockerSandboxOptions.resources` 可由嵌入方收紧或覆盖这些限制。
+容器文件工具不限制到 `/workspace`；`bash`、`read`、`write`、`edit` 和 `list` 可访问 sandbox 内任意绝对路径，包括 `/tmp`。这不会给予 Agent 宿主机文件访问权，宿主机只负责 Docker bind/volume 和控制面状态。`DockerSandbox` 为每个 Solver 容器默认传入 `--cpus=2`、4 GiB 的 `--memory/--memory-swap`、`--pids-limit=512`，并通过 `--storage-opt size=21474836480` 将容器可写层限制为 20 GiB；`DockerSandboxOptions.resources` 可由嵌入方收紧或覆盖这些限制。存储限制是否可用取决于 Docker storage driver；例如 `overlay2` 要求 XFS backing filesystem 启用 `pquota`。挂载到 `/workspace` 的 bind mount 或 volume 不属于容器可写层，需由宿主机或 volume driver 单独提供配额。
 
 ## Session 中断与阻塞
 
