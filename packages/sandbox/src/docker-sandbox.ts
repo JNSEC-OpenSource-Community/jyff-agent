@@ -48,7 +48,23 @@ export interface DockerSandboxOptions {
   workspaceMount?: DockerWorkspaceMount
   privileged: boolean
   networkMode: "none" | "bridge" | "host"
+  resources?: Partial<DockerSandboxResources>
 }
+
+export interface DockerSandboxResources {
+  cpus: number
+  memoryBytes: number
+  memorySwapBytes: number
+  pidsLimit: number
+}
+
+export const DEFAULT_DOCKER_SANDBOX_RESOURCES: Readonly<DockerSandboxResources> =
+  Object.freeze({
+    cpus: 2,
+    memoryBytes: 4 * 1024 * 1024 * 1024,
+    memorySwapBytes: 4 * 1024 * 1024 * 1024,
+    pidsLimit: 512,
+  })
 
 export type DockerWorkspaceMount =
   | { type: "bind"; source: string }
@@ -180,30 +196,7 @@ export class DockerSandbox implements Sandbox {
   }
 
   static async create(options: DockerSandboxOptions): Promise<DockerSandbox> {
-    const name = `ctf-solver-${options.runId}`
-    const workspaceMount = dockerMount(
-      options.workspaceMount ?? {
-        type: "bind",
-        source: options.workspace,
-      },
-    )
-    const args = [
-      "create",
-      "--name",
-      name,
-      "--label",
-      "ctf-agent.managed=true",
-      "--label",
-      `ctf-agent.project=${options.projectId}`,
-      "--label",
-      `ctf-agent.run=${options.runId}`,
-      "--network",
-      options.networkMode,
-      "--mount",
-      workspaceMount,
-    ]
-    if (options.privileged) args.push("--privileged")
-    args.push(options.image, "sleep", "infinity")
+    const args = dockerSandboxCreateArguments(options)
 
     const created = await execute(args)
     if (created.code !== 0) throw commandFailure("create", created)
@@ -241,6 +234,45 @@ export class DockerSandbox implements Sandbox {
       if (this.closing === operation) this.closing = undefined
     }
   }
+}
+
+export function dockerSandboxCreateArguments(
+  options: DockerSandboxOptions,
+): string[] {
+  const name = `ctf-solver-${options.runId}`
+  const workspaceMount = dockerMount(
+    options.workspaceMount ?? {
+      type: "bind",
+      source: options.workspace,
+    },
+  )
+  const resources = resolveDockerSandboxResources(options.resources)
+  const args = [
+    "create",
+    "--name",
+    name,
+    "--label",
+    "ctf-agent.managed=true",
+    "--label",
+    `ctf-agent.project=${options.projectId}`,
+    "--label",
+    `ctf-agent.run=${options.runId}`,
+    "--network",
+    options.networkMode,
+    "--cpus",
+    String(resources.cpus),
+    "--memory",
+    String(resources.memoryBytes),
+    "--memory-swap",
+    String(resources.memorySwapBytes),
+    "--pids-limit",
+    String(resources.pidsLimit),
+    "--mount",
+    workspaceMount,
+  ]
+  if (options.privileged) args.push("--privileged")
+  args.push(options.image, "sleep", "infinity")
+  return args
 }
 
 export function newRunId(): string {
@@ -285,4 +317,32 @@ function dockerMount(mount: DockerWorkspaceMount): string {
     fields.push(`volume-subpath=${normalized}`)
   }
   return fields.join(",")
+}
+
+function resolveDockerSandboxResources(
+  overrides: Partial<DockerSandboxResources> = {},
+): DockerSandboxResources {
+  const resources = { ...DEFAULT_DOCKER_SANDBOX_RESOURCES, ...overrides }
+  positiveFinite(resources.cpus, "resources.cpus")
+  positiveInteger(resources.memoryBytes, "resources.memoryBytes")
+  positiveInteger(resources.memorySwapBytes, "resources.memorySwapBytes")
+  positiveInteger(resources.pidsLimit, "resources.pidsLimit")
+  if (resources.memorySwapBytes < resources.memoryBytes) {
+    throw new Error(
+      "resources.memorySwapBytes must be >= resources.memoryBytes",
+    )
+  }
+  return resources
+}
+
+function positiveFinite(value: number, label: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${label} must be a positive finite number`)
+  }
+}
+
+function positiveInteger(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive safe integer`)
+  }
 }
