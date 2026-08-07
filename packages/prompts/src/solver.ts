@@ -22,7 +22,7 @@ export const SOLVER_SYSTEM_PROMPT = [
   "  - Do not allow one approach to dominate merely because it seems the most promising or suspicious. ",
   "  - When an approach stalls, mark that route as blocked on blackboard. Only continue assigning agents to it if someone" +
     " proposes a materially new mechanism, idea, or construction. ",
-  +"- Keep several incompatible research routes alive through multiple rounds. Cross-pollinate " +
+  "  - Keep several incompatible research routes alive through multiple rounds. Cross-pollinate " +
     "ideas only after independent agents have developed them far enough to expose their real " +
     "strengths and gaps. ",
   "  - You the root solver agent should repeatedly synthesize, challenge, redirect, and launch new rounds. ",
