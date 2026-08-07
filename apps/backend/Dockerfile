@@ -3,7 +3,7 @@ FROM node:24-alpine AS build
 RUN corepack enable
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/agents/package.json packages/agents/package.json
 COPY packages/platform/package.json packages/platform/package.json
 COPY packages/core/package.json packages/core/package.json
@@ -12,7 +12,7 @@ COPY packages/prompts/package.json packages/prompts/package.json
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/frontend/package.json apps/frontend/package.json
 RUN corepack pnpm install --frozen-lockfile \
-  --filter @ctf-agent/backend... --ignore-scripts
+  --filter @ctf-agent/backend... --filter @ctf-agent/frontend... --ignore-scripts
 
 COPY packages packages
 COPY apps apps
@@ -23,7 +23,7 @@ FROM node:24-alpine AS dependencies
 RUN corepack enable
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/agents/package.json packages/agents/package.json
 COPY packages/platform/package.json packages/platform/package.json
 COPY packages/core/package.json packages/core/package.json
