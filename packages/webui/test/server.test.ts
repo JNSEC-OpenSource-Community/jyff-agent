@@ -611,9 +611,20 @@ describe("WebUI HTTP server", () => {
     expect(
       dispatchedBody.challenges.find((item) => item.id === "misc-1")?.status,
     ).toBe("queued")
+    expect(scheduler.dispatchCalls).toEqual([
+      { challengeId: "misc-1", force: false },
+    ])
 
     expect((await post("/api/challenges/misc-1/cancel")).status).toBe(200)
     expect(scheduler.snapshot().queued).toHaveLength(0)
+
+    expect(
+      (await post("/api/challenges/pwn-1/dispatch", { force: true })).status,
+    ).toBe(200)
+    expect(scheduler.dispatchCalls.at(-1)).toEqual({
+      challengeId: "pwn-1",
+      force: true,
+    })
 
     expect((await post("/api/runs/run-pwn-1/retry")).status).toBe(200)
     expect(

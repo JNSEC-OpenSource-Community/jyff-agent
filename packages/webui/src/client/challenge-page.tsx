@@ -540,6 +540,9 @@ export function ChallengePage(): React.ReactElement {
           `/api/challenges/${encodeURIComponent(challengeId)}/${action}`,
         ),
         "POST",
+        action === "dispatch" && details?.challenge.status === "blocked"
+          ? { force: true }
+          : {},
       )
       await load()
     } catch (cause) {
@@ -588,7 +591,11 @@ export function ChallengePage(): React.ReactElement {
                 icon={active ? "lucide:square" : "lucide:play"}
                 width="16"
               />
-              {active ? "终止当前运行" : "派发 Solver"}
+              {active
+                ? "终止当前运行"
+                : challenge.status === "blocked"
+                  ? "强制重新派发"
+                  : "派发 Solver"}
             </Button>
           </>
         }
