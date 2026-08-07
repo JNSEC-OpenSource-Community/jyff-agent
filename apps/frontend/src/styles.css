@@ -339,7 +339,6 @@ p {
   width: min(1080px, 100%);
 }
 
-
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -1138,7 +1137,6 @@ p {
 .mobile-menu {
   display: none;
 }
-
 
 @media (max-width: 1080px) {
   .app-frame {
