@@ -133,7 +133,7 @@ async function fixture(challenges: TestChallenge[], tracker: SandboxTracker) {
   return project
 }
 
-function solvingAgent(item: TestChallenge, delayMs = 20): AgentOptions {
+function solvingAgent(item: TestChallenge, delayMs = 0): AgentOptions {
   const faux = createFauxCore({ provider: `scheduler-${item.id}` })
   faux.setResponses([
     async () => {
@@ -899,6 +899,6 @@ async function waitUntil(
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待调度状态超时")
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }

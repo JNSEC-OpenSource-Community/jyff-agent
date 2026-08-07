@@ -85,7 +85,7 @@ async function projectFixture(
 function solvingAgent(
   challenge: TestChallenge,
   attempt: number,
-  responseDelayMs = 25,
+  responseDelayMs = 0,
 ): AgentOptions {
   const faux = createFauxCore({
     provider: `runner-${challenge.id}-${attempt}`,
@@ -261,7 +261,7 @@ describe("ContestRunner", () => {
       const runner = new ContestRunner(project, {
         maxConcurrent: 1,
         maxAttempts: 1,
-        challengeTimeoutMs: 5_000,
+        challengeTimeoutMs: 200,
         abortGraceMs: 5,
         createAgentOptions: () => {
           const faux = createFauxCore({ provider: "runner-stop" })
@@ -271,7 +271,7 @@ describe("ContestRunner", () => {
               { stopReason: "toolUse" },
             ),
             async () => {
-              await new Promise((resolve) => setTimeout(resolve, 250))
+              await new Promise((resolve) => setTimeout(resolve, 50))
               return fauxAssistantMessage("too late")
             },
           ])
@@ -318,6 +318,6 @@ async function waitUntil(
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待条件超时")
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }

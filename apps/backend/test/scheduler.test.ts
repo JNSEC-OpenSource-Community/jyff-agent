@@ -49,18 +49,9 @@ describe("调度器路由", () => {
     expect(concurrency.status).toBe(200)
     expect(scheduler.snapshot().maxConcurrent).toBe(4)
 
-    const invalid = await jsonRequest(
-      app,
-      "/api/scheduler/concurrency",
-      "POST",
-      {
-        maxConcurrent: 0,
-      },
-    )
+    const invalid = await jsonRequest(app, "/api/scheduler/concurrency", "POST", { maxConcurrent: 0 })
     expect(invalid.status).toBe(400)
-    expect(await jsonOf(invalid)).toMatchObject({
-      error: "invalid_scheduler_configuration",
-    })
+    expect(await jsonOf(invalid)).toMatchObject({ error: "invalid_scheduler_configuration" })
 
     const dispatched = await jsonRequest(
       app,

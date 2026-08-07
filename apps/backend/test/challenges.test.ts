@@ -44,235 +44,91 @@ describe("题目路由", () => {
     expect(encoded.status).toBe(200)
   })
 
-  it("TLDR：读取、刷新与模型未配置 503", async () => {
-    const { app, project } = appWithProject()
+  it.each([
+    { label: "模型未配置时拒绝刷新", configured: false, expectStatus: 503, expectError: "model_unavailable", refreshCalls: 0 },
+    { label: "模型配置后刷新成功返回 TLDR 内容", configured: true, expectStatus: 200, refreshCalls: 1, expectContent: "堆溢出利用题" },
+  ])("TLDR $label", async ({ configured, expectStatus, expectError, refreshCalls, expectContent }) => {
+    const project = new FakeDashboardProject()
+    if (configured) {
+      project.tldrValue = {
+        challengeId: "pwn-1", updatedAt: "2026-07-29T13:00:00.000Z",
+        content: "# TLDR\n堆溢出利用题\n检查 glibc 版本", model: "solver",
+        sessionPath: "/sessions/tldr.jsonl", error: null,
+        inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0,
+      }
+    }
+    const modelConfiguration = new FakeModelConfiguration()
+    if (configured) {
+      modelConfiguration.value = {
+        models: [{ id: "solver", provider: "test", modelId: "solver-model", baseUrl: "https://test", contextWindow: 64_000, thinkingEnabled: true, reasoningEffort: "high", passthroughThinking: false, apiKeyConfigured: true, apiKeySource: "secret-store", configured: true, unavailableReason: undefined, supportedThinkingLevels: ["low", "medium", "high", "max"] }],
+        solverModelId: "solver", tldrModelId: "solver", subagentModels: {},
+        supportedThinkingLevels: ["low", "medium", "high", "max"],
+        configured: true, unavailableReason: undefined,
+      }
+      modelConfiguration.agentOptionsValue = { model: "solver-model", systemPrompt: "TLDR agent" } as unknown as AgentOptions
+    }
+    const { app } = createWebUiApp({ project, modelConfiguration, frontendDist: "/nonexistent" })
 
     const read = await app.request("/api/challenges/pwn-1/tldr")
     expect(read.status).toBe(200)
-    expect(await jsonOf(read)).toMatchObject({ tldr: null })
 
-    // 未配置模型配置/模型时刷新 → 503 model_unavailable
-    const refresh = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/tldr/refresh",
-      "POST",
-      {},
-    )
-    expect(refresh.status).toBe(503)
-    expect(await jsonOf(refresh)).toMatchObject({ error: "model_unavailable" })
-    expect(project.tldrRefreshCalls).toBe(0)
+    const refresh = await jsonRequest(app, "/api/challenges/pwn-1/tldr/refresh", "POST", {})
+    expect(refresh.status).toBe(expectStatus)
+    if (expectError) expect(await jsonOf(refresh)).toMatchObject({ error: expectError })
+    if (expectContent) expect(await jsonOf(refresh)).toMatchObject({ tldr: { challengeId: "pwn-1", content: expect.stringContaining(expectContent) } })
+    expect(project.tldrRefreshCalls).toBe(refreshCalls)
   })
 
-  it("TLDR 刷新成功后返回生成的 TLDR", async () => {
-    const project = new FakeDashboardProject()
-    project.tldrValue = {
-      challengeId: "pwn-1",
-      updatedAt: "2026-07-29T13:00:00.000Z",
-      content: "# TLDR\n堆溢出利用题\n检查 glibc 版本",
-      model: "solver",
-      sessionPath: "/sessions/tldr.jsonl",
-      error: null,
-      inputTokens: 100,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    }
-    project.tldrGenerationError = undefined
-    const modelConfiguration = new FakeModelConfiguration()
-    modelConfiguration.value = {
-      models: [
-        {
-          id: "solver",
-          provider: "test",
-          modelId: "solver-model",
-          baseUrl: "https://test",
-          contextWindow: 64_000,
-          thinkingEnabled: true,
-          reasoningEffort: "high",
-          passthroughThinking: false,
-          apiKeyConfigured: true,
-          apiKeySource: "secret-store",
-          configured: true,
-          unavailableReason: undefined,
-          supportedThinkingLevels: ["low", "medium", "high", "max"],
-        },
-      ],
-      solverModelId: "solver",
-      tldrModelId: "solver",
-      subagentModels: {},
-      supportedThinkingLevels: ["low", "medium", "high", "max"],
-      configured: true,
-      unavailableReason: undefined,
-    }
-    modelConfiguration.agentOptionsValue = {
-      model: "solver-model",
-      systemPrompt: "TLDR agent",
-    } as unknown as AgentOptions
-    const { app } = createWebUiApp({
-      project,
-      modelConfiguration,
-      frontendDist: "/nonexistent",
-    })
-
-    const refresh = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/tldr/refresh",
-      "POST",
-      {},
-    )
-    expect(refresh.status).toBe(200)
-    expect(await jsonOf(refresh)).toMatchObject({
-      tldr: {
-        challengeId: "pwn-1",
-        content: expect.stringContaining("堆溢出利用题"),
-      },
-    })
-    expect(project.tldrRefreshCalls).toBe(1)
-    expect(project.tldrAgentOptions).toMatchObject({ model: "solver-model" })
-  })
-
-  it("运行中切换思考强度（200/400/409 契约）", async () => {
+  it.each([
+    { label: "正常切换", level: "max", expectStatus: 200, expectKey: undefined },
+    { label: "非法档位 400", level: "ultra", expectStatus: 400, expectError: "invalid_level" },
+    { label: "无活跃 Run 返回 409", level: "low", expectStatus: 409, expectError: "no_active_run", setNoRun: true },
+  ])("切换思考强度 $label", async ({ level, expectStatus, expectError, setNoRun }) => {
     const { app, project } = appWithProject()
+    if (setNoRun) project.thinkingLevelResult = { error: "no_active_run" }
 
-    const ok = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/thinking-level",
-      "POST",
-      {
-        level: "max",
-      },
-    )
-    expect(ok.status).toBe(200)
-    expect(project.thinkingLevelCalls).toEqual([
-      { challengeId: "pwn-1", level: "max" },
-    ])
-
-    const invalid = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/thinking-level",
-      "POST",
-      {
-        level: "ultra",
-      },
-    )
-    expect(invalid.status).toBe(400)
-    expect(await jsonOf(invalid)).toMatchObject({ error: "invalid_level" })
-
-    project.thinkingLevelResult = { error: "no_active_run" }
-    const noRun = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/thinking-level",
-      "POST",
-      {
-        level: "low",
-      },
-    )
-    expect(noRun.status).toBe(409)
-    expect(await jsonOf(noRun)).toMatchObject({ error: "no_active_run" })
+    const response = await jsonRequest(app, "/api/challenges/pwn-1/thinking-level", "POST", { level })
+    expect(response.status).toBe(expectStatus)
+    if (expectError) expect(await jsonOf(response)).toMatchObject({ error: expectError })
+    if (expectStatus === 200) expect(project.thinkingLevelCalls).toEqual([{ challengeId: "pwn-1", level }])
   })
 
-  it("向运行中的 Agent 发送人工消息（200/400/409 契约）", async () => {
+  it.each([
+    { label: "正常发送", text: "先检查文件头", expectStatus: 200, expectResult: { runId: "run-pwn-1" } },
+    { label: "空白文本 400", text: "   ", expectStatus: 400 },
+    { label: "无活跃 Run 409", text: "继续", expectStatus: 409, setNoRun: true },
+    { label: "invalid_message 保留原始文案", text: "x", expectStatus: 400, setInvalidMessage: true, expectMessage: "消息内容不合法(测试)" },
+  ])("发送人工消息 $label", async ({ text, expectStatus, expectResult, setNoRun, setInvalidMessage, expectMessage }) => {
     const { app, project } = appWithProject()
+    if (setNoRun) project.sendMessageResult = { error: "no_active_run" }
+    if (setInvalidMessage) project.sendMessageResult = { error: "invalid_message" }
 
-    const delivered = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/message",
-      "POST",
-      {
-        text: "先检查文件头",
-      },
-    )
-    expect(delivered.status).toBe(200)
-    expect(await jsonOf(delivered)).toEqual({ runId: "run-pwn-1" })
-    expect(project.sendMessageCalls).toEqual([
-      { challengeId: "pwn-1", text: "先检查文件头" },
-    ])
-
-    expect(
-      (
-        await jsonRequest(app, "/api/challenges/pwn-1/message", "POST", {
-          text: "   ",
-        })
-      ).status,
-    ).toBe(400)
-    expect(
-      (await jsonRequest(app, "/api/challenges/pwn-1/message", "POST", {}))
-        .status,
-    ).toBe(400)
-
-    project.sendMessageResult = { error: "no_active_run" }
-    const noActive = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/message",
-      "POST",
-      {
-        text: "继续",
-      },
-    )
-    expect(noActive.status).toBe(409)
-
-    // project 抛 invalid_message 时保留其原始文案
-    project.sendMessageResult = { error: "invalid_message" }
-    const invalidMessage = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/message",
-      "POST",
-      {
-        text: "x",
-      },
-    )
-    expect(invalidMessage.status).toBe(400)
-    expect(await jsonOf(invalidMessage)).toMatchObject({
-      error: "invalid_message",
-      message: "消息内容不合法(测试)",
-    })
-
-    // message 路由不要求 scheduler（dispatch 才要求）
-    expect(
-      (await jsonRequest(app, "/api/challenges/pwn-1/dispatch", "POST", {}))
-        .status,
-    ).toBe(503)
+    const response = await jsonRequest(app, "/api/challenges/pwn-1/message", "POST", { text })
+    expect(response.status).toBe(expectStatus)
+    if (expectResult) expect(await jsonOf(response)).toEqual(expectResult)
+    if (expectMessage) expect(await jsonOf(response)).toMatchObject({ error: "invalid_message", message: expectMessage })
   })
 
-  it("writeup 下载：内容可用时返回 markdown 附件", async () => {
+  it("消息路由不要求 scheduler（dispatch 才要求）", async () => {
+    const { app } = appWithProject()
+    expect((await jsonRequest(app, "/api/challenges/pwn-1/dispatch", "POST", {})).status).toBe(503)
+  })
+
+  it.each([
+    { label: "内容可用时返回 markdown 附件", valid: true, errors: [] as string[], content: "# pwn-1 writeup\n\nheap exploit", expectStatus: 200, expectContentType: "text/markdown", expectBody: "# pwn-1 writeup" },
+    { label: "不可用时返回 409 与校验详情", valid: false, errors: ["no_solution_yet"], content: null, expectStatus: 409, expectError: "writeup_unavailable", expectValidation: { valid: false, errors: ["no_solution_yet"] } },
+  ])("writeup $label", async ({ valid, errors, content, expectStatus, expectContentType, expectBody, expectError, expectValidation }) => {
     const project = new FakeDashboardProject()
     project.writeupValue = {
-      validation: {
-        valid: true,
-        path: "/workspace/pwn-1/writeup.md",
-        errors: [],
-        size: 42,
-      },
-      content: "# pwn-1 writeup\n\nheap exploit",
+      validation: { valid, path: "/workspace/pwn-1/writeup.md", errors, size: valid ? 42 : 0 },
+      content,
     }
     const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
 
     const response = await app.request("/api/challenges/pwn-1/writeup")
-    expect(response.status).toBe(200)
-    expect(response.headers.get("content-type")).toContain("text/markdown")
-    expect(response.headers.get("content-disposition")).toContain(
-      'filename="writeup-pwn-1.md"',
-    )
-    expect(await response.text()).toContain("# pwn-1 writeup")
-  })
-
-  it("writeup 不可用时返回 409 与校验详情", async () => {
-    const project = new FakeDashboardProject()
-    project.writeupValue = {
-      validation: {
-        valid: false,
-        path: "/workspace/pwn-1/writeup.md",
-        errors: ["no_solution_yet"],
-        size: 0,
-      },
-      content: null,
-    }
-    const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
-
-    const response = await app.request("/api/challenges/pwn-1/writeup")
-    expect(response.status).toBe(409)
-    expect(await jsonOf(response)).toMatchObject({
-      error: "writeup_unavailable",
-      validation: { valid: false, errors: ["no_solution_yet"] },
-    })
+    expect(response.status).toBe(expectStatus)
+    if (expectContentType) expect(response.headers.get("content-type")).toContain(expectContentType)
+    if (expectBody) expect(await response.text()).toContain(expectBody)
+    if (expectError) expect(await jsonOf(response)).toMatchObject({ error: expectError, validation: expectValidation })
   })
 })

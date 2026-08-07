@@ -243,7 +243,7 @@ describe("CtfSubagentManager", () => {
       [1, 2, 3].map((index) => async () => {
         active++
         maximum = Math.max(maximum, active)
-        await new Promise((resolve) => setTimeout(resolve, 15))
+        await new Promise((resolve) => setTimeout(resolve, 0))
         active--
         return fauxAssistantMessage(`worker ${index} done`)
       }),
@@ -291,7 +291,7 @@ describe("CtfSubagentManager", () => {
     const faux = createFauxCore({ provider: "subagent-finalize" })
     faux.setResponses([
       async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20))
+        await new Promise((resolve) => setTimeout(resolve, 0))
         return fauxAssistantMessage("initial work")
       },
       fauxAssistantMessage("complete final report"),
@@ -353,6 +353,6 @@ async function waitFor(
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待 SubAgent 状态超时")
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }

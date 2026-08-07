@@ -111,6 +111,27 @@ describe("RunStore", () => {
     reopened.close()
   })
 
+  it("tool_started 事件可持久化与读取(含屏蔽后的命令参数)", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "run-tool",
+      challengeId: "misc-1",
+      workspace: "workspace",
+      attempt: 1,
+    })
+
+    const event = store.appendEvent("run-tool", "tool_started", {
+      toolName: "bash",
+      args: { command: "[omitted]" },
+    })
+    expect(event).toMatchObject({ runId: "run-tool", type: "tool_started" })
+    expect(store.events("run-tool").at(-1)?.data).toEqual({
+      toolName: "bash",
+      args: { command: "[omitted]" },
+    })
+    store.close()
+  })
+
   it("可直接读取最后事件，避免 Dashboard 扫描完整时间线", async () => {
     const { store } = await storeFixture()
     store.createRun({

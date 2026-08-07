@@ -102,6 +102,35 @@ describe("challenge attachments", () => {
     expect(sandbox.replaceCalls).toBe(0)
   })
 
+  it("同内容附件第二次下载时跳过写入（内容比对优化）", async () => {
+    const sandbox = new AttachmentSandbox()
+    sandbox.files.set("/workspace/attachments/chall", Buffer.from("unchanged"))
+
+    await downloadChallengeAttachments({
+      capability: capability(Buffer.from("unchanged")),
+      attachments: [{ id: "chall", name: "chall" }],
+      sandbox,
+    })
+
+    expect(sandbox.replaceCalls).toBe(0)
+  })
+
+  it("同名附件去重时各自写入不同路径", async () => {
+    const sandbox = new AttachmentSandbox()
+
+    await downloadChallengeAttachments({
+      capability: capability(Buffer.from("payload")),
+      attachments: [
+        { id: "a", name: "chall" },
+        { id: "b", name: "chall" },
+      ],
+      sandbox,
+    })
+
+    expect(sandbox.replaceCalls).toBe(2)
+    expect(sandbox.files.size).toBe(2)
+  })
+
   it("附件内容变化时通过原子替换刷新目标文件", async () => {
     const sandbox = new AttachmentSandbox()
     sandbox.files.set("/workspace/attachments/chall", Buffer.from("old"))
