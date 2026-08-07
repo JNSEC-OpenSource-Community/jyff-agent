@@ -41,6 +41,17 @@ export function apiMutation<T>(
 }
 
 export function projectApi(projectId: string, path: string): string {
-  const suffix = path.startsWith("/") ? path : `/${path}`
+  let normalizedPath = path
+  if (normalizedPath === "/api" || normalizedPath === "api") {
+    normalizedPath = ""
+  } else if (normalizedPath.startsWith("/api/")) {
+    normalizedPath = normalizedPath.slice(4)
+  } else if (normalizedPath.startsWith("api/")) {
+    normalizedPath = normalizedPath.slice(3)
+  }
+  const suffix =
+    normalizedPath === "" || normalizedPath.startsWith("/")
+      ? normalizedPath
+      : `/${normalizedPath}`
   return `/api/projects/${encodeURIComponent(projectId)}${suffix}`
 }

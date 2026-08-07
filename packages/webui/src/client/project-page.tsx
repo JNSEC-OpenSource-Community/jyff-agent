@@ -105,6 +105,7 @@ export function ProjectPage(): React.ReactElement {
   )
 
   const load = useCallback(async () => {
+    setError("")
     const next = await apiRequest<DashboardSnapshot>(
       projectApi(projectId, "/api/snapshot"),
     )
@@ -190,7 +191,17 @@ export function ProjectPage(): React.ReactElement {
     }
   }
 
-  if (!snapshot) return <Spinner label="正在同步比赛状态" />
+  if (!snapshot) {
+    if (error) {
+      return (
+        <div className="page">
+          <ErrorNotice message={error} />
+          <Button onClick={() => void load()}>重新同步</Button>
+        </div>
+      )
+    }
+    return <Spinner label="正在同步比赛状态" />
+  }
 
   const recent = [...snapshot.challenges]
     .sort(
