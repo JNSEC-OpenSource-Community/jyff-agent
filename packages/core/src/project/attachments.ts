@@ -10,6 +10,20 @@ export interface DownloadedChallengeAttachment {
   path: string
 }
 
+export class ChallengeAttachmentError extends Error {
+  readonly code = "CHALLENGE_ATTACHMENT_ERROR"
+
+  constructor(
+    readonly attachmentId: string,
+    readonly stage: "download" | "save",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = "ChallengeAttachmentError"
+  }
+}
+
 /** Download every advertised attachment into the run's persistent workspace. */
 export async function downloadChallengeAttachments(options: {
   capability: ChallengeCapability
@@ -20,7 +34,17 @@ export async function downloadChallengeAttachments(options: {
   const downloaded: DownloadedChallengeAttachment[] = []
   const usedPaths = new Set<string>()
   for (const attachment of options.attachments) {
-    const payload = await options.capability.downloadAttachment(attachment.id)
+    let payload: Awaited<ReturnType<ChallengeCapability["downloadAttachment"]>>
+    try {
+      payload = await options.capability.downloadAttachment(attachment.id)
+    } catch (cause) {
+      throw new ChallengeAttachmentError(
+        attachment.id,
+        "download",
+        `无法下载题目附件 ${attachment.name}: ${errorMessage(cause)}`,
+        { cause },
+      )
+    }
     const path = uniqueChallengeAttachmentPath(
       payload.attachment.id,
       payload.attachment.name,
@@ -34,11 +58,11 @@ export async function downloadChallengeAttachments(options: {
       ? ({ ok: true, value: undefined } as const)
       : await env.replaceFile(path, payload.content)
     if (!saved.ok) {
-      throw new Error(
+      throw new ChallengeAttachmentError(
+        payload.attachment.id,
+        "save",
         `无法保存题目附件 ${payload.attachment.name}: ${saved.error.message}`,
-        {
-          cause: saved.error,
-        },
+        { cause: saved.error },
       )
     }
     downloaded.push({
@@ -49,6 +73,10 @@ export async function downloadChallengeAttachments(options: {
     })
   }
   return downloaded
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 export function challengeAttachmentPath(name: string): string {

@@ -75,7 +75,10 @@ import {
   RunStore,
   type SchedulerQueueRecord,
 } from "../persistence/run-store.ts"
-import { downloadChallengeAttachments } from "./attachments.ts"
+import {
+  ChallengeAttachmentError,
+  downloadChallengeAttachments,
+} from "./attachments.ts"
 import {
   challengeWorkspaceKey,
   challengeWorkspacePath,
@@ -143,6 +146,21 @@ export interface CreateSolverOptions {
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource
+}
+
+export class SolverCreationError extends Error {
+  readonly code = "SOLVER_CREATION_FAILED"
+
+  constructor(
+    readonly runId: string,
+    readonly attachmentFailure: boolean,
+    readonly blocked: boolean,
+    readonly retryable: boolean,
+    cause: unknown,
+  ) {
+    super(`无法创建 Solver ${runId}: ${errorText(cause)}`, { cause })
+    this.name = "SolverCreationError"
+  }
 }
 
 /**
@@ -844,6 +862,10 @@ export class Project {
     const workspace =
       resumed?.workspace ??
       challengeWorkspacePath(this.agentDirectory, challengeId)
+    const attempt =
+      resumed?.attempt ??
+      options.attempt ??
+      this.runStore.nextAttempt(challengeId)
     // Run session 与题目级持久 workspace 分离；后者跨复活复用。
     await Promise.all([
       mkdir(runDirectory, { recursive: true }),
@@ -854,7 +876,7 @@ export class Project {
         id: runId,
         challengeId,
         workspace,
-        attempt: options.attempt ?? this.runStore.nextAttempt(challengeId),
+        attempt,
         source: options.source ?? "direct",
       })
       await this.persistRecord(record, runDirectory)
@@ -1139,32 +1161,48 @@ export class Project {
         error,
         ...cleanupErrors.map((message) => new Error(message)),
       ]
+      const attachmentFailure = error instanceof ChallengeAttachmentError
+      const blockImmediately = !resumed && attempt === 1 && !attachmentFailure
+      const retryable = attachmentFailure
+        ? !resumed && attempt === 1
+        : !blockImmediately && isRetryablePlatformError(error)
       try {
-        const retryable = isRetryablePlatformError(error)
+        if (blockImmediately) {
+          this.runStore.forceChallengeBlocked({ challengeId, runId })
+        }
         const updated = this.runStore.updateRun(
           runId,
           {
-            status: "failed",
-            closeReason: "failed",
+            status: blockImmediately ? "blocked" : "failed",
+            closeReason: blockImmediately ? "blocked" : "failed",
             error: errorText(error),
             cleanupError:
               cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
             finishedAt: new Date().toISOString(),
           },
-          "run_creation_failed",
-          { error: errorText(error), cleanupErrors, retryable },
+          blockImmediately ? "run_creation_blocked" : "run_creation_failed",
+          {
+            error: errorText(error),
+            cleanupErrors,
+            retryable,
+            attachmentFailure,
+          },
         )
         await this.persistRecord(updated, runDirectory)
       } catch (persistenceError) {
         failures.push(persistenceError)
       }
-      if (failures.length > 1) {
-        throw Object.assign(
-          new AggregateError(failures, `无法创建 Solver ${runId}`),
-          { retryable: isRetryablePlatformError(error) },
-        )
-      }
-      throw error
+      const cause =
+        failures.length > 1
+          ? new AggregateError(failures, `无法创建 Solver ${runId}`)
+          : error
+      throw new SolverCreationError(
+        runId,
+        attachmentFailure,
+        blockImmediately,
+        retryable,
+        cause,
+      )
     }
   }
 

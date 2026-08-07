@@ -929,7 +929,8 @@ export class ContestScheduler {
       active.queueGeneration === this.queueGeneration &&
       (retryableFailure ||
         schedulerAttemptsAfter < (this.options.maxAttempts ?? 2)) &&
-      !this.project.isChallengeSolved(active.challenge.id)
+      !this.project.isChallengeSolved(active.challenge.id) &&
+      !this.project.isChallengeBlocked(active.challenge.id)
     ) {
       if (failureMessage) {
         this.lastError = `${active.challenge.title}: ${failureMessage}（等待重试）`

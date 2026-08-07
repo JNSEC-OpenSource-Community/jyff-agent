@@ -187,7 +187,7 @@ describe("ContestRunner", () => {
       const runs = project.runs()
       expect(runs).toHaveLength(10)
       expect(runs.filter((run) => run.status === "solved")).toHaveLength(8)
-      expect(runs.filter((run) => run.status === "failed")).toHaveLength(1)
+      expect(runs.filter((run) => run.status === "blocked")).toHaveLength(1)
       expect(runs.filter((run) => run.status === "interrupted")).toHaveLength(1)
       expect(
         runs.every((run) => !["preparing", "running"].includes(run.status)),

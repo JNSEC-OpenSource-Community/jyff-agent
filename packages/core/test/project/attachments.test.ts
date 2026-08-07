@@ -5,7 +5,10 @@ import type {
   SandboxExecOptions,
 } from "@ctf-agent/sandbox"
 import { describe, expect, it, vi } from "vitest"
-import { downloadChallengeAttachments } from "../../src/project/attachments.ts"
+import {
+  ChallengeAttachmentError,
+  downloadChallengeAttachments,
+} from "../../src/project/attachments.ts"
 
 class AttachmentSandbox implements Sandbox {
   readonly id = "attachment-sandbox"
@@ -65,6 +68,27 @@ function capability(content: Buffer): ChallengeCapability {
 }
 
 describe("challenge attachments", () => {
+  it("用结构化错误标记平台下载失败", async () => {
+    const sandbox = new AttachmentSandbox()
+    const failedCapability = capability(Buffer.from("unused"))
+    failedCapability.downloadAttachment = vi.fn(async () => {
+      throw new Error("fetch failed")
+    })
+
+    await expect(
+      downloadChallengeAttachments({
+        capability: failedCapability,
+        attachments: [{ id: "chall", name: "chall" }],
+        sandbox,
+      }),
+    ).rejects.toMatchObject({
+      name: ChallengeAttachmentError.name,
+      code: "CHALLENGE_ATTACHMENT_ERROR",
+      attachmentId: "chall",
+      stage: "download",
+    })
+  })
+
   it("跨 attempt 遇到内容未变化的附件时保留现有 inode", async () => {
     const sandbox = new AttachmentSandbox()
     sandbox.files.set("/workspace/attachments/chall", Buffer.from("binary"))

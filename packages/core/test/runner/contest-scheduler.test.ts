@@ -33,6 +33,7 @@ class SandboxTracker {
   active = 0
   maximum = 0
   closed = 0
+  readonly files = new Map<string, Buffer>()
 
   create = async (_options: DockerSandboxOptions): Promise<Sandbox> => {
     this.active++
@@ -40,11 +41,44 @@ class SandboxTracker {
     let closed = false
     return {
       id: `sandbox-${this.maximum}-${this.active}`,
-      exec: async (): Promise<CommandResult> => ({
-        code: 0,
-        stdout: "",
-        stderr: "",
-      }),
+      exec: async (args, options): Promise<CommandResult> => {
+        if (args[0] !== "python3") {
+          return { code: 0, stdout: "", stderr: "" }
+        }
+        const payload = JSON.parse(options?.input ?? "{}") as {
+          op: string
+          path: string
+          base64?: string
+        }
+        if (payload.op === "read_binary") {
+          const content = this.files.get(payload.path)
+          return {
+            code: 0,
+            stdout: JSON.stringify(
+              content
+                ? { ok: true, value: content.toString("base64") }
+                : {
+                    ok: false,
+                    code: "not_found",
+                    message: "not found",
+                    path: payload.path,
+                  },
+            ),
+            stderr: "",
+          }
+        }
+        if (payload.op === "replace") {
+          this.files.set(
+            payload.path,
+            Buffer.from(payload.base64 ?? "", "base64"),
+          )
+        }
+        return {
+          code: 0,
+          stdout: JSON.stringify({ ok: true, value: null }),
+          stderr: "",
+        }
+      },
       close: async () => {
         if (closed) return
         closed = true
@@ -753,10 +787,10 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("平台瞬时创建故障恢复后继续调度且不消耗解题预算", async () => {
+  it("首次创建时附件下载失败可重试且不消耗解题预算", async () => {
     const item = challenge(1, {
-      failures: { bind: 1 },
-      retryableFailures: { bind: true },
+      attachments: [{ id: "chall", name: "chall", content: "payload" }],
+      failures: { download: 1 },
     })
     const tracker = new SandboxTracker()
     const project = await fixture([item], tracker)
@@ -784,6 +818,41 @@ describe("ContestScheduler", () => {
         expect.objectContaining({ attempt: 2, status: "solved" }),
       ])
       expect(project.schedulerAttemptCount(item.id)).toBe(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("首次创建时非附件错误直接阻塞且不创建新 attempt", async () => {
+    const item = challenge(2, {
+      failures: { bind: 1 },
+      retryableFailures: { bind: true },
+    })
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 3,
+      retryDelayMs: 0,
+      infrastructureRetryDelayMs: 0,
+      createAgentOptions: () => solvingAgent(item),
+    })
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () =>
+          project.isChallengeBlocked(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+
+      const runs = project.runs({ challengeId: item.id })
+      expect(runs).toEqual([
+        expect.objectContaining({ attempt: 1, status: "blocked" }),
+      ])
+      expect(
+        project.runEvents(runs[0]?.id ?? "").map((event) => event.type),
+      ).toContain("run_creation_blocked")
     } finally {
       await scheduler.shutdown()
       await project.close()

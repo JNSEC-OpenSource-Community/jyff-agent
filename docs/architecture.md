@@ -52,6 +52,8 @@ packages/
 7. 装配 Solver 的容器工具、平台工具、黑板工具与 SubAgent 工具；
 8. 用 Pi 原生 append-only JSONL session 运行并持久化消息树。
 
+首次 attempt 在 `run_creation` 阶段失败时按故障域处理：附件下载或写入失败允许重新创建一次 Run，其他装配错误立即把该 Run 与题目置为 blocked，等待人工介入。附件重试不计入实际开始解题的 Scheduler attempt 预算。
+
 题目描述和黑板快照均按不可信数据处理，动态内容不会进入 system prompt。固定 Solver、SubAgent、continuation 和 CTF compaction 提示词使用版本化英文占位文案，并明确要求 Agent 使用英语 reasoning；题目原文、Flag、路径、命令和协议 payload 保留原文。最终 Solver 策略和角色正文仍由人类审阅替换。Solver 默认 `thinkingLevel=medium`，再使用 Pi 的 `clampThinkingLevel` 按模型能力映射。SubAgent 的 thinkingLevel 由角色 registry 自己决定。
 
 每个 Solver Run 的 `ctf_submit_flag` 工具维护独立滑动窗口：任意连续 60 秒内最多发起 5 次平台提交，第 6 次在工具层拒绝且不会触达平台。新的 Run 会开始新的窗口。
