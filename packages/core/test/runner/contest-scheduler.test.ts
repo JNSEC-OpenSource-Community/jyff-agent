@@ -541,7 +541,7 @@ describe("ContestScheduler", () => {
       expect(project.sessionInterruptionCount(item.id)).toBe(0)
       expect(project.challengeRuntimeState(item.id)).toMatchObject({
         revivalCount: 1,
-        effectiveBlockThreshold: 12,
+        effectiveBlockThreshold: 14,
         blocked: false,
       })
       expect(project.isChallengeBlocked(item.id)).toBe(false)

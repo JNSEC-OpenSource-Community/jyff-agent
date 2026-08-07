@@ -285,7 +285,8 @@ export interface BlackboardStats {
   concludedOpportunities: number
 }
 
-export const DEFAULT_BLOCK_THRESHOLD = 8
+const PREVIOUS_DEFAULT_BLOCK_THRESHOLD = 8
+export const DEFAULT_BLOCK_THRESHOLD = 10
 export const BLOCK_THRESHOLD_REVIVAL_INCREMENT = 4
 
 export const BLACKBOARD_DESCRIPTION_MAX_LENGTH = 4_000
@@ -804,7 +805,7 @@ export class RunStore {
           CHECK (session_interruptions >= 0),
         blocked INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0, 1)),
         block_score INTEGER NOT NULL DEFAULT 0 CHECK (block_score >= 0),
-        base_block_threshold INTEGER NOT NULL DEFAULT 8
+        base_block_threshold INTEGER NOT NULL DEFAULT ${DEFAULT_BLOCK_THRESHOLD}
           CHECK (base_block_threshold >= 0),
         revival_count INTEGER NOT NULL DEFAULT 0 CHECK (revival_count >= 0),
         blocked_at TEXT,
@@ -1006,6 +1007,9 @@ export class RunStore {
     const hadBlockScore = runtimeColumns.some(
       (column) => column.name === "block_score",
     )
+    const hadBaseBlockThreshold = runtimeColumns.some(
+      (column) => column.name === "base_block_threshold",
+    )
     const runtimeMigrations = [
       [
         "block_score",
@@ -1040,6 +1044,22 @@ export class RunStore {
       for (const [name, sql] of runtimeMigrations) {
         if (!existingRuntimeColumns.has(name)) database.exec(sql)
       }
+
+      // 已阻塞任务保留作出判定时的旧阈值，避免升级数据库后隐式复活；
+      // 尚未阻塞的旧任务则采用提高后的默认阈值。
+      if (!hadBaseBlockThreshold) {
+        database.exec(`
+          UPDATE challenge_runtime_state
+          SET base_block_threshold = ${PREVIOUS_DEFAULT_BLOCK_THRESHOLD}
+          WHERE blocked = 1
+        `)
+      }
+      database.exec(`
+        UPDATE challenge_runtime_state
+        SET base_block_threshold = ${DEFAULT_BLOCK_THRESHOLD}
+        WHERE blocked = 0
+          AND base_block_threshold = ${PREVIOUS_DEFAULT_BLOCK_THRESHOLD}
+      `)
       if (!hadBlockScore) {
         database.exec(`
           UPDATE challenge_runtime_state

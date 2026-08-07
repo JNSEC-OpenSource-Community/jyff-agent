@@ -617,7 +617,7 @@ describe("RunStore", () => {
       workspace: "workspace",
       attempt: 1,
     })
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 6; index += 1) {
       store.recordChallengeBlockEvent({
         challengeId: "revive-challenge",
         runId: "revive-run",
@@ -628,9 +628,9 @@ describe("RunStore", () => {
     }
     const revived = store.reviveChallenge("revive-challenge")
     expect(revived).toMatchObject({
-      blockScore: 10,
+      blockScore: 12,
       revivalCount: 1,
-      effectiveBlockThreshold: 12,
+      effectiveBlockThreshold: 14,
       lifecycleGeneration: 1,
       blocked: false,
     })
@@ -678,7 +678,7 @@ describe("RunStore", () => {
       attempt: 1,
     })
 
-    for (let index = 1; index <= 4; index += 1) {
+    for (let index = 1; index <= 5; index += 1) {
       store.recordChallengeBlockEvent({
         challengeId: "crypto-score",
         runId: "score-run",
@@ -689,8 +689,8 @@ describe("RunStore", () => {
       })
     }
     expect(store.challengeRuntimeState("crypto-score")).toMatchObject({
-      blockScore: 8,
-      effectiveBlockThreshold: 8,
+      blockScore: 10,
+      effectiveBlockThreshold: 10,
       blocked: false,
     })
 
@@ -702,12 +702,12 @@ describe("RunStore", () => {
       reason: "model_stop",
     })
     expect(blocked).toMatchObject({
-      scoreBefore: 8,
-      scoreAfter: 9,
-      threshold: 8,
+      scoreBefore: 10,
+      scoreAfter: 11,
+      threshold: 10,
     })
     expect(store.challengeRuntimeState("crypto-score")).toMatchObject({
-      blockScore: 9,
+      blockScore: 11,
       blocked: true,
       blockedRunId: "score-run",
     })
@@ -720,17 +720,51 @@ describe("RunStore", () => {
       reason: "model_stop",
     })
     expect(replay).toEqual(blocked)
-    expect(store.challengeBlockEvents("crypto-score")).toHaveLength(5)
-    expect(store.challengeRuntimeState("crypto-score").blockScore).toBe(9)
+    expect(store.challengeBlockEvents("crypto-score")).toHaveLength(6)
+    expect(store.challengeRuntimeState("crypto-score").blockScore).toBe(11)
     store.updateRun("score-run", {
       status: "blocked",
       closeReason: "blocked",
     })
     expect(store.challengeRuntimeState("crypto-score")).toMatchObject({
-      blockScore: 9,
+      blockScore: 11,
       sessionInterruptions: 0,
     })
     store.close()
+  })
+
+  it("打开现行旧数据库时只提高尚未 blocked 任务的基础阈值", async () => {
+    const { path, store } = await storeFixture()
+    store.createRun({
+      id: "active-threshold-run",
+      challengeId: "active-threshold",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    store.recordChallengeBlockEvent({
+      challengeId: "active-threshold",
+      runId: "active-threshold-run",
+      eventKey: "seed-runtime-state",
+      delta: 0,
+      reason: "migration_fixture",
+    })
+    store.close()
+
+    const legacy = new DatabaseSync(path)
+    legacy.exec(`
+      UPDATE challenge_runtime_state
+      SET base_block_threshold = 8
+      WHERE challenge_id = 'active-threshold'
+    `)
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    expect(migrated.challengeRuntimeState("active-threshold")).toMatchObject({
+      baseBlockThreshold: 10,
+      effectiveBlockThreshold: 10,
+      blocked: false,
+    })
+    migrated.close()
   })
 
   it("打开旧 runtime state 时迁移 block score 且保留 blocked 事实", async () => {
