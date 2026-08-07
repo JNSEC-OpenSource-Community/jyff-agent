@@ -6,13 +6,9 @@ SubAgent 是单个 Solver Run 内的专业 worker。主 Solver 负责拆分任�
 
 | 角色 | thinkingLevel | 适用方向 |
 |---|---:|---|
-| `general-purpose` | `medium` | 通用探索和跨方向调查 |
-| `pwn` | `high` | 漏洞原语与利用链 |
-| `reverse` | `high` | 静态/动态逆向与反混淆 |
-| `web` | `medium` | HTTP、鉴权和 Web 漏洞 |
-| `crypto` | `high` | 密码构造和数学求解 |
-| `misc` | `medium` | 取证、隐写、流量和综合题 |
-| `reviewer` | `low` | 复核证据、脚本和候选解 |
+| `general-purpose` | `high` | 通用探索和跨方向调查 |
+| `explorer` | `max` | 深入浏览代码与攻击面 |
+| `fuzzer` | `medium` | 对有界机会执行模糊测试与黑盒枚举 |
 
 这些档位由 `packages/agents/src/subagent/registry.ts` 单独配置，不继承 Solver 的值。最终档位仍由 Pi 根据所选模型支持范围进行 clamp。
 
@@ -26,7 +22,7 @@ SubAgent 是单个 Solver Run 内的专业 worker。主 Solver 负责拆分任�
 | `cancel_subagent` | 取消排队或运行中的 worker |
 | `list_subagents` | 获取本 Run 的完整 fleet |
 
-后台并发默认上限为 4，前台调用不占后台池。后台任务完成后通过结构化 `<task-notification encoding="json">` 通知主 Solver。主 Solver 关闭时，manager 会取消或终止当前 Run 的全部 worker。
+后台并发默认上限为 4，前台调用不占后台池。后台任务完成后通过结构化 `<task-notification encoding="json">` 通知主 Solver。主 Solver 关闭时，manager 会取消或终止当前 Run 的全部 worker。共享 system prompt 禁止 worker 以计划、准备切换思路或单纯进度说明提前结束；它必须继续实际调查，直到形成可复现交付物、以具体负面证据穷尽有界方向，或主 Solver 明确要求阶段报告。`steer_subagent` 对 running worker 直接排队消息；对 completed/failed/cancelled/aborted/interrupted worker 则从原 JSONL session 恢复同一 ID，作为后台任务继续，完成后再次通知主 Solver。
 
 派发 prompt 当前受一个基础占位协议约束：只能委派可独立并行、边界清楚且有可验证交付物的任务，不能委派整道题、重复工作或 Flag 提交；prompt 必须使用 `<subagent_task>`，包含 `objective`、`context`、`deliverables` 和 `constraints`。协议定义在 `packages/prompts/src/project.ts`，后续可直接替换。
 
@@ -63,8 +59,8 @@ enabled: true
 
 - `display_name`、`description`：WebUI 和主 Solver 可见的角色信息；
 - `tools`：worker 工具白名单，未知工具会让任务明确失败；
-- `model`：`provider/model`，只能选择控制面已注册的模型；
-- `thinking`：`off|minimal|low|medium|high|xhigh|max`，省略时为 `medium`；
+- `model`：`provider/model`，只能选择控制面模型池中已注册的模型；WebUI 可按 role 覆盖，新 Run 生效；
+- `thinking`：`off|minimal|low|medium|high|xhigh|max`，省略时为 `low`；
 - `enabled`：设为 `false` 时不向主 Solver 暴露。
 
 无效角色会被隔离并写入 Project diagnostics，不阻止其他角色启动。SQLite 的 `run_subagents` 保存 worker 状态、会话路径、工作目录、当前工具、turn/tool/token 计数、结果和错误；完整生命周期同时写入 Run 事件时间线，并显示在 WebUI 的 Run 详情中。

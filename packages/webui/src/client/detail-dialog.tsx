@@ -1,10 +1,11 @@
-import type { RunEvent, SubagentRecord } from "@ctf-agent/core"
+import type { RunEvent } from "@ctf-agent/core"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type {
   AgentCacheStats,
   ChallengeDetails,
   DashboardChallenge,
   DashboardRun,
+  DashboardSubagent,
 } from "../types.ts"
 import {
   absoluteTime,
@@ -32,12 +33,23 @@ interface DetailDialogProps {
   toast: (message: string, error?: boolean) => void
 }
 
+const RETRYABLE_ATTEMPT_STATUSES = new Set<string>([
+  "failed",
+  "timed_out",
+  "cancelled",
+  "closed",
+  "interrupted",
+  "blocked",
+])
+
 export function DetailDialog(props: DetailDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [intervention, setIntervention] = useState("")
   const [subagentMessages, setSubagentMessages] = useState<
     Record<string, string>
   >({})
+  const [retryPrompts, setRetryPrompts] = useState<Record<string, string>>({})
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
 
   useEffect(() => {
     const node = dialog.current
@@ -94,7 +106,7 @@ export function DetailDialog(props: DetailDialogProps) {
     }
   }
 
-  async function steer(runId: string, subagent: SubagentRecord) {
+  async function steer(runId: string, subagent: DashboardSubagent) {
     const message = subagentMessages[subagent.id]?.trim()
     if (!message) return
     try {
@@ -110,7 +122,7 @@ export function DetailDialog(props: DetailDialogProps) {
     }
   }
 
-  async function cancel(runId: string, subagent: SubagentRecord) {
+  async function cancel(runId: string, subagent: DashboardSubagent) {
     try {
       await controlPost(
         `/api/runs/${encodeURIComponent(runId)}/subagents/${encodeURIComponent(subagent.id)}/cancel`,
@@ -119,6 +131,28 @@ export function DetailDialog(props: DetailDialogProps) {
       await props.onRefresh()
     } catch (error) {
       props.toast(errorMessage(error), true)
+    }
+  }
+
+  async function retryAttempt(run: DashboardRun) {
+    if (retryingRunId || active) return
+    const prompt = retryPrompts[run.id]?.trim()
+    setRetryingRunId(run.id)
+    try {
+      await controlPost(`/api/runs/${encodeURIComponent(run.id)}/retry`, {
+        ...(prompt ? { prompt } : {}),
+      })
+      setRetryPrompts((current) => ({ ...current, [run.id]: "" }))
+      props.toast(
+        prompt
+          ? `Attempt ${run.attempt} 已使用自定义提示词继续`
+          : `Attempt ${run.attempt} 已使用默认继续提示词重试`,
+      )
+      await props.onRefresh()
+    } catch (error) {
+      props.toast(errorMessage(error), true)
+    } finally {
+      setRetryingRunId(null)
     }
   }
 
@@ -189,14 +223,6 @@ export function DetailDialog(props: DetailDialogProps) {
                 </select>
               </label>
             ) : null}
-            {challenge && props.details && props.details.runs.length > 0 ? (
-              <a
-                className="control-button export-link"
-                href={`/api/challenges/${encodeURIComponent(challenge.id)}/export`}
-              >
-                查看 HTML
-              </a>
-            ) : null}
             <button
               className="icon-button"
               type="button"
@@ -224,6 +250,18 @@ export function DetailDialog(props: DetailDialogProps) {
               }
               onSteer={steer}
               onCancel={cancel}
+              retryPrompts={retryPrompts}
+              retryingRunId={retryingRunId}
+              canRetryAttempt={
+                props.schedulerAvailable && !active && !props.operationPending
+              }
+              onRetryPrompt={(runId, value) =>
+                setRetryPrompts((current) => ({
+                  ...current,
+                  [runId]: value,
+                }))
+              }
+              onRetry={retryAttempt}
               onRefreshTldr={refreshTldr}
               tldrPending={props.operationPending}
             />
@@ -269,8 +307,13 @@ function DetailContent(props: {
   details: ChallengeDetails
   messages: Record<string, string>
   onMessage: (id: string, value: string) => void
-  onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
-  onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  retryPrompts: Record<string, string>
+  retryingRunId: string | null
+  canRetryAttempt: boolean
+  onRetryPrompt: (runId: string, value: string) => void
+  onRetry: (run: DashboardRun) => Promise<void>
   onRefreshTldr: () => Promise<void>
   tldrPending: boolean
 }) {
@@ -333,6 +376,11 @@ function DetailContent(props: {
               onMessage={props.onMessage}
               onSteer={props.onSteer}
               onCancel={props.onCancel}
+              retryPrompt={props.retryPrompts[run.id] ?? ""}
+              retrying={props.retryingRunId === run.id}
+              canRetry={props.canRetryAttempt}
+              onRetryPrompt={props.onRetryPrompt}
+              onRetry={props.onRetry}
             />
           ))
         )}
@@ -439,11 +487,17 @@ function RunCard(props: {
   initiallyOpen: boolean
   messages: Record<string, string>
   onMessage: (id: string, value: string) => void
-  onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
-  onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  retryPrompt: string
+  retrying: boolean
+  canRetry: boolean
+  onRetryPrompt: (runId: string, value: string) => void
+  onRetry: (run: DashboardRun) => Promise<void>
 }) {
   const run = props.run
   const [open, setOpen] = useState(props.initiallyOpen)
+  const retryable = RETRYABLE_ATTEMPT_STATUSES.has(run.status)
   return (
     <details
       className="run-card"
@@ -467,14 +521,43 @@ function RunCard(props: {
         <span className={`status-chip status-${run.status}`}>
           {STATUS_LABELS[run.status] ?? run.status}
         </span>
-        <a
-          className="run-export-link"
-          href={`/api/challenges/${encodeURIComponent(run.challengeId)}/export?run=${encodeURIComponent(run.id)}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          查看 HTML
-        </a>
+        {run.hasConversation ? (
+          <a
+            className="run-export-link"
+            href={`/api/runs/${encodeURIComponent(run.id)}/export`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            查看对话 HTML
+          </a>
+        ) : (
+          <span className="run-export-link is-disabled">尚无 Agent 对话</span>
+        )}
       </summary>
+      {retryable ? (
+        <div className="run-retry-controls">
+          <textarea
+            value={props.retryPrompt}
+            maxLength={32_000}
+            rows={2}
+            disabled={!props.canRetry || props.retrying}
+            placeholder="可选：输入本次继续解题的提示词；留空使用系统默认 continuation prompt"
+            onChange={(event) =>
+              props.onRetryPrompt(run.id, event.target.value)
+            }
+          />
+          <button
+            className="outline-button"
+            type="button"
+            disabled={!props.canRetry || props.retrying}
+            onClick={() => void props.onRetry(run)}
+          >
+            {props.retrying ? "正在恢复…" : "重试此 Attempt"}
+          </button>
+          <small>
+            复用当前 Run、workspace 与 Pi session，不创建新 attempt。
+          </small>
+        </div>
+      ) : null}
       {run.subagents.length > 0 ? (
         <SubagentFleet
           run={run}
@@ -503,8 +586,8 @@ function SubagentFleet(props: {
   run: DashboardRun
   messages: Record<string, string>
   onMessage: (id: string, value: string) => void
-  onSteer: (runId: string, subagent: SubagentRecord) => Promise<void>
-  onCancel: (runId: string, subagent: SubagentRecord) => Promise<void>
+  onSteer: (runId: string, subagent: DashboardSubagent) => Promise<void>
+  onCancel: (runId: string, subagent: DashboardSubagent) => Promise<void>
 }) {
   return (
     <section className="subagent-fleet">
@@ -535,9 +618,23 @@ function SubagentFleet(props: {
                   <strong>{agent.displayName}</strong>
                   <small>{shortId(agent.id)}</small>
                 </div>
-                <span className={`status-chip status-${agent.status}`}>
-                  {STATUS_LABELS[agent.status] ?? agent.status}
-                </span>
+                <div className="subagent-card-actions">
+                  <span className={`status-chip status-${agent.status}`}>
+                    {STATUS_LABELS[agent.status] ?? agent.status}
+                  </span>
+                  {agent.hasConversation ? (
+                    <a
+                      className="run-export-link"
+                      href={`/api/runs/${encodeURIComponent(props.run.id)}/subagents/${encodeURIComponent(agent.id)}/export`}
+                    >
+                      查看对话 HTML
+                    </a>
+                  ) : (
+                    <span className="run-export-link is-disabled">
+                      尚无对话
+                    </span>
+                  )}
+                </div>
               </header>
               <p>{agent.description}</p>
               <div className="subagent-metrics">

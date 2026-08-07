@@ -49,6 +49,9 @@ const controlPlane = await ControlPlane.create({
   secretStore,
   project: {
     telemetry: { level: "full", maxTextLength: 8_000 },
+    subagents: {
+      modelForRole: (role) => modelConfiguration.modelForSubagent(role),
+    },
     ...(options.workspaceVolume
       ? {
           workspaceMount: ({ relativeWorkspace }) => ({
@@ -76,7 +79,7 @@ const controlPlane = await ControlPlane.create({
             : {}),
         }
       },
-      createAgentOptions: () => modelConfiguration.createAgentOptions(),
+      createAgentOptions: () => modelConfiguration.createAgentOptions("solver"),
       compaction: true,
       onMaxConcurrentChange: async (maxConcurrent) => {
         await schedulerConfiguration.update(maxConcurrent)

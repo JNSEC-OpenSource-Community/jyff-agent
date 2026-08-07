@@ -16,7 +16,10 @@ import {
   buildDashboardSnapshot,
   buildEmptyDashboardSnapshot,
 } from "./model.ts"
-import { exportPiSessionHtml } from "./pi-html-export.ts"
+import {
+  exportPiSessionHtml,
+  piSessionHasConversation,
+} from "./pi-html-export.ts"
 import type {
   DashboardControlPlane,
   DashboardModelAuthentication,
@@ -25,6 +28,8 @@ import type {
   DashboardScheduler,
   DashboardSnapshot,
   ModelConfigurationUpdate,
+  ModelConfigurationView,
+  ModelPoolEntryUpdate,
 } from "./types.ts"
 
 export interface WebUiOptions {
@@ -42,6 +47,8 @@ export interface WebUiOptions {
     sessionPath: string,
     metadata?: RunSessionExportMetadata,
   ) => Promise<Buffer>
+  /** 测试可替换原生 Pi session 的对话可用性检查。 */
+  sessionHasConversation?: (sessionPath: string) => Promise<boolean>
 }
 
 export interface WebUiServer {
@@ -103,6 +110,8 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const currentScheduler = (): DashboardScheduler | undefined =>
     options.controlPlane?.currentScheduler() ?? options.scheduler
   const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
+  const sessionHasConversation =
+    options.sessionHasConversation ?? piSessionHasConversation
   const buildCurrentSnapshot = async (): Promise<DashboardSnapshot> => {
     const project = currentProject()
     if (project) {
@@ -214,7 +223,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const message = error instanceof Error ? error.message : String(error)
       if (error instanceof ContestSchedulerError) {
         const status =
-          error.code === "challenge_not_found"
+          error.code === "challenge_not_found" || error.code === "run_not_found"
             ? 404
             : error.code === "unavailable"
               ? 503
@@ -328,9 +337,63 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    if (method === "POST" && url.pathname === "/api/announcements/review") {
+      const project = currentProject()
+      requireProject(project)
+      requireJsonRequest(request)
+      const body = await readJsonBody(request)
+      const challengeId = requiredString(
+        body.challengeId,
+        "Challenge ID",
+        512,
+        "invalid_announcement_review",
+      )
+      const announcementKey = requiredString(
+        body.announcementKey,
+        "Announcement key",
+        512,
+        "invalid_announcement_review",
+      )
+      const status = requiredString(
+        body.status,
+        "Status",
+        16,
+        "invalid_announcement_review",
+      )
+      if (status !== "approved" && status !== "rejected") {
+        throw new HttpRequestError(
+          400,
+          "invalid_announcement_review",
+          "公告审核状态必须是 approved 或 rejected",
+        )
+      }
+      try {
+        await project.reviewChallengeAnnouncement(
+          challengeId,
+          announcementKey,
+          status,
+        )
+      } catch (error) {
+        if (hasCode(error, "announcement_candidate_not_found")) {
+          throw new HttpRequestError(
+            404,
+            "announcement_candidate_not_found",
+            errorText(error),
+          )
+        }
+        throw error
+      }
+      sendJson(response, 200, await refresh())
+      return
+    }
+
     if (method === "GET" && url.pathname === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
-      sendJson(response, 200, options.modelConfiguration.snapshot())
+      sendJson(
+        response,
+        200,
+        modelConfigurationView(options.modelConfiguration, currentProject()),
+      )
       return
     }
 
@@ -338,13 +401,16 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       requireModelConfiguration(options.modelConfiguration)
       requireJsonRequest(request)
       const configuration = await options.modelConfiguration.update(
-        modelConfigurationUpdate(await readJsonBody(request)),
+        modelConfigurationUpdate(await readJsonBody(request, 256_000)),
       )
       const scheduler = currentScheduler()
       if (!configuration.configured) scheduler?.pauseAuto()
       else await scheduler?.reconcile()
       sendJson(response, 200, {
-        configuration,
+        configuration: modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(),
+        ),
         snapshot: await refresh(),
       })
       return
@@ -723,56 +789,79 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    // HTML session 导出必须在 /api/challenges/ 详情分支之前，否则路径会被吞。
-    const exportMatch = /^\/api\/challenges\/([^/]+)\/export$/.exec(
-      url.pathname,
-    )
-    if (method === "GET" && exportMatch) {
+    const retryAttempt = /^\/api\/runs\/([^/]+)\/retry$/.exec(url.pathname)
+    if (method === "POST" && retryAttempt) {
+      const scheduler = currentScheduler()
+      requireScheduler(scheduler)
+      requireJsonRequest(request)
+      const runId = decodeURIComponent(retryAttempt[1] ?? "")
+      const body = await readJsonBody(request, 40_000)
+      const prompt =
+        body.prompt === undefined
+          ? undefined
+          : optionalString(
+              body.prompt,
+              "Prompt",
+              32_000,
+              "invalid_retry_prompt",
+            )
+      await scheduler.retryAttempt(runId, {
+        ...(prompt ? { prompt } : {}),
+      })
+      sendJson(response, 200, await refresh())
+      return
+    }
+
+    const subagentExport =
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/export$/.exec(url.pathname)
+    if (method === "GET" && subagentExport) {
       const project = currentProject()
       requireProject(project)
-      const challengeId = decodeURIComponent(exportMatch[1] ?? "")
-      const runs = project.runs({ challengeId })
-      if (runs.length === 0) {
-        throw new HttpRequestError(404, "no_runs", "该题没有任何 Run 记录")
+      const runId = decodeURIComponent(subagentExport[1] ?? "")
+      const subagentId = decodeURIComponent(subagentExport[2] ?? "")
+      if (!project.runs().some((candidate) => candidate.id === runId)) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
       }
-      const requestedRunId = optionalQueryString(
-        url.searchParams.get("run"),
-        "run",
-        64,
-      )
-      const run = requestedRunId
-        ? runs.find((candidate) => candidate.id === requestedRunId)
-        : [...runs].sort(
-            (left, right) =>
-              Date.parse(right.createdAt) - Date.parse(left.createdAt),
-          )[0]
-      if (!run) {
+      const subagent = project
+        .subagents(runId)
+        .find((candidate) => candidate.id === subagentId)
+      if (!subagent) {
         throw new HttpRequestError(
           404,
-          "run_not_found",
-          `该题不存在 Run: ${requestedRunId}`,
+          "subagent_not_found",
+          `SubAgent 不存在: ${subagentId}`,
         )
       }
-      let body: Buffer
-      try {
-        body = await exportSessionHtml(
+      sendHtml(
+        response,
+        await exportConversationHtml(
+          subagent.sessionPath,
+          undefined,
+          sessionHasConversation,
+          exportSessionHtml,
+        ),
+      )
+      return
+    }
+
+    const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(url.pathname)
+    if (method === "GET" && runExport) {
+      const project = currentProject()
+      requireProject(project)
+      const runId = decodeURIComponent(runExport[1] ?? "")
+      const run = project.runs().find((candidate) => candidate.id === runId)
+      if (!run) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
+      }
+      sendHtml(
+        response,
+        await exportConversationHtml(
           project.runSessionPath(run.id),
           await project.runSessionExportMetadata(run.id),
-        )
-      } catch (error) {
-        throw new HttpRequestError(
-          409,
-          "session_export_failed",
-          `无法导出 Pi 会话: ${errorText(error)}`,
-        )
-      }
-      // 直接以 HTML 页面内联呈现，不强制下载；平台/run 数据因此不会进入响应头。
-      response.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-store",
-        "Content-Length": body.byteLength,
-      })
-      response.end(body)
+          sessionHasConversation,
+          exportSessionHtml,
+        ),
+      )
       return
     }
 
@@ -783,11 +872,17 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const project = currentProject()
       requireProject(project)
       const modelConfiguration = options.modelConfiguration
-      if (!modelConfiguration?.snapshot().configured) {
+      const modelSnapshot = modelConfiguration?.snapshot()
+      const tldrModelId =
+        modelSnapshot?.tldrModelId || modelSnapshot?.solverModelId
+      const tldrModel = modelSnapshot?.models.find(
+        (model) => model.id === tldrModelId,
+      )
+      if (!modelConfiguration || !tldrModel?.configured) {
         throw new HttpRequestError(
           503,
           "model_unavailable",
-          "模型尚未配置，无法生成 TLDR",
+          tldrModel?.unavailableReason ?? "TLDR 模型尚未配置",
         )
       }
       const encodedId = url.pathname
@@ -796,7 +891,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const challengeId = decodeURIComponent(encodedId)
       const tldr = await project.refreshTldr(
         challengeId,
-        modelConfiguration.createAgentOptions(),
+        modelConfiguration.createAgentOptions("tldr"),
       )
       if (tldr.challengeId !== challengeId) {
         throw new HttpRequestError(404, "challenge_not_found", "题目不存在")
@@ -1007,6 +1102,44 @@ function sendJson(
   response.end(body)
 }
 
+function sendHtml(response: ServerResponse, body: Buffer): void {
+  // 内联页面不带下载文件名，平台、Run 和 SubAgent 数据不会进入响应头。
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Content-Length": body.byteLength,
+  })
+  response.end(body)
+}
+
+async function exportConversationHtml(
+  sessionPath: string,
+  metadata: RunSessionExportMetadata | undefined,
+  hasConversation: (sessionPath: string) => Promise<boolean>,
+  exporter: (
+    sessionPath: string,
+    metadata?: RunSessionExportMetadata,
+  ) => Promise<Buffer>,
+): Promise<Buffer> {
+  try {
+    if (!(await hasConversation(sessionPath))) {
+      throw new HttpRequestError(
+        409,
+        "session_not_ready",
+        "该会话尚未产生 Agent 对话",
+      )
+    }
+    return await exporter(sessionPath, metadata)
+  } catch (error) {
+    if (error instanceof HttpRequestError) throw error
+    throw new HttpRequestError(
+      409,
+      "session_export_failed",
+      `无法导出 Pi 会话: ${errorText(error)}`,
+    )
+  }
+}
+
 function broadcast(
   clients: Set<ServerResponse>,
   event: string,
@@ -1050,6 +1183,20 @@ function requireProject(
       "project_unavailable",
       "比赛尚未配置或平台当前未连接",
     )
+  }
+}
+
+function modelConfigurationView(
+  configuration: DashboardModelConfiguration,
+  project: DashboardProject | undefined,
+): ModelConfigurationView {
+  return {
+    ...configuration.snapshot(),
+    subagentRoles:
+      project?.availableSubagents().map(({ name, displayName }) => ({
+        name,
+        displayName,
+      })) ?? [],
   }
 }
 
@@ -1216,6 +1363,107 @@ async function readJsonBody(
 function modelConfigurationUpdate(
   body: Record<string, unknown>,
 ): ModelConfigurationUpdate {
+  if (!Array.isArray(body.models) || body.models.length > 64) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_configuration",
+      "Models 必须是最多包含 64 项的数组",
+    )
+  }
+  const models = body.models.map((value, index) => {
+    if (!isRecord(value)) {
+      throw new HttpRequestError(
+        400,
+        "invalid_model_configuration",
+        `Models[${index}] 必须是对象`,
+      )
+    }
+    return modelPoolEntryUpdate(value, index)
+  })
+  const solverModelId = optionalString(body.solverModelId, "Solver Model", 128)
+  const tldrModelId = optionalString(body.tldrModelId, "TLDR Model", 128)
+  const subagentModels: Record<string, string> = {}
+  if (body.subagentModels !== undefined) {
+    if (!isRecord(body.subagentModels)) {
+      throw new HttpRequestError(
+        400,
+        "invalid_model_configuration",
+        "SubAgent Models 必须是对象",
+      )
+    }
+    for (const [role, value] of Object.entries(body.subagentModels)) {
+      const normalizedRole = requiredString(role, "SubAgent Role", 128)
+      subagentModels[normalizedRole] = requiredString(
+        value,
+        `SubAgent ${normalizedRole} Model`,
+        128,
+      )
+    }
+  }
+  const ids = new Set(models.map((model) => model.id))
+  if (ids.size !== models.length) {
+    throw invalidModelConfiguration("模型配置 ID 不能重复")
+  }
+  if (models.length === 0) {
+    if (
+      solverModelId ||
+      tldrModelId ||
+      Object.keys(subagentModels).length > 0
+    ) {
+      throw invalidModelConfiguration("空模型池不能包含 Agent 模型绑定")
+    }
+  } else {
+    if (!ids.has(solverModelId)) {
+      throw invalidModelConfiguration(`Solver 模型不存在: ${solverModelId}`)
+    }
+    if (tldrModelId && !ids.has(tldrModelId)) {
+      throw invalidModelConfiguration(`TLDR 模型不存在: ${tldrModelId}`)
+    }
+    for (const [role, id] of Object.entries(subagentModels)) {
+      if (!ids.has(id)) {
+        throw invalidModelConfiguration(`SubAgent ${role} 的模型不存在: ${id}`)
+      }
+    }
+  }
+  const references = new Set<string>()
+  const providerBaseUrls = new Map<string, string>()
+  for (const model of models) {
+    const reference = `${model.provider}/${model.modelId}`
+    if (references.has(reference)) {
+      throw invalidModelConfiguration(`模型不能重复: ${reference}`)
+    }
+    references.add(reference)
+    const previous = providerBaseUrls.get(model.provider)
+    if (previous !== undefined && previous !== model.baseUrl) {
+      throw invalidModelConfiguration(
+        `同一 Provider 的 Base URL 必须一致: ${model.provider}`,
+      )
+    }
+    providerBaseUrls.set(model.provider, model.baseUrl)
+  }
+  return { models, solverModelId, tldrModelId, subagentModels }
+}
+
+function invalidModelConfiguration(message: string): HttpRequestError {
+  return new HttpRequestError(400, "invalid_model_configuration", message)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function modelPoolEntryUpdate(
+  body: Record<string, unknown>,
+  index: number,
+): ModelPoolEntryUpdate {
+  const id = requiredString(body.id, `Models[${index}] ID`, 128)
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+    throw new HttpRequestError(
+      400,
+      "invalid_model_configuration",
+      "模型配置 ID 只能包含字母、数字、点、下划线和连字符",
+    )
+  }
   const provider = requiredString(body.provider, "Provider", 128)
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) {
     throw new HttpRequestError(
@@ -1284,6 +1532,7 @@ function modelConfigurationUpdate(
     )
   }
   return {
+    id,
     provider,
     modelId,
     baseUrl: baseUrl.replace(/\/+$/, ""),
@@ -1305,31 +1554,6 @@ const THINKING_LEVELS = new Set([
   "xhigh",
   "max",
 ])
-
-function optionalQueryString(
-  value: string | null,
-  field: string,
-  maxLength: number,
-): string | undefined {
-  if (value === null) return undefined
-  const text = value.trim()
-  if (text.length === 0) return undefined
-  if (text.length > maxLength) {
-    throw new HttpRequestError(
-      400,
-      "invalid_query",
-      `${field} 长度不能超过 ${maxLength}`,
-    )
-  }
-  if (hasControlCharacter(text)) {
-    throw new HttpRequestError(
-      400,
-      "invalid_query",
-      `${field} 不能包含控制字符`,
-    )
-  }
-  return text
-}
 
 function hasControlCharacter(value: string): boolean {
   return [...value].some((character) => {

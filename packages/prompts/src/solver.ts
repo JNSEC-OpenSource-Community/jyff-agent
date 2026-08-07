@@ -29,11 +29,15 @@ export const SOLVER_SYSTEM_PROMPT = [
 ].join("\n")
 
 export const CTF_COMPACTION_PROMPT = [
-  "Summarize only CTF investigation state that the challenge blackboard cannot replace.",
-  "Preserve the current concrete objective; unrecorded findings since the latest blackboard update; " +
-    "unfinished experiments and their exact state; critical paths, commands, addresses, constants, credential sources; " +
-    "human messages; active SubAgent tasks and pending results; and the smallest executable next steps.",
-  "Do not duplicate existing Evidence or Opportunities in full. Refer to their IDs when available.",
+  "Compact only solver-local investigation state that is not represented by the authoritative snapshots listed below.",
+  "Immediately after compaction, the control plane appends fresh sections in this order: " +
+    "<challenge_context>, <challenge_blackboard> when non-empty, <challenge_announcements>, and <active_subagents>.",
+  "Do not copy or paraphrase challenge metadata, descriptions, attachment lists, blackboard Evidence or Opportunities, " +
+    "approved announcements, or SubAgent records, assignments, status, and results. Do not summarize system instructions.",
+  "Preserve the current concrete objective; human instructions; unrecorded findings since the latest blackboard update; " +
+    "unfinished local experiments and their exact state; working hypotheses not recorded as Opportunities; critical commands, " +
+    "paths, addresses, constants, credential sources, and protocol payloads; and the smallest executable next steps.",
+  "If a finding should have been recorded on the blackboard but was not, retain it explicitly as unrecorded rather than inventing an Evidence ID.",
 ].join("\n")
 
 export const INCOMPLETE_CONTINUATION_PROMPT =

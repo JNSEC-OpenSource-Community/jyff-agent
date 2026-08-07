@@ -55,6 +55,7 @@ import {
 import {
   announcementRevision,
   classifyAnnouncement,
+  filterAnnouncementKeywords,
   matchAnnouncementChallenges,
 } from "../orchestration/announcement-matcher.ts"
 import {
@@ -62,6 +63,8 @@ import {
   type WriteupValidationResult,
 } from "../orchestration/writeup-validator.ts"
 import {
+  type AnnouncementApprovalStatus,
+  type ChallengeAnnouncementRecord,
   type EnqueueSchedulerChallenge,
   type MoveSchedulerChallenge,
   type RunEvent,
@@ -103,6 +106,8 @@ export interface OpenProjectOptions {
   telemetry?: ProjectTelemetryOptions
   subagents?: {
     maxConcurrent?: number
+    /** WebUI 的模型池可在创建新 Run 时覆盖 role frontmatter 中的 model。 */
+    modelForRole?: (role: string) => string | undefined
   }
 }
 
@@ -148,6 +153,7 @@ export class Project {
   readonly config: ProjectConfig
   private readonly solvers = new Set<CtfSolverAgent>()
   private readonly subagentManagers = new Map<string, CtfSubagentManager>()
+  private readonly runChallengeContexts = new Map<string, string>()
   private readonly diagnosticLog: ProjectDiagnostic[]
   private closed = false
   private constructor(
@@ -164,6 +170,7 @@ export class Project {
     private readonly telemetry: Required<ProjectTelemetryOptions>,
     private readonly subagentRuntime: {
       maxConcurrent: number
+      modelForRole?: (role: string) => string | undefined
     },
     diagnostics: readonly ProjectDiagnostic[],
   ) {
@@ -219,6 +226,9 @@ export class Project {
         },
         {
           maxConcurrent: Math.max(1, options.subagents?.maxConcurrent ?? 4),
+          ...(options.subagents?.modelForRole
+            ? { modelForRole: options.subagents.modelForRole }
+            : {}),
         },
         projectDiagnostics(discovered, discoveredSubagents),
       )
@@ -427,7 +437,9 @@ export class Project {
     let steered = 0
     for (const announcement of announcements) {
       const classification = classifyAnnouncement(announcement)
+      const keywordFilter = filterAnnouncementKeywords(announcement)
       const revision = announcementRevision(announcement)
+      const ignored = classification.ignored || !keywordFilter.eligible
       this.runStore.persistContestAnnouncement({
         key: revision.key,
         platformAnnouncementId: announcement.id,
@@ -436,10 +448,12 @@ export class Project {
         content: announcement.content,
         publishedAt: announcement.publishedAt,
         kind: classification.kind,
-        classificationReason: classification.reason,
-        ignored: classification.ignored,
+        classificationReason: classification.ignored
+          ? classification.reason
+          : keywordFilter.reason,
+        ignored,
       })
-      if (classification.ignored) continue
+      if (ignored) continue
       for (const match of matchAnnouncementChallenges(
         announcement,
         challenges,
@@ -449,54 +463,91 @@ export class Project {
           announcementKey: revision.key,
           matchType: match.matchType,
           matchedValue: match.matchedValue,
+          matchedKeywords: keywordFilter.matchedKeywords,
         })
         if (created) linked += 1
         if (options.steerActive === false) continue
-        const message = challengeAnnouncementsPrompt([
-          {
-            key: revision.key,
-            title: announcement.title,
-            content: announcement.content,
-            publishedAt: announcement.publishedAt,
-            kind: classification.kind,
-          },
-        ])
-        for (const solver of [...this.solvers]) {
-          if (solver.challenge.id !== match.challengeId || solver.isClosed) {
-            continue
-          }
-          const queued = this.runStore.enqueueAnnouncementDelivery({
-            challengeId: match.challengeId,
-            announcementKey: revision.key,
-            runId: solver.runId,
-          })
-          if (!queued) continue
-          try {
-            await solver.steer(message)
-            this.runStore.observeAnnouncementDelivery({
-              challengeId: match.challengeId,
-              announcementKey: revision.key,
-              runId: solver.runId,
-              status: "delivered",
-            })
-            this.runStore.appendEvent(solver.runId, "announcement_steered", {
-              announcementKey: revision.key,
-              matchType: match.matchType,
-            })
-            steered += 1
-          } catch (error) {
-            this.runStore.observeAnnouncementDelivery({
-              challengeId: match.challengeId,
-              announcementKey: revision.key,
-              runId: solver.runId,
-              status: "failed",
-              error: errorText(error),
-            })
-          }
+        const candidate = this.runStore
+          .announcementCandidates()
+          .find(
+            (item) =>
+              item.challengeId === match.challengeId &&
+              item.key === revision.key,
+          )
+        if (candidate?.approvalStatus === "approved") {
+          steered += await this.deliverAnnouncement(candidate)
         }
       }
     }
     return { announcements: announcements.length, linked, steered }
+  }
+  announcementCandidates(): ChallengeAnnouncementRecord[] {
+    return this.runStore.announcementCandidates()
+  }
+  async reviewChallengeAnnouncement(
+    challengeId: string,
+    announcementKey: string,
+    status: Exclude<AnnouncementApprovalStatus, "pending">,
+  ): Promise<ChallengeAnnouncementRecord> {
+    if (
+      !this.runStore
+        .announcementCandidates()
+        .some(
+          (candidate) =>
+            candidate.challengeId === challengeId &&
+            candidate.key === announcementKey,
+        )
+    ) {
+      throw announcementCandidateNotFound(challengeId, announcementKey)
+    }
+    const reviewed = this.runStore.reviewChallengeAnnouncement({
+      challengeId,
+      announcementKey,
+      status,
+    })
+    if (status === "approved") await this.deliverAnnouncement(reviewed)
+    return reviewed
+  }
+
+  private async deliverAnnouncement(
+    announcement: ChallengeAnnouncementRecord,
+  ): Promise<number> {
+    const message = challengeAnnouncementsPrompt([announcement])
+    let delivered = 0
+    for (const solver of [...this.solvers]) {
+      if (solver.challenge.id !== announcement.challengeId || solver.isClosed) {
+        continue
+      }
+      const queued = this.runStore.enqueueAnnouncementDelivery({
+        challengeId: announcement.challengeId,
+        announcementKey: announcement.key,
+        runId: solver.runId,
+      })
+      if (!queued) continue
+      try {
+        await solver.steer(message)
+        this.runStore.observeAnnouncementDelivery({
+          challengeId: announcement.challengeId,
+          announcementKey: announcement.key,
+          runId: solver.runId,
+          status: "delivered",
+        })
+        this.runStore.appendEvent(solver.runId, "announcement_steered", {
+          announcementKey: announcement.key,
+          matchType: announcement.matchType,
+        })
+        delivered += 1
+      } catch (error) {
+        this.runStore.observeAnnouncementDelivery({
+          challengeId: announcement.challengeId,
+          announcementKey: announcement.key,
+          runId: solver.runId,
+          status: "failed",
+          error: errorText(error),
+        })
+      }
+    }
+    return delivered
   }
   availableSkills(): readonly AgentSkill[] {
     return this.skills
@@ -524,28 +575,39 @@ export class Project {
   }
   compactRecoveryMessages(challengeId: string, runId: string): AgentMessage[] {
     const now = Date.now()
+    const challengeContext = this.runChallengeContexts.get(runId)
+    if (!challengeContext) {
+      throw new Error(`Run ${runId} 缺少 compact 恢复所需的题目上下文`)
+    }
     const blackboard = injectBlackboard(this.runStore, challengeId)
     const subagents =
       this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
     const announcements = this.runStore.challengeAnnouncements(challengeId)
     return [
+      {
+        role: "user" as const,
+        content: challengeContext,
+        timestamp: now,
+      },
       ...(blackboard
         ? [{ role: "user" as const, content: blackboard, timestamp: now }]
         : []),
       {
         role: "user" as const,
-        content: activeSubagentsPrompt(subagents),
+        content: challengeAnnouncementsPrompt(announcements),
         timestamp: now,
       },
       {
         role: "user" as const,
-        content: challengeAnnouncementsPrompt(announcements),
+        content: activeSubagentsPrompt(subagents),
         timestamp: now,
       },
     ]
   }
   availableSubagents(): SubagentRole[] {
-    return [...this.subagentRoles.values()].filter((role) => role.enabled)
+    return [...this.configuredSubagentRoles().values()].filter(
+      (role) => role.enabled,
+    )
   }
   async steerSubagent(
     runId: string,
@@ -749,17 +811,23 @@ export class Project {
     return this.createSolverForRun(challengeId, options)
   }
 
-  /**
-   * Reopen an interrupted solver from its persisted JSONL session. The caller
-   * supplies the live model transport again; credentials are intentionally not
-   * persisted with the session.
-   */
+  /** Reopen a terminal Solver on its original Run/workspace/Pi JSONL session. */
   async resumeSolver(
     runId: string,
     options: Omit<CreateSolverOptions, "attempt" | "source">,
   ): Promise<CtfSolverAgent> {
     const run = this.runStore.getRun(runId)
-    if (run?.status !== "interrupted") {
+    if (
+      !run ||
+      ![
+        "failed",
+        "timed_out",
+        "cancelled",
+        "closed",
+        "interrupted",
+        "blocked",
+      ].includes(run.status)
+    ) {
       throw new Error(`Run ${runId} 不存在或当前不可恢复`)
     }
     return this.createSolverForRun(run.challengeId, options, run)
@@ -801,17 +869,6 @@ export class Project {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
 
-      // 确保黑板 origin 存在，并准备自动注入内容
-      this.runStore.ensureOrigin(challengeId, runId, {
-        title: challenge.title,
-        category: challenge.category,
-        score: challenge.score,
-        description: challenge.description,
-        attachments: challenge.attachments.map((a) => ({
-          name: a.name,
-          size: a.size,
-        })),
-      })
       const blackboardInject = injectBlackboard(this.runStore, challengeId)
       const blackboardMessages: AgentMessage[] =
         !resumed && blackboardInject
@@ -850,12 +907,17 @@ export class Project {
         attachments: challenge.attachments,
         sandbox,
       })
+      const challengeContext = challengeContextPrompt(
+        challenge,
+        downloadedAttachments,
+      )
+      this.runChallengeContexts.set(runId, challengeContext)
       const challengeMessages: AgentMessage[] = resumed
         ? []
         : [
             {
               role: "user",
-              content: challengeContextPrompt(challenge, downloadedAttachments),
+              content: challengeContext,
               timestamp: Date.now(),
             },
           ]
@@ -867,7 +929,7 @@ export class Project {
         challenge,
         sandbox,
         agent: options.agent,
-        roles: this.subagentRoles,
+        roles: this.configuredSubagentRoles(),
         skills,
         maxConcurrent: this.subagentRuntime.maxConcurrent,
         onRecord: (subagent, event) => {
@@ -937,6 +999,7 @@ export class Project {
         onClosed: async (details) => {
           this.solvers.delete(solver)
           this.subagentManagers.delete(runId)
+          this.runChallengeContexts.delete(runId)
           const eventType =
             details.reason === "interrupted"
               ? "run_interrupted"
@@ -1049,6 +1112,7 @@ export class Project {
       this.subagentManagers.set(runId, subagentManager)
       return solver
     } catch (error) {
+      this.runChallengeContexts.delete(runId)
       const cleanupErrors: string[] = []
       if (subagentManager) {
         try {
@@ -1102,6 +1166,16 @@ export class Project {
       }
       throw error
     }
+  }
+
+  private configuredSubagentRoles(): ReadonlyMap<string, SubagentRole> {
+    if (!this.subagentRuntime.modelForRole) return this.subagentRoles
+    return new Map(
+      [...this.subagentRoles].map(([name, role]) => {
+        const model = this.subagentRuntime.modelForRole?.(name)
+        return [name, model ? { ...role, model } : role]
+      }),
+    )
   }
 
   async close(): Promise<void> {
@@ -1250,6 +1324,16 @@ function subagentUnavailable(runId: string): Error {
     {
       code: "subagent_unavailable",
     },
+  )
+}
+
+function announcementCandidateNotFound(
+  challengeId: string,
+  announcementKey: string,
+): Error {
+  return Object.assign(
+    new Error(`公告候选不存在: ${challengeId}/${announcementKey}`),
+    { code: "announcement_candidate_not_found" },
   )
 }
 

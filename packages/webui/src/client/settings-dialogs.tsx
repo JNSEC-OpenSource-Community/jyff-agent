@@ -4,6 +4,7 @@ import type {
   DashboardSnapshot,
   ModelConfigurationUpdate,
   ModelConfigurationView,
+  ModelPoolEntryView,
 } from "../types.ts"
 import { controlPost, errorMessage, getJson } from "./lib.ts"
 import { ModelAuthPanel } from "./model-auth-panel.tsx"
@@ -25,8 +26,11 @@ export function ModelDialog(
   const dialog = useDialog()
   const [configuration, setConfiguration] =
     useState<ModelConfigurationView | null>(props.summary)
-  const [apiKey, setApiKey] = useState("")
-  const [clearApiKey, setClearApiKey] = useState(false)
+  const [selectedId, setSelectedId] = useState(
+    props.summary?.solverModelId ?? props.summary?.models[0]?.id ?? "",
+  )
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
+  const [clearApiKeys, setClearApiKeys] = useState<Record<string, boolean>>({})
   const [showSecret, setShowSecret] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState("")
@@ -36,7 +40,14 @@ export function ModelDialog(
     setBusy(true)
     void getJson<ModelConfigurationView>("/api/model-config")
       .then((value) => {
-        if (live) setConfiguration(value)
+        if (live) {
+          setConfiguration(value)
+          setSelectedId((current) =>
+            value.models.some((model) => model.id === current)
+              ? current
+              : value.solverModelId || value.models[0]?.id || "",
+          )
+        }
       })
       .catch((error) => {
         if (live) setFailure(errorMessage(error))
@@ -49,17 +60,102 @@ export function ModelDialog(
     }
   }, [])
 
-  function field<K extends keyof ModelConfigurationView>(
+  function modelField<K extends keyof ModelPoolEntryView>(
     key: K,
-    value: ModelConfigurationView[K],
+    value: ModelPoolEntryView[K],
   ) {
+    setConfiguration((current) =>
+      current
+        ? {
+            ...current,
+            models: current.models.map((model) =>
+              model.id === selectedId ||
+              (key === "baseUrl" && model.provider === selected?.provider)
+                ? { ...model, [key]: value }
+                : model,
+            ),
+          }
+        : current,
+    )
+  }
+
+  function assignment(key: "solverModelId" | "tldrModelId", value: string) {
     setConfiguration((current) =>
       current ? { ...current, [key]: value } : current,
     )
   }
 
   async function refreshConfiguration() {
-    setConfiguration(await getJson<ModelConfigurationView>("/api/model-config"))
+    const next = await getJson<ModelConfigurationView>("/api/model-config")
+    setConfiguration(next)
+    setSelectedId((current) =>
+      next.models.some((model) => model.id === current)
+        ? current
+        : next.solverModelId || next.models[0]?.id || "",
+    )
+  }
+
+  function addModel(provider = "openrouter", modelId = "") {
+    setConfiguration((current) => {
+      if (!current) return current
+      const duplicate = current.models.find(
+        (model) => model.provider === provider && model.modelId === modelId,
+      )
+      if (duplicate) {
+        setSelectedId(duplicate.id)
+        return current
+      }
+      const id = nextModelId(current.models)
+      const model: ModelPoolEntryView = {
+        id,
+        provider,
+        modelId,
+        baseUrl: "",
+        contextWindow: 64_000,
+        apiKeyConfigured: false,
+        apiKeySource: "none",
+        thinkingEnabled: true,
+        reasoningEffort: "medium",
+        passthroughThinking: false,
+        supportedThinkingLevels: [],
+        configured: false,
+        unavailableReason: "尚未保存",
+      }
+      setSelectedId(id)
+      return {
+        ...current,
+        models: [...current.models, model],
+        solverModelId: current.solverModelId || id,
+        tldrModelId: current.tldrModelId || id,
+      }
+    })
+  }
+
+  function removeSelectedModel() {
+    setConfiguration((current) => {
+      if (!current) return current
+      const models = current.models.filter((model) => model.id !== selectedId)
+      const fallback = models[0]?.id ?? ""
+      const solverModelId =
+        current.solverModelId === selectedId ? fallback : current.solverModelId
+      const tldrModelId =
+        current.tldrModelId === selectedId
+          ? solverModelId || fallback
+          : current.tldrModelId
+      const subagentModels = Object.fromEntries(
+        Object.entries(current.subagentModels).filter(
+          ([, model]) => model !== selectedId,
+        ),
+      )
+      setSelectedId(fallback)
+      return {
+        ...current,
+        models,
+        solverModelId,
+        tldrModelId,
+        subagentModels,
+      }
+    })
   }
 
   async function save(event: React.FormEvent) {
@@ -68,15 +164,23 @@ export function ModelDialog(
     setBusy(true)
     setFailure("")
     const body: ModelConfigurationUpdate = {
-      provider: configuration.provider.trim(),
-      modelId: configuration.modelId.trim(),
-      baseUrl: configuration.baseUrl.trim(),
-      contextWindow: Number(configuration.contextWindow),
-      thinkingEnabled: configuration.thinkingEnabled,
-      reasoningEffort: configuration.reasoningEffort,
-      passthroughThinking: configuration.passthroughThinking,
-      ...(clearApiKey ? { clearApiKey: true } : {}),
-      ...(!clearApiKey && apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      models: configuration.models.map((model) => ({
+        id: model.id,
+        provider: model.provider.trim(),
+        modelId: model.modelId.trim(),
+        baseUrl: model.baseUrl.trim(),
+        contextWindow: Number(model.contextWindow),
+        thinkingEnabled: model.thinkingEnabled,
+        reasoningEffort: model.reasoningEffort,
+        passthroughThinking: model.passthroughThinking,
+        ...(clearApiKeys[model.id] ? { clearApiKey: true } : {}),
+        ...(!clearApiKeys[model.id] && apiKeys[model.id]?.trim()
+          ? { apiKey: apiKeys[model.id]?.trim() }
+          : {}),
+      })),
+      solverModelId: configuration.solverModelId,
+      tldrModelId: configuration.tldrModelId,
+      subagentModels: configuration.subagentModels,
     }
     try {
       const result = await controlPost<{
@@ -97,7 +201,11 @@ export function ModelDialog(
     }
   }
 
-  const levels = configuration?.supportedThinkingLevels ?? []
+  const selected = configuration?.models.find(
+    (model) => model.id === selectedId,
+  )
+  const levels = selected?.supportedThinkingLevels ?? []
+  const modelChoices = configuration?.models ?? []
   return (
     <dialog
       className="model-dialog"
@@ -112,7 +220,7 @@ export function ModelDialog(
         <DialogHeader
           eyebrow="MODEL UPLINK / LOCAL CONTROL"
           title="模型连接设置"
-          description="连接 Codex、Claude、API Key 或 OpenAI-compatible 端点，供 Solver 与 SubAgent 共享。"
+          description="维护可用模型池，并分别绑定 Solver、TLDR 与各类 SubAgent。"
           onClose={props.onClose}
         />
         <StatusCard
@@ -128,10 +236,10 @@ export function ModelDialog(
           }
           description={
             configuration?.configured
-              ? `${configuration.provider} / ${configuration.modelId}`
+              ? `${configuration.models.length} 个模型；Solver 使用 ${modelLabel(configuration.models, configuration.solverModelId)}`
               : failure ||
                 configuration?.unavailableReason ||
-                "请补全 API Key 与 Model ID"
+                "请添加并选择 Solver 模型"
           }
         />
         {configuration ? (
@@ -145,167 +253,271 @@ export function ModelDialog(
               toast={props.toast}
               onCredentialsChanged={refreshConfiguration}
               onSelectModel={(provider, modelId) => {
-                setConfiguration((current) =>
-                  current
-                    ? { ...current, provider, modelId, baseUrl: "" }
-                    : current,
-                )
-                setClearApiKey(false)
-                props.toast(`已填入 ${provider} / ${modelId}，保存后生效`)
+                addModel(provider, modelId)
+                props.toast(`已加入 ${provider} / ${modelId}，保存后生效`)
               }}
             />
-            <div className="model-form-grid">
-              <Field label="Provider" hint="模型提供方标识，用于匹配请求凭证。">
-                <input
-                  value={configuration.provider}
-                  onChange={(event) => field("provider", event.target.value)}
-                  maxLength={128}
-                  placeholder="openai-codex"
-                  required
-                  disabled={busy}
-                />
-              </Field>
-              <Field
-                label="Model ID"
-                hint="可从上方已登录 Provider 的模型列表填入，或手动填写。"
-              >
-                <input
-                  value={configuration.modelId}
-                  onChange={(event) => field("modelId", event.target.value)}
-                  maxLength={256}
-                  required
-                  disabled={busy}
-                />
-              </Field>
-              <Field
-                label="Base URL"
-                hint="留空使用 Pi 内置 Provider；自建中转站填写 HTTPS 地址。"
-                wide
-              >
-                <input
-                  type="url"
-                  value={configuration.baseUrl}
-                  onChange={(event) => field("baseUrl", event.target.value)}
-                  placeholder="https://api.example.com/v1"
-                  disabled={busy}
-                />
-              </Field>
-              <Field
-                label="API Key"
-                hint={
-                  configuration.apiKeyConfigured
-                    ? "已配置；留空保持现有密钥。"
-                    : "仅写入本机 Secret Store。"
-                }
-                wide
-              >
-                <div className="secret-control">
-                  <input
-                    type={showSecret ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(event) => {
-                      setApiKey(event.target.value)
-                      if (event.target.value) setClearApiKey(false)
-                    }}
-                    disabled={busy || clearApiKey}
-                    autoComplete="new-password"
-                    placeholder={
-                      configuration.apiKeyConfigured
-                        ? "已配置；留空保持"
-                        : "输入新的 API Key"
-                    }
-                  />
-                  <button
-                    className="secret-toggle"
-                    type="button"
-                    onClick={() => setShowSecret((value) => !value)}
-                    disabled={busy}
-                  >
-                    {showSecret ? "HIDE" : "SHOW"}
-                  </button>
+            <section className="model-pool" aria-label="可用模型池">
+              <header>
+                <div>
+                  <strong>可用模型池</strong>
+                  <small>同一 Provider 的模型共享 Base URL 与本机凭据。</small>
                 </div>
-              </Field>
-              {configuration.apiKeyConfigured ? (
+                <button
+                  className="outline-button"
+                  type="button"
+                  onClick={() => addModel()}
+                  disabled={busy}
+                >
+                  添加自定义模型
+                </button>
+              </header>
+              <div className="model-pool-tabs">
+                {modelChoices.map((model) => (
+                  <button
+                    className={model.id === selectedId ? "is-active" : ""}
+                    key={model.id}
+                    type="button"
+                    onClick={() => setSelectedId(model.id)}
+                  >
+                    <span>{model.provider}</span>
+                    <strong>{model.modelId || "未命名"}</strong>
+                  </button>
+                ))}
+              </div>
+            </section>
+            {selected ? (
+              <div className="model-form-grid">
                 <Field
-                  label="清除现有 API Key"
-                  hint="保存时从本机 Secret Store 删除。"
+                  label="Provider"
+                  hint="模型提供方标识，用于匹配请求凭证。"
+                >
+                  <input
+                    value={selected.provider}
+                    onChange={(event) =>
+                      modelField("provider", event.target.value)
+                    }
+                    maxLength={128}
+                    placeholder="openai-codex"
+                    required
+                    disabled={busy}
+                  />
+                </Field>
+                <Field
+                  label="Model ID"
+                  hint="可从上方已登录 Provider 的模型列表填入，或手动填写。"
+                >
+                  <input
+                    value={selected.modelId}
+                    onChange={(event) =>
+                      modelField("modelId", event.target.value)
+                    }
+                    maxLength={256}
+                    required
+                    disabled={busy}
+                  />
+                </Field>
+                <Field
+                  label="Base URL"
+                  hint="留空使用 Pi 内置 Provider；自建中转站填写 HTTPS 地址。"
+                  wide
+                >
+                  <input
+                    type="url"
+                    value={selected.baseUrl}
+                    onChange={(event) =>
+                      modelField("baseUrl", event.target.value)
+                    }
+                    placeholder="https://api.example.com/v1"
+                    disabled={busy}
+                  />
+                </Field>
+                <Field
+                  label="API Key"
+                  hint={
+                    selected.apiKeyConfigured
+                      ? "已配置；留空保持现有密钥。"
+                      : "仅写入本机 Secret Store。"
+                  }
+                  wide
+                >
+                  <div className="secret-control">
+                    <input
+                      type={showSecret ? "text" : "password"}
+                      value={apiKeys[selected.id] ?? ""}
+                      onChange={(event) => {
+                        setApiKeys((current) => ({
+                          ...current,
+                          [selected.id]: event.target.value,
+                        }))
+                        if (event.target.value) {
+                          setClearApiKeys((current) => ({
+                            ...current,
+                            [selected.id]: false,
+                          }))
+                        }
+                      }}
+                      disabled={busy || clearApiKeys[selected.id] === true}
+                      autoComplete="new-password"
+                      placeholder={
+                        selected.apiKeyConfigured
+                          ? "已配置；留空保持"
+                          : "输入新的 API Key"
+                      }
+                    />
+                    <button
+                      className="secret-toggle"
+                      type="button"
+                      onClick={() => setShowSecret((value) => !value)}
+                      disabled={busy}
+                    >
+                      {showSecret ? "HIDE" : "SHOW"}
+                    </button>
+                  </div>
+                </Field>
+                {selected.apiKeyConfigured ? (
+                  <Field
+                    label="清除现有 API Key"
+                    hint="保存时从本机 Secret Store 删除。"
+                  >
+                    <input
+                      className="model-checkbox"
+                      type="checkbox"
+                      checked={clearApiKeys[selected.id] === true}
+                      onChange={(event) => {
+                        setClearApiKeys((current) => ({
+                          ...current,
+                          [selected.id]: event.target.checked,
+                        }))
+                        if (event.target.checked) {
+                          setApiKeys((current) => ({
+                            ...current,
+                            [selected.id]: "",
+                          }))
+                        }
+                      }}
+                      disabled={busy}
+                    />
+                  </Field>
+                ) : null}
+                <Field label="Context Window" hint="Agent 可使用的上下文上限。">
+                  <input
+                    type="number"
+                    value={selected.contextWindow}
+                    onChange={(event) =>
+                      modelField("contextWindow", Number(event.target.value))
+                    }
+                    min={1_024}
+                    disabled={busy}
+                  />
+                </Field>
+                <Field
+                  label="启用思考"
+                  hint="模型级默认值；运行中可在题目详情单独切换。"
                 >
                   <input
                     className="model-checkbox"
                     type="checkbox"
-                    checked={clearApiKey}
-                    onChange={(event) => {
-                      setClearApiKey(event.target.checked)
-                      if (event.target.checked) setApiKey("")
-                    }}
+                    checked={selected.thinkingEnabled}
+                    onChange={(event) =>
+                      modelField("thinkingEnabled", event.target.checked)
+                    }
                     disabled={busy}
                   />
                 </Field>
-              ) : null}
-              <Field label="Context Window" hint="Agent 可使用的上下文上限。">
-                <input
-                  type="number"
-                  value={configuration.contextWindow}
-                  onChange={(event) =>
-                    field("contextWindow", Number(event.target.value))
-                  }
-                  min={1_024}
-                  disabled={busy}
-                />
-              </Field>
-              <Field
-                label="启用思考"
-                hint="模型级默认值；运行中可在题目详情单独切换。"
-              >
-                <input
-                  className="model-checkbox"
-                  type="checkbox"
-                  checked={configuration.thinkingEnabled}
-                  onChange={(event) =>
-                    field("thinkingEnabled", event.target.checked)
-                  }
-                  disabled={busy}
-                />
-              </Field>
-              <Field label="思考强度" hint="档位由 Pi 根据当前模型动态计算。">
-                <select
-                  value={
-                    levels.includes(configuration.reasoningEffort)
-                      ? configuration.reasoningEffort
-                      : ""
-                  }
-                  onChange={(event) =>
-                    field("reasoningEffort", event.target.value)
-                  }
-                  disabled={
-                    busy || levels.length === 0 || levels.includes("off")
-                  }
+                <Field label="思考强度" hint="档位由 Pi 根据当前模型动态计算。">
+                  <select
+                    value={
+                      levels.includes(selected.reasoningEffort)
+                        ? selected.reasoningEffort
+                        : ""
+                    }
+                    onChange={(event) =>
+                      modelField("reasoningEffort", event.target.value)
+                    }
+                    disabled={
+                      busy || levels.length === 0 || levels.includes("off")
+                    }
+                  >
+                    <option value="">—</option>
+                    {levels
+                      .filter((level) => level !== "off")
+                      .map((level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+                <Field
+                  label="透传思考档位"
+                  hint="自定义 Base URL 场景将档位同名直通。"
                 >
-                  <option value="">—</option>
-                  {levels
-                    .filter((level) => level !== "off")
-                    .map((level) => (
-                      <option key={level} value={level}>
-                        {level}
-                      </option>
-                    ))}
-                </select>
-              </Field>
-              <Field
-                label="透传思考档位"
-                hint="自定义 Base URL 场景将档位同名直通。"
-              >
-                <input
-                  className="model-checkbox"
-                  type="checkbox"
-                  checked={configuration.passthroughThinking}
-                  onChange={(event) =>
-                    field("passthroughThinking", event.target.checked)
-                  }
-                  disabled={busy || !configuration.baseUrl}
+                  <input
+                    className="model-checkbox"
+                    type="checkbox"
+                    checked={selected.passthroughThinking}
+                    onChange={(event) =>
+                      modelField("passthroughThinking", event.target.checked)
+                    }
+                    disabled={busy || !selected.baseUrl}
+                  />
+                </Field>
+                <Field label="删除模型" hint="移除模型及其 Agent 绑定。">
+                  <button
+                    className="outline-button"
+                    type="button"
+                    onClick={removeSelectedModel}
+                    disabled={busy}
+                  >
+                    移除当前模型
+                  </button>
+                </Field>
+              </div>
+            ) : (
+              <p className="model-empty">模型池为空，请添加一个模型。</p>
+            )}
+            <section className="model-assignments">
+              <header>
+                <strong>Agent 模型绑定</strong>
+                <small>最大 Solver 并发量继续在主控制台即时设置。</small>
+              </header>
+              <div className="model-form-grid">
+                <ModelAssignment
+                  label="Solver"
+                  value={configuration.solverModelId}
+                  models={modelChoices}
+                  disabled={busy}
+                  onChange={(value) => assignment("solverModelId", value)}
                 />
-              </Field>
-            </div>
+                <ModelAssignment
+                  label="TLDR"
+                  value={configuration.tldrModelId}
+                  models={modelChoices}
+                  disabled={busy}
+                  onChange={(value) => assignment("tldrModelId", value)}
+                />
+                {configuration.subagentRoles?.map((role) => (
+                  <ModelAssignment
+                    key={role.name}
+                    label={`SubAgent · ${role.displayName}`}
+                    value={configuration.subagentModels[role.name] ?? ""}
+                    models={modelChoices}
+                    disabled={busy}
+                    allowDefault
+                    onChange={(value) =>
+                      setConfiguration((current) => {
+                        if (!current) return current
+                        const subagentModels = { ...current.subagentModels }
+                        if (value) subagentModels[role.name] = value
+                        else delete subagentModels[role.name]
+                        return { ...current, subagentModels }
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            </section>
             <aside className="model-security-note">
               <span aria-hidden="true">LOCAL SECRET</span>
               <p>
@@ -338,6 +550,48 @@ export function ModelDialog(
         ) : null}
       </div>
     </dialog>
+  )
+}
+
+function nextModelId(models: readonly ModelPoolEntryView[]): string {
+  const used = new Set(models.map((model) => model.id))
+  let sequence = models.length + 1
+  while (used.has(`model-${sequence}`)) sequence++
+  return `model-${sequence}`
+}
+
+function modelLabel(models: readonly ModelPoolEntryView[], id: string): string {
+  const model = models.find((candidate) => candidate.id === id)
+  return model ? `${model.provider}/${model.modelId}` : "未选择"
+}
+
+function ModelAssignment(props: {
+  label: string
+  value: string
+  models: readonly ModelPoolEntryView[]
+  disabled: boolean
+  allowDefault?: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <Field label={props.label} hint="新建 Agent 时生效。">
+      <select
+        value={props.value}
+        disabled={props.disabled}
+        required={!props.allowDefault && props.models.length > 0}
+        onChange={(event) => props.onChange(event.target.value)}
+      >
+        {props.allowDefault ? <option value="">继承 role 配置</option> : null}
+        {!props.allowDefault && props.models.length === 0 ? (
+          <option value="">无可用模型</option>
+        ) : null}
+        {props.models.map((model) => (
+          <option key={model.id} value={model.id}>
+            {model.provider}/{model.modelId || "未命名"}
+          </option>
+        ))}
+      </select>
+    </Field>
   )
 }
 

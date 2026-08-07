@@ -37,12 +37,14 @@ packages/
 
 `.pi/ctf-config.json` 只作为旧配置的只读回退。平台配置只保存非敏感字段和 secret 名称，凭据由 Secret Store 单独保存。
 
+`model-config.json` 保存 v2 模型池、默认 Solver 模型、独立 TLDR 模型和 SubAgent role 绑定，不保存密钥。自定义 Provider 的 API Key 按 Provider 隔离在 Secret Store；原生 Provider 继续使用 Pi CredentialStore。控制面为每次调度构造完整 Pi `Models` registry，Solver 选择默认模型，TLDR 选择自己的模型，SubAgent manager 在创建新 Run 时把 WebUI role 绑定覆盖到 registry 角色；未覆盖的角色仍使用 frontmatter 的 `model`。旧版单模型文件和遗留明文 Key 会自动迁移。Solver 最大并发量由独立的 `scheduler-config.json` 管理，可在 WebUI 主控制台即时调整。
+
 ## 一次 Solver Run
 
 `Project.createSolver()` 的主要流程：
 
 1. 将题目 ID 绑定为单题 `ChallengeCapability` 并读取元数据；
-2. 为当前题目创建或复用黑板 origin；
+2. 读取当前题目已有的共享黑板；黑板默认保持为空；
 3. 创建或复用由题目 ID 稳定哈希得到的题目级 workspace，并创建 Docker sandbox；
 4. 自动下载全部附件到容器的 `/workspace/attachments/<文件名>`；
 5. 把题目信息与附件路径编码为 `<challenge_context>` 初始 user 消息；
@@ -66,6 +68,8 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 中断计数按 challenge 持久化在 `challenge_runtime_state`。默认允许 3 次；当计数超过 `maxSessionInterruptions` 时，题目进入 `blocked`，不再自动调度，等待 WebUI 人工重启。人工强制派发会清除该题的中断计数和 blocked 状态。
 
+Run 级人工重试与题目级重新派发是两个不同操作。重新派发创建新 Run/attempt；对 `failed`、`timed_out`、`cancelled`、`closed`、`interrupted` 或 `blocked` Run 执行重试时，Scheduler 重新创建 sandbox 并通过 `Project.resumeSolver()` 打开原 Pi JSONL，保留 Run ID、attempt、source 和 workspace。首轮默认使用 `INCOMPLETE_CONTINUATION_PROMPT`，WebUI 可覆盖为最长 32,000 字符的人工提示词；恢复后的 turn 仍经过正常的超时、compaction、blocked 和 Flag 提交监督。
+
 `interrupted` 与 `blocked` Run 不消耗常规 `maxAttempts` 预算；超时、取消、准备失败等走各自终态和重试规则。
 
 ## SubAgent 协作
@@ -76,7 +80,7 @@ The correct final flag has not been submitted. Continue solving the challenge.
 
 ## 持久化职责
 
-- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 对单个 Run 直接调用 Pi HTML 导出器，不从 SQLite 事件重建 transcript，导出以 HTML 页面内联呈现、不强制下载。活跃 Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
+- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 只对明确选择且已经产生 assistant 消息的 attempt/SubAgent session 调用 Pi HTML 导出器，不提供题目级“最新 Run”推断，也不从 SQLite 事件重建 transcript。导出以 HTML 页面内联呈现、不强制下载。活跃 Solver Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
 - SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数和黑板；
 - 题目级 workspace：附件、脚本、反编译结果、`writeup.md` 和其他跨复活保留的解题产物。
 
@@ -88,7 +92,7 @@ RunStore 已具备 block v2 的持久化基础：`challenge_runtime_state` 保�
 
 在 Solver supervisor 接管 turn 生命周期前，现有 Session 中断路径仍会同步维护旧 `session_interruptions` 与 `block_score` 兼容值；新 supervisor 应只写 block event ledger，旧字段只保留审计和迁移用途。
 
-ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；baseline 失败只进入降级诊断，不阻塞解题。之后由不重叠的递归 timer 默认每 30 秒同步一次，失败指数退避，断开时停止。公告按平台 ID 与内容 revision hash 持久化，solve broadcast 会被过滤，其余公告经确定性标题/ID 匹配关联题目。新 Solver 从 `challenge_announcements` 获得完整的转义数据消息；活跃 Solver 的 steer 先进入 `announcement_deliveries` outbox，按题目、公告 revision 和 Run 幂等排队，成功/失败/attempts 可恢复，失败 delivery 后续 poll 可重试。steer 只在消息队列尾部追加公告，不改写既有消息；支持前缀缓存的 Provider 通常仍可复用原有前缀，compact 才会重写会话上下文。
+ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；baseline 失败只进入降级诊断，不阻塞解题。之后由不重叠的递归 timer 默认每 30 秒同步一次，失败指数退避，断开时停止。公告按平台 ID 与内容 revision hash 持久化；solve broadcast、新题上线和不含 hint/fix/update/attachment/environment/credential 等关键字的普通公告会被过滤。通过过滤且能确定匹配题目的公告先以 `pending` 候选显示在 WebUI，只有用户批准后才进入 `challenge_announcements` 上下文；拒绝项保持审计记录但不会发送。活跃 Solver 的获批公告 steer 先进入 `announcement_deliveries` outbox，按题目、公告 revision 和 Run 幂等排队，成功/失败/attempts 可恢复，失败 delivery 后续 poll 可重试。steer 只在消息队列尾部追加公告，不改写既有消息；支持前缀缓存的 Provider 通常仍可复用原有前缀，compact 才会重写会话上下文。
 
 生产 Scheduler 在 accepted/already_solved 后进入 `writing_writeup`，保留同一 Solver/session 但将 active tools 限制为 `read/write/edit/list`。Solver 必须把英文可复现 writeup 写入题目 workspace，校验失败时最多继续专用 writeup turn，不增加 block score；通过校验后才以 solved 关闭并销毁 sandbox；校验失败会清除临时 terminal submission，再以 failed 关闭，不能被 close callback 自动改回 solved。测试调度器可显式关闭该流程以隔离生命周期测试。
 
@@ -98,6 +102,6 @@ WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`ca
 
 Solver 停止原因经过 `classifySolverStop` 归一化：网络断连、Provider 5xx/429 和显式 retryable 错误不增加 block score，记录 `run_transient_failure` 后按基础设施退避重试；认证/配置错误不重试。模型自然停止、长度耗尽、协议异常和 prompt timeout 在未超过阈值时记录幂等 block event，并在同一 Run/session 追加 continuation prompt；超过阈值才关闭为 blocked。取消、进程关闭和已提交结果不计入 block。
 
-Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn 前读取 context pressure。compact 边界先以 `delta=2` 预判有效阈值：可 compact 时执行 CTF compact 并写入 `compact_performed=true`，会超阈值时跳过 compact 并直接进入 `blocking`。compact 成功后重新读取并注入最新黑板、SubAgent snapshot 与公告；因此 compact 期间完成的 worker 结果会进入下一 turn。blocking 阶段会向 running SubAgent 请求 final report，等待短 grace 后将最新 worker snapshot 作为不可信数据注入 Solver，执行一次 `BLOCKED_FINALIZATION_PROMPT` final turn；最终无论成功还是失败都关闭为 blocked，失败追加 `block_finalization_failed`。因 legacy interruption 上限而进入 blocking 时使用独立的 `forceChallengeBlocked` 生命周期更新，只改变 blocked 事实，不重复增加 block score；存在 ledger 的 Run 也不会再被 close callback 重复计分。事件 key 由 Run/session 事件序列稳定派生，崩溃重放不会重复计分。
+Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn 前读取 context pressure。compact 边界先以 `delta=2` 预判有效阈值：可 compact 时执行 CTF compact 并写入 `compact_performed=true`，会超阈值时跳过 compact 并直接进入 `blocking`。`CTF_COMPACTION_PROMPT` 只让摘要保留未被权威快照覆盖的 Solver 本地调查状态；该提示词由 `CtfSolverAgent` 传给 Pi `AgentHarness.compact()`。compact 成功后，控制面按题目信息、非空黑板、已批准公告、SubAgent snapshot 的顺序重新注入最新结构化数据，因此各部分不在摘要中重复，compact 期间完成的 worker 结果也会进入下一 turn。blocking 阶段会向 running SubAgent 请求 final report，等待短 grace 后将最新 worker snapshot 作为不可信数据注入 Solver，执行一次 `BLOCKED_FINALIZATION_PROMPT` final turn；最终无论成功还是失败都关闭为 blocked，失败追加 `block_finalization_failed`。因 legacy interruption 上限而进入 blocking 时使用独立的 `forceChallengeBlocked` 生命周期更新，只改变 blocked 事实，不重复增加 block score；存在 ledger 的 Run 也不会再被 close callback 重复计分。事件 key 由 Run/session 事件序列稳定派生，崩溃重放不会重复计分。
 
 调度等待队列持久化在 `scheduler_queue`，记录 normal/blocked lane、lane 内位置、人工跨 lane override 和乐观锁版本。自主调度优先填充 normal lane；普通题耗尽后，按 `blocked_at` 顺序加入 blocked revival。领取复活题时保留原 block score，`revival_count` 和 `lifecycle_generation` 各增加 1，因此有效阈值增加 4。人工重排使用版本检查，冲突时拒绝覆盖；数据库队列在进程关闭后保留，显式暂停自主调度或取消排队题目时才删除相应记录。生产默认 Solver 并发数为 8。

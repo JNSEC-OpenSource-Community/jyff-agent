@@ -442,6 +442,7 @@ describe("RunStore", () => {
         announcementKey: input.key,
         matchType: "title",
         matchedValue: "Cookie Jar",
+        matchedKeywords: ["hint"],
       }),
     ).toBe(true)
     expect(
@@ -452,19 +453,80 @@ describe("RunStore", () => {
         matchedValue: "Cookie Jar",
       }),
     ).toBe(false)
-    expect(store.challengeAnnouncements("web-1")).toEqual([
+    expect(store.challengeAnnouncements("web-1")).toEqual([])
+    expect(store.announcementCandidates()).toEqual([
       expect.objectContaining({
         key: input.key,
         challengeId: "web-1",
         lastSeenAt: "2026-01-01T00:02:00.000Z",
         matchType: "title",
+        matchedKeywords: ["hint"],
+        approvalStatus: "pending",
       }),
     ])
+    expect(
+      store.reviewChallengeAnnouncement({
+        challengeId: "web-1",
+        announcementKey: input.key,
+        status: "approved",
+        reviewedAt: "2026-01-01T00:03:00.000Z",
+      }),
+    ).toMatchObject({
+      approvalStatus: "approved",
+      reviewedAt: "2026-01-01T00:03:00.000Z",
+    })
+    expect(store.challengeAnnouncements("web-1")).toHaveLength(1)
     store.close()
 
     const reopened = await RunStore.open(path)
     expect(reopened.challengeAnnouncements("web-1")).toHaveLength(1)
     reopened.close()
+  })
+
+  it("打开旧数据库时自动补充公告审核字段并默认为待审核", async () => {
+    const { path, store } = await storeFixture()
+    store.close()
+    const legacy = new DatabaseSync(path)
+    legacy.exec("ALTER TABLE challenge_announcements DROP COLUMN reviewed_at")
+    legacy.exec(
+      "ALTER TABLE challenge_announcements DROP COLUMN approval_status",
+    )
+    legacy.exec(
+      "ALTER TABLE challenge_announcements DROP COLUMN matched_keywords_json",
+    )
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    const announcementKey = "legacy-notice:hash-a"
+    migrated.persistContestAnnouncement({
+      key: announcementKey,
+      platformAnnouncementId: "legacy-notice",
+      revisionHash: "hash-a",
+      title: "Legacy hint",
+      content: "A useful hint for Cookie Jar",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+      kind: "hint",
+      classificationReason: "platform_kind",
+      seenAt: "2026-01-01T00:01:00.000Z",
+    })
+    expect(
+      migrated.linkChallengeAnnouncement({
+        challengeId: "web-1",
+        announcementKey,
+        matchType: "title",
+        matchedValue: "Cookie Jar",
+      }),
+    ).toBe(true)
+    expect(migrated.announcementCandidates()).toEqual([
+      expect.objectContaining({
+        key: announcementKey,
+        matchedKeywords: [],
+        approvalStatus: "pending",
+        reviewedAt: null,
+      }),
+    ])
+    expect(migrated.challengeAnnouncements("web-1")).toEqual([])
+    migrated.close()
   })
 
   it("持久化 normal/blocked 队列、支持乐观锁重排和人工跨 lane 提前", async () => {

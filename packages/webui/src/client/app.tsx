@@ -317,6 +317,23 @@ function App() {
     )
   }
 
+  async function reviewAnnouncement(
+    candidate: DashboardSnapshot["announcementCandidates"][number],
+    status: "approved" | "rejected",
+  ) {
+    await operate(
+      () =>
+        controlPost<DashboardSnapshot>("/api/announcements/review", {
+          challengeId: candidate.challengeId,
+          announcementKey: candidate.key,
+          status,
+        }),
+      status === "approved"
+        ? "公告已批准并发送给对应 Solver"
+        : "公告已拒绝，不会进入 Agent 上下文",
+    )
+  }
+
   return (
     <>
       <a className="skip-link" href="#challenge-board">
@@ -345,7 +362,13 @@ function App() {
           onConcurrency={setSchedulerConcurrency}
         />
         <Stats snapshot={snapshot} />
-        <Operations snapshot={snapshot} />
+        <Operations
+          snapshot={snapshot}
+          pending={operationPending}
+          onReview={(candidate, status) =>
+            void reviewAnnouncement(candidate, status)
+          }
+        />
         <ChallengeBoard
           snapshot={snapshot}
           pending={operationPending}
@@ -672,7 +695,15 @@ function Stats({ snapshot }: { snapshot: DashboardSnapshot | null }) {
   )
 }
 
-function Operations({ snapshot }: { snapshot: DashboardSnapshot | null }) {
+function Operations(props: {
+  snapshot: DashboardSnapshot | null
+  pending: boolean
+  onReview: (
+    candidate: DashboardSnapshot["announcementCandidates"][number],
+    status: "approved" | "rejected",
+  ) => void
+}) {
+  const { snapshot } = props
   const total = snapshot?.stats.total ?? 0
   const completion =
     total === 0 ? 0 : Math.round(((snapshot?.stats.solved ?? 0) / total) * 100)
@@ -680,6 +711,14 @@ function Operations({ snapshot }: { snapshot: DashboardSnapshot | null }) {
     snapshot?.environments.filter((item) => item.status === "running").length ??
     0
   const announcements = snapshot?.announcements ?? []
+  const pendingAnnouncements =
+    snapshot?.announcementCandidates.filter(
+      (item) => item.approvalStatus === "pending",
+    ) ?? []
+  const challengeTitles = new Map(
+    snapshot?.challenges.map((challenge) => [challenge.id, challenge.title]) ??
+      [],
+  )
   return (
     <section className="operations-strip" aria-label="运行概况">
       <div>
@@ -698,9 +737,45 @@ function Operations({ snapshot }: { snapshot: DashboardSnapshot | null }) {
         <summary>
           <span className="strip-label">平台公告</span>
           <strong>{announcements.length}</strong>
-          <small>条更新</small>
+          <small>条更新 · {pendingAnnouncements.length} 条待审核</small>
         </summary>
         <div className="announcement-popover">
+          {pendingAnnouncements.length > 0 ? (
+            <section className="announcement-review-list">
+              <span className="strip-label">待批准发送给 Solver</span>
+              {pendingAnnouncements.map((item) => (
+                <article
+                  className="announcement-item announcement-review-item"
+                  key={`${item.challengeId}:${item.key}`}
+                >
+                  <strong>
+                    {challengeTitles.get(item.challengeId) ?? item.challengeId}{" "}
+                    ·{item.title}
+                  </strong>
+                  <p>{item.content}</p>
+                  <small>关键词：{item.matchedKeywords.join("、")}</small>
+                  <div className="announcement-review-actions">
+                    <button
+                      className="row-action"
+                      disabled={props.pending}
+                      onClick={() => props.onReview(item, "approved")}
+                      type="button"
+                    >
+                      批准发送
+                    </button>
+                    <button
+                      className="row-action is-cancel"
+                      disabled={props.pending}
+                      onClick={() => props.onReview(item, "rejected")}
+                      type="button"
+                    >
+                      忽略
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </section>
+          ) : null}
           {announcements.length === 0 ? (
             <p className="muted">暂无公告</p>
           ) : (

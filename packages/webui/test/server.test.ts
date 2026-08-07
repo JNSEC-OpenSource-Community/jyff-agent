@@ -168,6 +168,61 @@ describe("WebUI HTTP server", () => {
     expect(project.refreshCalls).toBe(1)
   })
 
+  it("通过 WebUI 审核公告后才标记为可发送", async () => {
+    const project = new FakeDashboardProject()
+    project.announcementCandidateValues = [
+      {
+        key: "notice:revision",
+        platformAnnouncementId: "notice",
+        revisionHash: "revision",
+        title: "Cookie Jar hint",
+        content: "Inspect the updated attachment.",
+        publishedAt: "2026-01-01T00:00:00.000Z",
+        kind: "hint",
+        classificationReason: "critical_keyword",
+        ignored: false,
+        firstSeenAt: "2026-01-01T00:00:01.000Z",
+        lastSeenAt: "2026-01-01T00:00:01.000Z",
+        challengeId: "web-1",
+        matchType: "title",
+        matchedValue: "Cookie Jar",
+        matchedKeywords: ["hint", "update", "attachment"],
+        approvalStatus: "pending",
+        reviewedAt: null,
+        linkedAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+    })
+    servers.push(server)
+
+    const response = await fetch(`${server.url}/api/announcements/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challengeId: "web-1",
+        announcementKey: "notice:revision",
+        status: "approved",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(project.announcementReviews).toEqual([
+      {
+        challengeId: "web-1",
+        announcementKey: "notice:revision",
+        status: "approved",
+      },
+    ])
+    expect(await response.json()).toMatchObject({
+      announcementCandidates: [{ approvalStatus: "approved" }],
+    })
+  })
+
   it("通过模型凭据 API 导入、列出和移除凭据且不泄露原文", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-auth-server-"))
     roots.push(root)
@@ -397,6 +452,26 @@ describe("WebUI HTTP server", () => {
 
     expect((await post("/api/challenges/misc-1/cancel")).status).toBe(200)
     expect(scheduler.snapshot().queued).toHaveLength(0)
+
+    expect((await post("/api/runs/run-pwn-1/retry")).status).toBe(200)
+    expect(
+      (
+        await post("/api/runs/run-pwn-1/retry", {
+          prompt: "Focus on the saved crash input.",
+        })
+      ).status,
+    ).toBe(200)
+    expect(scheduler.retryAttemptCalls).toEqual([
+      { runId: "run-pwn-1" },
+      { runId: "run-pwn-1", prompt: "Focus on the saved crash input." },
+    ])
+    expect(
+      (
+        await post("/api/runs/run-pwn-1/retry", {
+          prompt: "x".repeat(32_001),
+        })
+      ).status,
+    ).toBe(400)
   })
 
   it("保存模型配置且不向浏览器回传 API Key", async () => {
@@ -413,23 +488,34 @@ describe("WebUI HTTP server", () => {
 
     const initial = await fetch(`${server.url}/api/model-config`)
     expect(initial.status).toBe(200)
-    expect(await initial.json()).toMatchObject({
-      provider: "openrouter",
-      apiKeyConfigured: false,
-    })
+    const initialConfiguration = await initial.json()
+    expect(initialConfiguration).toMatchObject({ models: [] })
+    expect(initialConfiguration.subagentRoles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "general-purpose" }),
+      ]),
+    )
 
     const apiKey = "secret-model-key"
     const saved = await fetch(`${server.url}/api/model-config`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "https://models.example.test/v1/",
-        contextWindow: 64_000,
-        thinkingEnabled: true,
-        reasoningEffort: "high",
-        apiKey,
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "https://models.example.test/v1/",
+            contextWindow: 64_000,
+            thinkingEnabled: true,
+            reasoningEffort: "high",
+            apiKey,
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: { explorer: "solver" },
       }),
     })
     expect(saved.status).toBe(200)
@@ -437,13 +523,20 @@ describe("WebUI HTTP server", () => {
     expect(savedText).not.toContain(apiKey)
     expect(JSON.parse(savedText)).toMatchObject({
       configuration: {
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "https://models.example.test/v1",
-        apiKeyConfigured: true,
-        apiKeySource: "secret-store",
-        thinkingEnabled: true,
-        reasoningEffort: "high",
+        models: [
+          {
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "https://models.example.test/v1",
+            apiKeyConfigured: true,
+            apiKeySource: "secret-store",
+            thinkingEnabled: true,
+            reasoningEffort: "high",
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: { explorer: "solver" },
         configured: true,
       },
     })
@@ -453,12 +546,20 @@ describe("WebUI HTTP server", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "file:///tmp/model",
-        contextWindow: 1_024,
-        thinkingEnabled: false,
-        reasoningEffort: "max",
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "file:///tmp/model",
+            contextWindow: 1_024,
+            thinkingEnabled: false,
+            reasoningEffort: "max",
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: {},
       }),
     })
     expect(invalid.status).toBe(400)
@@ -467,15 +568,45 @@ describe("WebUI HTTP server", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: "custom-openai",
-        modelId: "solver-model",
-        baseUrl: "",
-        contextWindow: 1_024,
-        thinkingEnabled: false,
-        reasoningEffort: "ultra",
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "",
+            contextWindow: 1_024,
+            thinkingEnabled: false,
+            reasoningEffort: "ultra",
+          },
+        ],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: {},
       }),
     })
     expect(badEffort.status).toBe(400)
+
+    const missingBinding = await fetch(`${server.url}/api/model-config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        models: [
+          {
+            id: "solver",
+            provider: "custom-openai",
+            modelId: "solver-model",
+            baseUrl: "https://models.example.test/v1",
+            contextWindow: 64_000,
+            thinkingEnabled: true,
+            reasoningEffort: "medium",
+          },
+        ],
+        solverModelId: "missing",
+        tldrModelId: "solver",
+        subagentModels: {},
+      }),
+    })
+    expect(missingBinding.status).toBe(400)
   })
 
   it("运行中切换思考强度(200/400/409 契约)", async () => {
@@ -637,7 +768,66 @@ describe("WebUI HTTP server", () => {
     })
   })
 
-  it("Pi 会话导出:无 run 404;指定不存在 run 404;200 返回 HTML 附件", async () => {
+  it("HTML 导出仅接受明确的 Run 或 SubAgent 会话", async () => {
+    const project = new FakeDashboardProject()
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+      sessionHasConversation: async () => true,
+    })
+    servers.push(server)
+
+    const ambiguous = await fetch(`${server.url}/api/challenges/pwn-1/export`)
+    expect(ambiguous.status).toBe(404)
+    expect(await ambiguous.json()).toMatchObject({
+      error: "challenge_not_found",
+    })
+
+    const missingRun = await fetch(`${server.url}/api/runs/nope/export`)
+    expect(missingRun.status).toBe(404)
+    expect(await missingRun.json()).toMatchObject({ error: "run_not_found" })
+
+    const missingSubagent = await fetch(
+      `${server.url}/api/runs/run-pwn-1/subagents/nope/export`,
+    )
+    expect(missingSubagent.status).toBe(404)
+    expect(await missingSubagent.json()).toMatchObject({
+      error: "subagent_not_found",
+    })
+  })
+
+  it("尚未产生 Agent 对话的 attempt 和 SubAgent 均拒绝导出", async () => {
+    const project = new FakeDashboardProject()
+    let exportCalls = 0
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+      sessionHasConversation: async () => false,
+      exportSessionHtml: async () => {
+        exportCalls++
+        return Buffer.from("<!doctype html>")
+      },
+    })
+    servers.push(server)
+
+    for (const path of [
+      "/api/runs/run-pwn-1/export",
+      "/api/runs/run-pwn-1/subagents/worker-pwn-1/export",
+    ]) {
+      const response = await fetch(`${server.url}${path}`)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({
+        error: "session_not_ready",
+      })
+    }
+    expect(exportCalls).toBe(0)
+  })
+
+  it("Run 与 SubAgent 对话使用各自的 Pi JSONL 导出 HTML", async () => {
     const project = new FakeDashboardProject()
     const sessionExports: Array<{
       sessionPath: string
@@ -649,6 +839,7 @@ describe("WebUI HTTP server", () => {
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
+      sessionHasConversation: async () => true,
       exportSessionHtml: async (sessionPath, metadata) => {
         sessionExports.push({
           sessionPath,
@@ -660,46 +851,29 @@ describe("WebUI HTTP server", () => {
     })
     servers.push(server)
 
-    // 无 run 的题 → 404 no_runs
-    const noRuns = await fetch(`${server.url}/api/challenges/web-1/export`)
-    expect(noRuns.status).toBe(404)
-    expect(await noRuns.json()).toMatchObject({ error: "no_runs" })
+    const runExport = await fetch(`${server.url}/api/runs/run-pwn-1/export`)
+    expect(runExport.status).toBe(200)
+    expect(runExport.headers.get("content-type")).toContain("text/html")
+    expect(runExport.headers.get("content-disposition")).toBeNull()
+    expect(await runExport.text()).toContain("<title>Pi Session")
 
-    // 指定不存在的 run → 404 run_not_found
-    const missingRun = await fetch(
-      `${server.url}/api/challenges/pwn-1/export?run=nope`,
+    const subagentExport = await fetch(
+      `${server.url}/api/runs/run-pwn-1/subagents/worker-pwn-1/export`,
     )
-    expect(missingRun.status).toBe(404)
-    expect(await missingRun.json()).toMatchObject({ error: "run_not_found" })
-
-    // 存在 run → 200 内联返回 Pi HTML 页面；未指定时导出最新 Run。
-    const exportLatest = await fetch(
-      `${server.url}/api/challenges/pwn-1/export`,
-    )
-    expect(exportLatest.status).toBe(200)
-    expect(exportLatest.headers.get("content-type")).toContain("text/html")
-    expect(exportLatest.headers.get("content-disposition")).toBeNull()
-    expect(await exportLatest.text()).toContain("<title>Pi Session")
+    expect(subagentExport.status).toBe(200)
+    expect(await subagentExport.text()).toContain("<title>Pi Session")
     expect(sessionExports).toEqual([
       {
         sessionPath: "/sessions/run-pwn-1/session.jsonl",
         systemPrompt: "You are a CTF solver.",
         toolNames: ["ctf_submit_flag"],
       },
+      {
+        sessionPath: "/sessions/worker-pwn-1/session.jsonl",
+        systemPrompt: undefined,
+        toolNames: undefined,
+      },
     ])
-
-    // 指定 Run 同样交由 Pi 的 HTML 导出器处理。
-    const single = await fetch(
-      `${server.url}/api/challenges/pwn-1/export?run=run-pwn-1`,
-    )
-    expect(single.status).toBe(200)
-    expect(single.headers.get("content-disposition")).toBeNull()
-    expect(sessionExports).toHaveLength(2)
-    expect(sessionExports[1]).toMatchObject({
-      sessionPath: "/sessions/run-pwn-1/session.jsonl",
-      systemPrompt: "You are a CTF solver.",
-      toolNames: ["ctf_submit_flag"],
-    })
   })
 
   it("导出响应内联呈现，平台/run 数据不进入任何响应头(防 header 注入)", async () => {
@@ -719,12 +893,13 @@ describe("WebUI HTTP server", () => {
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
+      sessionHasConversation: async () => true,
       exportSessionHtml: async () => Buffer.from("<!doctype html>"),
     })
     servers.push(server)
 
     const response = await fetch(
-      `${server.url}/api/challenges/${encodeURIComponent('pwn"1;../evil')}/export`,
+      `${server.url}/api/runs/${encodeURIComponent('run"evil"1')}/export`,
     )
     expect(response.status).toBe(200)
     // 内联页面不带下载文件名，因此平台/run 数据完全不会出现在响应头。

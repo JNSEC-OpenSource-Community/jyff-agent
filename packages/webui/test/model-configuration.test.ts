@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FileSecretStore } from "@ctf-agent/core"
+import { FileSecretStore, modelsFromAgentOptions } from "@ctf-agent/core"
 import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import { afterEach, describe, expect, it } from "vitest"
 import { createFileModelAuthentication } from "../src/model-authentication.ts"
@@ -11,6 +11,32 @@ import {
 } from "../src/model-configuration.ts"
 
 const roots: string[] = []
+
+function modelEntry(
+  overrides: Partial<{
+    id: string
+    provider: string
+    modelId: string
+    baseUrl: string
+    contextWindow: number
+    thinkingEnabled: boolean
+    reasoningEffort: string
+    passthroughThinking: boolean
+    apiKey: string
+  }> = {},
+) {
+  return {
+    id: "solver",
+    provider: "custom-openai",
+    modelId: "solver-model",
+    baseUrl: "https://models.example.test/v1",
+    contextWindow: 64_000,
+    thinkingEnabled: true,
+    reasoningEffort: "medium",
+    passthroughThinking: false,
+    ...overrides,
+  }
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -30,17 +56,13 @@ describe("file model configuration", () => {
     })
 
     const view = await configuration.update({
-      provider: "custom-openai",
-      modelId: "solver-model",
-      baseUrl: "https://models.example.test/v1",
-      contextWindow: 64_000,
-      thinkingEnabled: true,
-      reasoningEffort: "high",
-      passthroughThinking: false,
-      apiKey: "secret-key",
+      models: [modelEntry({ reasoningEffort: "high", apiKey: "secret-key" })],
+      solverModelId: "solver",
+      tldrModelId: "solver",
+      subagentModels: {},
     })
 
-    expect(view).toMatchObject({
+    expect(view.models[0]).toMatchObject({
       configured: true,
       apiKeyConfigured: true,
       apiKeySource: "secret-store",
@@ -62,15 +84,14 @@ describe("file model configuration", () => {
     expect(agent.initialState?.systemPrompt).toBe(SOLVER_SYSTEM_PROMPT)
 
     const disabledThinking = await configuration.update({
-      provider: "custom-openai",
-      modelId: "solver-model",
-      baseUrl: "https://models.example.test/v1",
-      contextWindow: 64_000,
-      thinkingEnabled: false,
-      reasoningEffort: "high",
-      passthroughThinking: false,
+      models: [modelEntry({ thinkingEnabled: false, reasoningEffort: "high" })],
+      solverModelId: "solver",
+      tldrModelId: "solver",
+      subagentModels: {},
     })
-    expect(disabledThinking.supportedThinkingLevels).toContain("high")
+    expect(disabledThinking.models[0]?.supportedThinkingLevels).toContain(
+      "high",
+    )
   })
 
   it("把旧模型配置中的明文 Key 迁移到 Secret Store", async () => {
@@ -92,7 +113,9 @@ describe("file model configuration", () => {
       secretStore: await FileSecretStore.open(secretsPath),
     })
 
-    expect(configuration.snapshot().apiKeySource).toBe("secret-store")
+    expect(configuration.snapshot().models[0]?.apiKeySource).toBe(
+      "secret-store",
+    )
     expect(await readFile(storagePath, "utf8")).not.toContain("legacy-key")
     expect(await readFile(storagePath, "utf8")).not.toContain("maxTokens")
     expect(await readFile(secretsPath, "utf8")).toContain("legacy-key")
@@ -118,12 +141,10 @@ describe("file model configuration", () => {
 
     expect(configuration.snapshot()).toMatchObject({
       configured: false,
-      apiKeyConfigured: false,
-      thinkingEnabled: true,
-      reasoningEffort: "max",
+      models: [],
       supportedThinkingLevels: [],
     })
-    expect(() => configuration.createAgentOptions()).toThrow("未配置 Model ID")
+    expect(() => configuration.createAgentOptions()).toThrow("未选择 Solver")
   })
 
   it("使用 Pi Provider 凭据与原生模型创建 Agent", async () => {
@@ -147,16 +168,20 @@ describe("file model configuration", () => {
     })
 
     const view = await configuration.update({
-      provider: "openai",
-      modelId,
-      baseUrl: "",
-      contextWindow: 64_000,
-      thinkingEnabled: true,
-      reasoningEffort: "high",
-      passthroughThinking: false,
+      models: [
+        modelEntry({
+          provider: "openai",
+          modelId,
+          baseUrl: "",
+          reasoningEffort: "high",
+        }),
+      ],
+      solverModelId: "solver",
+      tldrModelId: "solver",
+      subagentModels: {},
     })
 
-    expect(view).toMatchObject({
+    expect(view.models[0]).toMatchObject({
       configured: true,
       apiKeyConfigured: true,
       apiKeySource: "provider-credential",
@@ -164,5 +189,54 @@ describe("file model configuration", () => {
     expect(configuration.createAgentOptions()).toMatchObject({
       initialState: { model: { provider: "openai", id: modelId } },
     })
+  })
+
+  it("为 Solver、TLDR 和 SubAgent 注册并选择不同模型", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-pool-"))
+    roots.push(root)
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+    })
+
+    const view = await configuration.update({
+      models: [
+        modelEntry({ apiKey: "solver-key" }),
+        modelEntry({
+          id: "worker",
+          provider: "worker-provider",
+          modelId: "worker-model",
+          baseUrl: "https://workers.example.test/v1",
+          apiKey: "worker-key",
+        }),
+      ],
+      solverModelId: "solver",
+      tldrModelId: "worker",
+      subagentModels: { explorer: "worker" },
+    })
+
+    expect(view).toMatchObject({
+      configured: true,
+      solverModelId: "solver",
+      tldrModelId: "worker",
+      subagentModels: { explorer: "worker" },
+    })
+    const solver = configuration.createAgentOptions("solver")
+    const tldr = configuration.createAgentOptions("tldr")
+    expect(solver.initialState?.model).toMatchObject({
+      provider: "custom-openai",
+      id: "solver-model",
+    })
+    expect(tldr.initialState?.model).toMatchObject({
+      provider: "worker-provider",
+      id: "worker-model",
+    })
+    const solverModel = solver.initialState?.model
+    if (!solverModel) throw new Error("missing solver model")
+    const registry = modelsFromAgentOptions(solver, solverModel)
+    expect(registry.getModel("worker-provider", "worker-model")).toBeDefined()
+    expect(configuration.modelForSubagent("explorer")).toBe(
+      "worker-provider/worker-model",
+    )
   })
 })

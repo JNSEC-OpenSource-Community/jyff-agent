@@ -74,11 +74,40 @@ describe("WebUI dashboard model", () => {
       type: "tool_started",
       data: { toolName: "bash" },
     })
+    expect(details?.runs[0]?.hasConversation).toBe(true)
+    expect(details?.runs[0]?.subagents[0]?.hasConversation).toBe(true)
     expect(details?.environment?.endpoint).toBe("tcp://127.0.0.1:31337")
     expect(details?.blackboard.evidence[0]?.description).toBe("PIE enabled")
     await expect(
       buildChallengeDetails(project, "missing"),
     ).resolves.toBeUndefined()
+  })
+
+  it("未产生 Agent 消息或工具调用的 attempt 不标记为可导出", async () => {
+    const project = new FakeDashboardProject()
+    project.eventValues.set("run-pwn-1", [
+      {
+        id: 1,
+        runId: "run-pwn-1",
+        type: "run_created",
+        createdAt: "2026-07-29T11:55:00.000Z",
+      },
+    ])
+    const subagent = project.subagentValues.get("run-pwn-1")?.[0]
+    if (!subagent) throw new Error("测试 SubAgent 缺失")
+    project.subagentValues.set("run-pwn-1", [
+      {
+        ...subagent,
+        turns: 0,
+        toolUses: 0,
+        totalTokens: 0,
+        result: undefined,
+      },
+    ])
+
+    const details = await buildChallengeDetails(project, "pwn-1")
+    expect(details?.runs[0]?.hasConversation).toBe(false)
+    expect(details?.runs[0]?.subagents[0]?.hasConversation).toBe(false)
   })
 
   it("题目详情复用当前 Dashboard 快照，不重复访问平台", async () => {

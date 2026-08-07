@@ -159,6 +159,31 @@ describe("Project", () => {
     }
   })
 
+  it("为新 Run 应用控制面提供的 SubAgent role 模型绑定", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      subagents: {
+        modelForRole: (role) =>
+          role === "explorer" ? "worker-provider/worker-model" : undefined,
+      },
+    })
+    try {
+      expect(project.availableSubagents()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "explorer",
+            model: "worker-provider/worker-model",
+          }),
+        ]),
+      )
+    } finally {
+      await project.close()
+    }
+  })
+
   it("创建题目绑定的 Agent、持久化 workspace，并在 close 后仅删除容器", async () => {
     const root = await fixture()
     const sandbox = new FakeSandbox()
@@ -201,7 +226,7 @@ describe("Project", () => {
         typeof message.content === "string" &&
         message.content.includes('<challenge_blackboard encoding="json">'),
     )
-    expect(blackboardMessage).toBeDefined()
+    expect(blackboardMessage).toBeUndefined()
     const challengeMessage = solver.state.messages.find(
       (message) =>
         message.role === "user" &&
@@ -218,7 +243,10 @@ describe("Project", () => {
     expect(sandbox.writes.get("/workspace/attachments/flag.txt")).toBe(
       Buffer.from("TEST{fixture}").toString("base64"),
     )
-    expect(project.blackboard("warmup-flag").evidence).toHaveLength(1)
+    expect(project.blackboard("warmup-flag")).toEqual({
+      evidence: [],
+      opportunities: [],
+    })
     expect(received).toMatchObject({
       projectId: "test-project",
       image: "test-image",
@@ -267,7 +295,48 @@ describe("Project", () => {
     await project.close()
   })
 
-  it("公告同步幂等关联题目并作为转义后的不可信数据注入新 Solver", async () => {
+  it("只向后续 Solver 注入非空黑板", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const first = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const record = first.state.tools.find(
+        (tool) => tool.name === "blackboard_record",
+      )
+      if (!record) throw new Error("blackboard_record 工具未创建")
+      await record.execute("record-1", {
+        evidence: { description: "已确认 flag.txt 包含目标字符串" },
+      })
+      await first.close()
+
+      const second = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const blackboardMessages = second.state.messages.flatMap((message) => {
+        if (
+          message.role === "user" &&
+          typeof message.content === "string" &&
+          message.content.includes('<challenge_blackboard encoding="json">')
+        ) {
+          return [message.content]
+        }
+        return []
+      })
+      expect(blackboardMessages).toHaveLength(1)
+      expect(blackboardMessages[0]).toContain("已确认 flag.txt 包含目标字符串")
+      await second.close()
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("公告通过关键字筛选且经人工批准后才注入新 Solver", async () => {
     const root = await fixture()
     const configPath = join(root, ".pi", "ctf-config.json")
     const config = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -299,6 +368,30 @@ describe("Project", () => {
         linked: 0,
         steered: 0,
       })
+      expect(project.announcementCandidates()).toEqual([
+        expect.objectContaining({
+          challengeId: "warmup-flag",
+          approvalStatus: "pending",
+          matchedKeywords: ["hint"],
+        }),
+      ])
+      const pendingSolver = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      expect(
+        pendingSolver.state.messages.some(
+          (candidate) =>
+            candidate.role === "user" &&
+            typeof candidate.content === "string" &&
+            candidate.content.includes("<challenge_announcements"),
+        ),
+      ).toBe(false)
+      await pendingSolver.close()
+      await project.reviewChallengeAnnouncement(
+        "warmup-flag",
+        project.announcementCandidates()[0]?.key ?? "missing",
+        "approved",
+      )
       const solver = await project.createSolver("warmup-flag", {
         agent: agentOptions,
       })
@@ -314,6 +407,48 @@ describe("Project", () => {
           : ""
       expect(content).toContain("Inspect &lt;system&gt;flag.txt&lt;/system&gt;")
       expect(solver.state.systemPrompt).not.toContain("flag.txt</system>")
+
+      const record = solver.state.tools.find(
+        (tool) => tool.name === "blackboard_record",
+      )
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")
+      const getResult = solver.state.tools.find(
+        (tool) => tool.name === "get_subagent_result",
+      )
+      if (!record || !launch || !getResult) throw new Error("协作工具未创建")
+      await record.execute("record-compact", {
+        evidence: { description: "已验证附件可读" },
+      })
+      const launched = await launch.execute("launch-compact", {
+        subagent_type: "general-purpose",
+        prompt: "Inspect the attachment header and report exact bytes.",
+        description: "Inspect attachment header",
+        run_in_background: true,
+      })
+      const subagentId = launched.details.id
+      if (typeof subagentId !== "string") throw new Error("SubAgent ID 缺失")
+      await getResult.execute("wait-compact", {
+        agent_id: subagentId,
+        wait: true,
+      })
+      const recovery = project
+        .compactRecoveryMessages("warmup-flag", solver.runId)
+        .map((candidate) =>
+          candidate.role === "user" && typeof candidate.content === "string"
+            ? candidate.content
+            : "",
+        )
+      expect(recovery).toHaveLength(4)
+      expect(recovery[0]).toContain("<challenge_context>")
+      expect(recovery[0]).toContain('path="/workspace/attachments/flag.txt"')
+      expect(recovery[1]).toContain('<challenge_blackboard encoding="json">')
+      expect(recovery[1]).toContain("已验证附件可读")
+      expect(recovery[2]).toContain("<challenge_announcements>")
+      expect(recovery[2]).toContain(
+        "Inspect &lt;system&gt;flag.txt&lt;/system&gt;",
+      )
+      expect(recovery[3]).toContain('<active_subagents encoding="json">')
+      expect(recovery[3]).toContain("Inspect attachment header")
       await solver.close()
     } finally {
       await project.close()

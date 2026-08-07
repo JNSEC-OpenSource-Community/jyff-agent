@@ -1,6 +1,8 @@
 export {
+  attachModelsToAgentOptions,
   DEFAULT_SOLVER_THINKING_LEVEL,
   isThinkingLevel,
+  modelsFromAgentOptions,
 } from "@ctf-agent/agents"
 export * from "@ctf-agent/platform"
 export * from "./agent/thinking.ts"

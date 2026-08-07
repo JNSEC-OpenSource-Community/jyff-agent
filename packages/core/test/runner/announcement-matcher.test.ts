@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   announcementRevision,
   classifyAnnouncement,
+  filterAnnouncementKeywords,
   matchAnnouncementChallenges,
   normalizeAnnouncementText,
 } from "../../src/orchestration/announcement-matcher.ts"
@@ -66,6 +67,46 @@ describe("announcement classification", () => {
         }),
       ),
     ).toEqual({ kind: "hint", ignored: false, reason: "platform_kind" })
+  })
+
+  it("只让包含关键变更词的公告进入人工审批", () => {
+    expect(
+      filterAnnouncementKeywords(
+        announcement({
+          title: "Cookie Jar attachment updated",
+          content: "Download the fixed archive.",
+        }),
+      ),
+    ).toEqual({
+      eligible: true,
+      matchedKeywords: ["fix", "update", "attachment"],
+      reason: "critical_keyword",
+    })
+    expect(
+      filterAnnouncementKeywords(
+        announcement({ kind: "hint", title: "Cookie Jar", content: "Look up" }),
+      ),
+    ).toEqual({
+      eligible: true,
+      matchedKeywords: ["hint"],
+      reason: "critical_keyword",
+    })
+  })
+
+  it("过滤新题上线和没有关键字的普通旧公告", () => {
+    expect(
+      filterAnnouncementKeywords(
+        announcement({
+          kind: "new_challenge",
+          title: "New challenge: Cookie Jar",
+        }),
+      ),
+    ).toMatchObject({ eligible: false, reason: "new_challenge" })
+    expect(
+      filterAnnouncementKeywords(
+        announcement({ title: "Welcome", content: "Contest starts now" }),
+      ),
+    ).toMatchObject({ eligible: false, reason: "no_critical_keyword" })
   })
 })
 

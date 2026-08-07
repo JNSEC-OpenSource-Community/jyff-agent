@@ -6,6 +6,10 @@ import {
 import type { RunStore } from "../../src/persistence/run-store.js"
 
 describe("serializeBlackboard", () => {
+  it("空黑板不生成可注入内容", () => {
+    expect(serializeBlackboard({ evidence: [], opportunities: [] })).toBe("")
+  })
+
   it("仅有 evidence 时省略 opportunity 段", () => {
     const text = serializeBlackboard({
       evidence: [{ id: 1, description: "发现漏洞", runId: "run-1" }],
@@ -66,13 +70,6 @@ describe("createBlackboardTools", () => {
         id: 1,
         challengeId: "c1",
         description: "ok",
-        runId: "r1",
-        createdAt: "now",
-      }),
-      ensureOrigin: () => ({
-        id: 1,
-        challengeId: "c1",
-        description: "origin",
         runId: "r1",
         createdAt: "now",
       }),

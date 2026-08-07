@@ -1,5 +1,6 @@
 import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
 import {
+  DockerBashExecutionEnv,
   DockerExecutionEnv,
   RtkRewriter,
   type Sandbox,
@@ -89,7 +90,12 @@ export function createSandboxTools(options: SandboxToolOptions): AgentTool[] {
   const context: ExecutionToolContext = { env }
   const rtk = new RtkRewriter(env)
   return [
-    bindExecutionTool(createBashTool({ prepare: rtk.prepare() }), context),
+    bindDynamicExecutionTool(
+      createBashTool({ prepare: rtk.prepare() }),
+      () => ({
+        env: new DockerBashExecutionEnv(options.sandbox, { cwd: options.cwd }),
+      }),
+    ),
     bindExecutionTool(createReadTool(), context),
     bindExecutionTool(createWriteTool(), context),
     bindExecutionTool(createEditTool(), context),
@@ -214,6 +220,18 @@ function bindExecutionTool<TParameters extends TSchema, TDetails>(
     ...tool,
     execute(toolCallId, params, signal, onUpdate) {
       return tool.execute(toolCallId, params, signal, onUpdate, context)
+    },
+  }
+}
+
+function bindDynamicExecutionTool<TParameters extends TSchema, TDetails>(
+  tool: AgentHarnessTool<ExecutionToolContext, TParameters, TDetails>,
+  context: () => ExecutionToolContext,
+): AgentTool<TParameters, TDetails> {
+  return {
+    ...tool,
+    execute(toolCallId, params, signal, onUpdate) {
+      return tool.execute(toolCallId, params, signal, onUpdate, context())
     },
   }
 }

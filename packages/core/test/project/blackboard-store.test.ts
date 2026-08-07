@@ -24,20 +24,24 @@ async function storeFixture(): Promise<{ store: RunStore; path: string }> {
   return { store: await RunStore.open(path), path }
 }
 
-function fakeChallenge() {
-  return {
-    title: "Test Challenge",
-    category: "pwn",
-    score: 100,
-    description: "A binary exploitation challenge",
-    attachments: [
-      { name: "binary.exe", size: 4096 },
-      { name: "libc.so", size: 204800 },
-    ],
-  }
-}
-
 describe("RunStore blackboard", () => {
+  it("新题目的黑板默认为空", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "run-1",
+      challengeId: "chal-1",
+      workspace: "/tmp/a",
+      attempt: 1,
+    })
+
+    expect(store.getBlackboardSummary("chal-1")).toEqual({
+      evidence: [],
+      opportunities: [],
+    })
+    expect(store.getBlackboardStats()).toEqual([])
+    store.close()
+  })
+
   it("记录 Evidence 并可通过 getBlackboardSummary 查询", async () => {
     const { store } = await storeFixture()
     store.createRun({
@@ -68,72 +72,6 @@ describe("RunStore blackboard", () => {
     store.close()
   })
 
-  it("ensureOrigin 首次创建 origin，再次调用幂等返回", async () => {
-    const { store } = await storeFixture()
-    store.createRun({
-      id: "run-1",
-      challengeId: "chal-1",
-      workspace: "/tmp/a",
-      attempt: 1,
-    })
-
-    const challenge = fakeChallenge()
-    const origin1 = store.ensureOrigin("chal-1", "run-1", challenge)
-    expect(origin1.description).toContain("Test Challenge")
-    expect(origin1.description).toContain("pwn")
-    expect(origin1.description).toContain("binary.exe")
-    expect(origin1.description).toContain("libc.so")
-    store.updateRun("run-1", { status: "closed", closeReason: "manual" })
-
-    // 幂等调用
-    store.createRun({
-      id: "run-2",
-      challengeId: "chal-1",
-      workspace: "/tmp/b",
-      attempt: 2,
-    })
-    const origin2 = store.ensureOrigin("chal-1", "run-2", {
-      ...challenge,
-      title: "Different Title",
-    })
-    expect(origin2.id).toBe(origin1.id)
-    // 描述不变（使用第一次的内容）
-    expect(origin2.description).toBe(origin1.description)
-
-    const summary = store.getBlackboardSummary("chal-1")
-    expect(summary.evidence).toHaveLength(1)
-
-    store.close()
-  })
-
-  it("不同 challenge 的 origin 互不干扰", async () => {
-    const { store } = await storeFixture()
-    store.createRun({
-      id: "run-1",
-      challengeId: "chal-1",
-      workspace: "/tmp/a",
-      attempt: 1,
-    })
-    store.createRun({
-      id: "run-2",
-      challengeId: "chal-2",
-      workspace: "/tmp/b",
-      attempt: 1,
-    })
-
-    store.ensureOrigin("chal-1", "run-1", fakeChallenge())
-    store.ensureOrigin("chal-2", "run-2", {
-      ...fakeChallenge(),
-      title: "Other",
-    })
-
-    expect(store.getBlackboardSummary("chal-1").evidence).toHaveLength(1)
-    expect(store.getBlackboardSummary("chal-2").evidence).toHaveLength(1)
-    expect(store.getBlackboardSummary("chal-3").evidence).toHaveLength(0)
-
-    store.close()
-  })
-
   it("recordOpportunity 在事务中写入 opportunity + sources", async () => {
     const { store } = await storeFixture()
     store.createRun({
@@ -142,16 +80,16 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    store.ensureOrigin("chal-1", "run-1", fakeChallenge())
-
+    const origin = store.recordEvidence(
+      "chal-1",
+      "run-1",
+      "已确认格式化字符串漏洞",
+    )
     const e2 = store.recordEvidence(
       "chal-1",
       "run-1",
       "format string 可泄露栈地址",
     )
-    const [origin] = store.getBlackboardSummary("chal-1").evidence
-    if (!origin) throw new Error("origin evidence 未创建")
-
     const opp = store.recordOpportunity(
       "chal-1",
       "run-1",
@@ -246,10 +184,7 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    store.ensureOrigin("chal-1", "run-1", fakeChallenge())
-
-    const [origin] = store.getBlackboardSummary("chal-1").evidence
-    if (!origin) throw new Error("origin evidence 未创建")
+    const origin = store.recordEvidence("chal-1", "run-1", "已确认可控返回地址")
     const opp = store.recordOpportunity("chal-1", "run-1", "测试探索", [
       origin.id,
     ])
@@ -266,7 +201,7 @@ describe("RunStore blackboard", () => {
     expect(result.opportunity.targetEvidenceId).toBe(result.evidence.id)
 
     const summary = store.getBlackboardSummary("chal-1")
-    expect(summary.evidence).toHaveLength(2) // origin + 新 evidence
+    expect(summary.evidence).toHaveLength(2) // 初始证据 + 新 evidence
     expect(summary.opportunities[0]).toMatchObject({
       status: "concluded",
       resolution: "confirmed",
@@ -302,10 +237,7 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    store.ensureOrigin("chal-1", "run-1", fakeChallenge())
-
-    const [origin] = store.getBlackboardSummary("chal-1").evidence
-    if (!origin) throw new Error("origin evidence 未创建")
+    const origin = store.recordEvidence("chal-1", "run-1", "已确认可控返回地址")
     const opp = store.recordOpportunity("chal-1", "run-1", "test", [origin.id])
     store.concludeOpportunity("chal-1", opp.id, "done", "run-1")
 
@@ -405,9 +337,6 @@ describe("RunStore blackboard", () => {
     expect(() => store.recordEvidence("chal-2", "run-1", "invalid")).toThrow(
       "does not belong to challenge chal-2",
     )
-    expect(() =>
-      store.ensureOrigin("chal-2", "run-1", fakeChallenge()),
-    ).toThrow("does not belong to challenge chal-2")
     const evidence = store.recordEvidence("chal-1", "run-1", "valid")
     expect(() =>
       store.recordOpportunity("chal-2", "run-1", "invalid", [evidence.id]),
@@ -444,11 +373,10 @@ describe("RunStore blackboard", () => {
       attempt: 1,
     })
 
-    store.ensureOrigin("chal-1", "run-1", fakeChallenge())
     store.recordEvidence("chal-1", "run-1", "chal-1 的证据")
     store.recordEvidence("chal-2", "run-2", "chal-2 的证据")
 
-    expect(store.getBlackboardSummary("chal-1").evidence).toHaveLength(2)
+    expect(store.getBlackboardSummary("chal-1").evidence).toHaveLength(1)
     expect(store.getBlackboardSummary("chal-2").evidence).toHaveLength(1)
     store.close()
   })

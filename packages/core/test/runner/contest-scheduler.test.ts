@@ -129,6 +129,92 @@ function solvingAgent(item: TestChallenge, delayMs = 20): AgentOptions {
 
 describe("ContestScheduler", () => {
   it.each([
+    {
+      label: "默认 continuation prompt",
+      prompt: undefined,
+      expected: INCOMPLETE_CONTINUATION_PROMPT,
+    },
+    {
+      label: "用户提供的 prompt",
+      prompt: "Re-check the decoded payload before submitting the flag.",
+      expected: "Re-check the decoded payload before submitting the flag.",
+    },
+  ])("使用$label重试原 attempt 和 Pi session", async ({ prompt, expected }) => {
+    const item = challenge(prompt ? 102 : 101)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const original = await project.createSolver(item.id, {
+      agent: solvingAgent(item, 0),
+      attempt: 7,
+      source: "manual",
+    })
+    await original.close("failed", "等待人工重试")
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      createAgentOptions: () => solvingAgent(item, 0),
+    })
+
+    try {
+      await scheduler.retryAttempt(original.runId, { prompt })
+      await waitUntil(
+        () =>
+          project.isChallengeSolved(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+
+      expect(project.runs({ challengeId: item.id })).toEqual([
+        expect.objectContaining({
+          id: original.runId,
+          attempt: 7,
+          source: "manual",
+          status: "solved",
+        }),
+      ])
+      expect(
+        await readFile(project.runSessionPath(original.runId), "utf8"),
+      ).toContain(expected)
+      expect(
+        project
+          .runEvents(original.runId)
+          .filter((event) => event.type === "run_resumed"),
+      ).toHaveLength(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("拒绝不存在或仍在运行的 Run 重试", async () => {
+    const item = challenge(103)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      createAgentOptions: () => solvingAgent(item, 0),
+    })
+
+    try {
+      await expect(scheduler.retryAttempt("missing-run")).rejects.toMatchObject(
+        {
+          code: "run_not_found",
+        },
+      )
+      const running = await project.createSolver(item.id, {
+        agent: solvingAgent(item, 0),
+        attempt: 1,
+        source: "manual",
+      })
+      await expect(scheduler.retryAttempt(running.runId)).rejects.toMatchObject(
+        { code: "run_not_retryable" },
+      )
+      await running.close("manual")
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it.each([
     { label: "输出达到 token 上限", stopReason: "length" as const },
     { label: "模型过早正常结束", stopReason: "stop" as const },
     {
@@ -309,7 +395,13 @@ describe("ContestScheduler", () => {
         ),
         "utf8",
       )
-      expect(session).toContain('<challenge_blackboard encoding=\\"json\\">')
+      expect(session).not.toContain(
+        '<challenge_blackboard encoding=\\"json\\">',
+      )
+      expect(
+        session.match(/<challenge_context>\\n/g)?.length,
+      ).toBeGreaterThanOrEqual(2)
+      expect(session).toContain("compact summary")
       expect(session).toContain('<active_subagents encoding=\\"json\\">')
       expect(session).toContain("<challenge_announcements>")
       expect(project.challengeBlockEvents(item.id)).toEqual([

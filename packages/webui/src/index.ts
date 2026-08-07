@@ -37,4 +37,6 @@ export type {
   ModelAuthProviderView,
   ModelConfigurationUpdate,
   ModelConfigurationView,
+  ModelPoolEntryUpdate,
+  ModelPoolEntryView,
 } from "./types.ts"

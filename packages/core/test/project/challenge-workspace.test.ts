@@ -40,8 +40,14 @@ describe("challenge workspace", () => {
     expect(() =>
       resolveWorkspaceArtifact(workspace, join(root, "secret.txt")),
     ).toThrow("relative path")
+    const outside = join(root, "outside")
+    await mkdir(outside)
     const link = join(workspace, "escape")
-    await symlink(join(root, "secret.txt"), link)
+    await symlink(
+      outside,
+      link,
+      process.platform === "win32" ? "junction" : "dir",
+    )
     await expect(
       assertWorkspaceArtifactContained(workspace, link),
     ).rejects.toThrow("symlink escapes")

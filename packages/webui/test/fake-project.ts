@@ -2,6 +2,7 @@ import type {
   Announcement,
   BlackboardStats,
   BlackboardSummary,
+  ChallengeAnnouncementRecord,
   ChallengeSummary,
   ContestOverview,
   ContestSchedulerSnapshot,
@@ -55,6 +56,12 @@ export class FakeDashboardProject implements DashboardProject {
       publishedAt: "2026-07-29T10:00:00.000Z",
     },
   ]
+  announcementCandidateValues: ChallengeAnnouncementRecord[] = []
+  announcementReviews: Array<{
+    challengeId: string
+    announcementKey: string
+    status: "approved" | "rejected"
+  }> = []
   environmentValues: RemoteEnvironment[] = [
     {
       id: "env-1",
@@ -202,6 +209,36 @@ export class FakeDashboardProject implements DashboardProject {
   async announcements(): Promise<Announcement[]> {
     return this.announcementValues
   }
+
+  availableSubagents() {
+    return [
+      { name: "general-purpose", displayName: "General" },
+      { name: "explorer", displayName: "Explore" },
+      { name: "fuzzer", displayName: "Fuzz" },
+    ]
+  }
+  announcementCandidates(): ChallengeAnnouncementRecord[] {
+    return this.announcementCandidateValues
+  }
+  async reviewChallengeAnnouncement(
+    challengeId: string,
+    announcementKey: string,
+    status: "approved" | "rejected",
+  ): Promise<ChallengeAnnouncementRecord> {
+    this.announcementReviews.push({ challengeId, announcementKey, status })
+    const candidate = this.announcementCandidateValues.find(
+      (item) =>
+        item.challengeId === challengeId && item.key === announcementKey,
+    )
+    if (!candidate) {
+      throw Object.assign(new Error("公告候选不存在"), {
+        code: "announcement_candidate_not_found",
+      })
+    }
+    candidate.approvalStatus = status
+    candidate.reviewedAt = new Date().toISOString()
+    return candidate
+  }
   async environments(): Promise<RemoteEnvironment[]> {
     return this.environmentValues
   }
@@ -342,6 +379,7 @@ export class FakeDashboardProject implements DashboardProject {
 }
 
 export class FakeDashboardScheduler implements DashboardScheduler {
+  retryAttemptCalls: Array<{ runId: string; prompt?: string }> = []
   value: ContestSchedulerSnapshot = {
     available: true,
     autoEnabled: false,
@@ -391,6 +429,14 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     return this.snapshot()
   }
 
+  async retryAttempt(
+    runId: string,
+    options: { prompt?: string } = {},
+  ): Promise<ContestSchedulerSnapshot> {
+    this.retryAttemptCalls.push({ runId, ...options })
+    return this.snapshot()
+  }
+
   reorderQueue(
     challengeId: string,
     options: { position: number; expectedVersion: number },
@@ -415,15 +461,10 @@ export class FakeDashboardScheduler implements DashboardScheduler {
 
 export class FakeModelConfiguration implements DashboardModelConfiguration {
   value: ModelConfigurationView = {
-    provider: "openrouter",
-    modelId: "",
-    baseUrl: "",
-    contextWindow: 64_000,
-    apiKeyConfigured: false,
-    apiKeySource: "none",
-    thinkingEnabled: false,
-    reasoningEffort: "max",
-    passthroughThinking: false,
+    models: [],
+    solverModelId: "",
+    tldrModelId: "",
+    subagentModels: {},
     supportedThinkingLevels: ["low", "medium", "high", "max"],
     configured: false,
     unavailableReason: "missing model configuration",
@@ -434,29 +475,55 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     return structuredClone(this.value)
   }
 
-  createAgentOptions(): AgentOptions {
+  createAgentOptions(_target: "solver" | "tldr" = "solver"): AgentOptions {
     throw new Error("Fake model transport is not configured")
+  }
+
+  modelForSubagent(role: string): string | undefined {
+    const id = this.value.subagentModels[role]
+    const model = this.value.models.find((candidate) => candidate.id === id)
+    return model ? `${model.provider}/${model.modelId}` : undefined
   }
 
   async update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView> {
-    if (configuration.apiKey) this.lastApiKey = configuration.apiKey
-    if (configuration.clearApiKey) this.lastApiKey = undefined
+    const secretUpdate = configuration.models.find(
+      (model) => model.apiKey !== undefined || model.clearApiKey,
+    )
+    if (secretUpdate?.apiKey) this.lastApiKey = secretUpdate.apiKey
+    if (secretUpdate?.clearApiKey) this.lastApiKey = undefined
     const apiKeyConfigured = Boolean(this.lastApiKey)
-    this.value = {
-      provider: configuration.provider,
-      modelId: configuration.modelId,
-      baseUrl: configuration.baseUrl,
-      contextWindow: configuration.contextWindow,
+    const models = configuration.models.map((model) => ({
+      id: model.id,
+      provider: model.provider,
+      modelId: model.modelId,
+      baseUrl: model.baseUrl,
+      contextWindow: model.contextWindow,
       apiKeyConfigured,
-      apiKeySource: apiKeyConfigured ? "secret-store" : "none",
-      thinkingEnabled: configuration.thinkingEnabled,
-      reasoningEffort: configuration.reasoningEffort,
-      passthroughThinking: configuration.passthroughThinking,
-      supportedThinkingLevels: this.value.supportedThinkingLevels,
-      configured: apiKeyConfigured && Boolean(configuration.modelId),
-      ...(!apiKeyConfigured || !configuration.modelId
+      apiKeySource: apiKeyConfigured
+        ? ("secret-store" as const)
+        : ("none" as const),
+      thinkingEnabled: model.thinkingEnabled,
+      reasoningEffort: model.reasoningEffort,
+      passthroughThinking: model.passthroughThinking,
+      supportedThinkingLevels: ["low", "medium", "high", "max"],
+      configured: apiKeyConfigured && Boolean(model.modelId),
+      ...(!apiKeyConfigured || !model.modelId
+        ? { unavailableReason: "missing model configuration" }
+        : {}),
+    }))
+    const solver = models.find(
+      (model) => model.id === configuration.solverModelId,
+    )
+    this.value = {
+      models,
+      solverModelId: configuration.solverModelId,
+      tldrModelId: configuration.tldrModelId,
+      subagentModels: { ...configuration.subagentModels },
+      supportedThinkingLevels: solver?.supportedThinkingLevels ?? [],
+      configured: solver?.configured === true,
+      ...(!solver?.configured
         ? { unavailableReason: "missing model configuration" }
         : {}),
     }

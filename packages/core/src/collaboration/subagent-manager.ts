@@ -131,7 +131,7 @@ export class CtfSubagentManager {
     for (const record of records) {
       if (record.runId !== this.options.runId || this.records.has(record.id))
         continue
-      if (record.status !== "interrupted") continue
+      if (!TERMINAL.has(record.status)) continue
       const role = resolveSubagentRole(this.options.roles, record.role)
       if (!role) continue
       let resolve!: (value: SubagentRecord) => void
@@ -271,10 +271,21 @@ export class CtfSubagentManager {
 
   async steer(id: string, message: string): Promise<SubagentRecord> {
     const managed = this.records.get(id)
-    if (!managed?.agent || managed.record.status !== "running") {
+    if (!managed) {
       throw new Error(`SubAgent ${id} 当前不可接收 steer`)
     }
-    await managed.agent.steer(boundedText(message, "message", 4_000))
+    const nextMessage = boundedText(message, "message", 4_000)
+    if (TERMINAL.has(managed.record.status)) {
+      // finished worker 的内存 Agent 可能已释放；强制从原 JSONL session
+      // 重新打开，保证 steer 延续同一 worker，而不是创建新会话。
+      await managed.agent?.waitForIdle()
+      managed.agent = undefined
+      return this.resume(id, nextMessage, true)
+    }
+    if (!managed.agent || managed.record.status !== "running") {
+      throw new Error(`SubAgent ${id} 当前不可接收 steer`)
+    }
+    await managed.agent.steer(nextMessage)
     managed.record.updatedAt = new Date().toISOString()
     this.emit(managed, "steered")
     return snapshot(managed.record)
@@ -435,7 +446,7 @@ export class CtfSubagentManager {
     this.emit(managed, event)
     managed.resolve(snapshot(managed.record))
     if (managed.record.background && !managed.resultConsumed) {
-      void this.notifyParent(managed.record)
+      void this.notifyParent(managed.record).catch(() => undefined)
     }
   }
 
@@ -538,7 +549,8 @@ export function createSubagentManagerTools(
     {
       name: "steer_subagent",
       label: "Steer SubAgent",
-      description: "Send new guidance to a running SubAgent.",
+      description:
+        "Send new guidance to a running SubAgent, or resume a finished SubAgent from its persisted session.",
       parameters: Type.Object({
         agent_id: Type.String(),
         message: Type.String({ minLength: 1, maxLength: 4_000 }),

@@ -8,6 +8,7 @@ import {
 } from "@ctf-agent/prompts"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type {
+  RunRecord,
   RunSource,
   SchedulerQueueRecord,
 } from "../persistence/run-store.ts"
@@ -98,6 +99,8 @@ export class ContestSchedulerError extends Error {
     readonly code:
       | "unavailable"
       | "challenge_not_found"
+      | "run_not_found"
+      | "run_not_retryable"
       | "already_queued"
       | "already_active"
       | "already_solved"
@@ -119,6 +122,8 @@ interface QueueItem {
   requiresAuto: boolean
   enqueuedAt: string
   version: number
+  resumeRun?: RunRecord
+  retryPrompt?: string
 }
 
 interface ActiveItem {
@@ -134,6 +139,8 @@ interface ActiveItem {
   cancelRequested: boolean
   queueGeneration: number
   operation?: Promise<void>
+  resumeRun?: RunRecord
+  retryPrompt?: string
 }
 
 /**
@@ -220,8 +227,10 @@ export class ContestScheduler {
   pauseAuto(): ContestSchedulerSnapshot {
     this.autoEnabled = false
     this.queueGeneration += 1
-    for (const item of this.queue)
-      this.project.removeSchedulerChallenge(item.challenge.id)
+    for (const item of this.queue) {
+      if (!item.resumeRun)
+        this.project.removeSchedulerChallenge(item.challenge.id)
+    }
     this.queue.length = 0
     return this.snapshot()
   }
@@ -371,6 +380,64 @@ export class ContestScheduler {
     return this.snapshot()
   }
 
+  async retryAttempt(
+    runId: string,
+    options: { prompt?: string } = {},
+  ): Promise<ContestSchedulerSnapshot> {
+    this.assertAvailable()
+    this.assertNotShuttingDown()
+    const run = this.project.runs().find((candidate) => candidate.id === runId)
+    if (!run) {
+      throw new ContestSchedulerError("run_not_found", `Run 不存在: ${runId}`)
+    }
+    if (!RETRYABLE_RUN_STATUSES.has(run.status)) {
+      throw new ContestSchedulerError(
+        "run_not_retryable",
+        `Run ${runId} 当前状态 ${run.status} 不允许重试`,
+      )
+    }
+    if (this.active.has(run.challengeId)) {
+      throw new ContestSchedulerError(
+        "already_active",
+        "该题已有正在运行的 Agent",
+      )
+    }
+    if (this.queue.some((item) => item.challenge.id === run.challengeId)) {
+      throw new ContestSchedulerError("already_queued", "该题已经在调度队列中")
+    }
+    const prompt = options.prompt?.trim()
+    if (prompt && prompt.length > 32_000) {
+      throw new Error("重试提示词长度不能超过 32000")
+    }
+    await this.project.refresh()
+    const challenge = (await this.project.challenges()).find(
+      (candidate) => candidate.id === run.challengeId,
+    )
+    if (!challenge) {
+      throw new ContestSchedulerError(
+        "challenge_not_found",
+        `平台不存在题目: ${run.challengeId}`,
+      )
+    }
+    if (challenge.solved || this.project.isChallengeSolved(run.challengeId)) {
+      throw new ContestSchedulerError("already_solved", "该题已经解出")
+    }
+    const blocked = this.project.isChallengeBlocked(run.challengeId)
+    this.queue.unshift({
+      challenge,
+      source: "retry",
+      lane: blocked ? "blocked" : "normal",
+      manualOverride: true,
+      requiresAuto: false,
+      enqueuedAt: new Date().toISOString(),
+      version: 1,
+      resumeRun: run,
+      ...(prompt ? { retryPrompt: prompt } : {}),
+    })
+    this.pump()
+    return this.snapshot()
+  }
+
   reorderQueue(
     challengeId: string,
     options: {
@@ -387,6 +454,23 @@ export class ContestScheduler {
         "challenge_not_found",
         `题目不在调度队列中: ${challengeId}`,
       )
+    }
+    if (item.resumeRun) {
+      if (item.version !== options.expectedVersion) {
+        throw new ContestSchedulerError(
+          "queue_version_conflict",
+          `queue version conflict: expected ${options.expectedVersion}, actual ${item.version}`,
+        )
+      }
+      const from = this.queue.indexOf(item)
+      this.queue.splice(from, 1)
+      const target = Math.max(
+        0,
+        Math.min(this.queue.length, options.position - 1),
+      )
+      this.queue.splice(target, 0, item)
+      item.version += 1
+      return this.snapshot()
     }
     let moved: SchedulerQueueRecord
     try {
@@ -427,8 +511,9 @@ export class ContestScheduler {
       (item) => item.challenge.id === challengeId,
     )
     if (queueIndex >= 0) {
-      this.queue.splice(queueIndex, 1)
-      this.project.removeSchedulerChallenge(challengeId)
+      const [removed] = this.queue.splice(queueIndex, 1)
+      if (!removed?.resumeRun)
+        this.project.removeSchedulerChallenge(challengeId)
       return this.snapshot()
     }
     const active = this.active.get(challengeId)
@@ -502,6 +587,8 @@ export class ContestScheduler {
           runId: null,
           cancelRequested: false,
           queueGeneration: this.queueGeneration,
+          ...(item.resumeRun ? { resumeRun: item.resumeRun } : {}),
+          ...(item.retryPrompt ? { retryPrompt: item.retryPrompt } : {}),
         }
         this.active.set(item.challenge.id, active)
         const operation = this.runItem(active)
@@ -542,10 +629,14 @@ export class ContestScheduler {
       let context: SchedulerAttemptContext | undefined
       try {
         if (!solver) {
-          active.attempt = this.project.nextAttempt(active.challenge.id)
-          const source: SchedulerQueueSource = continuation
+          const resumed = active.resumeRun
+          active.attempt =
+            resumed?.attempt ?? this.project.nextAttempt(active.challenge.id)
+          const source: SchedulerQueueSource = resumed
             ? "retry"
-            : active.source
+            : continuation
+              ? "retry"
+              : active.source
           active.source = source
           context = {
             challenge: active.challenge,
@@ -554,14 +645,21 @@ export class ContestScheduler {
           }
           const agent = await this.options.createAgentOptions(context)
           if (active.cancelRequested) return
-          solver = await this.project.createSolver(active.challenge.id, {
-            agent,
-            // Supervisor 统一管理 compact 边界，BaseAgent 不得隐式 compact。
-            compaction: false,
-            attempt: active.attempt,
-            source,
-            writeup: this.options.writeup === true,
-          })
+          solver = resumed
+            ? await this.project.resumeSolver(resumed.id, {
+                agent,
+                // Supervisor 统一管理 compact 边界，BaseAgent 不得隐式 compact。
+                compaction: false,
+                writeup: this.options.writeup === true,
+              })
+            : await this.project.createSolver(active.challenge.id, {
+                agent,
+                compaction: false,
+                attempt: active.attempt,
+                source,
+                writeup: this.options.writeup === true,
+              })
+          active.resumeRun = undefined
           this.lastError = undefined
           active.solver = solver
           active.runId = solver.runId
@@ -649,17 +747,21 @@ export class ContestScheduler {
             solver.appendMessage(message)
           }
         }
-        const prompt = continuation
-          ? INCOMPLETE_CONTINUATION_PROMPT
-          : typeof this.options.prompt === "function"
-            ? await this.options.prompt(
-                context ?? {
-                  challenge: active.challenge,
-                  attempt: active.attempt,
-                  source: active.source,
-                },
-              )
-            : (this.options.prompt ?? "Start solving this CTF challenge.")
+        const retryPrompt = active.retryPrompt
+        active.retryPrompt = undefined
+        const prompt =
+          retryPrompt ??
+          (continuation
+            ? INCOMPLETE_CONTINUATION_PROMPT
+            : typeof this.options.prompt === "function"
+              ? await this.options.prompt(
+                  context ?? {
+                    challenge: active.challenge,
+                    attempt: active.attempt,
+                    source: active.source,
+                  },
+                )
+              : (this.options.prompt ?? "Start solving this CTF challenge."))
         const outcome = await runSolverPrompt({
           solver,
           prompt,
@@ -1025,6 +1127,15 @@ function deduplicate(
     if (!unique.has(challenge.id)) unique.set(challenge.id, challenge)
   return [...unique.values()]
 }
+
+const RETRYABLE_RUN_STATUSES = new Set<RunRecord["status"]>([
+  "failed",
+  "timed_out",
+  "cancelled",
+  "closed",
+  "interrupted",
+  "blocked",
+])
 
 function positiveInteger(value: number, field: string): void {
   if (!Number.isInteger(value) || value <= 0)

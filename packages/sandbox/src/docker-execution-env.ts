@@ -19,8 +19,9 @@ import {
 } from "./docker-sandbox.ts"
 
 const WORKSPACE = "/workspace"
-const DEFAULT_SHELL_TIMEOUT_SECONDS = 5 * 60
 const MAX_TIMER_MS = 2_147_483_647
+const BASH_CAPTURE_FLUSH_BYTES = 512 * 1024
+const FILE_HELPER_MAX_ATTEMPTS = 3
 
 const FILE_HELPER = String.raw`
 import base64, json, os, shutil, stat, sys
@@ -154,11 +155,12 @@ export class DockerExecutionEnv implements ExecutionEnv {
     if (!cwd.ok) {
       return err(new ExecutionError("unknown", cwd.error.message, cwd.error))
     }
-    const timeoutSeconds = options.timeout ?? DEFAULT_SHELL_TIMEOUT_SECONDS
+    const timeoutSeconds = options.timeout
     if (
-      !Number.isFinite(timeoutSeconds) ||
-      timeoutSeconds <= 0 ||
-      timeoutSeconds * 1000 > MAX_TIMER_MS
+      timeoutSeconds !== undefined &&
+      (!Number.isFinite(timeoutSeconds) ||
+        timeoutSeconds <= 0 ||
+        timeoutSeconds * 1000 > MAX_TIMER_MS)
     ) {
       return err(
         new ExecutionError(
@@ -186,7 +188,9 @@ export class DockerExecutionEnv implements ExecutionEnv {
     try {
       const result = await this.sandbox.exec(args, {
         signal: options.abortSignal,
-        timeoutMs: timeoutSeconds * 1000,
+        ...(timeoutSeconds === undefined
+          ? {}
+          : { timeoutMs: timeoutSeconds * 1000 }),
         onStdout: options.onStdout,
         onStderr: options.onStderr,
       })
@@ -390,14 +394,25 @@ export class DockerExecutionEnv implements ExecutionEnv {
         new FileError("aborted", "File operation aborted", address.value),
       )
     try {
-      const execution = await this.sandbox.exec(
-        ["python3", "-c", FILE_HELPER],
-        {
-          input: JSON.stringify({ ...payload, path: address.value }),
+      const input = JSON.stringify({ ...payload, path: address.value })
+      let execution: CommandResult | undefined
+      for (let attempt = 1; attempt <= FILE_HELPER_MAX_ATTEMPTS; attempt++) {
+        execution = await this.sandbox.exec(["python3", "-c", FILE_HELPER], {
+          input,
           signal,
           timeoutMs: 30_000,
-        },
-      )
+        })
+        if (
+          execution.code === 0 ||
+          !isWindowsNativeFailure(execution.code) ||
+          attempt === FILE_HELPER_MAX_ATTEMPTS
+        ) {
+          break
+        }
+      }
+      if (!execution) {
+        throw new Error("Container file helper did not start")
+      }
       if (execution.code !== 0)
         return err(fileCommandError(address.value, execution))
       if (execution.stdoutTruncated) {
@@ -436,6 +451,125 @@ export class DockerExecutionEnv implements ExecutionEnv {
   }
 }
 
+interface BufferedCapture {
+  chunks: Uint8Array[]
+  size: number
+}
+
+/**
+ * Pi 会把被截断的 bash 完整输出逐 chunk 追加到临时文件。该专用环境按 512 KiB
+ * 合并写入，避免长任务为每个输出 chunk 启动一个 docker CLI 进程。
+ * 每次 bash 工具调用必须创建独立实例，避免并行工具之间共享缓冲区。
+ */
+export class DockerBashExecutionEnv extends DockerExecutionEnv {
+  private readonly captures = new Map<string, BufferedCapture>()
+  private readonly pendingOperations = new Set<Promise<unknown>>()
+  private captureFailure?: FileError
+
+  override createTempFile(
+    options: {
+      prefix?: string
+      suffix?: string
+      abortSignal?: AbortSignal
+    } = {},
+  ): Promise<Result<string, FileError>> {
+    const operation = super.createTempFile(options).then((created) => {
+      if (
+        created.ok &&
+        options.prefix === "bash-" &&
+        options.suffix === ".log"
+      ) {
+        this.captures.set(created.value, { chunks: [], size: 0 })
+      }
+      return created
+    })
+    return this.track(operation)
+  }
+
+  override appendFile(
+    path: string,
+    content: string | Uint8Array,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    const capture = this.captures.get(path)
+    if (!capture) return super.appendFile(path, content, abortSignal)
+    const operation = this.bufferCapture(path, capture, content, abortSignal)
+    return this.track(operation)
+  }
+
+  override async exec(
+    command: string,
+    options: ShellExecOptions = {},
+  ): Promise<
+    Result<{ stdout: string; stderr: string; exitCode: number }, ExecutionError>
+  > {
+    const result = await super.exec(command, options)
+    await this.drainPendingOperations()
+    for (const path of this.captures.keys()) {
+      // 命令自身被取消时仍要尽力保存已捕获的输出，不能让已 abort 的 signal
+      // 把主执行结果覆盖成 file-helper 错误。
+      const flushed = await this.flushCapture(path)
+      if (!flushed.ok) break
+    }
+    if (this.captureFailure) {
+      return err(
+        new ExecutionError(
+          "unknown",
+          this.captureFailure.message,
+          this.captureFailure,
+        ),
+      )
+    }
+    return result
+  }
+
+  private async bufferCapture(
+    path: string,
+    capture: BufferedCapture,
+    content: string | Uint8Array,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    if (abortSignal?.aborted) {
+      return err(new FileError("aborted", "File operation aborted", path))
+    }
+    const chunk = Buffer.from(content)
+    capture.chunks.push(chunk)
+    capture.size += chunk.byteLength
+    return capture.size >= BASH_CAPTURE_FLUSH_BYTES
+      ? this.flushCapture(path, abortSignal)
+      : ok(undefined)
+  }
+
+  private async flushCapture(
+    path: string,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    const capture = this.captures.get(path)
+    if (!capture || capture.size === 0) return ok(undefined)
+    const content = Buffer.concat(capture.chunks, capture.size)
+    capture.chunks = []
+    capture.size = 0
+    const flushed = await super.appendFile(path, content, abortSignal)
+    if (!flushed.ok) this.captureFailure = flushed.error
+    return flushed
+  }
+
+  private track<T>(operation: Promise<T>): Promise<T> {
+    this.pendingOperations.add(operation)
+    void operation
+      .finally(() => this.pendingOperations.delete(operation))
+      .catch(() => undefined)
+    return operation
+  }
+
+  private async drainPendingOperations(): Promise<void> {
+    do {
+      await Promise.resolve()
+      await Promise.allSettled([...this.pendingOperations])
+    } while (this.pendingOperations.size > 0)
+  }
+}
+
 function executionCwd(value: string | undefined): string {
   if (value === undefined) return WORKSPACE
   if (value.includes("\\") || value.includes("\0")) {
@@ -462,6 +596,11 @@ function fileCommandError(path: string, result: CommandResult): FileError {
     message || `Container file helper exited with ${result.code}`,
     path,
   )
+}
+
+function isWindowsNativeFailure(code: number): boolean {
+  const unsigned = code >>> 0
+  return unsigned >= 0xc0000000 && unsigned <= 0xcfffffff
 }
 
 function executionError(cause: unknown): ExecutionError {

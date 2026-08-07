@@ -7,6 +7,7 @@
 - CTFd 插件：题目、附件、公告、Flag 提交；
 - Flag 提交滑动窗口：每个 Solver Run 每分钟最多 5 次；
 - GZCTF 插件：用户名密码或 `GZCTF_Token` Cookie 登录、比赛题目与实例管理；
+- 公告关键字筛选与 WebUI 人工批准，只有获批公告进入 Solver 上下文；
 - 并发调度：自动、人工、重试、取消、超时和 attempt 上限；
 - 每题独立 Docker sandbox；
 - 题目上下文结构化注入、附件自动下载；
@@ -35,7 +36,7 @@ docker compose -f compose.webui.yaml ps
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
-1. 在“模型设置”中登录 Codex / Claude、填写 API Key、导入 `auth.json`，或配置 OpenAI-compatible 端点；
+1. 在“模型设置”中登录 Codex / Claude、填写 API Key、导入 `auth.json`，或配置 OpenAI-compatible 端点；可加入多个模型，并分别绑定 Solver、TLDR 和各类 SubAgent；
 2. 在“比赛平台设置”中选择 CTFd 或 GZCTF，填写站点、比赛与认证信息；
 3. 先“测试连接”，成功后再“保存并连接”；
 4. 人工调度单题，或开启自主调度整场比赛。
@@ -97,6 +98,8 @@ WebUI 映射到宿主机 `0.0.0.0:3000`，可从外部网络访问；WSL2 端口
 | OpenAI-compatible | Provider、Base URL、Model ID、API Key | 旧版通用配置 |
 
 OAuth 和原生 Provider API Key 由 Pi 的 `CredentialStore` 写入具名卷中的 `.ctf-agent/auth.json`，刷新 token 时会原子更新；WebUI 状态接口只返回 Provider、凭据类型和模型清单，不返回凭据原文。
+
+`.ctf-agent/model-config.json` 使用 v2 模型池结构，只保存非敏感模型参数和 Agent 绑定。自定义端点的 API Key 按 Provider 写入 Secret Store；同一 Provider 下的模型共享 Base URL 和凭据。Solver 与 TLDR 各选择一个模型，SubAgent role 可以在 WebUI 中选择模型，也可以留空继承角色 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此 role 绑定不受 Solver 当前模型限制。旧版单模型配置会在读取时自动迁移。Solver 最大并发量仍由主控制台独立设置并写入 `scheduler-config.json`，修改后即时生效。
 
 WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：
 
@@ -173,6 +176,8 @@ WebUI 可执行入口还支持：
 
 一次 prompt 对应一个 Run 和一个全新 Pi session。若模型正常结束、输出被截断或 provider/WebSocket 异常时仍未提交 Flag，系统会关闭旧 Solver 与 SubAgent，统计一次中断并创建全新的 Run/session，以英文 continuation prompt 继续。中断次数超过阈值后题目进入 `blocked`，等待人工重启；`interrupted`/`blocked` 不消耗常规 attempt 预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，上下文接近窗口时仍使用 Pi compaction 保留关键进度。当前固定 Solver/SubAgent/compaction 提示词已集中为版本化英文占位文案，最终策略正文仍等待人类审阅。
 
+WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”。该操作复用原 Run ID、attempt 编号、workspace 和 Pi JSONL session，不新增 attempt；提示词留空时使用 `INCOMPLETE_CONTINUATION_PROMPT`，也可以提供最长 32,000 字符的自定义继续提示词。
+
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 
 ## 安全说明
@@ -181,4 +186,4 @@ WebUI 可执行入口还支持：
 - HTTP 服务暂不内置用户认证。默认的 `0.0.0.0:3000` 会接受外部连接；公网部署应使用防火墙限制来源，或放在带 TLS 和认证的反向代理后。
 - WebUI 挂载 Docker socket，因此容器等价于拥有 Docker 主机的高权限控制能力，只应运行可信代码。
 - 完整遥测会保存工具参数、输出和已提交 Flag，适合赛后复盘，但持久卷应按敏感数据管理。
-- WebUI 的 Pi HTML 会话导出保留原始 JSONL 内容，并附加 Agent 的 system prompt 与工具 schema；页面以 HTML 形式内联呈现，可能包含 Flag、题目数据和工具输出，同样应按敏感数据管理。
+- WebUI 仅从明确的 attempt 或 SubAgent 卡片导出对应 Pi JSONL 对话 HTML，不提供含义模糊的题目级导出；尚无 assistant 消息的会话不可导出。Solver 导出会附加 system prompt 与工具 schema；页面以内联 HTML 呈现，可能包含 Flag、题目数据和工具输出，同样应按敏感数据管理。
