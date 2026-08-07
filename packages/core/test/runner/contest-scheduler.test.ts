@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   ContestScheduler,
   type ContestSchedulerError,
+  DEFAULT_TRANSIENT_RETRY_DELAYS_MS,
 } from "../../src/orchestration/contest-scheduler.ts"
 import { Project } from "../../src/project/project.ts"
 import { type TestChallenge, TestPlatformPlugin } from "../fake-platform.ts"
@@ -257,7 +258,7 @@ describe("ContestScheduler", () => {
       errorMessage: "websocket disconnected",
     },
   ])(
-    "$label 时按分类在同一 Run 续跑或创建新 Run",
+    "$label 时按分类在同一 Run 内 continuation",
     async ({ stopReason, errorMessage }) => {
       const item = challenge(99)
       const tracker = new SandboxTracker()
@@ -268,47 +269,27 @@ describe("ContestScheduler", () => {
         maxAttempts: 1,
         retryDelayMs: 0,
         infrastructureRetryDelayMs: 0,
+        transientRetryDelaysMs: [0, 0, 0],
         createAgentOptions: () => {
           sessions++
           const faux = createFauxCore({
             provider: `continuation-${stopReason}`,
           })
-          faux.setResponses(
-            sessions === 1 && stopReason !== "error"
-              ? [
-                  fauxAssistantMessage("分析尚未完成。", {
-                    stopReason,
-                    ...(errorMessage ? { errorMessage } : {}),
-                  }),
-                  fauxAssistantMessage(
-                    fauxToolCall(
-                      "ctf_submit_flag",
-                      { flag: item.flag },
-                      { id: `continued-submit-${stopReason}` },
-                    ),
-                    { stopReason: "toolUse" },
-                  ),
-                  fauxAssistantMessage("已提交。"),
-                ]
-              : sessions === 1
-                ? [
-                    fauxAssistantMessage("分析尚未完成。", {
-                      stopReason,
-                      ...(errorMessage ? { errorMessage } : {}),
-                    }),
-                  ]
-                : [
-                    fauxAssistantMessage(
-                      fauxToolCall(
-                        "ctf_submit_flag",
-                        { flag: item.flag },
-                        { id: `continued-submit-${stopReason}` },
-                      ),
-                      { stopReason: "toolUse" },
-                    ),
-                    fauxAssistantMessage("已提交。"),
-                  ],
-          )
+          faux.setResponses([
+            fauxAssistantMessage("分析尚未完成。", {
+              stopReason,
+              ...(errorMessage ? { errorMessage } : {}),
+            }),
+            fauxAssistantMessage(
+              fauxToolCall(
+                "ctf_submit_flag",
+                { flag: item.flag },
+                { id: `continued-submit-${stopReason}` },
+              ),
+              { stopReason: "toolUse" },
+            ),
+            fauxAssistantMessage("已提交。"),
+          ])
           return {
             streamFn: faux.streamSimple as AgentOptions["streamFn"],
             initialState: { model: faux.getModel(), thinkingLevel: "off" },
@@ -325,29 +306,15 @@ describe("ContestScheduler", () => {
         )
 
         const runs = project.runs({ challengeId: item.id })
-        expect(runs).toEqual(
-          stopReason === "error"
-            ? [
-                expect.objectContaining({
-                  attempt: 1,
-                  status: "failed",
-                  closeReason: "failed",
-                }),
-                expect.objectContaining({
-                  attempt: 2,
-                  status: "solved",
-                  closeReason: "submitted",
-                }),
-              ]
-            : [
-                expect.objectContaining({
-                  attempt: 1,
-                  status: "solved",
-                  closeReason: "submitted",
-                }),
-              ],
-        )
-        const continuedRun = runs.at(stopReason === "error" ? 1 : 0)
+        expect(runs).toEqual([
+          expect.objectContaining({
+            attempt: 1,
+            status: "solved",
+            closeReason: "submitted",
+          }),
+        ])
+        expect(sessions).toBe(1)
+        const continuedRun = runs[0]
         const continuedSession = await readFile(
           join(
             dirname(dirname(dirname(continuedRun?.workspace ?? ""))),
@@ -362,6 +329,11 @@ describe("ContestScheduler", () => {
         expect(project.challengeBlockEvents(item.id)).toHaveLength(
           stopReason === "error" ? 0 : 1,
         )
+        expect(
+          project
+            .runEvents(continuedRun?.id ?? "")
+            .filter((event) => event.type === "run_transient_failure"),
+        ).toHaveLength(stopReason === "error" ? 1 : 0)
         expect(project.schedulerAttemptCount(item.id)).toBe(1)
       } finally {
         await scheduler.shutdown()
@@ -369,6 +341,56 @@ describe("ContestScheduler", () => {
       }
     },
   )
+
+  it("同一 attempt 对连续 fetch failed 仅提供三次退避重试", async () => {
+    expect(DEFAULT_TRANSIENT_RETRY_DELAYS_MS).toEqual([10_000, 60_000, 300_000])
+    const item = challenge(96)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({ provider: "transient-exhaustion" })
+    faux.setResponses(
+      Array.from({ length: 4 }, () =>
+        fauxAssistantMessage("network unavailable", {
+          stopReason: "error",
+          errorMessage: "fetch failed",
+        }),
+      ),
+    )
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      transientRetryDelaysMs: [0, 0, 0],
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      }),
+    })
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+
+      const [run] = project.runs({ challengeId: item.id })
+      expect(run).toMatchObject({
+        attempt: 1,
+        status: "failed",
+        closeReason: "failed",
+      })
+      expect(faux.state.callCount).toBe(4)
+      const failures = project
+        .runEvents(run?.id ?? "")
+        .filter((event) => event.type === "run_transient_failure")
+      expect(failures.map((event) => event.data)).toEqual([
+        expect.objectContaining({ failureNumber: 1, retryScheduled: true }),
+        expect.objectContaining({ failureNumber: 2, retryScheduled: true }),
+        expect.objectContaining({ failureNumber: 3, retryScheduled: true }),
+        expect.objectContaining({ failureNumber: 4, retryScheduled: false }),
+      ])
+      expect(project.challengeBlockEvents(item.id)).toHaveLength(0)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
 
   it("在 compact 边界记录 delta=2 并继续同一 Run", async () => {
     const item = challenge(97)

@@ -279,6 +279,29 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("同一 session 内处理的瞬时错误仍计为一个调度 attempt", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "same-attempt-retry",
+      challengeId: "web-retry",
+      workspace: "workspace",
+      attempt: 1,
+      source: "auto",
+    })
+    store.appendEvent("same-attempt-retry", "run_transient_failure", {
+      retryable: true,
+      sameAttempt: true,
+      retryScheduled: true,
+    })
+    store.updateRun("same-attempt-retry", {
+      status: "solved",
+      closeReason: "submitted",
+    })
+
+    expect(store.schedulerAttemptCount("web-retry")).toBe(1)
+    store.close()
+  })
+
   it("持久化 Session 中断计数和 blocked，并支持人工重置", async () => {
     const { store } = await storeFixture()
     store.createRun({

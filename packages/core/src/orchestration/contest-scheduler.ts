@@ -36,6 +36,7 @@ export interface ContestSchedulerOptions {
   abortGraceMs?: number
   retryDelayMs?: number
   infrastructureRetryDelayMs?: number
+  transientRetryDelaysMs?: readonly [number, number, number]
   /** Flag accepted 后执行 writeup turn；生产调度应开启。 */
   writeup?: boolean
   createAgentOptions(
@@ -141,7 +142,12 @@ interface ActiveItem {
   operation?: Promise<void>
   resumeRun?: RunRecord
   retryPrompt?: string
+  cancelRetryDelay?: () => void
 }
+
+export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [
+  10_000, 60_000, 300_000,
+] as const
 
 /**
  * 长驻的混合调度控制面：
@@ -181,6 +187,11 @@ export class ContestScheduler {
       options.infrastructureRetryDelayMs ?? 15_000,
       "infrastructureRetryDelayMs",
     )
+    for (const [index, delay] of (
+      options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
+    ).entries()) {
+      nonNegativeInteger(delay, `transientRetryDelaysMs[${index}]`)
+    }
   }
 
   snapshot(): ContestSchedulerSnapshot {
@@ -520,6 +531,7 @@ export class ContestScheduler {
     if (!active) return this.snapshot()
     active.cancelRequested = true
     active.phase = "cancelling"
+    active.cancelRetryDelay?.()
     active.solver?.abort()
     if (active.solver) await active.solver.close("cancelled", "由控制面取消")
     await active.operation?.catch(() => undefined)
@@ -544,6 +556,7 @@ export class ContestScheduler {
     for (const item of active) {
       item.cancelRequested = true
       item.phase = "cancelling"
+      item.cancelRetryDelay?.()
       item.solver?.abort()
     }
     await Promise.allSettled(
@@ -618,6 +631,9 @@ export class ContestScheduler {
     let solver: CtfSolverAgent | undefined
     let sameRunStops = 0
     let compactRecovery: string | undefined
+    let transientRetries = 0
+    const transientRetryDelays =
+      this.options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
 
     if (
       active.lane === "blocked" &&
@@ -783,22 +799,43 @@ export class ContestScheduler {
         const classification = classifySolverStop({
           stopReason: outcome.stopReason,
           ...(outcome.error ? { error: outcome.error } : {}),
+          ...(active.cancelRequested ? { operatorCancel: true } : {}),
+          ...(this.shuttingDown ? { processShutdown: true } : {}),
         })
+        if (
+          classification.kind === "operator_cancel" ||
+          classification.kind === "process_shutdown"
+        ) {
+          return
+        }
         if (classification.blockDelta === 0) {
           const message = `${classification.kind}: ${classification.detail ?? outcome.stopReason}`
+          const retryDelay = transientRetryDelays[transientRetries]
+          const retryScheduled =
+            classification.retryable && retryDelay !== undefined
           this.project.appendRunEvent(solver.runId, "run_transient_failure", {
             retryable: classification.retryable,
             reason: classification.kind,
+            failureNumber: transientRetries + 1,
+            retryScheduled,
+            retryDelayMs: retryScheduled ? retryDelay : null,
+            sameAttempt: true,
           })
+          if (retryScheduled) {
+            transientRetries++
+            continuation = true
+            active.phase = "running"
+            const elapsed = await this.waitForRetryDelay(active, retryDelay)
+            if (!elapsed) return
+            continue
+          }
           await solver.close("failed", message)
           solver = undefined
           active.solver = undefined
-          if (classification.retryable) {
-            retryableFailure = true
-            failureReason = "failed"
-            failureMessage = message
-            break
-          }
+          retryableFailure = false
+          failureReason = "failed"
+          failureMessage = message
+          if (classification.retryable) break
           this.lastError = `${active.challenge.title}: ${message}`
           return
         }
@@ -857,6 +894,35 @@ export class ContestScheduler {
             ? "timed_out"
             : "failed"
         failureMessage = classification.detail ?? errorText(error)
+        if (
+          solver &&
+          classification.blockDelta === 0 &&
+          classification.retryable &&
+          !active.cancelRequested &&
+          !this.shuttingDown
+        ) {
+          const retryDelay = transientRetryDelays[transientRetries]
+          const retryScheduled = retryDelay !== undefined
+          this.project.appendRunEvent(solver.runId, "run_transient_failure", {
+            retryable: true,
+            reason: classification.kind,
+            failureNumber: transientRetries + 1,
+            retryScheduled,
+            retryDelayMs: retryScheduled ? retryDelay : null,
+            sameAttempt: true,
+          })
+          if (retryScheduled) {
+            transientRetries++
+            continuation = true
+            failureReason = undefined
+            failureMessage = undefined
+            retryableFailure = false
+            const elapsed = await this.waitForRetryDelay(active, retryDelay)
+            if (!elapsed) return
+            continue
+          }
+          retryableFailure = false
+        }
         if (
           solver &&
           classification.blockDelta === 1 &&
@@ -1091,6 +1157,32 @@ export class ContestScheduler {
     }
     if (manualOverride) this.queue.unshift(item)
     else this.queue.push(item)
+  }
+
+  private waitForRetryDelay(
+    active: ActiveItem,
+    delayMs: number,
+  ): Promise<boolean> {
+    if (active.cancelRequested || this.shuttingDown)
+      return Promise.resolve(false)
+    if (delayMs === 0) {
+      return Promise.resolve(true)
+    }
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = (elapsed: boolean) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        if (active.cancelRetryDelay === cancel) {
+          active.cancelRetryDelay = undefined
+        }
+        resolve(elapsed)
+      }
+      const timeout = setTimeout(() => finish(true), delayMs)
+      const cancel = () => finish(false)
+      active.cancelRetryDelay = cancel
+    })
   }
 
   private assertAvailable(): void {

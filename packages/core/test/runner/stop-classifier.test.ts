@@ -36,6 +36,13 @@ describe("classifySolverStop", () => {
       kind: "provider_transient",
       blockDelta: 0,
     })
+    expect(
+      classifySolverStop({ stopReason: "aborted", error: "Aborted" }),
+    ).toMatchObject({
+      kind: "network_transient",
+      blockDelta: 0,
+      retryable: true,
+    })
   })
 
   it.each([
