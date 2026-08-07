@@ -24,7 +24,7 @@ const BASH_CAPTURE_FLUSH_BYTES = 512 * 1024
 const FILE_HELPER_MAX_ATTEMPTS = 3
 
 const FILE_HELPER = String.raw`
-import base64, json, os, shutil, stat, sys
+import base64, json, os, shutil, stat, sys, uuid
 from pathlib import Path
 
 def addressed(raw):
@@ -77,6 +77,19 @@ try:
         data = base64.b64decode(payload['base64'], validate=True)
         with resolved.open('ab' if op == 'append' else 'wb') as output:
             output.write(data)
+        value = None
+    elif op == 'replace':
+        path = addressed(raw)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        resolved = path.resolve()
+        temporary = resolved.with_name(f'.{resolved.name}.{uuid.uuid4().hex}.tmp')
+        data = base64.b64decode(payload['base64'], validate=True)
+        try:
+            with temporary.open('wb') as output:
+                output.write(data)
+            os.replace(temporary, resolved)
+        finally:
+            temporary.unlink(missing_ok=True)
         value = None
     elif op == 'info':
         value = info(addressed(raw))
@@ -254,6 +267,21 @@ export class DockerExecutionEnv implements ExecutionEnv {
   ): Promise<Result<void, FileError>> {
     return this.fileOperation<void>(
       { op: "write", path, base64: encoded(content) },
+      abortSignal,
+    )
+  }
+
+  /**
+   * 通过同目录原子替换写入文件。与直接截断目标文件不同，即使旧 inode 正被进程
+   * 执行也不会触发 Linux ETXTBSY，适合跨 attempt 刷新持久化附件。
+   */
+  replaceFile(
+    path: string,
+    content: string | Uint8Array,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    return this.fileOperation<void>(
+      { op: "replace", path, base64: encoded(content) },
       abortSignal,
     )
   }

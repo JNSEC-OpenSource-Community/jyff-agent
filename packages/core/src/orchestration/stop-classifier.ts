@@ -80,6 +80,12 @@ export function classifySolverStop(
   ) {
     return classification("network_transient", 0, true, facts.detail)
   }
+  if (
+    input.stopReason === "aborted" ||
+    /(?:^|\b)(?:request |operation )?aborted(?:$|\b)/i.test(facts.detail ?? "")
+  ) {
+    return classification("network_transient", 0, true, facts.detail)
+  }
   if (/\b(?:HTTP\s*)?(?:429|5\d\d)\b/i.test(facts.detail ?? "")) {
     return classification("provider_transient", 0, true, facts.detail)
   }

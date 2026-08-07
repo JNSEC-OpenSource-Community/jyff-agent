@@ -95,7 +95,7 @@ describe("BaseAgent native session", () => {
       thinkingLevel: "low",
       initialMessages: [{ role: "user", content: "persist me", timestamp: 1 }],
     })
-    await first.appendMessage({
+    await first.session.appendMessage({
       role: "user",
       content: "second message",
       timestamp: 2,

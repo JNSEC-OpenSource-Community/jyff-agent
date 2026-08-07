@@ -6,7 +6,7 @@
 
 黑板与 Run 共用 `.ctf-agent/runs.sqlite`，由 `RunStore` 负责事务和归属校验：
 
-- `challenge_evidence`：只增不改的证据节点；
+- `challenge_evidence`：可纠正、可删除的证据节点；
 - `challenge_opportunities`：从一组证据出发、必须经过实验才能判断的探索方向；状态为 `open` 或 `concluded`，结束时 resolution 为 `confirmed` 或 `dead_end`；
 - `challenge_opportunity_sources`：Opportunity 与多个源 Evidence 的关联。
 
@@ -16,10 +16,11 @@
 
 ## Agent 工具
 
-主 Solver 拥有两个顺序执行的工具：
+主 Solver 拥有三个顺序执行的工具：
 
 - `blackboard_read`：读取当前题目的有界快照；
 - `blackboard_record`：新增 Evidence、声明 Opportunity，或在产生新 Evidence 的同时结束 Opportunity。
+- `blackboard_manage`：按 ID 更新或删除一条 Evidence/Opportunity。
 
 `blackboard_record` 的输入结构如下：
 
@@ -38,7 +39,9 @@
 }
 ```
 
-三个操作均可选，但至少提供一个。每项操作独立返回结果或错误；结束 Opportunity 时，写入结果 Evidence 和更新 Opportunity 会在同一 `BEGIN IMMEDIATE` 事务内完成。`resolution` 省略时兼容为 `confirmed`；标记 `dead_end` 时结果 Evidence 必须描述实际实验及其结果，记录会永久保留以避免复活后的 Solver 重复尝试。
+三个操作均可选，但至少提供一个。每项操作独立返回结果或错误；结束 Opportunity 时，写入结果 Evidence 和更新 Opportunity 会在同一 `BEGIN IMMEDIATE` 事务内完成。`resolution` 省略时兼容为 `confirmed`；标记 `dead_end` 时结果 Evidence 必须描述实际实验及其结果，记录默认会跨 Run 保留，除非 Solver 之后明确纠正或删除。
+
+`blackboard_manage` 每次只接受一个 `action`：`update_evidence`、`delete_evidence`、`update_opportunity` 或 `delete_opportunity`。更新 Opportunity 时可以修改描述、源 Evidence 集合或两者。为避免静默破坏图关系，仍被 Opportunity 作为 source 或 target 引用的 Evidence 不能删除；应先更新或删除引用它的 Opportunity。所有操作继续按当前题目隔离，不能用其他题目的 ID 修改数据。
 
 SubAgent 不直接操作黑板。它把结果返回给主 Solver，由主 Solver 复核后记录，避免未经验证的 worker 输出直接成为共享事实。无需实验即可排除的方向不应写成 Opportunity；平台公告和提示也必须经过验证后才能成为 Evidence。
 

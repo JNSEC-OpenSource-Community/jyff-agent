@@ -284,4 +284,75 @@ describe("CtfSubagentManager", () => {
     expect(maximum).toBe(1)
     await manager.close()
   })
+
+  it("blocking 收尾等待运行 worker 完成并取消尚未启动的任务", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-finalize-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-finalize" })
+    faux.setResponses([
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return fauxAssistantMessage("initial work")
+      },
+      fauxAssistantMessage("complete final report"),
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-finalize",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      maxConcurrent: 1,
+    })
+    const running = manager.spawn({
+      role: "general-purpose",
+      prompt: "investigate",
+      description: "running worker",
+      background: true,
+    })
+    await waitFor(() => manager.get(running.id)?.status === "running")
+    const queued = manager.spawn({
+      role: "general-purpose",
+      prompt: "queued investigation",
+      description: "queued worker",
+      background: true,
+    })
+
+    const records = await manager.finalize("Produce the final report now.", 500)
+
+    expect(records.find((record) => record.id === running.id)).toMatchObject({
+      status: "completed",
+      result: "complete final report",
+    })
+    expect(records.find((record) => record.id === queued.id)).toMatchObject({
+      status: "cancelled",
+    })
+    expect(records.every((record) => record.status !== "running")).toBe(true)
+    expect(() =>
+      manager.spawn({
+        role: "general-purpose",
+        prompt: "too late",
+        description: "late worker",
+        background: true,
+      }),
+    ).toThrow("正在收尾")
+    await manager.close()
+  })
 })
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 1_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("等待 SubAgent 状态超时")
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}

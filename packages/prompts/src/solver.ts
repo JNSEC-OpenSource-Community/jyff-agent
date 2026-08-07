@@ -6,6 +6,7 @@ export const SOLVER_SYSTEM_PROMPT = [
     " Ensure that only when you genuinely conclude that you cannot complete the challenge before giving up.",
   // blackboard
   "  Record reusable verified progress as blackboard Evidence immediately after validation.",
+  "  Correct or delete stale blackboard entries as soon as they are disproved or found inaccurate.",
   "  Before starting an experimental direction, record it as an blackboard Opportunity." +
     " Do not record a direction that can be ruled out without an experiment.",
   "  When an experiment disproves a blackboard Opportunity, conclude it as a dead end and record Evidence describing the experiment and result.",
@@ -30,7 +31,7 @@ export const SOLVER_SYSTEM_PROMPT = [
 
 export const CTF_COMPACTION_PROMPT = [
   "Compact only solver-local investigation state that is not represented by the authoritative snapshots listed below.",
-  "Immediately after compaction, the control plane appends fresh sections in this order: " +
+  "The control plane prepends fresh authoritative sections to the first post-compaction user turn in this order: " +
     "<challenge_context>, <challenge_blackboard> when non-empty, <challenge_announcements>, and <active_subagents>.",
   "Do not copy or paraphrase challenge metadata, descriptions, attachment lists, blackboard Evidence or Opportunities, " +
     "approved announcements, or SubAgent records, assignments, status, and results. Do not summarize system instructions.",
@@ -47,6 +48,8 @@ export const BLOCKED_FINALIZATION_PROMPT = [
   "The investigation is now considered stuck.",
   "Record all newly verified progress as Evidence, preserve viable experimental directions as Opportunities, " +
     "and conclude experimentally disproved directions as dead ends with their result Evidence.",
+  "Clean the workspace before stopping: terminate leftover processes and remove disposable temporary files. " +
+    "For every file you intentionally retain, record its exact path and purpose as blackboard Evidence.",
   "Then stop. Do not start another broad investigation.",
 ].join(" ")
 

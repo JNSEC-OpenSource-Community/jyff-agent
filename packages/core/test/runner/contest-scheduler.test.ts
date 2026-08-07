@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   ContestScheduler,
   type ContestSchedulerError,
+  DEFAULT_TRANSIENT_RETRY_DELAYS_MS,
 } from "../../src/orchestration/contest-scheduler.ts"
 import { Project } from "../../src/project/project.ts"
 import { type TestChallenge, TestPlatformPlugin } from "../fake-platform.ts"
@@ -33,6 +34,7 @@ class SandboxTracker {
   active = 0
   maximum = 0
   closed = 0
+  readonly files = new Map<string, Buffer>()
 
   create = async (_options: DockerSandboxOptions): Promise<Sandbox> => {
     this.active++
@@ -40,11 +42,44 @@ class SandboxTracker {
     let closed = false
     return {
       id: `sandbox-${this.maximum}-${this.active}`,
-      exec: async (): Promise<CommandResult> => ({
-        code: 0,
-        stdout: "",
-        stderr: "",
-      }),
+      exec: async (args, options): Promise<CommandResult> => {
+        if (args[0] !== "python3") {
+          return { code: 0, stdout: "", stderr: "" }
+        }
+        const payload = JSON.parse(options?.input ?? "{}") as {
+          op: string
+          path: string
+          base64?: string
+        }
+        if (payload.op === "read_binary") {
+          const content = this.files.get(payload.path)
+          return {
+            code: 0,
+            stdout: JSON.stringify(
+              content
+                ? { ok: true, value: content.toString("base64") }
+                : {
+                    ok: false,
+                    code: "not_found",
+                    message: "not found",
+                    path: payload.path,
+                  },
+            ),
+            stderr: "",
+          }
+        }
+        if (payload.op === "replace") {
+          this.files.set(
+            payload.path,
+            Buffer.from(payload.base64 ?? "", "base64"),
+          )
+        }
+        return {
+          code: 0,
+          stdout: JSON.stringify({ ok: true, value: null }),
+          stderr: "",
+        }
+      },
       close: async () => {
         if (closed) return
         closed = true
@@ -223,7 +258,7 @@ describe("ContestScheduler", () => {
       errorMessage: "websocket disconnected",
     },
   ])(
-    "$label 时按分类在同一 Run 续跑或创建新 Run",
+    "$label 时按分类在同一 Run 内 continuation",
     async ({ stopReason, errorMessage }) => {
       const item = challenge(99)
       const tracker = new SandboxTracker()
@@ -234,47 +269,27 @@ describe("ContestScheduler", () => {
         maxAttempts: 1,
         retryDelayMs: 0,
         infrastructureRetryDelayMs: 0,
+        transientRetryDelaysMs: [0, 0, 0],
         createAgentOptions: () => {
           sessions++
           const faux = createFauxCore({
             provider: `continuation-${stopReason}`,
           })
-          faux.setResponses(
-            sessions === 1 && stopReason !== "error"
-              ? [
-                  fauxAssistantMessage("分析尚未完成。", {
-                    stopReason,
-                    ...(errorMessage ? { errorMessage } : {}),
-                  }),
-                  fauxAssistantMessage(
-                    fauxToolCall(
-                      "ctf_submit_flag",
-                      { flag: item.flag },
-                      { id: `continued-submit-${stopReason}` },
-                    ),
-                    { stopReason: "toolUse" },
-                  ),
-                  fauxAssistantMessage("已提交。"),
-                ]
-              : sessions === 1
-                ? [
-                    fauxAssistantMessage("分析尚未完成。", {
-                      stopReason,
-                      ...(errorMessage ? { errorMessage } : {}),
-                    }),
-                  ]
-                : [
-                    fauxAssistantMessage(
-                      fauxToolCall(
-                        "ctf_submit_flag",
-                        { flag: item.flag },
-                        { id: `continued-submit-${stopReason}` },
-                      ),
-                      { stopReason: "toolUse" },
-                    ),
-                    fauxAssistantMessage("已提交。"),
-                  ],
-          )
+          faux.setResponses([
+            fauxAssistantMessage("分析尚未完成。", {
+              stopReason,
+              ...(errorMessage ? { errorMessage } : {}),
+            }),
+            fauxAssistantMessage(
+              fauxToolCall(
+                "ctf_submit_flag",
+                { flag: item.flag },
+                { id: `continued-submit-${stopReason}` },
+              ),
+              { stopReason: "toolUse" },
+            ),
+            fauxAssistantMessage("已提交。"),
+          ])
           return {
             streamFn: faux.streamSimple as AgentOptions["streamFn"],
             initialState: { model: faux.getModel(), thinkingLevel: "off" },
@@ -291,29 +306,15 @@ describe("ContestScheduler", () => {
         )
 
         const runs = project.runs({ challengeId: item.id })
-        expect(runs).toEqual(
-          stopReason === "error"
-            ? [
-                expect.objectContaining({
-                  attempt: 1,
-                  status: "failed",
-                  closeReason: "failed",
-                }),
-                expect.objectContaining({
-                  attempt: 2,
-                  status: "solved",
-                  closeReason: "submitted",
-                }),
-              ]
-            : [
-                expect.objectContaining({
-                  attempt: 1,
-                  status: "solved",
-                  closeReason: "submitted",
-                }),
-              ],
-        )
-        const continuedRun = runs.at(stopReason === "error" ? 1 : 0)
+        expect(runs).toEqual([
+          expect.objectContaining({
+            attempt: 1,
+            status: "solved",
+            closeReason: "submitted",
+          }),
+        ])
+        expect(sessions).toBe(1)
+        const continuedRun = runs[0]
         const continuedSession = await readFile(
           join(
             dirname(dirname(dirname(continuedRun?.workspace ?? ""))),
@@ -328,6 +329,11 @@ describe("ContestScheduler", () => {
         expect(project.challengeBlockEvents(item.id)).toHaveLength(
           stopReason === "error" ? 0 : 1,
         )
+        expect(
+          project
+            .runEvents(continuedRun?.id ?? "")
+            .filter((event) => event.type === "run_transient_failure"),
+        ).toHaveLength(stopReason === "error" ? 1 : 0)
         expect(project.schedulerAttemptCount(item.id)).toBe(1)
       } finally {
         await scheduler.shutdown()
@@ -335,6 +341,56 @@ describe("ContestScheduler", () => {
       }
     },
   )
+
+  it("同一 attempt 对连续 fetch failed 仅提供三次退避重试", async () => {
+    expect(DEFAULT_TRANSIENT_RETRY_DELAYS_MS).toEqual([10_000, 60_000, 300_000])
+    const item = challenge(96)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({ provider: "transient-exhaustion" })
+    faux.setResponses(
+      Array.from({ length: 4 }, () =>
+        fauxAssistantMessage("network unavailable", {
+          stopReason: "error",
+          errorMessage: "fetch failed",
+        }),
+      ),
+    )
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      transientRetryDelaysMs: [0, 0, 0],
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      }),
+    })
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+
+      const [run] = project.runs({ challengeId: item.id })
+      expect(run).toMatchObject({
+        attempt: 1,
+        status: "failed",
+        closeReason: "failed",
+      })
+      expect(faux.state.callCount).toBe(4)
+      const failures = project
+        .runEvents(run?.id ?? "")
+        .filter((event) => event.type === "run_transient_failure")
+      expect(failures.map((event) => event.data)).toEqual([
+        expect.objectContaining({ failureNumber: 1, retryScheduled: true }),
+        expect.objectContaining({ failureNumber: 2, retryScheduled: true }),
+        expect.objectContaining({ failureNumber: 3, retryScheduled: true }),
+        expect.objectContaining({ failureNumber: 4, retryScheduled: false }),
+      ])
+      expect(project.challengeBlockEvents(item.id)).toHaveLength(0)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
 
   it("在 compact 边界记录 delta=2 并继续同一 Run", async () => {
     const item = challenge(97)
@@ -404,6 +460,16 @@ describe("ContestScheduler", () => {
       expect(session).toContain("compact summary")
       expect(session).toContain('<active_subagents encoding=\\"json\\">')
       expect(session).toContain("<challenge_announcements>")
+      const recoveredTurn = session
+        .split(/\r?\n/)
+        .find(
+          (line) =>
+            line.includes("<challenge_context>") &&
+            line.includes("<challenge_announcements>") &&
+            line.includes("<active_subagents") &&
+            line.includes(INCOMPLETE_CONTINUATION_PROMPT),
+        )
+      expect(recoveredTurn).toBeDefined()
       expect(project.challengeBlockEvents(item.id)).toEqual([
         expect.objectContaining({ delta: 1, reason: "model_stop" }),
         expect.objectContaining({
@@ -475,7 +541,7 @@ describe("ContestScheduler", () => {
       expect(project.sessionInterruptionCount(item.id)).toBe(0)
       expect(project.challengeRuntimeState(item.id)).toMatchObject({
         revivalCount: 1,
-        effectiveBlockThreshold: 12,
+        effectiveBlockThreshold: 14,
         blocked: false,
       })
       expect(project.isChallengeBlocked(item.id)).toBe(false)
@@ -753,10 +819,10 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("平台瞬时创建故障恢复后继续调度且不消耗解题预算", async () => {
+  it("首次创建时附件下载失败可重试且不消耗解题预算", async () => {
     const item = challenge(1, {
-      failures: { bind: 1 },
-      retryableFailures: { bind: true },
+      attachments: [{ id: "chall", name: "chall", content: "payload" }],
+      failures: { download: 1 },
     })
     const tracker = new SandboxTracker()
     const project = await fixture([item], tracker)
@@ -784,6 +850,41 @@ describe("ContestScheduler", () => {
         expect.objectContaining({ attempt: 2, status: "solved" }),
       ])
       expect(project.schedulerAttemptCount(item.id)).toBe(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("首次创建时非附件错误直接阻塞且不创建新 attempt", async () => {
+    const item = challenge(2, {
+      failures: { bind: 1 },
+      retryableFailures: { bind: true },
+    })
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 3,
+      retryDelayMs: 0,
+      infrastructureRetryDelayMs: 0,
+      createAgentOptions: () => solvingAgent(item),
+    })
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () =>
+          project.isChallengeBlocked(item.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+
+      const runs = project.runs({ challengeId: item.id })
+      expect(runs).toEqual([
+        expect.objectContaining({ attempt: 1, status: "blocked" }),
+      ])
+      expect(
+        project.runEvents(runs[0]?.id ?? "").map((event) => event.type),
+      ).toContain("run_creation_blocked")
     } finally {
       await scheduler.shutdown()
       await project.close()

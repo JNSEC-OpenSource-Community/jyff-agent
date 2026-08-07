@@ -106,6 +106,52 @@ describe("createBlackboardTools", () => {
           concludedAt: "now",
         },
       }),
+      updateEvidence: (
+        _challengeId: string,
+        evidenceId: number,
+        description: string,
+      ) => ({
+        id: evidenceId,
+        challengeId: "c1",
+        description,
+        runId: "r1",
+        createdAt: "now",
+      }),
+      deleteEvidence: (_challengeId: string, evidenceId: number) => ({
+        id: evidenceId,
+        challengeId: "c1",
+        description: "deleted",
+        runId: "r1",
+        createdAt: "now",
+      }),
+      updateOpportunity: (
+        _challengeId: string,
+        opportunityId: number,
+        input: { description?: string; sourceEvidenceIds?: number[] },
+      ) => ({
+        id: opportunityId,
+        challengeId: "c1",
+        description: input.description ?? "opp",
+        status: "open" as const,
+        resolution: null,
+        runId: "r1",
+        sourceEvidenceIds: input.sourceEvidenceIds ?? [1],
+        targetEvidenceId: null,
+        createdAt: "now",
+        concludedAt: null,
+      }),
+      deleteOpportunity: (_challengeId: string, opportunityId: number) => ({
+        id: opportunityId,
+        challengeId: "c1",
+        description: "deleted",
+        status: "open" as const,
+        resolution: null,
+        runId: "r1",
+        sourceEvidenceIds: [1],
+        targetEvidenceId: null,
+        createdAt: "now",
+        concludedAt: null,
+      }),
       getBlackboardSummary: () => ({
         evidence: [{ id: 1, description: "test", runId: "r1" }],
         opportunities: [],
@@ -203,6 +249,56 @@ describe("createBlackboardTools", () => {
       "结论",
       "r1",
       "dead_end",
+    )
+  })
+
+  it("manage 工具按 ID 更新与删除条目", async () => {
+    const updateOpportunity = vi.fn(
+      (_challengeId: string, opportunityId: number) => ({
+        id: opportunityId,
+        challengeId: "c1",
+        description: "updated",
+        status: "open" as const,
+        resolution: null,
+        runId: "r1",
+        sourceEvidenceIds: [2],
+        targetEvidenceId: null,
+        createdAt: "now",
+        concludedAt: null,
+      }),
+    )
+    const deleteEvidence = vi.fn(() => {
+      throw new Error("Evidence 1 is referenced")
+    })
+    const tools = createBlackboardTools({
+      runStore: fakeRunStore({
+        updateOpportunity,
+        deleteEvidence,
+      } as Partial<RunStore>),
+      challengeId: "c1",
+      runId: "r1",
+    })
+    const manage = tools.find((tool) => tool.name === "blackboard_manage")
+    if (!manage) throw new Error("blackboard_manage 工具未创建")
+
+    const updated = await manage.execute("update", {
+      action: "update_opportunity",
+      opportunityId: 3,
+      description: "updated",
+      sourceEvidenceIds: [2],
+    })
+    expect((updated.details as { record?: { id: number } }).record?.id).toBe(3)
+    expect(updateOpportunity).toHaveBeenCalledWith("c1", 3, {
+      description: "updated",
+      sourceEvidenceIds: [2],
+    })
+
+    const rejected = await manage.execute("delete", {
+      action: "delete_evidence",
+      evidenceId: 1,
+    })
+    expect((rejected.details as { error?: string }).error).toContain(
+      "is referenced",
     )
   })
 })

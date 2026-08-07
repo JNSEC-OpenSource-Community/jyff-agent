@@ -112,6 +112,7 @@ export class CtfSubagentManager {
   private readonly maxConcurrent: number
   private runningBackground = 0
   private parent?: CtfSolverAgent
+  private finalizing = false
   private closing = false
 
   constructor(private readonly options: SubagentManagerOptions) {
@@ -155,7 +156,9 @@ export class CtfSubagentManager {
     description: string
     background: boolean
   }): SubagentRecord {
-    if (this.closing) throw new Error("SubAgent manager 正在关闭")
+    if (this.closing || this.finalizing) {
+      throw new Error("SubAgent manager 正在收尾或关闭")
+    }
     const role = resolveSubagentRole(this.options.roles, input.role)
     if (!role) {
       throw new Error(
@@ -220,6 +223,18 @@ export class CtfSubagentManager {
     prompt: string,
     background: boolean,
   ): Promise<SubagentRecord> {
+    if (this.closing || this.finalizing) {
+      throw new Error("SubAgent manager 正在收尾或关闭")
+    }
+    return this.restart(id, prompt, background)
+  }
+
+  private async restart(
+    id: string,
+    prompt: string,
+    background: boolean,
+    bypassQueue = false,
+  ): Promise<SubagentRecord> {
     const managed = this.records.get(id)
     if (!managed || !TERMINAL.has(managed.record.status)) {
       throw new Error(`SubAgent ${id} 不存在、尚未完成或会话不可恢复`)
@@ -240,7 +255,11 @@ export class CtfSubagentManager {
     })
     managed.resolve = resolve
     this.emit(managed, "created")
-    if (background && this.runningBackground >= this.maxConcurrent) {
+    if (
+      !bypassQueue &&
+      background &&
+      this.runningBackground >= this.maxConcurrent
+    ) {
       this.queue.push({ managed, prompt: nextPrompt })
     } else {
       this.launch(managed, nextPrompt, !managed.agent)
@@ -306,6 +325,61 @@ export class CtfSubagentManager {
     return snapshot(managed.record)
   }
 
+  /**
+   * blocking 收尾屏障：先停止未启动任务，再中止当前 turn，并从同一 JSONL
+   * session 启动一个明确的最终报告 turn。
+   * 超时 worker 会先抓取最新回复再中止，返回时所有子任务都已进入终态。
+   */
+  async finalize(
+    reportPrompt: string,
+    graceMs: number,
+  ): Promise<SubagentRecord[]> {
+    if (!Number.isFinite(graceMs) || graceMs < 0) {
+      throw new Error("SubAgent finalization graceMs must be non-negative")
+    }
+    this.finalizing = true
+    const queued = this.list().filter((record) => record.status === "queued")
+    await Promise.allSettled(queued.map((record) => this.cancel(record.id)))
+
+    const running = this.list().filter((record) => record.status === "running")
+    await Promise.allSettled(
+      running.map(async (record) => {
+        const managed = this.records.get(record.id)
+        if (managed) await this.captureLatestResult(managed)
+        await this.cancel(record.id)
+        await managed?.agent?.waitForIdle()
+      }),
+    )
+    await Promise.allSettled(
+      running.map((record) =>
+        this.restart(record.id, reportPrompt, true, true),
+      ),
+    )
+    if (running.length > 0 && graceMs > 0) {
+      await settleWithin(
+        running.map((record) => this.wait(record.id)),
+        graceMs,
+      )
+    }
+
+    const unfinished = this.list().filter(
+      (record) => record.status === "running" || record.status === "queued",
+    )
+    await Promise.allSettled(
+      unfinished.map(async (record) => {
+        const managed = this.records.get(record.id)
+        if (managed) await this.captureLatestResult(managed)
+        await this.cancel(record.id)
+      }),
+    )
+    await Promise.allSettled(
+      unfinished.map((record) =>
+        this.records.get(record.id)?.agent?.waitForIdle(),
+      ),
+    )
+    return this.list()
+  }
+
   async close(): Promise<void> {
     if (this.closing) return
     this.closing = true
@@ -362,6 +436,7 @@ export class CtfSubagentManager {
       await this.run(managed, prompt)
     } catch (error) {
       if (!isCancelled(managed)) {
+        await this.captureLatestResult(managed).catch(() => undefined)
         managed.record.error = errorText(error)
         this.finish(managed, managed.hardAborted ? "aborted" : "failed")
       }
@@ -375,15 +450,19 @@ export class CtfSubagentManager {
     this.emit(managed, "started")
     await managed.agent?.prompt(prompt)
     if (isCancelled(managed)) return
+    await this.captureLatestResult(managed)
+    this.finish(managed, managed.hardAborted ? "aborted" : "completed")
+  }
+
+  private async captureLatestResult(managed: ManagedSubagent): Promise<void> {
     const messages = (await managed.agent?.transcript()) ?? []
     for (let index = messages.length - 1; index >= 0; index--) {
       const text = extractAssistantText(messages[index])
       if (text) {
         managed.record.result = text
-        break
+        return
       }
     }
-    this.finish(managed, managed.hardAborted ? "aborted" : "completed")
   }
 
   private subscribe(managed: ManagedSubagent, agent: CtfSubagent): void {
@@ -453,6 +532,7 @@ export class CtfSubagentManager {
   private drainQueue(): void {
     while (
       !this.closing &&
+      !this.finalizing &&
       this.queue.length > 0 &&
       this.runningBackground < this.maxConcurrent
     ) {
@@ -479,6 +559,16 @@ export class CtfSubagentManager {
     })
     await parent.followUp(subagentCompletionNotificationPrompt(payload))
   }
+}
+
+function settleWithin(promises: Promise<unknown>[], milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, milliseconds)
+    void Promise.allSettled(promises).then(() => {
+      clearTimeout(timeout)
+      resolve()
+    })
+  })
 }
 
 /** Main-Agent tools use pi-subagents-compatible names and argument conventions. */

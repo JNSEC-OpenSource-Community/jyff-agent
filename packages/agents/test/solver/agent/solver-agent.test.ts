@@ -2,7 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ChallengeCapability } from "@ctf-agent/platform"
-import { CTF_COMPACTION_PROMPT } from "@ctf-agent/prompts"
+import {
+  BLOCKED_FINALIZATION_PROMPT,
+  CTF_COMPACTION_PROMPT,
+} from "@ctf-agent/prompts"
 import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
 import { AgentHarness, type AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
@@ -126,6 +129,11 @@ describe("CtfSolverAgent 强制清理", () => {
     expect(CTF_COMPACTION_PROMPT).toContain("<active_subagents>")
     expect(CTF_COMPACTION_PROMPT).not.toContain("active SubAgent tasks")
     await solver.close("manual")
+  })
+
+  it("阻塞收尾要求清理 workspace 并记录保留文件用途", () => {
+    expect(BLOCKED_FINALIZATION_PROMPT).toContain("Clean the workspace")
+    expect(BLOCKED_FINALIZATION_PROMPT).toContain("exact path and purpose")
   })
 
   it("失败关闭时先回收 SubAgent，再销毁实例、Sandbox 并持久化状态", async () => {

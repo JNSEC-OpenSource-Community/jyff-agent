@@ -209,9 +209,6 @@ export abstract class BaseAgent {
       ? this.harness.steer(text, options)
       : this.harness.nextTurn(text, options)
   }
-  appendMessage(message: AgentMessage) {
-    return this.harness.appendMessage(message)
-  }
   subscribe(
     listener: (
       event: AgentHarnessEvent,

@@ -387,6 +387,7 @@ function humanToolName(tool: string): string {
     ctf_instance_destroy: "关闭远程环境",
     blackboard_read: "读取黑板",
     blackboard_record: "更新黑板",
+    blackboard_manage: "管理黑板条目",
   }
   return labels[tool] ?? tool
 }

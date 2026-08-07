@@ -57,6 +57,7 @@ export const TOOL_LABELS: Record<string, string> = {
   ctf_instance_destroy: "关闭远程环境",
   blackboard_read: "读取协作黑板",
   blackboard_record: "更新协作黑板",
+  blackboard_manage: "管理协作黑板条目",
   Agent: "派发 SubAgent",
   get_subagent_result: "读取 SubAgent 结果",
   steer_subagent: "引导 SubAgent",

@@ -110,6 +110,61 @@ describe("RunStore blackboard", () => {
     store.close()
   })
 
+  it("更新和删除条目时保持引用关系与 challenge 隔离", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "run-1",
+      challengeId: "chal-1",
+      workspace: "/tmp/a",
+      attempt: 1,
+    })
+    store.createRun({
+      id: "run-2",
+      challengeId: "chal-2",
+      workspace: "/tmp/b",
+      attempt: 1,
+    })
+    const first = store.recordEvidence("chal-1", "run-1", "old evidence")
+    const second = store.recordEvidence("chal-1", "run-1", "replacement")
+    const opportunity = store.recordOpportunity(
+      "chal-1",
+      "run-1",
+      "old opportunity",
+      [first.id],
+    )
+
+    expect(
+      store.updateEvidence("chal-1", first.id, " corrected "),
+    ).toMatchObject({ id: first.id, description: "corrected" })
+    expect(() =>
+      store.updateEvidence("chal-2", first.id, "cross challenge"),
+    ).toThrow("not found for challenge chal-2")
+    expect(() => store.deleteEvidence("chal-1", first.id)).toThrow(
+      `referenced by Opportunity ${opportunity.id}`,
+    )
+
+    expect(
+      store.updateOpportunity("chal-1", opportunity.id, {
+        description: "corrected opportunity",
+        sourceEvidenceIds: [second.id],
+      }),
+    ).toMatchObject({
+      description: "corrected opportunity",
+      sourceEvidenceIds: [second.id],
+    })
+    expect(store.deleteEvidence("chal-1", first.id).id).toBe(first.id)
+    expect(store.deleteOpportunity("chal-1", opportunity.id)).toMatchObject({
+      id: opportunity.id,
+      sourceEvidenceIds: [second.id],
+    })
+    expect(store.deleteEvidence("chal-1", second.id).id).toBe(second.id)
+    expect(store.getBlackboardSummary("chal-1")).toEqual({
+      evidence: [],
+      opportunities: [],
+    })
+    store.close()
+  })
+
   it("recordOpportunity 拒绝空的 sourceEvidenceIds", async () => {
     const { store } = await storeFixture()
     store.createRun({

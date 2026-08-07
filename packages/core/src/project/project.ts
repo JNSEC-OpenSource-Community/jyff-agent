@@ -75,7 +75,10 @@ import {
   RunStore,
   type SchedulerQueueRecord,
 } from "../persistence/run-store.ts"
-import { downloadChallengeAttachments } from "./attachments.ts"
+import {
+  ChallengeAttachmentError,
+  downloadChallengeAttachments,
+} from "./attachments.ts"
 import {
   challengeWorkspaceKey,
   challengeWorkspacePath,
@@ -143,6 +146,21 @@ export interface CreateSolverOptions {
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource
+}
+
+export class SolverCreationError extends Error {
+  readonly code = "SOLVER_CREATION_FAILED"
+
+  constructor(
+    readonly runId: string,
+    readonly attachmentFailure: boolean,
+    readonly blocked: boolean,
+    readonly retryable: boolean,
+    cause: unknown,
+  ) {
+    super(`无法创建 Solver ${runId}: ${errorText(cause)}`, { cause })
+    this.name = "SolverCreationError"
+  }
 }
 
 /**
@@ -573,8 +591,7 @@ export class Project {
   subagents(runId: string): SubagentRecord[] {
     return this.runStore.subagents(runId)
   }
-  compactRecoveryMessages(challengeId: string, runId: string): AgentMessage[] {
-    const now = Date.now()
+  compactRecoveryPrompt(challengeId: string, runId: string): string {
     const challengeContext = this.runChallengeContexts.get(runId)
     if (!challengeContext) {
       throw new Error(`Run ${runId} 缺少 compact 恢复所需的题目上下文`)
@@ -584,25 +601,11 @@ export class Project {
       this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
     const announcements = this.runStore.challengeAnnouncements(challengeId)
     return [
-      {
-        role: "user" as const,
-        content: challengeContext,
-        timestamp: now,
-      },
-      ...(blackboard
-        ? [{ role: "user" as const, content: blackboard, timestamp: now }]
-        : []),
-      {
-        role: "user" as const,
-        content: challengeAnnouncementsPrompt(announcements),
-        timestamp: now,
-      },
-      {
-        role: "user" as const,
-        content: activeSubagentsPrompt(subagents),
-        timestamp: now,
-      },
-    ]
+      challengeContext,
+      ...(blackboard ? [blackboard] : []),
+      challengeAnnouncementsPrompt(announcements),
+      activeSubagentsPrompt(subagents),
+    ].join("\n\n")
   }
   availableSubagents(): SubagentRole[] {
     return [...this.configuredSubagentRoles().values()].filter(
@@ -703,31 +706,7 @@ export class Project {
   ): Promise<SubagentRecord[]> {
     const manager = this.subagentManagers.get(runId)
     if (!manager) return this.runStore.subagents(runId)
-    const records = manager.list()
-    await Promise.all(
-      records
-        .filter((record) => record.status === "running")
-        .map(async (record) => {
-          try {
-            await manager.steer(record.id, reportPrompt)
-          } catch {
-            // worker 可能在 steer 前已自然结束，最终 snapshot 会读取最新状态。
-          }
-        }),
-    )
-    await Promise.all(
-      records
-        .filter(
-          (record) => record.status === "running" || record.status === "queued",
-        )
-        .map(async (record) => {
-          await Promise.race([
-            manager.wait(record.id).catch(() => undefined),
-            new Promise<void>((resolve) => setTimeout(resolve, graceMs)),
-          ])
-        }),
-    )
-    return manager.list()
+    return manager.finalize(reportPrompt, graceMs)
   }
   blackboard(challengeId: string) {
     return this.runStore.getBlackboardSummary(challengeId)
@@ -844,6 +823,10 @@ export class Project {
     const workspace =
       resumed?.workspace ??
       challengeWorkspacePath(this.agentDirectory, challengeId)
+    const attempt =
+      resumed?.attempt ??
+      options.attempt ??
+      this.runStore.nextAttempt(challengeId)
     // Run session 与题目级持久 workspace 分离；后者跨复活复用。
     await Promise.all([
       mkdir(runDirectory, { recursive: true }),
@@ -854,7 +837,7 @@ export class Project {
         id: runId,
         challengeId,
         workspace,
-        attempt: options.attempt ?? this.runStore.nextAttempt(challengeId),
+        attempt,
         source: options.source ?? "direct",
       })
       await this.persistRecord(record, runDirectory)
@@ -1139,32 +1122,48 @@ export class Project {
         error,
         ...cleanupErrors.map((message) => new Error(message)),
       ]
+      const attachmentFailure = error instanceof ChallengeAttachmentError
+      const blockImmediately = !resumed && attempt === 1 && !attachmentFailure
+      const retryable = attachmentFailure
+        ? !resumed && attempt === 1
+        : !blockImmediately && isRetryablePlatformError(error)
       try {
-        const retryable = isRetryablePlatformError(error)
+        if (blockImmediately) {
+          this.runStore.forceChallengeBlocked({ challengeId, runId })
+        }
         const updated = this.runStore.updateRun(
           runId,
           {
-            status: "failed",
-            closeReason: "failed",
+            status: blockImmediately ? "blocked" : "failed",
+            closeReason: blockImmediately ? "blocked" : "failed",
             error: errorText(error),
             cleanupError:
               cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
             finishedAt: new Date().toISOString(),
           },
-          "run_creation_failed",
-          { error: errorText(error), cleanupErrors, retryable },
+          blockImmediately ? "run_creation_blocked" : "run_creation_failed",
+          {
+            error: errorText(error),
+            cleanupErrors,
+            retryable,
+            attachmentFailure,
+          },
         )
         await this.persistRecord(updated, runDirectory)
       } catch (persistenceError) {
         failures.push(persistenceError)
       }
-      if (failures.length > 1) {
-        throw Object.assign(
-          new AggregateError(failures, `无法创建 Solver ${runId}`),
-          { retryable: isRetryablePlatformError(error) },
-        )
-      }
-      throw error
+      const cause =
+        failures.length > 1
+          ? new AggregateError(failures, `无法创建 Solver ${runId}`)
+          : error
+      throw new SolverCreationError(
+        runId,
+        attachmentFailure,
+        blockImmediately,
+        retryable,
+        cause,
+      )
     }
   }
 
@@ -1435,6 +1434,13 @@ function tracedToolArgs(
       operations: ["evidence", "opportunity", "concludeOpportunity"].filter(
         (key) => input[key] !== undefined,
       ),
+    }
+  }
+  if (toolName === "blackboard_manage") {
+    return {
+      action: clippedText(input.action, 64),
+      evidenceId: input.evidenceId,
+      opportunityId: input.opportunityId,
     }
   }
   return Object.fromEntries(
