@@ -3,20 +3,25 @@ import { cva, type VariantProps } from "class-variance-authority"
 import type * as React from "react"
 import { cn } from "#lib/utils"
 
-export const buttonVariants = cva(
-  "button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50",
+const buttonVariants = cva(
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        primary: "button-primary",
-        secondary: "button-secondary",
-        ghost: "button-ghost",
-        danger: "button-danger",
+        primary:
+          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+        secondary:
+          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/70",
+        ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
+        danger:
+          "bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20",
+        outline:
+          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
       },
       size: {
-        default: "button-default",
-        sm: "button-sm",
-        icon: "button-icon",
+        default: "h-9 px-4 py-2 has-[>svg]:px-3",
+        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5 text-xs",
+        icon: "size-9",
       },
     },
     defaultVariants: { variant: "primary", size: "default" },
@@ -29,11 +34,11 @@ export interface ButtonProps
   asChild?: boolean
 }
 
-export function Button({
+function Button({
   className,
   variant,
   size,
-  asChild,
+  asChild = false,
   ...props
 }: ButtonProps): React.ReactElement {
   const Component = asChild ? Slot : "button"
@@ -45,3 +50,5 @@ export function Button({
     />
   )
 }
+
+export { Button, buttonVariants }

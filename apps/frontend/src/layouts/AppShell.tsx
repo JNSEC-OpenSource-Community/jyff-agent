@@ -127,7 +127,9 @@ function ContextSidebar({
         </div>
       </div>
       <div className="context-sidebar-footer">
-        <span>Issue #14 · workspace v2</span>
+        <span className="text-muted-foreground text-[11px]">
+          CTF Agent · Workspace v2
+        </span>
       </div>
     </aside>
   )
@@ -154,8 +156,8 @@ export function AppShell(): React.ReactElement {
     <div className="app-frame">
       <aside className="primary-rail">
         <Link to="/" className="brand-mark" aria-label="CTF Agent 首页">
-          <span>CTF</span>
-          <strong>A</strong>
+          <Icon icon="lucide:crosshair" width="19" />
+          <strong>CTF</strong>
         </Link>
         <nav className="rail-nav" aria-label="全局导航">
           <Tooltip label="项目">

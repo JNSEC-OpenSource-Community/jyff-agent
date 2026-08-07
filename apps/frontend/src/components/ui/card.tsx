@@ -1,40 +1,49 @@
 import type * as React from "react"
 import { cn } from "#lib/utils"
 
-export function Card({
+function Card({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
-  return <div data-slot="card" className={cn("card", className)} {...props} />
+  return (
+    <div
+      data-slot="card"
+      className={cn(
+        "bg-card text-card-foreground rounded-lg border border-border shadow-sm",
+        className,
+      )}
+      {...props}
+    />
+  )
 }
 
-export function CardHeader({
+function CardHeader({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
   return (
     <div
       data-slot="card-header"
-      className={cn("grid gap-2 px-6 pt-6", className)}
+      className={cn("grid gap-1.5 px-5 pt-5", className)}
       {...props}
     />
   )
 }
 
-export function CardTitle({
+function CardTitle({
   className,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>): React.ReactElement {
   return (
     <h3
       data-slot="card-title"
-      className={cn("font-semibold leading-none", className)}
+      className={cn("font-semibold leading-none tracking-tight", className)}
       {...props}
     />
   )
 }
 
-export function CardDescription({
+function CardDescription({
   className,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>): React.ReactElement {
@@ -47,28 +56,30 @@ export function CardDescription({
   )
 }
 
-export function CardContent({
+function CardContent({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
   return (
     <div
       data-slot="card-content"
-      className={cn("px-6", className)}
+      className={cn("px-5", className)}
       {...props}
     />
   )
 }
 
-export function CardFooter({
+function CardFooter({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
   return (
     <div
       data-slot="card-footer"
-      className={cn("flex items-center px-6 pb-6", className)}
+      className={cn("flex items-center px-5 pb-5", className)}
       {...props}
     />
   )
 }
+
+export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }

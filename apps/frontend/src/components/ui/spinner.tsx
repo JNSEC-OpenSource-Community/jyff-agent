@@ -8,7 +8,7 @@ export function Spinner({
 }): React.ReactElement {
   return (
     <div data-slot="spinner" className="loading-state" role="status">
-      <Icon icon="lucide:loader-circle" className="spin" width="20" />
+      <Icon icon="lucide:loader-circle" className="animate-spin" width="20" />
       <span>{label}</span>
     </div>
   )

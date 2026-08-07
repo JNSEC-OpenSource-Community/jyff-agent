@@ -8,7 +8,6 @@ import type {
   DashboardProject,
   DashboardProjectRuntimeConfiguration,
   DashboardScheduler,
-  DashboardSnapshot,
   DashboardWebUiAuthentication,
 } from "../types.ts"
 import { loadStaticAssets } from "./assets.ts"

@@ -2,7 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppProvider, useApp } from "./app/AppProvider.tsx"
-import { Spinner, TooltipProvider } from "./components/index.ts"
+import { Spinner, Toaster, TooltipProvider } from "./components/index.ts"
 import { AppShell } from "./layouts/AppShell.tsx"
 import { ChallengePage } from "./pages/ChallengePage.tsx"
 import { LoginPage } from "./pages/LoginPage.tsx"
@@ -11,7 +11,7 @@ import { NewProjectPage, ProjectsPage } from "./pages/ProjectsPage.tsx"
 import {
   GlobalSettingsPage,
   ProjectSettingsPage,
-} from "./pages/SettingsPage.tsx"
+} from "./pages/settings/index.ts"
 
 function AuthenticatedRoutes(): React.ReactElement {
   const { auth, loading } = useApp()
@@ -55,6 +55,7 @@ createRoot(root).render(
       <TooltipProvider>
         <AppProvider>
           <AuthenticatedRoutes />
+          <Toaster position="bottom-right" richColors />
         </AppProvider>
       </TooltipProvider>
     </BrowserRouter>

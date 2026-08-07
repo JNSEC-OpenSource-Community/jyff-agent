@@ -1,7 +1,7 @@
 import type { AddressInfo } from "node:net"
 import type { ServerType } from "@hono/node-server"
 import { serve } from "@hono/node-server"
-import { buildRouter, createWebUiApp, type WebUiOptions } from "./http/app.ts"
+import { buildRouter, type WebUiOptions } from "./http/app.ts"
 import { Services } from "./http/services.ts"
 import type { DashboardSnapshot } from "./types.ts"
 

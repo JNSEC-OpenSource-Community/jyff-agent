@@ -2,7 +2,7 @@ import { Icon } from "@iconify/react"
 import { type FormEvent, useState } from "react"
 import { Navigate, useNavigate } from "react-router-dom"
 import { useApp } from "../app/AppProvider.tsx"
-import { Button, ErrorNotice } from "../components/index.ts"
+import { Button, ErrorNotice, Input } from "../components/index.ts"
 import { apiMutation } from "../lib/api.ts"
 
 export function LoginPage(): React.ReactElement {
@@ -64,26 +64,30 @@ export function LoginPage(): React.ReactElement {
             </div>
           </div>
           {error ? <ErrorNotice message={error} /> : null}
-          <label className="field">
+          <div className="field">
             <span>用户名</span>
-            <input
+            <Input
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
-          </label>
-          <label className="field">
+          </div>
+          <div className="field">
             <span>密码</span>
-            <input
+            <Input
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-          </label>
+          </div>
           <Button type="submit" disabled={busy || !username || !password}>
             {busy ? (
-              <Icon icon="lucide:loader-circle" className="spin" width="17" />
+              <Icon
+                icon="lucide:loader-circle"
+                className="animate-spin"
+                width="17"
+              />
             ) : (
               <Icon icon="lucide:log-in" width="17" />
             )}

@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react"
 import type * as React from "react"
+import { cn } from "#lib/utils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,9 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../ui/alert-dialog.tsx"
-import { Sheet, SheetClose, SheetContent, SheetTitle } from "../ui/sheet.tsx"
+import {
+  Sheet,
+  SheetCloseButton,
+  SheetContent,
+  SheetTitle,
+} from "../ui/sheet.tsx"
 
-export function MobileSheet({
+function MobileSheet({
   open,
   onOpenChange,
   children,
@@ -26,15 +32,13 @@ export function MobileSheet({
       <SheetContent>
         <SheetTitle className="sr-only">导航</SheetTitle>
         {children}
-        <SheetClose className="sheet-close" aria-label="关闭导航">
-          <Icon icon="lucide:x" width="18" />
-        </SheetClose>
+        <SheetCloseButton aria-label="关闭导航" />
       </SheetContent>
     </Sheet>
   )
 }
 
-export function ConfirmDialog({
+function ConfirmDialog({
   open,
   onOpenChange,
   title,
@@ -75,30 +79,41 @@ export function ConfirmDialog({
   )
 }
 
-export function EmptyState({
+function EmptyState({
   icon,
   title,
   description,
   action,
+  className,
 }: {
   icon: string
   title: string
   description: string
   action?: React.ReactNode
+  className?: string
 }): React.ReactElement {
   return (
-    <div data-slot="empty" className="empty-state">
-      <div data-slot="empty-icon" className="empty-state-icon">
+    <div
+      data-slot="empty"
+      className={cn(
+        "flex min-h-40 flex-col items-center justify-center gap-2 p-8 text-center",
+        className,
+      )}
+    >
+      <div
+        data-slot="empty-icon"
+        className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-full"
+      >
         <Icon icon={icon} width="24" />
       </div>
-      <h3 data-slot="empty-title">{title}</h3>
-      <p data-slot="empty-description">{description}</p>
-      {action}
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <p className="text-muted-foreground max-w-sm text-sm">{description}</p>
+      {action ? <div className="mt-2">{action}</div> : null}
     </div>
   )
 }
 
-export function PageHeader({
+function PageHeader({
   eyebrow,
   title,
   description,
@@ -110,26 +125,46 @@ export function PageHeader({
   actions?: React.ReactNode
 }): React.ReactElement {
   return (
-    <header className="page-header">
-      <div>
-        {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
-        <h1>{title}</h1>
-        {description ? <p className="page-description">{description}</p> : null}
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        {eyebrow ? (
+          <p className="text-muted-foreground mb-1 text-[11px] font-bold tracking-[0.18em] uppercase">
+            {eyebrow}
+          </p>
+        ) : null}
+        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+        {description ? (
+          <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+            {description}
+          </p>
+        ) : null}
       </div>
-      {actions ? <div className="page-actions">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      ) : null}
     </header>
   )
 }
 
-export function ErrorNotice({
+function ErrorNotice({
   message,
+  className,
 }: {
   message: string
+  className?: string
 }): React.ReactElement {
   return (
-    <div className="notice notice-error" role="alert">
+    <div
+      className={cn(
+        "border-danger/30 bg-danger/10 text-danger flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
+        className,
+      )}
+      role="alert"
+    >
       <Icon icon="lucide:circle-alert" width="18" />
       <span>{message}</span>
     </div>
   )
 }
+
+export { ConfirmDialog, EmptyState, ErrorNotice, MobileSheet, PageHeader }

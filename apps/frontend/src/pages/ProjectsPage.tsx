@@ -14,6 +14,7 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorNotice,
+  Input,
   PageHeader,
   Spinner,
 } from "../components/index.ts"
@@ -337,12 +338,12 @@ export function NewProjectPage(): React.ReactElement {
               <h2>连接信息</h2>
               <div className="form-grid">
                 {platform?.setup.fields.map((field) => (
-                  <label className="field" key={field.key}>
+                  <div key={field.key} className="field">
                     <span>
                       {field.label}
                       {field.required ? " *" : ""}
                     </span>
-                    <input
+                    <Input
                       type={field.type === "integer" ? "number" : field.type}
                       required={field.required}
                       min={field.minimum}
@@ -359,7 +360,7 @@ export function NewProjectPage(): React.ReactElement {
                         }))
                       }
                     />
-                  </label>
+                  </div>
                 ))}
               </div>
               {platform && platform.setup.authStrategies.length > 1 ? (
@@ -379,7 +380,7 @@ export function NewProjectPage(): React.ReactElement {
               ) : null}
               <div className="form-grid">
                 {strategy?.secrets.map((field) => (
-                  <label className="field" key={field.name}>
+                  <div key={field.name} className="field">
                     <span>
                       {field.label}
                       {field.required ? " *" : ""}
@@ -401,7 +402,7 @@ export function NewProjectPage(): React.ReactElement {
                         }))
                       }
                     />
-                  </label>
+                  </div>
                 ))}
               </div>
               <Button
@@ -414,7 +415,7 @@ export function NewProjectPage(): React.ReactElement {
                   icon={
                     busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"
                   }
-                  className={busy === "test" ? "spin" : ""}
+                  className={busy === "test" ? "animate-spin" : ""}
                   width="17"
                 />
                 验证连接
@@ -436,9 +437,9 @@ export function NewProjectPage(): React.ReactElement {
             <div className="section-content">
               <h2>项目身份</h2>
               <div className="form-grid form-grid-two">
-                <label className="field">
+                <div className="field">
                   <span>项目 ID</span>
-                  <input
+                  <Input
                     value={projectId}
                     placeholder="自动生成"
                     onChange={(event) => {
@@ -447,10 +448,10 @@ export function NewProjectPage(): React.ReactElement {
                     }}
                   />
                   <small>用于路由与持久化命名空间，创建后不应修改。</small>
-                </label>
-                <label className="field">
+                </div>
+                <div className="field">
                   <span>显示名称</span>
-                  <input
+                  <Input
                     value={projectName}
                     placeholder="自动读取比赛名称"
                     onChange={(event) => {
@@ -458,7 +459,7 @@ export function NewProjectPage(): React.ReactElement {
                       setProjectName(event.target.value)
                     }}
                   />
-                </label>
+                </div>
               </div>
             </div>
           </section>
@@ -477,7 +478,11 @@ export function NewProjectPage(): React.ReactElement {
               }
             >
               {busy === "create" ? (
-                <Icon icon="lucide:loader-circle" className="spin" width="17" />
+                <Icon
+                  icon="lucide:loader-circle"
+                  className="animate-spin"
+                  width="17"
+                />
               ) : (
                 <Icon icon="lucide:arrow-right" width="17" />
               )}

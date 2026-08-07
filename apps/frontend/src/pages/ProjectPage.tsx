@@ -24,25 +24,25 @@ import {
   Card,
   EmptyState,
   ErrorNotice,
+  Input,
   PageHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Spinner,
 } from "../components/index.ts"
 import { apiMutation, apiRequest, projectApi } from "../lib/api.ts"
+import {
+  filterChallenges,
+  recentChallenges,
+  sortChallenges,
+  toneForStatus,
+} from "../lib/challenge.ts"
 import { STATUS_LABELS } from "../lib/labels.ts"
 import { relativeTime } from "../lib/time.ts"
 import type { DashboardChallenge, DashboardSnapshot } from "../types.ts"
-
-function statusTone(
-  status: string,
-): "neutral" | "positive" | "warning" | "danger" | "info" {
-  if (status === "solved") return "positive"
-  if (["running", "preparing", "writing_writeup", "blocking"].includes(status))
-    return "info"
-  if (["failed", "timed_out", "blocked", "interrupted"].includes(status))
-    return "danger"
-  if (status === "queued") return "warning"
-  return "neutral"
-}
 
 function SortableQueueItem({
   entry,
@@ -204,44 +204,10 @@ export function ProjectPage(): React.ReactElement {
     return <Spinner label="正在同步比赛状态" />
   }
 
-  const recent = [...snapshot.challenges]
-    .sort(
-      (left, right) =>
-        Date.parse(right.lastActivityAt ?? "0") -
-        Date.parse(left.lastActivityAt ?? "0"),
-    )
-    .slice(0, 8)
-  const visibleChallenges = snapshot.challenges
-    .filter((challenge) => {
-      if (statusFilter === "all") return true
-      if (statusFilter === "active") {
-        return ["preparing", "running", "blocking", "writing_writeup"].includes(
-          challenge.status,
-        )
-      }
-      if (statusFilter === "attention") {
-        return ["failed", "timed_out", "blocked", "interrupted"].includes(
-          challenge.status,
-        )
-      }
-      return challenge.status === statusFilter
-    })
-    .filter((challenge) => {
-      const normalized = query.trim().toLocaleLowerCase("zh-CN")
-      return (
-        !normalized ||
-        challenge.title.toLocaleLowerCase("zh-CN").includes(normalized) ||
-        challenge.category.toLocaleLowerCase("zh-CN").includes(normalized)
-      )
-    })
-    .sort((left, right) => {
-      if (left.status === "running" && right.status !== "running") return -1
-      if (right.status === "running" && left.status !== "running") return 1
-      return (
-        right.score - left.score ||
-        left.title.localeCompare(right.title, "zh-CN")
-      )
-    })
+  const recent = recentChallenges(snapshot.challenges, 8)
+  const visibleChallenges = sortChallenges(
+    filterChallenges(snapshot.challenges, { query, statusFilter }),
+  )
 
   return (
     <div className="page project-dashboard">
@@ -258,7 +224,7 @@ export function ProjectPage(): React.ReactElement {
             >
               <Icon
                 icon="lucide:refresh-cw"
-                className={busy ? "spin" : ""}
+                className={busy ? "animate-spin" : ""}
                 width="16"
               />{" "}
               同步
@@ -370,7 +336,7 @@ export function ProjectPage(): React.ReactElement {
                     {challenge.score} pts · {challenge.progress}
                   </small>
                 </div>
-                <Badge tone={statusTone(challenge.status)}>
+                <Badge tone={toneForStatus(challenge.status)}>
                   {STATUS_LABELS[challenge.status] ?? challenge.status}
                 </Badge>
                 <Icon icon="lucide:chevron-right" width="16" />
@@ -386,27 +352,29 @@ export function ProjectPage(): React.ReactElement {
             <h2>全部题目</h2>
           </div>
           <div className="challenge-filters">
-            <label className="search-field">
+            <div className="search-field">
               <Icon icon="lucide:search" width="15" />
               <span className="sr-only">搜索题目</span>
-              <input
+              <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索名称或分类"
+                className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
               />
-            </label>
-            <select
-              aria-label="状态筛选"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="all">全部状态</option>
-              <option value="active">执行中</option>
-              <option value="queued">队列中</option>
-              <option value="pending">未调度</option>
-              <option value="solved">已解出</option>
-              <option value="attention">需处理</option>
-            </select>
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-8 w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="active">执行中</SelectItem>
+                <SelectItem value="queued">队列中</SelectItem>
+                <SelectItem value="pending">未调度</SelectItem>
+                <SelectItem value="solved">已解出</SelectItem>
+                <SelectItem value="attention">需处理</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <div className="challenge-table">
@@ -432,7 +400,7 @@ export function ProjectPage(): React.ReactElement {
               <span>{challenge.score}</span>
               <span>{challenge.attempts}</span>
               <span>
-                <Badge tone={statusTone(challenge.status)}>
+                <Badge tone={toneForStatus(challenge.status)}>
                   {STATUS_LABELS[challenge.status] ?? challenge.status}
                 </Badge>
               </span>
