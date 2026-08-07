@@ -87,4 +87,55 @@ describe("ProjectConfigStore", () => {
     ).toBe("legacy-state")
     expect((await store.load("legacy"))?.project.name).toBe("Renamed")
   })
+
+  it("删除隔离 Project 时清理其状态目录并保留其他注册项", async () => {
+    const root = await fixture()
+    const store = new ProjectConfigStore(root)
+    await store.saveProject(config("first"))
+    const second = await store.saveProject(config("second"))
+    await writeFile(join(second.stateDirectory, "runs.sqlite"), "state")
+
+    await expect(store.deleteProject("second")).resolves.toMatchObject({
+      config: { project: { id: "second" } },
+    })
+    await expect(access(second.stateDirectory)).rejects.toMatchObject({
+      code: "ENOENT",
+    })
+    expect((await store.list()).map((item) => item.config.project.id)).toEqual([
+      "first",
+    ])
+    await expect(store.deleteProject("missing")).resolves.toBeUndefined()
+  })
+
+  it("删除旧版 Project 时只清理项目状态并保留全局配置", async () => {
+    const root = await fixture()
+    const stateDirectory = join(root, ".ctf-agent")
+    await mkdir(join(stateDirectory, "runs"), { recursive: true })
+    await mkdir(join(stateDirectory, "challenges"), { recursive: true })
+    await writeFile(
+      join(stateDirectory, "project-config.json"),
+      JSON.stringify(config("legacy")),
+    )
+    await writeFile(join(stateDirectory, "runtime-config.json"), "runtime")
+    await writeFile(join(stateDirectory, "runs.sqlite"), "state")
+    await writeFile(join(stateDirectory, "global-config.json"), "global")
+    await writeFile(join(stateDirectory, "secrets.json"), "secrets")
+    const store = new ProjectConfigStore(root)
+
+    await store.deleteProject("legacy")
+
+    expect(await store.list()).toEqual([])
+    await expect(
+      access(join(stateDirectory, "project-config.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(
+      access(join(stateDirectory, "runs.sqlite")),
+    ).rejects.toMatchObject({ code: "ENOENT" })
+    expect(
+      await readFile(join(stateDirectory, "global-config.json"), "utf8"),
+    ).toBe("global")
+    expect(await readFile(join(stateDirectory, "secrets.json"), "utf8")).toBe(
+      "secrets",
+    )
+  })
 })

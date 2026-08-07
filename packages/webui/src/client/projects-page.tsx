@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorNotice,
   PageHeader,
@@ -19,7 +20,30 @@ import {
 } from "./ui.tsx"
 
 export function ProjectsPage(): React.ReactElement {
-  const { projects, loading } = useApp()
+  const { projects, loading, refreshProjects } = useApp()
+  const [deletingProject, setDeletingProject] = useState<
+    (typeof projects)[number] | null
+  >(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState("")
+
+  async function deleteProject(): Promise<void> {
+    if (!deletingProject) return
+    setDeleteBusy(true)
+    setDeleteError("")
+    try {
+      await apiMutation(
+        `/api/projects/${encodeURIComponent(deletingProject.id)}`,
+        "DELETE",
+      )
+      await refreshProjects()
+      setDeletingProject(null)
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
 
   if (loading) return <Spinner label="正在读取项目注册表" />
 
@@ -37,6 +61,7 @@ export function ProjectsPage(): React.ReactElement {
           </Button>
         }
       />
+      {deleteError ? <ErrorNotice message={deleteError} /> : null}
       {projects.length === 0 ? (
         <Card>
           <EmptyState
@@ -53,31 +78,58 @@ export function ProjectsPage(): React.ReactElement {
       ) : (
         <div className="project-grid">
           {projects.map((project, index) => (
-            <Link
-              key={project.id}
-              className="project-card"
-              to={`/projects/${encodeURIComponent(project.id)}`}
-            >
-              <div className="project-card-index">
-                {String(index + 1).padStart(2, "0")}
-              </div>
-              <div className="project-card-platform">{project.platformId}</div>
-              <h2>{project.name}</h2>
-              <p className="project-card-id">{project.id}</p>
-              <div className="project-card-footer">
-                <Badge
-                  tone={project.phase === "ready" ? "positive" : "warning"}
-                >
-                  {project.phase === "ready" ? "已连接" : "待恢复"}
-                </Badge>
-                <span>
-                  进入作战面板 <Icon icon="lucide:arrow-up-right" width="16" />
-                </span>
-              </div>
-            </Link>
+            <article key={project.id} className="project-card">
+              <Link
+                className="project-card-main"
+                to={`/projects/${encodeURIComponent(project.id)}`}
+              >
+                <div className="project-card-index">
+                  {String(index + 1).padStart(2, "0")}
+                </div>
+                <div className="project-card-platform">
+                  {project.platformId}
+                </div>
+                <h2>{project.name}</h2>
+                <p className="project-card-id">{project.id}</p>
+                <div className="project-card-footer">
+                  <Badge
+                    tone={project.phase === "ready" ? "positive" : "warning"}
+                  >
+                    {project.phase === "ready" ? "已连接" : "待恢复"}
+                  </Badge>
+                  <span>
+                    进入作战面板
+                    <Icon icon="lucide:arrow-up-right" width="16" />
+                  </span>
+                </div>
+              </Link>
+              <Button
+                className="project-card-delete"
+                variant="ghost"
+                size="icon"
+                aria-label={`删除 ${project.name}`}
+                onClick={() => {
+                  setDeleteError("")
+                  setDeletingProject(project)
+                }}
+              >
+                <Icon icon="lucide:trash-2" width="16" />
+              </Button>
+            </article>
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={deletingProject !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setDeletingProject(null)
+        }}
+        title={`删除 ${deletingProject?.name ?? "Project"}？`}
+        description="这会停止该项目的调度器和 Agent，并永久删除 Run、对话、题目工作区、项目配置与独立凭据。全局模型配置和其他项目不会受到影响。"
+        confirmLabel="永久删除"
+        busy={deleteBusy}
+        onConfirm={() => void deleteProject()}
+      />
     </div>
   )
 }

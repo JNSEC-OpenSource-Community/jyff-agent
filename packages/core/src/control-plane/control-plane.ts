@@ -337,6 +337,39 @@ export class ControlPlane {
     })
   }
 
+  async deleteProject(projectId: string): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      if (!this.runtimes.has(projectId)) {
+        throw new Error(`Project 不存在: ${projectId}`)
+      }
+      await this.performDisconnect(projectId)
+      const deleted = await this.configStore.deleteProject(projectId)
+      if (!deleted) throw new Error(`Project 不存在: ${projectId}`)
+
+      const secretNames = new Set(
+        this.platforms.flatMap(
+          (plugin) =>
+            plugin.setup?.authStrategies.flatMap((strategy) =>
+              strategy.secrets.map((secret) => secret.name),
+            ) ?? [],
+        ),
+      )
+      await this.secretStore.set(
+        Object.fromEntries(
+          [...secretNames].map((name) => [
+            projectSecretName(projectId, name),
+            undefined,
+          ]),
+        ),
+      )
+      this.runtimes.delete(projectId)
+      if (this.selectedProjectId === projectId) {
+        this.selectedProjectId = this.runtimes.keys().next().value
+      }
+      return this.snapshot()
+    })
+  }
+
   async close(): Promise<void> {
     await this.enqueueTransition(async () => {
       this.closing = true

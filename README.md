@@ -44,6 +44,8 @@ docker compose -f compose.webui.yaml ps
 4. 在该 Project 的“项目配置”中分别绑定 Solver、TLDR、各类 SubAgent 模型并设置并发数；
 5. 从 Project 首页拖动调度队列、人工派发单题，或开启自主调度整场比赛。
 
+Project 列表提供带二次确认的永久删除操作。删除前系统会停止该 Project 的调度器、Solver 与 SubAgent，然后清理其 Run、Pi 会话、题目 workspace、运行配置和命名空间凭据；其他 Project 与全局模型配置保持不变。
+
 Compose 只使用 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 `CTF_AGENT_MAX_SESSION_INTERRUPTIONS` 三个可选环境变量（默认分别为 `3000`、`1800000` 和 `3`）；不会从环境注入模型或平台凭据。其余业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
 
 ```text

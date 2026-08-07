@@ -92,6 +92,7 @@ describe("WebUI HTTP server", () => {
     let project: FakeDashboardProject | undefined
     let phase: "unconfigured" | "ready" = "unconfigured"
     let appliedConfig: unknown
+    const deletedProjects: string[] = []
     const snapshot = () => ({
       phase,
       configured: phase === "ready",
@@ -155,6 +156,12 @@ describe("WebUI HTTP server", () => {
         return snapshot()
       },
       connect: async () => snapshot(),
+      deleteProject: async (projectId) => {
+        deletedProjects.push(projectId)
+        project = undefined
+        phase = "unconfigured"
+        return snapshot()
+      },
     }
     let runtimeConfiguration = {
       solverModelId: "",
@@ -175,6 +182,9 @@ describe("WebUI HTTP server", () => {
               },
             }
           : undefined,
+      onProjectDeleted: (projectId) => {
+        deletedProjects.push(`cache:${projectId}`)
+      },
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
@@ -252,6 +262,18 @@ describe("WebUI HTTP server", () => {
     )
     expect(runtimeUpdated.status).toBe(200)
     expect(runtimeConfiguration.maxConcurrent).toBe(3)
+
+    const deleted = await fetch(`${server.url}/api/projects/demo`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toMatchObject({
+      controlPlane: { configured: false, projects: [] },
+    })
+    expect(deletedProjects).toEqual(["demo", "cache:demo"])
+    expect((await fetch(`${server.url}/api/projects/demo`)).status).toBe(404)
   })
 
   it("提供健康检查、静态前端、快照、详情和平台刷新 API", async () => {

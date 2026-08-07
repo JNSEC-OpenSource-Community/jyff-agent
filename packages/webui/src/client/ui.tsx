@@ -147,6 +147,48 @@ export function MobileSheet({
   )
 }
 
+export function ConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel,
+  busy = false,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange(open: boolean): void
+  title: string
+  description: string
+  confirmLabel: string
+  busy?: boolean
+  onConfirm(): void
+}): React.ReactElement {
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="dialog-overlay" />
+        <DialogPrimitive.Content className="dialog-content">
+          <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
+          <DialogPrimitive.Description>
+            {description}
+          </DialogPrimitive.Description>
+          <div className="dialog-actions">
+            <DialogPrimitive.Close asChild>
+              <Button variant="secondary" disabled={busy}>
+                取消
+              </Button>
+            </DialogPrimitive.Close>
+            <Button variant="danger" disabled={busy} onClick={onConfirm}>
+              {busy ? "正在删除…" : confirmLabel}
+            </Button>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  )
+}
+
 export function EmptyState({
   icon,
   title,

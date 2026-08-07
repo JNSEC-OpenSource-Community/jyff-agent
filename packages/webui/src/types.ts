@@ -225,6 +225,7 @@ export interface DashboardControlPlane {
     secrets?: Readonly<Record<string, string | undefined>>
   }): Promise<ControlPlaneSnapshot>
   connect(projectId?: string): Promise<ControlPlaneSnapshot>
+  deleteProject(projectId: string): Promise<ControlPlaneSnapshot>
 }
 
 export interface ModelPoolEntryView {

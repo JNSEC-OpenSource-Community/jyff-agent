@@ -53,6 +53,7 @@ export interface WebUiOptions {
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
+  onProjectDeleted?: (projectId: string) => void | Promise<void>
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
   exportSessionHtml?: (
     sessionPath: string,
@@ -481,6 +482,25 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         throw new HttpRequestError(404, "project_not_found", "Project 不存在")
       }
       sendJson(response, 200, snapshot)
+      return
+    }
+
+    if (method === "DELETE" && projectId && apiPath === "/api") {
+      requireControlPlane(options.controlPlane)
+      try {
+        await options.controlPlane.deleteProject(projectId)
+        await options.onProjectDeleted?.(projectId)
+      } catch (error) {
+        const message = errorText(error)
+        if (message.includes("Project 不存在")) {
+          throw new HttpRequestError(404, "project_not_found", message)
+        }
+        throw error
+      }
+      sendJson(response, 200, {
+        controlPlane: options.controlPlane.snapshot(),
+        snapshot: await refresh(),
+      })
       return
     }
 

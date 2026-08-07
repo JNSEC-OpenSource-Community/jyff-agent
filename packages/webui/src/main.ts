@@ -134,6 +134,9 @@ const webui = await startWebUi({
   authentication,
   projectRuntimeConfiguration: (projectId) =>
     projectRuntimeConfigurations.get(projectId),
+  onProjectDeleted: (projectId) => {
+    projectRuntimeConfigurations.delete(projectId)
+  },
   host: options.host,
   port: options.port,
   pollIntervalMs: options.pollIntervalMs,

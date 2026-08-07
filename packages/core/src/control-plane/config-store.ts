@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 
@@ -145,6 +145,55 @@ export class ProjectConfigStore {
       updatedAt: entry.updatedAt,
       legacy: entry.directory === ".",
     }
+  }
+
+  async deleteProject(
+    projectId: string,
+  ): Promise<StoredProjectConfig | undefined> {
+    const registry = await this.readRegistry()
+    const record = (await this.list()).find(
+      (candidate) => candidate.config.project.id === projectId,
+    )
+    if (!record) return undefined
+
+    await writeJsonAtomic(this.registryPath, {
+      ...registry,
+      projects: registry.projects.filter((entry) => entry.id !== projectId),
+    })
+
+    if (!record.legacy) {
+      const expectedDirectory = resolve(
+        this.stateDirectory,
+        "projects",
+        projectStorageKey(projectId),
+      )
+      if (record.stateDirectory !== expectedDirectory) {
+        throw new Error(`Project 状态目录与 ID 不匹配: ${projectId}`)
+      }
+      await rm(expectedDirectory, { recursive: true, force: true })
+      return cloneRecord(record)
+    }
+
+    const legacyFallback = await readConfig(this.legacyPath)
+    const projectArtifacts = [
+      this.path,
+      join(this.stateDirectory, "runtime-config.json"),
+      join(this.stateDirectory, "runs.sqlite"),
+      join(this.stateDirectory, "runs.sqlite-shm"),
+      join(this.stateDirectory, "runs.sqlite-wal"),
+      join(this.stateDirectory, "runs.sqlite-journal"),
+      join(this.stateDirectory, "runs"),
+      join(this.stateDirectory, "challenges"),
+    ]
+    if (legacyFallback?.project.id === projectId) {
+      projectArtifacts.push(this.legacyPath)
+    }
+    await Promise.all(
+      projectArtifacts.map((path) =>
+        rm(path, { recursive: true, force: true }),
+      ),
+    )
+    return cloneRecord(record)
   }
 
   private async readRegistry(): Promise<ProjectRegistryFile> {

@@ -493,12 +493,28 @@ p {
 .project-card {
   position: relative;
   min-height: 250px;
-  padding: 24px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   transition: 150ms ease;
+}
+.project-card-main {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 250px;
+  padding: 24px;
+}
+.project-card-delete {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 16px;
+  color: var(--quiet);
+}
+.project-card-delete:hover {
+  color: var(--red);
 }
 .project-card::after {
   content: "";
@@ -557,6 +573,41 @@ p {
   gap: 5px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.dialog-overlay {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  background: rgba(5, 7, 6, 0.78);
+  backdrop-filter: blur(4px);
+}
+.dialog-content {
+  position: fixed;
+  z-index: 81;
+  top: 50%;
+  left: 50%;
+  width: min(460px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+}
+.dialog-content h2 {
+  font-size: 20px;
+}
+.dialog-content p {
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
 }
 
 .empty-state {

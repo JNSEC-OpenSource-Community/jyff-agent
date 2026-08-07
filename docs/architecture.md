@@ -49,6 +49,8 @@ packages/
 
 ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有自己的 `Project`、`ContestScheduler`、`AnnouncementPoller` 和状态目录；一个 Project 连接降级、断开或关闭不会替换其他 runtime。WebUI 的 Project 路由使用 `/api/projects/:projectId/...`，SSE 客户端也绑定显式 Project ID，业务代码不得依赖 UI 当前选择项来定位 Run 或 Scheduler。
 
+删除 Project 是显式且不可恢复的控制面操作：ControlPlane 先关闭该 Project 的公告轮询、Scheduler、Solver/SubAgent 与 RunStore，再从注册表移除它，清理隔离状态目录和命名空间平台凭据。旧版首 Project 只删除 `.ctf-agent` 下明确属于 Project 的 `project-config.json`、`runtime-config.json`、RunStore、session 与 challenge workspace，不删除全局登录、模型池、Provider 凭据、调度迁移配置或其他 Project。
+
 ## WebUI 页面与会话读取
 
 前端使用 React Router 的独立页面和 Misuzu 风格的全局图标栏 + Project 上下文栏。根页面列出所有 Project；全局设置管理 Provider 凭据、模型池和可选登录；Project 首页管理完整题目列表与可拖动持久队列；Project 设置只管理比赛连接、角色绑定和并发量；每道题拥有独立聊天工作区。
