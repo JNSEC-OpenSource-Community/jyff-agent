@@ -617,6 +617,7 @@ export class ContestScheduler {
     let continuation = active.source === "retry"
     let solver: CtfSolverAgent | undefined
     let sameRunStops = 0
+    let compactRecovery: string | undefined
 
     if (
       active.lane === "blocked" &&
@@ -740,16 +741,14 @@ export class ContestScheduler {
             compactPerformed: true,
             scoreAfter: blockEvent.scoreAfter,
           })
-          for (const message of this.project.compactRecoveryMessages(
+          compactRecovery = this.project.compactRecoveryPrompt(
             active.challenge.id,
             solver.runId,
-          )) {
-            solver.appendMessage(message)
-          }
+          )
         }
         const retryPrompt = active.retryPrompt
         active.retryPrompt = undefined
-        const prompt =
+        const nextPrompt =
           retryPrompt ??
           (continuation
             ? INCOMPLETE_CONTINUATION_PROMPT
@@ -762,6 +761,10 @@ export class ContestScheduler {
                   },
                 )
               : (this.options.prompt ?? "Start solving this CTF challenge."))
+        const prompt = compactRecovery
+          ? `${compactRecovery}\n\n${nextPrompt}`
+          : nextPrompt
+        compactRecovery = undefined
         const outcome = await runSolverPrompt({
           solver,
           prompt,
@@ -1031,14 +1034,9 @@ export class ContestScheduler {
         "Report your current objective, verified findings, attempted experiments, exact results, artifacts, and next-step recommendation. Terminate processes you started and remove disposable temporary files; list the exact path and purpose of every retained artifact. Stop investigating after this report.",
         30_000,
       )
-      solver.appendMessage({
-        role: "user",
-        content: activeSubagentsPrompt(records),
-        timestamp: Date.now(),
-      })
       const outcome = await runSolverPrompt({
         solver,
-        prompt: BLOCKED_FINALIZATION_PROMPT,
+        prompt: `${activeSubagentsPrompt(records)}\n\n${BLOCKED_FINALIZATION_PROMPT}`,
         timeoutMs: Math.min(this.options.challengeTimeoutMs ?? 30_000, 30_000),
         abortGraceMs: this.options.abortGraceMs ?? 5_000,
       })

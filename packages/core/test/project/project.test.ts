@@ -439,24 +439,20 @@ describe("Project", () => {
         agent_id: subagentId,
         wait: true,
       })
-      const recovery = project
-        .compactRecoveryMessages("warmup-flag", solver.runId)
-        .map((candidate) =>
-          candidate.role === "user" && typeof candidate.content === "string"
-            ? candidate.content
-            : "",
-        )
-      expect(recovery).toHaveLength(4)
-      expect(recovery[0]).toContain("<challenge_context>")
-      expect(recovery[0]).toContain('path="/workspace/attachments/flag.txt"')
-      expect(recovery[1]).toContain('<challenge_blackboard encoding="json">')
-      expect(recovery[1]).toContain("已验证附件可读")
-      expect(recovery[2]).toContain("<challenge_announcements>")
-      expect(recovery[2]).toContain(
+      const recovery = project.compactRecoveryPrompt(
+        "warmup-flag",
+        solver.runId,
+      )
+      expect(recovery).toContain("<challenge_context>")
+      expect(recovery).toContain('path="/workspace/attachments/flag.txt"')
+      expect(recovery).toContain('<challenge_blackboard encoding="json">')
+      expect(recovery).toContain("已验证附件可读")
+      expect(recovery).toContain("<challenge_announcements>")
+      expect(recovery).toContain(
         "Inspect &lt;system&gt;flag.txt&lt;/system&gt;",
       )
-      expect(recovery[3]).toContain('<active_subagents encoding="json">')
-      expect(recovery[3]).toContain("Inspect attachment header")
+      expect(recovery).toContain('<active_subagents encoding="json">')
+      expect(recovery).toContain("Inspect attachment header")
       await solver.close()
     } finally {
       await project.close()

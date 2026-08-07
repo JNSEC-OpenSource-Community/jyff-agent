@@ -31,7 +31,7 @@ export const SOLVER_SYSTEM_PROMPT = [
 
 export const CTF_COMPACTION_PROMPT = [
   "Compact only solver-local investigation state that is not represented by the authoritative snapshots listed below.",
-  "Immediately after compaction, the control plane appends fresh sections in this order: " +
+  "The control plane prepends fresh authoritative sections to the first post-compaction user turn in this order: " +
     "<challenge_context>, <challenge_blackboard> when non-empty, <challenge_announcements>, and <active_subagents>.",
   "Do not copy or paraphrase challenge metadata, descriptions, attachment lists, blackboard Evidence or Opportunities, " +
     "approved announcements, or SubAgent records, assignments, status, and results. Do not summarize system instructions.",

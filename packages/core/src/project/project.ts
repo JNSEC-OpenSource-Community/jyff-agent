@@ -591,8 +591,7 @@ export class Project {
   subagents(runId: string): SubagentRecord[] {
     return this.runStore.subagents(runId)
   }
-  compactRecoveryMessages(challengeId: string, runId: string): AgentMessage[] {
-    const now = Date.now()
+  compactRecoveryPrompt(challengeId: string, runId: string): string {
     const challengeContext = this.runChallengeContexts.get(runId)
     if (!challengeContext) {
       throw new Error(`Run ${runId} 缺少 compact 恢复所需的题目上下文`)
@@ -602,25 +601,11 @@ export class Project {
       this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
     const announcements = this.runStore.challengeAnnouncements(challengeId)
     return [
-      {
-        role: "user" as const,
-        content: challengeContext,
-        timestamp: now,
-      },
-      ...(blackboard
-        ? [{ role: "user" as const, content: blackboard, timestamp: now }]
-        : []),
-      {
-        role: "user" as const,
-        content: challengeAnnouncementsPrompt(announcements),
-        timestamp: now,
-      },
-      {
-        role: "user" as const,
-        content: activeSubagentsPrompt(subagents),
-        timestamp: now,
-      },
-    ]
+      challengeContext,
+      ...(blackboard ? [blackboard] : []),
+      challengeAnnouncementsPrompt(announcements),
+      activeSubagentsPrompt(subagents),
+    ].join("\n\n")
   }
   availableSubagents(): SubagentRole[] {
     return [...this.configuredSubagentRoles().values()].filter(

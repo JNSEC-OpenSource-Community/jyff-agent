@@ -438,6 +438,16 @@ describe("ContestScheduler", () => {
       expect(session).toContain("compact summary")
       expect(session).toContain('<active_subagents encoding=\\"json\\">')
       expect(session).toContain("<challenge_announcements>")
+      const recoveredTurn = session
+        .split(/\r?\n/)
+        .find(
+          (line) =>
+            line.includes("<challenge_context>") &&
+            line.includes("<challenge_announcements>") &&
+            line.includes("<active_subagents") &&
+            line.includes(INCOMPLETE_CONTINUATION_PROMPT),
+        )
+      expect(recoveredTurn).toBeDefined()
       expect(project.challengeBlockEvents(item.id)).toEqual([
         expect.objectContaining({ delta: 1, reason: "model_stop" }),
         expect.objectContaining({
