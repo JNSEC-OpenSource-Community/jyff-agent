@@ -1,5 +1,4 @@
 import { Icon } from "@iconify/react"
-import { useParams } from "react-router-dom"
 import { Card, PageHeader } from "./ui.tsx"
 
 export function GlobalSettingsPlaceholder(): React.ReactElement {
@@ -29,23 +28,6 @@ export function ProjectSettingsPlaceholder(): React.ReactElement {
       <Card className="placeholder-card">
         <Icon icon="lucide:construction" width="24" />
         <p>项目配置编辑器正在接入。</p>
-      </Card>
-    </div>
-  )
-}
-
-export function ChallengePlaceholder(): React.ReactElement {
-  const { challengeId } = useParams()
-  return (
-    <div className="page">
-      <PageHeader
-        eyebrow="CHALLENGE"
-        title={challengeId ?? "题目"}
-        description="Solver 与 SubAgent 对话工作区。"
-      />
-      <Card className="placeholder-card">
-        <Icon icon="lucide:messages-square" width="24" />
-        <p>对话视图正在接入。</p>
       </Card>
     </div>
   )

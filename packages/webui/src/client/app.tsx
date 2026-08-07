@@ -4,11 +4,11 @@ import { createRoot } from "react-dom/client"
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppProvider, useApp } from "./app-context.tsx"
 import { AppShell } from "./app-shell.tsx"
+import { ChallengePage } from "./challenge-page.tsx"
 import { LoginPage } from "./login-page.tsx"
 import { ProjectPage } from "./project-page.tsx"
 import { NewProjectPage, ProjectsPage } from "./projects-page.tsx"
 import {
-  ChallengePlaceholder,
   GlobalSettingsPlaceholder,
   ProjectSettingsPlaceholder,
 } from "./route-placeholders.tsx"
@@ -33,7 +33,7 @@ function AuthenticatedRoutes(): React.ReactElement {
           />
           <Route
             path="projects/:projectId/challenges/:challengeId"
-            element={<ChallengePlaceholder />}
+            element={<ChallengePage />}
           />
         </Route>
       ) : (
