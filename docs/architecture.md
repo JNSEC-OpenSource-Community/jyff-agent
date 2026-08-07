@@ -18,26 +18,44 @@ packages/
 
 ## 启动与配置
 
-`packages/webui/src/main.ts` 是生产入口。它依次打开 Secret Store、模型配置、调度配置和 ControlPlane，再启动 HTTP/SSE 服务。业务配置保存在项目根目录下的 `.ctf-agent/`：
+`packages/webui/src/main.ts` 是生产入口。它依次打开全局 Secret/Credential Store、全局模型池、可选登录配置和 ControlPlane，再为注册表中的每个 Project 创建独立 runtime，最后启动 HTTP/SSE 服务。业务配置保存在项目根目录下的 `.ctf-agent/`：
 
 ```text
 .ctf-agent/
 ├── secrets.json
 ├── auth.json
 ├── model-config.json
-├── scheduler-config.json
-├── project-config.json
-├── runs.sqlite
-├── runs/<run-id>/
-│   ├── session.jsonl
-│   └── subagents/<subagent-id>/session.jsonl
-└── challenges/<safe-key>/
-    └── workspace/
+├── scheduler-config.json     # legacy 迁移回退
+├── global-config.json
+├── project-registry.json
+├── project-config.json       # 首个/legacy Project
+├── runtime-config.json       # 首个/legacy Project
+├── runs.sqlite、runs/、challenges/
+└── projects/<project-hash>/
+    ├── project-config.json
+    ├── runtime-config.json
+    ├── runs.sqlite
+    ├── runs/<run-id>/
+    │   ├── session.jsonl
+    │   └── subagents/<subagent-id>/session.jsonl
+    └── challenges/<safe-key>/workspace/
 ```
 
-`.pi/ctf-config.json` 只作为旧配置的只读回退。平台配置只保存非敏感字段和 secret 名称，凭据由 Secret Store 单独保存。
+`.pi/ctf-config.json` 只作为旧配置的只读回退。`project-registry.json` 是 Project ID 到状态目录的权威映射；附加 Project 使用 Project ID 的稳定 SHA-256 前缀作为目录名，避免路径注入和重命名冲突。首个或升级自旧版本的 Project 继续使用 `.ctf-agent` 根目录，原有 `runs.sqlite`、session 和 workspace 无需搬迁。
 
-`model-config.json` 保存 v2 模型池、默认 Solver 模型、独立 TLDR 模型和 SubAgent role 绑定，不保存密钥。自定义 Provider 的 API Key 按 Provider 隔离在 Secret Store；原生 Provider 继续使用 Pi CredentialStore。控制面为每次调度构造完整 Pi `Models` registry，Solver 选择默认模型，TLDR 选择自己的模型，SubAgent manager 在创建新 Run 时把 WebUI role 绑定覆盖到 registry 角色；未覆盖的角色仍使用 frontmatter 的 `model`。旧版单模型文件和遗留明文 Key 会自动迁移。Solver 最大并发量由独立的 `scheduler-config.json` 管理，可在 WebUI 主控制台即时调整。
+平台配置只保存非敏感字段和 secret 名称。平台凭据虽然集中写入全局 `secrets.json`，键名会同时散列 Project ID 和插件 Secret 名，因此两个 CTFd/GZCTF Project 可以使用不同账号而不会覆盖。旧版 `CTFD_TOKEN`、`GZCTF_*` 等未命名空间键只作为兼容读取回退；新的保存永远写入 Project 命名空间。Provider OAuth/API Key 与模型池属于全局配置，不进入这个命名空间。
+
+`model-config.json` 保存全局 v2 模型池，不保存密钥。自定义 Provider 的 API Key 按 Provider 隔离在 Secret Store；原生 Provider 继续使用 Pi CredentialStore。每个 Project 的 `runtime-config.json` 保存 Solver、TLDR、SubAgent role 模型绑定和 `maxConcurrent`。控制面为每次调度构造完整 Pi `Models` registry，再应用所属 Project 的绑定；未覆盖的角色仍使用 frontmatter 的 `model`。旧版单模型文件、模型池内的角色绑定、`scheduler-config.json` 和遗留明文 Key 会作为迁移回退读取，新保存则遵循全局模型池/Project runtime 的边界。
+
+ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有自己的 `Project`、`ContestScheduler`、`AnnouncementPoller` 和状态目录；一个 Project 连接降级、断开或关闭不会替换其他 runtime。WebUI 的 Project 路由使用 `/api/projects/:projectId/...`，SSE 客户端也绑定显式 Project ID，业务代码不得依赖 UI 当前选择项来定位 Run 或 Scheduler。
+
+## WebUI 页面与会话读取
+
+前端使用 React Router 的独立页面和 Misuzu 风格的全局图标栏 + Project 上下文栏。根页面列出所有 Project；全局设置管理 Provider 凭据、模型池和可选登录；Project 首页管理完整题目列表与可拖动持久队列；Project 设置只管理比赛连接、角色绑定和并发量；每道题拥有独立聊天工作区。
+
+聊天接口直接读取 Pi JSONL 当前分支上的结构化消息，不从 SQLite 事件拼接 transcript。Solver attempt 与 SubAgent 使用同一个消息渲染器；工具、thinking 和元数据可以折叠，黑板、Attempts 与 Writeup 放在独立 tab。只有至少存在一条 Assistant 消息时，结构化会话与 Pi HTML 导出才可查看。BrowserRouter 的非 API GET 路由由服务端回退到 `index.html`，刷新嵌套路由不会得到 404。
+
+WebUI 登录默认关闭。启用后 `global-config.json` 只保存 scrypt 参数、盐和摘要；成功登录签发内存 session，并使用 HttpOnly、SameSite=Strict Cookie。除静态 SPA、登录端点和最小健康状态外，API、SSE 与导出均经过同一鉴权门。
 
 ## 一次 Solver Run
 
@@ -82,7 +100,7 @@ Run 级人工重试与题目级重新派发是两个不同操作。重新派发�
 
 ## 持久化职责
 
-- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 只对明确选择且已经产生 assistant 消息的 attempt/SubAgent session 调用 Pi HTML 导出器，不提供题目级“最新 Run”推断，也不从 SQLite 事件重建 transcript。导出以 HTML 页面内联呈现、不强制下载。活跃 Solver Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
+- Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 对明确选择且已经产生 assistant 消息的 attempt/SubAgent session 读取当前分支的结构化消息，并可调用 Pi HTML 导出器，不提供题目级“最新 Run”推断，也不从 SQLite 事件重建 transcript。导出以 HTML 页面内联呈现、不强制下载。活跃 Solver Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
 - SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数和黑板；
 - 题目级 workspace：附件、脚本、反编译结果、`writeup.md` 和其他跨复活保留的解题产物。
 

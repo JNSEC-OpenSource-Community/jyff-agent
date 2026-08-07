@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-这是基于 Pi 的批量 CTF 解题控制面，使用 TypeScript、pnpm workspace、Vitest、Biome、SQLite 和 Docker。WebUI 管理模型/比赛配置与调度；每个 Solver Run 使用独立 Docker sandbox 和 Pi JSONL session，并可派发共享该 sandbox 的 SubAgent。
+这是基于 Pi 的批量 CTF 解题控制面，使用 TypeScript、pnpm workspace、Vitest、Biome、SQLite 和 Docker。WebUI 同时管理多个比赛 Project；全局层保存 Provider 凭据和模型池，每个 Project 独立保存平台连接、角色模型绑定、并发量、SQLite、workspace 与调度器。每个 Solver Run 使用独立 Docker sandbox 和 Pi JSONL session，并可派发共享该 sandbox 的 SubAgent。
 
 开始改动前先读 `README.md` 和 `docs/architecture.md`，再按任务查对应包。不要把历史 TODO 或审计文档当成当前事实；代码、测试和 `docs/` 中的现行设计文档才是依据。
 
@@ -36,7 +36,9 @@ docs/               当前架构与扩展协议
 - 用 Biome 格式化/检查。尽量做小而集中的改动，不在同一提交混入无关重构。
 - 修改行为时，在所属包的 `test/` 中补或更新 Vitest 测试；优先测试公开行为和失败边界，不复制实现细节。
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
-- 模型配置是 v2 模型池：凭据不进入 `model-config.json`；Solver、TLDR 和 SubAgent role 可独立绑定模型，传入 Agent 时必须保留完整 Pi `Models` registry。全局 Solver 并发量继续由 `scheduler-config.json` 管理。
+- 模型配置是全局 v2 模型池：凭据不进入 `model-config.json`；各 Project 在自己的 `runtime-config.json` 中为 Solver、TLDR 和 SubAgent role 绑定模型并保存最大并发量。传入 Agent 时必须保留完整 Pi `Models` registry。`scheduler-config.json` 和模型池中的旧绑定只用于兼容迁移。
+- 多 Project 代码不得依赖“当前选中 Project”的隐式全局状态：HTTP API、SSE、Scheduler、RunStore、workspace 和平台 Secret 都必须按显式 Project ID 隔离。平台 Secret 写入全局 `secrets.json` 时必须使用 Project 命名空间；旧未命名空间键只允许作为兼容读取回退。
+- WebUI 使用 React Router 页面路由、Iconify 图标和基于 Radix/CVA 的 shadcn 风格组件。业务页面不使用裸 `<svg>`，不要重新引入巨型设置/详情弹窗；Solver 与 SubAgent 对话复用同一结构化 Pi session 组件。
 - 多进行 git commit，commit message 遵循 gitmoji + conventional 混合规范，如 `✨ feat(solver): add a new feature`, `🐛 fix(core): fix something`
 
 ## 单元测试最佳实践

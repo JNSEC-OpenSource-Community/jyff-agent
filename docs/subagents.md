@@ -63,4 +63,4 @@ enabled: true
 - `thinking`：`off|minimal|low|medium|high|xhigh|max`，省略时为 `low`；
 - `enabled`：设为 `false` 时不向主 Solver 暴露。
 
-无效角色会被隔离并写入 Project diagnostics，不阻止其他角色启动。SQLite 的 `run_subagents` 保存 worker 状态、会话路径、工作目录、当前工具、turn/tool/token 计数、结果和错误；完整生命周期同时写入 Run 事件时间线，并显示在 WebUI 的 Run 详情中。
+无效角色会被隔离并写入 Project diagnostics，不阻止其他角色启动。SQLite 的 `run_subagents` 保存 worker 状态、会话路径、工作目录、当前工具、turn/tool/token 计数、结果和错误；完整生命周期同时写入 Run 事件时间线。WebUI 题目页在右侧列出所属 attempt 的 worker 状态，选择 worker 后复用 Solver 的结构化 Pi session 对话布局；即使 worker 已退出，steer 也会从持久化 JSONL 恢复对象后继续。

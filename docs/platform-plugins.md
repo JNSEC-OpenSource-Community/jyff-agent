@@ -1,14 +1,17 @@
 # Platform plugins
 
 Projects select a platform adapter through the WebUI or configuration. The control plane persists
-its current configuration in `.ctf-agent/project-config.json`; `.pi/ctf-config.json` remains a
-read-only legacy fallback. Each plugin parses its own `config` object. Credentials are referenced by
-secret name and never persisted in the project configuration.
+the first/legacy project in `.ctf-agent/project-config.json` and additional projects below
+`.ctf-agent/projects/<project-hash>/project-config.json`; `.pi/ctf-config.json` remains a read-only
+legacy fallback. Each plugin parses its own `config` object. Credentials are referenced by secret
+name and never persisted in the project configuration.
 
 The WebUI renders setup fields from each plugin's `setup` descriptor. It can test a temporary
-connection before replacing the current runtime. Secrets entered there are stored separately in
-`.ctf-agent/secrets.json` with service-only file permissions. The runtime resolves credentials only
-from this Secret Store; environment variables are not a credential fallback.
+connection before replacing the selected Project runtime. Secrets entered there are stored in
+`.ctf-agent/secrets.json` with service-only file permissions and a key derived from both the Project
+ID and plugin secret name, so multiple Projects can use different platform accounts. Legacy
+unscoped keys remain a read-only fallback. The runtime resolves credentials only from this Secret
+Store; environment variables are not a credential fallback.
 
 ## CTFd
 
