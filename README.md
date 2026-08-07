@@ -137,11 +137,14 @@ packages/
 ├── platform/  平台契约，以及 CTFd/GZCTF 单文件插件
 ├── sandbox/   Docker 生命周期、Pi ExecutionEnv、RTK 与 solver 镜像
 ├── prompts/   Solver、SubAgent 与项目上下文的共享提示词
-├── core/      Project、ControlPlane、调度器、SQLite、blackboard
-└── webui/     可执行控制面、HTTP/SSE、聚合模型与前端
+└── core/      Project、ControlPlane、调度器、SQLite、blackboard
+
+apps/
+├── backend/   Hono HTTP/SSE 服务（createWebUiApp/startWebUi）、聚合模型与鉴权
+└── frontend/  React 客户端（Vite/esbuild 构建，产物 dist/ 由 backend 托管）
 ```
 
-依赖方向保持为 `webui → core → agents/platform/sandbox`；`webui`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 不依赖 Project 或 SQLite，因此后续可以在同一包中增加其他职能 Agent，并复用 BaseAgent 的 session、skills、模型和生命周期能力。
+依赖方向保持为 `apps/backend → core → agents/platform/sandbox`；`apps/backend`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 不依赖 Project 或 SQLite，因此后续可以在同一包中增加其他职能 Agent，并复用 BaseAgent 的 session、skills、模型和生命周期能力。
 
 每个 Solver 只拿到当前题目的 `ChallengeCapability`，无法通过任意 `challengeId` 操作其他题。题目信息以结构化 XML 初始消息注入，附件在 Solver 启动时自动下载到 `/workspace/attachments`。`bash`、`read`、`write`、`edit` 和 `list` 可访问 sandbox 内任意路径（包括 `/tmp`），但不能访问宿主机文件；宿主机只持有控制面状态和 workspace 挂载。每个 Solver 容器默认限制为 2 CPU、4 GiB 内存（不额外使用 swap）和 512 个 PID，避免单题耗尽宿主机资源。
 
@@ -164,7 +167,7 @@ pnpm typecheck
 pnpm test
 
 # 本机启动；需要本机 Docker
-pnpm webui --root . --host 0.0.0.0 --port 3000
+pnpm webui --root . --host 0.0.0.0 --port 3000  # 等价于 pnpm build:webui && node --experimental-transform-types apps/backend/src/main.ts
 ```
 
 WebUI 可执行入口还支持：

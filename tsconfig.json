@@ -15,5 +15,10 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["packages/**/*.ts", "packages/**/*.tsx"]
+  "include": [
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "apps/**/*.ts",
+    "apps/**/*.tsx"
+  ]
 }

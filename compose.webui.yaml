@@ -2,7 +2,7 @@ services:
   webui:
     build:
       context: .
-      dockerfile: packages/webui/Dockerfile
+      dockerfile: apps/backend/Dockerfile
     image: ctf-agent-webui:latest
     command:
       - --root

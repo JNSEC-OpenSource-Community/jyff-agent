@@ -8,17 +8,18 @@
   },
   "scripts": {
     "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
-    "build:webui": "pnpm --filter @ctf-agent/webui build:client",
+    "build:webui": "pnpm --filter @ctf-agent/frontend build:client",
     "check": "biome check .",
     "test": "vitest run",
     "test:runner": "vitest run packages/core/test/runner/contest-runner.test.ts",
     "test:watch": "vitest",
-    "webui": "pnpm build:webui && node --experimental-transform-types packages/webui/src/main.ts",
+    "webui": "pnpm build:webui && node --experimental-transform-types apps/backend/src/main.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "webui:backend": "node --experimental-transform-types apps/backend/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

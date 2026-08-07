@@ -14,13 +14,15 @@ packages/sandbox/   Docker sandbox、ExecutionEnv、RTK、solver Dockerfile
 packages/prompts/   Solver、SubAgent、TLDR 和项目上下文的共享提示词
 packages/agents/    BaseAgent、Pi session/skills、Solver/SubAgent 和工具
 packages/core/      Project、调度器、RunStore、黑板、SubAgent manager
-packages/webui/     进程入口、HTTP/SSE、模型配置、React 客户端
+apps/backend/       Hono HTTP/SSE 服务、模型配置、WebUI 鉴权、Dockerfile
+apps/frontend/      React 客户端（shadcn/ui + Tailwind v4，产物由 backend 托管）
 docs/               当前架构与扩展协议
 ```
 
 主要入口：
 
-- `packages/webui/src/main.ts`：进程和 CLI；
+- `apps/backend/src/main.ts`：进程和 CLI；`apps/backend/src/server.ts`：Hono 装配（`createWebUiApp`/`startWebUi`）；
+- `apps/backend/src/routes/`：按域拆分的路由（system/projects/scheduler/challenges/runs/models）；
 - `packages/core/src/project/project.ts`：单个 Solver Run 的装配；
 - `packages/core/src/orchestration/contest-scheduler.ts`：生产调度；
 - `packages/core/src/persistence/run-store.ts`：SQLite 权威状态；
@@ -34,7 +36,7 @@ docs/               当前架构与扩展协议
 - 使用 Node.js 22.19+、仓库锁定的 pnpm 11；不要绕过 workspace 依赖。
 - TypeScript 保持 strict、ESM 和显式 `.ts` 相对导入风格；公共类型从包 `src/index.ts` 导出。
 - 用 Biome 格式化/检查。尽量做小而集中的改动，不在同一提交混入无关重构。
-- WebUI 基础组件遵循 shadcn/ui 的源码托管方式，放在 `packages/webui/src/client/components/ui/`，配置入口为 `packages/webui/components.json`；图标统一使用 Iconify，不提交裸 SVG React 组件。
+- WebUI 基础组件遵循 shadcn/ui 的源码托管方式，放在 `apps/frontend/src/components/ui/`，配置入口为 `apps/frontend/components.json`；图标统一使用 Iconify，不提交裸 SVG React 组件。
 - 修改行为时，在所属包的 `test/` 中补或更新 Vitest 测试；优先测试公开行为和失败边界，不复制实现细节。
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
 - 模型配置是全局 v2 模型池：凭据不进入 `model-config.json`；各 Project 在自己的 `runtime-config.json` 中为 Solver、TLDR 和 SubAgent role 绑定模型并保存最大并发量。传入 Agent 时必须保留完整 Pi `Models` registry。`scheduler-config.json` 和模型池中的旧绑定只用于兼容迁移。
@@ -63,6 +65,8 @@ corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm build:webui
 ```
+
+后端路由改动后按域跑 `corepack pnpm exec vitest run apps/backend/test/<domain>.test.ts`；`apps/backend/test/helpers.ts` 提供 `createTestApp`/`jsonRequest`/`readSseUntil` 等内存装配助手（不占用端口）。
 
 按改动范围先运行单包/单文件测试，提交前至少运行 `check`、`typecheck` 和相关测试。Dockerfile 改动还应运行 `docker build --check packages/sandbox/docker`；需要验证工具可执行性时再构建完整镜像。
 

@@ -1,6 +1,10 @@
 packages:
   - packages/*
+  - apps/*
 
 allowBuilds:
   '@parcel/watcher': false
   esbuild: true
+
+minimumReleaseAgeExclude:
+  - hono@4.13.1

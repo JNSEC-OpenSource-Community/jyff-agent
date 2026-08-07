@@ -7,11 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": [
-      "**",
-      "!packages/webui/src/client/app.js",
-      "!packages/webui/src/client/app.css"
-    ]
+    "includes": ["**", "!apps/frontend/dist", "!apps/frontend/index.html"]
   },
   "formatter": {
     "enabled": true,
@@ -37,7 +33,7 @@
   },
   "overrides": [
     {
-      "includes": ["packages/webui/src/client/styles.css"],
+      "includes": ["apps/frontend/src/styles.css"],
       "linter": {
         "rules": {
           "complexity": {
@@ -50,33 +46,18 @@
       }
     },
     {
-      "includes": ["packages/webui/src/client/index.html"],
+      "includes": [
+        "apps/frontend/src/pages/**",
+        "apps/frontend/src/components/**"
+      ],
       "linter": {
         "rules": {
           "a11y": {
             "useFocusableInteractive": "off",
             "useSemanticElements": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["packages/webui/src/client/app.tsx"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "useFocusableInteractive": "off",
-            "useSemanticElements": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["packages/webui/src/client/settings-dialogs.tsx"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "noLabelWithoutControl": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off"
           }
         }
       }

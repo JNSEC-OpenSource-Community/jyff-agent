@@ -10,15 +10,18 @@ packages/
 ├── sandbox/   Docker 生命周期、DockerExecutionEnv、RTK 与 solver 镜像
 ├── prompts/   Solver、SubAgent 与项目上下文的共享提示词
 ├── agents/    BaseAgent、Solver/SubAgent、Pi session/skills 和容器工具
-├── core/      Project、ControlPlane、调度器、RunStore、黑板与 SubAgent manager
-└── webui/     进程入口、HTTP/SSE API、模型配置和 React 客户端
+└── core/      Project、ControlPlane、调度器、RunStore、黑板与 SubAgent manager
+
+apps/
+├── backend/   进程入口、Hono HTTP/SSE API、模型配置与 WebUI 鉴权
+└── frontend/  React 客户端（shadcn/ui 组件与 Tailwind CSS v4）
 ```
 
-主要依赖方向是 `webui → core → agents/platform/sandbox`；`webui`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 可以依赖 `platform` 与 `sandbox`，但不能依赖 `core`、Project 或 SQLite。跨包公开 API 从各包的 `src/index.ts` 导出。
+主要依赖方向是 `apps/backend → core → agents/platform/sandbox`；`apps/backend`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 可以依赖 `platform` 与 `sandbox`，但不能依赖 `core`、Project 或 SQLite。跨包公开 API 从各包的 `src/index.ts` 导出。
 
 ## 启动与配置
 
-`packages/webui/src/main.ts` 是生产入口。它依次打开全局 Secret/Credential Store、全局模型池、可选登录配置和 ControlPlane，再为注册表中的每个 Project 创建独立 runtime，最后启动 HTTP/SSE 服务。业务配置保存在项目根目录下的 `.ctf-agent/`：
+`apps/backend/src/main.ts` 是生产入口，`src/server.ts` 导出 `createWebUiApp()`（内存装配，供 `app.request()` 测试）与 `startWebUi()`（真实端口 + 轮询/心跳定时器）。它依次打开全局 Secret/Credential Store、全局模型池、可选登录配置和 ControlPlane，再为注册表中的每个 Project 创建独立 runtime，最后启动 HTTP/SSE 服务。业务配置保存在项目根目录下的 `.ctf-agent/`：
 
 ```text
 .ctf-agent/
@@ -55,7 +58,7 @@ ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有�
 
 前端使用 React Router 的独立页面和 Misuzu 风格的全局图标栏 + Project 上下文栏。根页面列出所有 Project；全局设置管理 Provider 凭据、模型池和可选登录；Project 首页管理完整题目列表与可拖动持久队列；Project 设置只管理比赛连接、角色绑定和并发量；每道题拥有独立聊天工作区。
 
-通用 UI 采用 shadcn/ui 的源码托管结构：`packages/webui/components.json` 是 CLI 配置，Radix/CVA 组件位于 `src/client/components/ui/`，组合型业务组件位于 `src/client/components/`，`src/client/lib/utils.ts` 提供 `cn()`。Tailwind CSS v4 在构建期把 `styles.css` 编译为服务端实际发布的 `app.css`；图标继续统一通过 Iconify 渲染，不在业务组件中嵌入裸 SVG。
+通用 UI 采用 shadcn/ui 的源码托管结构：`apps/frontend/components.json` 是 CLI 配置，Radix/CVA 组件位于 `src/components/ui/`，组合型业务组件位于 `src/components/`，`src/lib/utils.ts` 提供 `cn()`。Tailwind CSS v4 在构建期把 `src/styles.css` 编译为 `dist/app.css`；后端通过 `WEBUI_FRONTEND_DIST` 环境变量定位构建产物（默认 `apps/frontend/dist`），缺失时回退到占位 HTML。图标继续统一通过 Iconify 渲染，不在业务组件中嵌入裸 SVG。
 
 聊天接口直接读取 Pi JSONL 当前分支上的结构化消息，不从 SQLite 事件拼接 transcript。Solver attempt 与 SubAgent 使用同一个消息渲染器；工具、thinking 和元数据可以折叠，黑板、Attempts 与 Writeup 放在独立 tab。只有至少存在一条 Assistant 消息时，结构化会话与 Pi HTML 导出才可查看。BrowserRouter 的非 API GET 路由由服务端回退到 `index.html`，刷新嵌套路由不会得到 404。
 
