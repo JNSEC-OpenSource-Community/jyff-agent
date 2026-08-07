@@ -273,7 +273,12 @@ describe("WebUI HTTP server", () => {
 
     const home = await fetch(server.url)
     expect(home.headers.get("content-type")).toContain("text/html")
-    expect(await home.text()).toContain("题目作战面板")
+    expect(await home.text()).toContain("正在载入控制面")
+
+    const nestedRoute = await fetch(`${server.url}/projects/demo/settings`)
+    expect(nestedRoute.status).toBe(200)
+    expect(nestedRoute.headers.get("content-type")).toContain("text/html")
+    expect(await nestedRoute.text()).toContain("CTF Agent · Operations")
 
     const snapshot = await fetch(`${server.url}/api/snapshot`)
     const snapshotBody = (await snapshot.json()) as { challenges: unknown[] }

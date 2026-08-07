@@ -1335,6 +1335,18 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         response.end(asset.content)
         return
       }
+      if (!url.pathname.startsWith("/api/")) {
+        const index = assets.get("/")
+        if (index) {
+          response.writeHead(200, {
+            "Content-Type": index.contentType,
+            "Cache-Control": "no-cache",
+            "Content-Length": index.content.byteLength,
+          })
+          response.end(index.content)
+          return
+        }
+      }
     }
 
     sendJson(response, 404, { error: "not_found" })
