@@ -1,9 +1,12 @@
 import {
+  type CommandResult,
   DEFAULT_DOCKER_SANDBOX_RESOURCES,
+  type DockerCommandExecutor,
+  DockerSandbox,
   type DockerSandboxOptions,
   dockerSandboxCreateArguments,
 } from "@ctf-agent/sandbox"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 const options: DockerSandboxOptions = {
   projectId: "project",
@@ -18,6 +21,21 @@ function valueAfter(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag)
   return index < 0 ? undefined : args[index + 1]
 }
+
+function result(
+  code: number,
+  output: { stdout?: string; stderr?: string } = {},
+): CommandResult {
+  return {
+    code,
+    stdout: output.stdout ?? "",
+    stderr: output.stderr ?? "",
+  }
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("DockerSandbox resources", () => {
   it("默认限制每个 Solver 容器的 CPU、内存、swap、PID 与存储", () => {
@@ -74,5 +92,67 @@ describe("DockerSandbox resources", () => {
         }),
       ).toThrow("resources.storageBytes must be a positive safe integer")
     }
+  })
+
+  it("Docker 不支持可写层配额时只移除 storage-opt 并重试创建", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute
+      .mockResolvedValueOnce(
+        result(125, {
+          stderr:
+            "--storage-opt is supported only for overlay over xfs with 'pquota' mount option",
+        }),
+      )
+      .mockResolvedValueOnce(result(0, { stdout: "container-id\n" }))
+      .mockResolvedValueOnce(result(0))
+      .mockResolvedValueOnce(result(0))
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const sandbox = await DockerSandbox.create(options, execute)
+    await sandbox.close()
+
+    expect(execute).toHaveBeenCalledTimes(4)
+    expect(execute.mock.calls[0]?.[0]).toContain("--storage-opt")
+    expect(execute.mock.calls[1]?.[0]).not.toContain("--storage-opt")
+    expect(execute.mock.calls[1]?.[0]).toEqual(
+      expect.arrayContaining(["--cpus", "2", "--mount"]),
+    )
+    expect(execute.mock.calls[2]?.[0]).toEqual(["start", "container-id"])
+    expect(execute.mock.calls[3]?.[0]).toEqual(["rm", "-f", "container-id"])
+    expect(warning).toHaveBeenCalledOnce()
+  })
+
+  it("普通 Docker 创建错误不移除资源限制或重试", async () => {
+    const execute = vi
+      .fn<DockerCommandExecutor>()
+      .mockResolvedValueOnce(result(125, { stderr: "permission denied" }))
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    await expect(DockerSandbox.create(options, execute)).rejects.toThrow(
+      "Docker create failed: permission denied",
+    )
+
+    expect(execute).toHaveBeenCalledOnce()
+    expect(execute.mock.calls[0]?.[0]).toContain("--storage-opt")
+    expect(warning).not.toHaveBeenCalled()
+  })
+
+  it("无配额重试仍失败时保留第二次 Docker 错误", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute
+      .mockResolvedValueOnce(
+        result(125, {
+          stderr: "storage-opt size is not supported for this graph driver",
+        }),
+      )
+      .mockResolvedValueOnce(result(125, { stderr: "image not found" }))
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    await expect(DockerSandbox.create(options, execute)).rejects.toThrow(
+      "Docker create failed: image not found",
+    )
+
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute.mock.calls[1]?.[0]).not.toContain("--storage-opt")
   })
 })

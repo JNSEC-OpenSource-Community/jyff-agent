@@ -17,6 +17,11 @@ export interface SandboxExecOptions {
   onStderr?: (chunk: string) => void
 }
 
+export type DockerCommandExecutor = (
+  args: string[],
+  options?: SandboxExecOptions,
+) => Promise<CommandResult>
+
 export type SandboxCommandErrorCode =
   | "aborted"
   | "timeout"
@@ -193,22 +198,35 @@ export class DockerSandbox implements Sandbox {
   private closed = false
   private closing?: Promise<void>
 
-  private constructor(id: string) {
+  private constructor(
+    id: string,
+    private readonly executeCommand: DockerCommandExecutor,
+  ) {
     this.id = id
   }
 
-  static async create(options: DockerSandboxOptions): Promise<DockerSandbox> {
-    const args = dockerSandboxCreateArguments(options)
+  static async create(
+    options: DockerSandboxOptions,
+    executeCommand: DockerCommandExecutor = execute,
+  ): Promise<DockerSandbox> {
+    let args = dockerSandboxCreateArguments(options)
+    let created = await executeCommand(args)
+    if (created.code !== 0 && isUnsupportedStorageQuota(created)) {
+      console.warn(
+        `[sandbox] Docker 不支持可写层配额，Project ${options.projectId} Run ${options.runId} 将不带 --storage-opt 重试`,
+      )
+      args = withoutStorageQuota(args)
+      created = await executeCommand(args)
+    }
 
-    const created = await execute(args)
     if (created.code !== 0) throw commandFailure("create", created)
     const id = created.stdout.trim()
-    const started = await execute(["start", id])
+    const started = await executeCommand(["start", id])
     if (started.code !== 0) {
-      await execute(["rm", "-f", id]).catch(() => undefined)
+      await executeCommand(["rm", "-f", id]).catch(() => undefined)
       throw commandFailure("start", started)
     }
-    return new DockerSandbox(id)
+    return new DockerSandbox(id, executeCommand)
   }
 
   async exec(
@@ -218,14 +236,14 @@ export class DockerSandbox implements Sandbox {
     if (this.closed) throw new Error("Docker sandbox is closed")
     if (args.length === 0)
       throw new Error("Docker exec arguments must not be empty")
-    return execute(["exec", "-i", this.id, ...args], options)
+    return this.executeCommand(["exec", "-i", this.id, ...args], options)
   }
 
   async close(): Promise<void> {
     if (this.closed) return
     if (this.closing) return this.closing
     const operation = (async () => {
-      const result = await execute(["rm", "-f", this.id])
+      const result = await this.executeCommand(["rm", "-f", this.id])
       if (result.code !== 0) throw commandFailure("remove", result)
       this.closed = true
     })()
@@ -290,6 +308,22 @@ function commandFailure(operation: string, result: CommandResult): Error {
   return new Error(
     `Docker ${operation} failed: ${output || `exit code ${result.code}`}`,
   )
+}
+
+function isUnsupportedStorageQuota(result: CommandResult): boolean {
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase()
+  return [
+    "--storage-opt is supported only",
+    "storage-opt size is not supported",
+    "unknown flag: --storage-opt",
+    "unknown option: --storage-opt",
+  ].some((message) => output.includes(message))
+}
+
+function withoutStorageQuota(args: readonly string[]): string[] {
+  const index = args.indexOf("--storage-opt")
+  if (index < 0) return [...args]
+  return [...args.slice(0, index), ...args.slice(index + 2)]
 }
 
 function dockerMount(mount: DockerWorkspaceMount): string {
