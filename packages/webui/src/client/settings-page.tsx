@@ -572,6 +572,7 @@ export function GlobalSettingsPage(): React.ReactElement {
   const [authEnabled, setAuthEnabled] = useState(false)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [importing, setImporting] = useState(false)
 
   const load = useCallback(async (): Promise<void> => {
     const next =
@@ -604,6 +605,27 @@ export function GlobalSettingsPage(): React.ReactElement {
     }
   }
 
+  async function importAuthentication(
+    source: { json: string } | "file",
+  ): Promise<void> {
+    setImporting(true)
+    setError("")
+    try {
+      await apiMutation(
+        source === "file"
+          ? "/api/model-auth/import-file"
+          : "/api/model-auth/import",
+        "POST",
+        source === "file" ? {} : source,
+      )
+      await load()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   if (!configuration) return <Spinner label="正在读取全局配置" />
   const modelAuth = configuration.modelAuthentication
   const models = configuration.modelConfiguration
@@ -633,6 +655,53 @@ export function GlobalSettingsPage(): React.ReactElement {
               connected
             </Badge>
           </div>
+          {modelAuth ? (
+            <Card className="auth-import-bar">
+              <div>
+                <Icon icon="lucide:file-key-2" width="17" />
+                <span>
+                  <strong>导入现有凭据</strong>
+                  <small>兼容 Pi、Codex CLI 与 Claude Code auth JSON。</small>
+                </span>
+              </div>
+              <div>
+                <label className="button button-secondary button-sm">
+                  <Icon icon="lucide:upload" width="14" />
+                  上传 JSON
+                  <input
+                    className="sr-only"
+                    type="file"
+                    accept="application/json,.json"
+                    disabled={importing}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (!file) return
+                      void file
+                        .text()
+                        .then(
+                          async (json) => await importAuthentication({ json }),
+                        )
+                      event.target.value = ""
+                    }}
+                  />
+                </label>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={importing || !modelAuth.importFileAvailable}
+                  title={
+                    modelAuth.importFileAvailable
+                      ? modelAuth.importPath
+                      : "容器内未找到导入文件"
+                  }
+                  onClick={() => void importAuthentication("file")}
+                >
+                  <Icon icon="lucide:folder-key" width="14" />
+                  读取 {modelAuth.importPath}
+                </Button>
+              </div>
+            </Card>
+          ) : null}
           <div className="provider-grid">
             {modelAuth?.providers.map((provider) => (
               <ProviderCredentialCard

@@ -1556,6 +1556,32 @@ p {
 .provider-grid {
   grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
 }
+.auth-import-bar {
+  margin-bottom: 12px;
+  padding: 13px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.auth-import-bar > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.auth-import-bar > div:first-child > span {
+  display: grid;
+}
+.auth-import-bar strong {
+  font-size: 12px;
+}
+.auth-import-bar small {
+  color: var(--quiet);
+  font-size: 10px;
+}
+.auth-import-bar .button {
+  white-space: nowrap;
+}
 .provider-card {
   padding: 16px;
 }
@@ -2003,6 +2029,13 @@ p {
   .provider-grid,
   .auth-prompt {
     grid-template-columns: 1fr;
+  }
+  .auth-import-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .auth-import-bar > div:last-child {
+    flex-wrap: wrap;
   }
   .challenge-browser-heading {
     align-items: stretch;
