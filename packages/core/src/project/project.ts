@@ -721,31 +721,7 @@ export class Project {
   ): Promise<SubagentRecord[]> {
     const manager = this.subagentManagers.get(runId)
     if (!manager) return this.runStore.subagents(runId)
-    const records = manager.list()
-    await Promise.all(
-      records
-        .filter((record) => record.status === "running")
-        .map(async (record) => {
-          try {
-            await manager.steer(record.id, reportPrompt)
-          } catch {
-            // worker 可能在 steer 前已自然结束，最终 snapshot 会读取最新状态。
-          }
-        }),
-    )
-    await Promise.all(
-      records
-        .filter(
-          (record) => record.status === "running" || record.status === "queued",
-        )
-        .map(async (record) => {
-          await Promise.race([
-            manager.wait(record.id).catch(() => undefined),
-            new Promise<void>((resolve) => setTimeout(resolve, graceMs)),
-          ])
-        }),
-    )
-    return manager.list()
+    return manager.finalize(reportPrompt, graceMs)
   }
   blackboard(challengeId: string) {
     return this.runStore.getBlackboardSummary(challengeId)

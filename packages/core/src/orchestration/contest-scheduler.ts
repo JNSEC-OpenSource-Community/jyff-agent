@@ -1029,7 +1029,7 @@ export class ContestScheduler {
       const records = await this.project.finalizeSubagents(
         solver.runId,
         "Report your current objective, verified findings, attempted experiments, exact results, artifacts, and next-step recommendation. Terminate processes you started and remove disposable temporary files; list the exact path and purpose of every retained artifact. Stop investigating after this report.",
-        2_000,
+        30_000,
       )
       solver.appendMessage({
         role: "user",
