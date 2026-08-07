@@ -21,16 +21,19 @@ import {
   piSessionHasConversation,
 } from "./pi-html-export.ts"
 import type {
+  AgentModelBindings,
   DashboardControlPlane,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardProject,
+  DashboardProjectRuntimeConfiguration,
   DashboardScheduler,
   DashboardSnapshot,
   DashboardWebUiAuthentication,
   ModelConfigurationUpdate,
   ModelConfigurationView,
   ModelPoolEntryUpdate,
+  ProjectRuntimeConfigurationView,
 } from "./types.ts"
 
 export interface WebUiOptions {
@@ -45,6 +48,9 @@ export interface WebUiOptions {
   modelAuthentication?: DashboardModelAuthentication
   authentication?: DashboardWebUiAuthentication
   secureCookies?: boolean
+  projectRuntimeConfiguration?: (
+    projectId: string,
+  ) => DashboardProjectRuntimeConfiguration | undefined
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
   exportSessionHtml?: (
     sessionPath: string,
@@ -118,6 +124,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     options.controlPlane
       ? options.controlPlane.currentScheduler(projectId)
       : options.scheduler
+  const currentRuntimeConfiguration = (
+    projectId?: string,
+  ): DashboardProjectRuntimeConfiguration | undefined =>
+    projectId ? options.projectRuntimeConfiguration?.(projectId) : undefined
   const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
   const sessionHasConversation =
     options.sessionHasConversation ?? piSessionHasConversation
@@ -612,6 +622,55 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    if (method === "GET" && projectId && apiPath === "/api/runtime-config") {
+      const runtime = currentRuntimeConfiguration(projectId)
+      requireProjectRuntimeConfiguration(runtime)
+      requireModelConfiguration(options.modelConfiguration)
+      sendJson(response, 200, {
+        runtime: runtime.snapshot(),
+        models: modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(projectId),
+          runtime.snapshot(),
+        ),
+      })
+      return
+    }
+
+    if (method === "POST" && projectId && apiPath === "/api/runtime-config") {
+      const runtime = currentRuntimeConfiguration(projectId)
+      requireProjectRuntimeConfiguration(runtime)
+      requireModelConfiguration(options.modelConfiguration)
+      requireJsonRequest(request)
+      let configuration: ProjectRuntimeConfigurationView
+      try {
+        configuration = await runtime.update(
+          projectRuntimeConfigurationUpdate(await readJsonBody(request)),
+        )
+      } catch (error) {
+        throw new HttpRequestError(
+          400,
+          "invalid_project_runtime_configuration",
+          errorText(error),
+        )
+      }
+      const scheduler = currentScheduler(projectId)
+      await scheduler?.setMaxConcurrent(configuration.maxConcurrent)
+      const model = options.modelConfiguration.snapshot(configuration)
+      if (!model.configured) scheduler?.pauseAuto()
+      else await scheduler?.reconcile()
+      sendJson(response, 200, {
+        runtime: configuration,
+        models: modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(projectId),
+          configuration,
+        ),
+        snapshot: await refreshProject(projectId),
+      })
+      return
+    }
+
     if (method === "GET" && apiPath === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
       sendJson(
@@ -620,6 +679,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         modelConfigurationView(
           options.modelConfiguration,
           currentProject(projectId),
+          currentRuntimeConfiguration(projectId)?.snapshot(),
         ),
       )
       return
@@ -638,6 +698,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         configuration: modelConfigurationView(
           options.modelConfiguration,
           currentProject(projectId),
+          currentRuntimeConfiguration(projectId)?.snapshot(),
         ),
         snapshot: await refreshProject(projectId),
       })
@@ -1098,7 +1159,8 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const project = currentProject(projectId)
       requireProject(project)
       const modelConfiguration = options.modelConfiguration
-      const modelSnapshot = modelConfiguration?.snapshot()
+      const bindings = currentRuntimeConfiguration(projectId)?.snapshot()
+      const modelSnapshot = modelConfiguration?.snapshot(bindings)
       const tldrModelId =
         modelSnapshot?.tldrModelId || modelSnapshot?.solverModelId
       const tldrModel = modelSnapshot?.models.find(
@@ -1117,7 +1179,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       const challengeId = decodeURIComponent(encodedId)
       const tldr = await project.refreshTldr(
         challengeId,
-        modelConfiguration.createAgentOptions("tldr"),
+        modelConfiguration.createAgentOptions("tldr", bindings),
       )
       if (tldr.challengeId !== challengeId) {
         throw new HttpRequestError(404, "challenge_not_found", "题目不存在")
@@ -1506,14 +1568,27 @@ function requireProject(
 function modelConfigurationView(
   configuration: DashboardModelConfiguration,
   project: DashboardProject | undefined,
+  bindings?: AgentModelBindings,
 ): ModelConfigurationView {
   return {
-    ...configuration.snapshot(),
+    ...configuration.snapshot(bindings),
     subagentRoles:
       project?.availableSubagents().map(({ name, displayName }) => ({
         name,
         displayName,
       })) ?? [],
+  }
+}
+
+function requireProjectRuntimeConfiguration(
+  configuration: DashboardProjectRuntimeConfiguration | undefined,
+): asserts configuration is DashboardProjectRuntimeConfiguration {
+  if (!configuration) {
+    throw new HttpRequestError(
+      503,
+      "project_runtime_configuration_unavailable",
+      "Project 运行配置尚不可用",
+    )
   }
 }
 
@@ -1675,6 +1750,54 @@ async function readJsonBody(
     throw new HttpRequestError(400, "invalid_json", "请求体必须是 JSON 对象")
   }
   return parsed as Record<string, unknown>
+}
+
+function projectRuntimeConfigurationUpdate(
+  body: Record<string, unknown>,
+): ProjectRuntimeConfigurationView {
+  const solverModelId = optionalString(
+    body.solverModelId,
+    "Solver Model",
+    128,
+    "invalid_project_runtime_configuration",
+  )
+  const tldrModelId = optionalString(
+    body.tldrModelId,
+    "TLDR Model",
+    128,
+    "invalid_project_runtime_configuration",
+  )
+  const maxConcurrent = requiredPositiveInteger(
+    body.maxConcurrent,
+    "调度并发量",
+    64,
+    "invalid_project_runtime_configuration",
+  )
+  const subagentModels: Record<string, string> = {}
+  if (body.subagentModels !== undefined) {
+    if (!isRecord(body.subagentModels)) {
+      throw new HttpRequestError(
+        400,
+        "invalid_project_runtime_configuration",
+        "SubAgent Models 必须是对象",
+      )
+    }
+    for (const [role, value] of Object.entries(body.subagentModels)) {
+      const normalizedRole = requiredString(
+        role,
+        "SubAgent Role",
+        128,
+        "invalid_project_runtime_configuration",
+      )
+      subagentModels[normalizedRole] = requiredString(
+        value,
+        `SubAgent ${normalizedRole} Model`,
+        128,
+        "invalid_project_runtime_configuration",
+      )
+    }
+  }
+  return { solverModelId, tldrModelId, subagentModels, maxConcurrent }
 }
 
 function modelConfigurationUpdate(

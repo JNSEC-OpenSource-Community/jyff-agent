@@ -80,10 +80,34 @@ export interface ControlPlaneOptions {
     | "platforms"
     | "resolveSecret"
   >
+  createProjectOptions?: (context: {
+    projectId: string
+    stateDirectory: string
+  }) =>
+    | Omit<
+        OpenProjectOptions,
+        | "root"
+        | "config"
+        | "stateDirectory"
+        | "workspaceNamespace"
+        | "platforms"
+        | "resolveSecret"
+      >
+    | Promise<
+        Omit<
+          OpenProjectOptions,
+          | "root"
+          | "config"
+          | "stateDirectory"
+          | "workspaceNamespace"
+          | "platforms"
+          | "resolveSecret"
+        >
+      >
   createScheduler?: (
     project: Project,
     context: { projectId: string; stateDirectory: string },
-  ) => ContestScheduler | undefined
+  ) => ContestScheduler | undefined | Promise<ContestScheduler | undefined>
   announcementPollIntervalMs?: number
 }
 
@@ -365,8 +389,14 @@ export class ControlPlane {
     runtime.lastError = null
     this.setRuntimePhase(runtime, "connecting")
     try {
+      const context = {
+        projectId,
+        stateDirectory: runtime.record.stateDirectory,
+      }
+      const projectOptions = await this.options.createProjectOptions?.(context)
       const project = await Project.open({
         ...this.options.project,
+        ...projectOptions,
         root: this.root,
         stateDirectory: runtime.record.stateDirectory,
         workspaceNamespace: runtime.record.legacy
@@ -383,10 +413,7 @@ export class ControlPlane {
         // 公告 baseline 降级不阻塞 Solver；后续 poll 可以恢复。
         runtime.lastError = `公告 baseline 失败: ${errorText(error)}`
       }
-      runtime.scheduler = this.options.createScheduler?.(project, {
-        projectId,
-        stateDirectory: runtime.record.stateDirectory,
-      })
+      runtime.scheduler = await this.options.createScheduler?.(project, context)
       runtime.announcementPoller = new AnnouncementPoller({
         intervalMs: this.options.announcementPollIntervalMs ?? 30_000,
         poll: async () => {

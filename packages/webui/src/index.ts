@@ -20,6 +20,7 @@ export {
   createFileModelConfiguration,
   type FileModelConfigurationOptions,
 } from "./model-configuration.ts"
+export { createFileProjectRuntimeConfiguration } from "./project-runtime-configuration.ts"
 export type { WebUiOptions, WebUiServer } from "./server.ts"
 export { startWebUi } from "./server.ts"
 export type {

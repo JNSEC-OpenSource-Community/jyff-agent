@@ -156,8 +156,25 @@ describe("WebUI HTTP server", () => {
       },
       connect: async () => snapshot(),
     }
+    let runtimeConfiguration = {
+      solverModelId: "",
+      tldrModelId: "",
+      subagentModels: {},
+      maxConcurrent: 8,
+    }
     const server = await startWebUi({
       controlPlane,
+      modelConfiguration: new FakeModelConfiguration(),
+      projectRuntimeConfiguration: (projectId) =>
+        projectId === "demo"
+          ? {
+              snapshot: () => structuredClone(runtimeConfiguration),
+              update: async (configuration) => {
+                runtimeConfiguration = structuredClone(configuration)
+                return structuredClone(runtimeConfiguration)
+              },
+            }
+          : undefined,
       host: "127.0.0.1",
       port: 0,
       pollIntervalMs: 60_000,
@@ -215,6 +232,26 @@ describe("WebUI HTTP server", () => {
     expect(
       await (await fetch(`${server.url}/api/projects/demo/snapshot`)).json(),
     ).toMatchObject({ overview: { name: "Test CTF" } })
+    expect(
+      await (
+        await fetch(`${server.url}/api/projects/demo/runtime-config`)
+      ).json(),
+    ).toMatchObject({ runtime: { maxConcurrent: 8 } })
+    const runtimeUpdated = await fetch(
+      `${server.url}/api/projects/demo/runtime-config`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          solverModelId: "",
+          tldrModelId: "",
+          subagentModels: {},
+          maxConcurrent: 3,
+        }),
+      },
+    )
+    expect(runtimeUpdated.status).toBe(200)
+    expect(runtimeConfiguration.maxConcurrent).toBe(3)
   })
 
   it("提供健康检查、静态前端、快照、详情和平台刷新 API", async () => {

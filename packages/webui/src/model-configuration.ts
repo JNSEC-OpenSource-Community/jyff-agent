@@ -25,6 +25,7 @@ import {
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat"
 import type {
+  AgentModelBindings,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   ModelConfigurationUpdate,
@@ -68,7 +69,10 @@ export interface FileModelConfigurationOptions {
 }
 
 export interface AgentModelConfiguration extends DashboardModelConfiguration {
-  createAgentOptions(target?: "solver" | "tldr"): AgentOptions
+  createAgentOptions(
+    target?: "solver" | "tldr",
+    bindings?: AgentModelBindings,
+  ): AgentOptions
 }
 
 /** Public model parameters and role assignments are persisted separately from credentials. */
@@ -100,16 +104,17 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     private values: StoredModelConfiguration,
   ) {}
 
-  snapshot(): ModelConfigurationView {
+  snapshot(bindings?: AgentModelBindings): ModelConfigurationView {
+    const selectedBindings = bindings ?? this.values
     const models = this.values.models.map((entry) => this.entryView(entry))
     const solver = models.find(
-      (entry) => entry.id === this.values.solverModelId,
+      (entry) => entry.id === selectedBindings.solverModelId,
     )
     return {
       models,
-      solverModelId: this.values.solverModelId,
-      tldrModelId: this.values.tldrModelId,
-      subagentModels: { ...this.values.subagentModels },
+      solverModelId: selectedBindings.solverModelId,
+      tldrModelId: selectedBindings.tldrModelId,
+      subagentModels: { ...selectedBindings.subagentModels },
       supportedThinkingLevels: solver?.supportedThinkingLevels ?? [],
       configured: solver?.configured === true,
       ...(!solver?.configured
@@ -136,11 +141,15 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     return this.snapshot()
   }
 
-  createAgentOptions(target: "solver" | "tldr" = "solver"): AgentOptions {
+  createAgentOptions(
+    target: "solver" | "tldr" = "solver",
+    bindings?: AgentModelBindings,
+  ): AgentOptions {
+    const selectedBindings = bindings ?? this.values
     const id =
       target === "tldr"
-        ? this.values.tldrModelId || this.values.solverModelId
-        : this.values.solverModelId
+        ? selectedBindings.tldrModelId || selectedBindings.solverModelId
+        : selectedBindings.solverModelId
     const selected = this.values.models.find((entry) => entry.id === id)
     if (!selected) {
       throw new Error(`未选择 ${target === "tldr" ? "TLDR" : "Solver"} 模型`)
@@ -167,8 +176,11 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     return attachModelsToAgentOptions(agent, models)
   }
 
-  modelForSubagent(role: string): string | undefined {
-    const id = this.values.subagentModels[role]
+  modelForSubagent(
+    role: string,
+    bindings?: AgentModelBindings,
+  ): string | undefined {
+    const id = (bindings ?? this.values).subagentModels[role]
     const entry = this.values.models.find((candidate) => candidate.id === id)
     return entry ? `${entry.provider}/${entry.modelId}` : undefined
   }

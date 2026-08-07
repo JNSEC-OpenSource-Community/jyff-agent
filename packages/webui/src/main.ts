@@ -8,6 +8,7 @@ import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
 import { createFileWebUiAuthentication } from "./authentication.ts"
 import { createFileModelAuthentication } from "./model-authentication.ts"
 import { createFileModelConfiguration } from "./model-configuration.ts"
+import { createFileProjectRuntimeConfiguration } from "./project-runtime-configuration.ts"
 import { createFileSchedulerConfiguration } from "./scheduler-configuration.ts"
 import { startWebUi } from "./server.ts"
 
@@ -47,15 +48,37 @@ const schedulerConfiguration = await createFileSchedulerConfiguration({
 const authentication = await createFileWebUiAuthentication(
   join(stateDirectory, "global-config.json"),
 )
+const projectRuntimeConfigurations = new Map<
+  string,
+  Awaited<ReturnType<typeof createFileProjectRuntimeConfiguration>>
+>()
+async function projectRuntimeConfiguration(context: {
+  projectId: string
+  stateDirectory: string
+}) {
+  const existing = projectRuntimeConfigurations.get(context.projectId)
+  if (existing) return existing
+  const globalModels = modelConfiguration.snapshot()
+  const configuration = await createFileProjectRuntimeConfiguration({
+    storagePath: join(context.stateDirectory, "runtime-config.json"),
+    fallback: {
+      solverModelId: globalModels.solverModelId,
+      tldrModelId: globalModels.tldrModelId,
+      subagentModels: globalModels.subagentModels,
+      maxConcurrent: schedulerConfiguration.snapshot(),
+    },
+    availableModelIds: () =>
+      new Set(modelConfiguration.snapshot().models.map((model) => model.id)),
+  })
+  projectRuntimeConfigurations.set(context.projectId, configuration)
+  return configuration
+}
 const controlPlane = await ControlPlane.create({
   root: options.root,
   platforms: [ctfdPlatform, gzctfPlatform],
   secretStore,
   project: {
     telemetry: { level: "full", maxTextLength: 8_000 },
-    subagents: {
-      modelForRole: (role) => modelConfiguration.modelForSubagent(role),
-    },
     ...(options.workspaceVolume
       ? {
           workspaceMount: ({ relativeWorkspace }) => ({
@@ -66,16 +89,26 @@ const controlPlane = await ControlPlane.create({
         }
       : {}),
   },
-  createScheduler: (project) =>
-    new ContestScheduler(project, {
-      maxConcurrent: schedulerConfiguration.snapshot(),
+  createProjectOptions: async (context) => {
+    const runtime = await projectRuntimeConfiguration(context)
+    return {
+      subagents: {
+        modelForRole: (role) =>
+          modelConfiguration.modelForSubagent(role, runtime.snapshot()),
+      },
+    }
+  },
+  createScheduler: async (project, context) => {
+    const runtime = await projectRuntimeConfiguration(context)
+    return new ContestScheduler(project, {
+      maxConcurrent: runtime.snapshot().maxConcurrent,
       maxAttempts: options.maxAttempts,
       maxSessionInterruptions: options.maxSessionInterruptions,
       writeup: true,
       challengeTimeoutMs: options.challengeTimeoutMs,
       retryDelayMs: options.retryDelayMs,
       availability: () => {
-        const model = modelConfiguration.snapshot()
+        const model = modelConfiguration.snapshot(runtime.snapshot())
         return {
           available: model.configured,
           ...(model.unavailableReason
@@ -83,12 +116,14 @@ const controlPlane = await ControlPlane.create({
             : {}),
         }
       },
-      createAgentOptions: () => modelConfiguration.createAgentOptions("solver"),
+      createAgentOptions: () =>
+        modelConfiguration.createAgentOptions("solver", runtime.snapshot()),
       compaction: true,
       onMaxConcurrentChange: async (maxConcurrent) => {
-        await schedulerConfiguration.update(maxConcurrent)
+        await runtime.update({ ...runtime.snapshot(), maxConcurrent })
       },
-    }),
+    })
+  },
 })
 
 await controlPlane.start()
@@ -97,6 +132,8 @@ const webui = await startWebUi({
   modelAuthentication,
   modelConfiguration,
   authentication,
+  projectRuntimeConfiguration: (projectId) =>
+    projectRuntimeConfigurations.get(projectId),
   host: options.host,
   port: options.port,
   pollIntervalMs: options.pollIntervalMs,
@@ -106,13 +143,20 @@ console.log(`CTF Agent WebUI 已启动：${webui.url}`)
 if (controlPlane.snapshot().phase !== "ready") {
   console.log("比赛平台尚未连接，请在 WebUI 中完成配置")
 }
-if (options.autoStart && controlPlane.currentScheduler()) {
-  const availability = modelConfiguration.snapshot()
-  if (availability.configured) {
-    await controlPlane.currentScheduler()?.startAuto()
-    console.log("自主调度已开启")
-  } else {
-    console.log(`自主调度未开启：${availability.unavailableReason}`)
+if (options.autoStart) {
+  for (const project of controlPlane.projectSnapshots()) {
+    const scheduler = controlPlane.currentScheduler(project.id)
+    const runtime = projectRuntimeConfigurations.get(project.id)
+    if (!scheduler || !runtime) continue
+    const availability = modelConfiguration.snapshot(runtime.snapshot())
+    if (availability.configured) {
+      await scheduler.startAuto()
+      console.log(`${project.name}：自主调度已开启`)
+    } else {
+      console.log(
+        `${project.name}：自主调度未开启：${availability.unavailableReason}`,
+      )
+    }
   }
 }
 

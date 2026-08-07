@@ -263,6 +263,23 @@ export interface ModelConfigurationView {
   unavailableReason?: string
 }
 
+export interface AgentModelBindings {
+  solverModelId: string
+  tldrModelId: string
+  subagentModels: Record<string, string>
+}
+
+export interface ProjectRuntimeConfigurationView extends AgentModelBindings {
+  maxConcurrent: number
+}
+
+export interface DashboardProjectRuntimeConfiguration {
+  snapshot(): ProjectRuntimeConfigurationView
+  update(
+    configuration: ProjectRuntimeConfigurationView,
+  ): Promise<ProjectRuntimeConfigurationView>
+}
+
 export interface ModelConfigurationUpdate {
   models: ModelPoolEntryUpdate[]
   solverModelId: string
@@ -271,9 +288,15 @@ export interface ModelConfigurationUpdate {
 }
 
 export interface DashboardModelConfiguration {
-  snapshot(): ModelConfigurationView
-  createAgentOptions(target?: "solver" | "tldr"): AgentOptions
-  modelForSubagent(role: string): string | undefined
+  snapshot(bindings?: AgentModelBindings): ModelConfigurationView
+  createAgentOptions(
+    target?: "solver" | "tldr",
+    bindings?: AgentModelBindings,
+  ): AgentOptions
+  modelForSubagent(
+    role: string,
+    bindings?: AgentModelBindings,
+  ): string | undefined
   update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView>
