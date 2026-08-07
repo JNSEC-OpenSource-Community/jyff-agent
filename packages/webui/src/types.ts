@@ -19,7 +19,17 @@ import type {
   SubagentRecord,
   TldrRecord,
 } from "@ctf-agent/core"
-import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import type { AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core"
+
+export interface DashboardConversationMessage {
+  entryId: string
+  timestamp: string
+  message: AgentMessage
+}
+
+export interface DashboardConversation {
+  messages: DashboardConversationMessage[]
+}
 
 export type DashboardChallengeStatus =
   | "queued"

@@ -1005,6 +1005,93 @@ describe("WebUI HTTP server", () => {
     ])
   })
 
+  it("Run 与 SubAgent 通过同一结构化 API 返回当前 Pi 对话", async () => {
+    const project = new FakeDashboardProject()
+    const reads: string[] = []
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+      readSessionConversation: (sessionPath) => {
+        reads.push(sessionPath)
+        return {
+          messages: [
+            {
+              entryId: "assistant-1",
+              timestamp: "2026-08-01T00:00:00.000Z",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "found offset" }],
+                api: "openai-completions",
+                provider: "test",
+                model: "test-model",
+                usage: {
+                  input: 1,
+                  output: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 2,
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    total: 0,
+                  },
+                },
+                stopReason: "stop",
+                timestamp: 1,
+              },
+            },
+          ],
+        }
+      },
+    })
+    servers.push(server)
+
+    const run = await fetch(`${server.url}/api/runs/run-pwn-1/conversation`)
+    const subagent = await fetch(
+      `${server.url}/api/runs/run-pwn-1/subagents/worker-pwn-1/conversation`,
+    )
+
+    expect(run.status).toBe(200)
+    expect(await run.json()).toMatchObject({
+      messages: [{ message: { role: "assistant" } }],
+    })
+    expect(subagent.status).toBe(200)
+    expect(reads).toEqual([
+      "/sessions/run-pwn-1/session.jsonl",
+      "/sessions/worker-pwn-1/session.jsonl",
+    ])
+  })
+
+  it("尚未产生 assistant 消息时结构化对话也不可查看", async () => {
+    const project = new FakeDashboardProject()
+    const server = await startWebUi({
+      project,
+      host: "127.0.0.1",
+      port: 0,
+      pollIntervalMs: 60_000,
+      readSessionConversation: () => ({
+        messages: [
+          {
+            entryId: "user-1",
+            timestamp: "2026-08-01T00:00:00.000Z",
+            message: { role: "user", content: "start", timestamp: 1 },
+          },
+        ],
+      }),
+    })
+    servers.push(server)
+
+    const response = await fetch(
+      `${server.url}/api/runs/run-pwn-1/conversation`,
+    )
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: "session_not_ready" })
+  })
+
   it("导出响应内联呈现，平台/run 数据不进入任何响应头(防 header 注入)", async () => {
     const project = new FakeDashboardProject()
     project.runValues.push({

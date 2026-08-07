@@ -19,10 +19,12 @@ import {
 import {
   exportPiSessionHtml,
   piSessionHasConversation,
+  readPiSessionConversation,
 } from "./pi-html-export.ts"
 import type {
   AgentModelBindings,
   DashboardControlPlane,
+  DashboardConversation,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardProject,
@@ -58,6 +60,8 @@ export interface WebUiOptions {
   ) => Promise<Buffer>
   /** 测试可替换原生 Pi session 的对话可用性检查。 */
   sessionHasConversation?: (sessionPath: string) => Promise<boolean>
+  /** 测试可替换原生 Pi session 的结构化对话读取器。 */
+  readSessionConversation?: (sessionPath: string) => DashboardConversation
 }
 
 export interface WebUiServer {
@@ -131,6 +135,8 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
   const sessionHasConversation =
     options.sessionHasConversation ?? piSessionHasConversation
+  const readSessionConversation =
+    options.readSessionConversation ?? readPiSessionConversation
   const buildCurrentSnapshot = async (
     projectId?: string,
   ): Promise<DashboardSnapshot> => {
@@ -1131,6 +1137,34 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
+    const subagentConversation =
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/conversation$/.exec(apiPath)
+    if (method === "GET" && subagentConversation) {
+      const project = currentProject(projectId)
+      requireProject(project)
+      const runId = decodeURIComponent(subagentConversation[1] ?? "")
+      const subagentId = decodeURIComponent(subagentConversation[2] ?? "")
+      if (!project.runs().some((candidate) => candidate.id === runId)) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
+      }
+      const subagent = project
+        .subagents(runId)
+        .find((candidate) => candidate.id === subagentId)
+      if (!subagent) {
+        throw new HttpRequestError(
+          404,
+          "subagent_not_found",
+          `SubAgent 不存在: ${subagentId}`,
+        )
+      }
+      sendJson(
+        response,
+        200,
+        readConversation(subagent.sessionPath, readSessionConversation),
+      )
+      return
+    }
+
     const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(apiPath)
     if (method === "GET" && runExport) {
       const project = currentProject(projectId)
@@ -1147,6 +1181,26 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
           await project.runSessionExportMetadata(run.id),
           sessionHasConversation,
           exportSessionHtml,
+        ),
+      )
+      return
+    }
+
+    const runConversation = /^\/api\/runs\/([^/]+)\/conversation$/.exec(apiPath)
+    if (method === "GET" && runConversation) {
+      const project = currentProject(projectId)
+      requireProject(project)
+      const runId = decodeURIComponent(runConversation[1] ?? "")
+      const run = project.runs().find((candidate) => candidate.id === runId)
+      if (!run) {
+        throw new HttpRequestError(404, "run_not_found", `Run 不存在: ${runId}`)
+      }
+      sendJson(
+        response,
+        200,
+        readConversation(
+          project.runSessionPath(run.id),
+          readSessionConversation,
         ),
       )
       return
@@ -1454,6 +1508,32 @@ async function exportConversationHtml(
       409,
       "session_export_failed",
       `无法导出 Pi 会话: ${errorText(error)}`,
+    )
+  }
+}
+
+function readConversation(
+  sessionPath: string,
+  reader: (sessionPath: string) => DashboardConversation,
+): DashboardConversation {
+  try {
+    const conversation = reader(sessionPath)
+    if (
+      !conversation.messages.some(({ message }) => message.role === "assistant")
+    ) {
+      throw new HttpRequestError(
+        409,
+        "session_not_ready",
+        "该会话尚未产生 Agent 对话",
+      )
+    }
+    return conversation
+  } catch (error) {
+    if (error instanceof HttpRequestError) throw error
+    throw new HttpRequestError(
+      409,
+      "session_read_failed",
+      `无法读取 Pi 会话: ${errorText(error)}`,
     )
   }
 }
