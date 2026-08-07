@@ -8,7 +8,11 @@ import { AnnouncementPoller } from "../orchestration/announcement-poller.ts"
 import type { ContestScheduler } from "../orchestration/contest-scheduler.ts"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 import { type OpenProjectOptions, Project } from "../project/project.ts"
-import { ProjectConfigStore } from "./config-store.ts"
+import {
+  ProjectConfigStore,
+  projectStorageKey,
+  type StoredProjectConfig,
+} from "./config-store.ts"
 import { FileSecretStore, type SecretStore } from "./secret-store.ts"
 
 export type ControlPlanePhase =
@@ -19,6 +23,16 @@ export type ControlPlanePhase =
   | "degraded"
   | "closing"
 
+export interface ControlPlaneProjectSnapshot {
+  id: string
+  name: string
+  platformId: string
+  phase: Exclude<ControlPlanePhase, "unconfigured">
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface ControlPlaneSnapshot {
   phase: ControlPlanePhase
   configured: boolean
@@ -27,6 +41,8 @@ export interface ControlPlaneSnapshot {
   platformId: string | null
   lastError: string | null
   updatedAt: string
+  selectedProjectId: string | null
+  projects: ControlPlaneProjectSnapshot[]
 }
 
 export interface PlatformConnectionTest {
@@ -55,25 +71,43 @@ export interface ControlPlaneOptions {
   root: string
   platforms: readonly PlatformPlugin[]
   secretStore?: SecretStore
-  project?: Omit<OpenProjectOptions, "root" | "platforms" | "resolveSecret">
-  createScheduler?: (project: Project) => ContestScheduler | undefined
+  project?: Omit<
+    OpenProjectOptions,
+    | "root"
+    | "config"
+    | "stateDirectory"
+    | "workspaceNamespace"
+    | "platforms"
+    | "resolveSecret"
+  >
+  createScheduler?: (
+    project: Project,
+    context: { projectId: string; stateDirectory: string },
+  ) => ContestScheduler | undefined
   announcementPollIntervalMs?: number
 }
 
-/** Owns configuration and the replaceable Project/Scheduler runtime. */
+interface ManagedProjectRuntime {
+  record: StoredProjectConfig
+  phase: Exclude<ControlPlanePhase, "unconfigured">
+  lastError: string | null
+  updatedAt: string
+  project?: Project
+  scheduler?: ContestScheduler
+  announcementPoller?: AnnouncementPoller
+}
+
+/** Owns the global Project registry and one isolated runtime per configured Project. */
 export class ControlPlane {
   readonly root: string
   private readonly platforms: readonly PlatformPlugin[]
   private readonly configStore: ProjectConfigStore
   private readonly secretStore: SecretStore
   private readonly options: ControlPlaneOptions
-  private config?: ProjectConfig
-  private project?: Project
-  private scheduler?: ContestScheduler
-  private announcementPoller?: AnnouncementPoller
-  private phase: ControlPlanePhase = "unconfigured"
-  private lastError: string | null = null
-  private updatedAt = new Date().toISOString()
+  private readonly runtimes = new Map<string, ManagedProjectRuntime>()
+  private selectedProjectId?: string
+  private loadError: string | null = null
+  private closing = false
   private transitionTail: Promise<void> = Promise.resolve()
 
   private constructor(options: ControlPlaneOptions, secretStore: SecretStore) {
@@ -91,32 +125,76 @@ export class ControlPlane {
       (await FileSecretStore.open(join(root, ".ctf-agent", "secrets.json")))
     const control = new ControlPlane(options, secretStore)
     try {
-      control.config = await control.configStore.load()
-      control.setPhase(control.config ? "disconnected" : "unconfigured")
+      const records = await control.configStore.list()
+      for (const record of records) {
+        control.runtimes.set(record.config.project.id, {
+          record,
+          phase: "disconnected",
+          lastError: null,
+          updatedAt: record.updatedAt,
+        })
+      }
+      control.selectedProjectId = records[0]?.config.project.id
     } catch (error) {
-      control.lastError = errorText(error)
-      control.setPhase("degraded")
+      control.loadError = errorText(error)
     }
     return control
   }
 
-  snapshot(): ControlPlaneSnapshot {
+  snapshot(projectId?: string): ControlPlaneSnapshot {
+    const selectedId = projectId ?? this.selectedProjectId
+    const runtime = selectedId ? this.runtimes.get(selectedId) : undefined
+    const projects = this.projectSnapshots()
+    if (!runtime) {
+      return {
+        phase: this.closing
+          ? "closing"
+          : this.loadError
+            ? "degraded"
+            : "unconfigured",
+        configured: projects.length > 0,
+        projectId: null,
+        projectName: null,
+        platformId: null,
+        lastError: this.loadError,
+        updatedAt:
+          projects.reduce<string | undefined>(
+            (latest, item) =>
+              !latest || item.updatedAt.localeCompare(latest) > 0
+                ? item.updatedAt
+                : latest,
+            undefined,
+          ) ?? new Date().toISOString(),
+        selectedProjectId: this.selectedProjectId ?? null,
+        projects,
+      }
+    }
+    const state = this.runtimeSnapshot(runtime)
     return {
-      phase: this.phase,
-      configured: this.config !== undefined,
-      projectId: this.config?.project.id ?? null,
-      projectName: this.config?.project.name ?? null,
-      platformId: this.config?.platform.plugin ?? null,
-      lastError: this.lastError,
-      updatedAt: this.updatedAt,
+      phase: this.closing ? "closing" : state.phase,
+      configured: true,
+      projectId: state.id,
+      projectName: state.name,
+      platformId: state.platformId,
+      lastError: state.lastError,
+      updatedAt: state.updatedAt,
+      selectedProjectId: this.selectedProjectId ?? null,
+      projects,
     }
   }
 
-  configuration(): ProjectConfig | undefined {
-    return this.config ? structuredClone(this.config) : undefined
+  projectSnapshots(): ControlPlaneProjectSnapshot[] {
+    return [...this.runtimes.values()].map((runtime) =>
+      this.runtimeSnapshot(runtime),
+    )
   }
 
-  setupSnapshot(): ControlPlaneSetupSnapshot {
+  configuration(projectId?: string): ProjectConfig | undefined {
+    const runtime = this.resolveRuntime(projectId)
+    return runtime ? structuredClone(runtime.record.config) : undefined
+  }
+
+  setupSnapshot(projectId?: string): ControlPlaneSetupSnapshot {
     const platforms = this.platforms.flatMap((plugin) =>
       plugin.setup ? [{ id: plugin.id, setup: plugin.setup }] : [],
     )
@@ -128,8 +206,8 @@ export class ControlPlane {
       ),
     )
     return {
-      state: this.snapshot(),
-      config: this.configuration() ?? null,
+      state: this.snapshot(projectId),
+      config: this.configuration(projectId) ?? null,
       platforms,
       secrets: Object.fromEntries(
         [...names].map((name) => [
@@ -143,25 +221,43 @@ export class ControlPlane {
     }
   }
 
-  currentProject(): Project | undefined {
-    return this.project
+  selectProject(projectId: string): ControlPlaneSnapshot {
+    if (!this.runtimes.has(projectId)) {
+      throw new Error(`Project 不存在: ${projectId}`)
+    }
+    this.selectedProjectId = projectId
+    return this.snapshot(projectId)
   }
 
-  currentScheduler(): ContestScheduler | undefined {
-    return this.scheduler
+  currentProject(projectId?: string): Project | undefined {
+    return this.resolveRuntime(projectId)?.project
+  }
+
+  currentScheduler(projectId?: string): ContestScheduler | undefined {
+    return this.resolveRuntime(projectId)?.scheduler
   }
 
   async start(): Promise<ControlPlaneSnapshot> {
-    if (!this.config) return this.snapshot()
-    try {
-      return await this.connect()
-    } catch {
+    return await this.enqueueTransition(async () => {
+      for (const projectId of this.runtimes.keys()) {
+        try {
+          await this.performConnect(projectId)
+        } catch {
+          // 单个 Project 降级不阻塞其他 Project 启动。
+        }
+      }
       return this.snapshot()
-    }
+    })
   }
 
-  async connect(): Promise<ControlPlaneSnapshot> {
-    return await this.enqueueTransition(() => this.performConnect())
+  async connect(projectId?: string): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      const id = this.resolveProjectId(projectId)
+      if (!id) return this.snapshot()
+      this.selectedProjectId = id
+      await this.performConnect(id)
+      return this.snapshot(id)
+    })
   }
 
   async testConnection(
@@ -183,33 +279,60 @@ export class ControlPlane {
     return await this.enqueueTransition(async () => {
       const config = this.validateConfig(input.config)
       await this.testConnection({ config, secrets: input.secrets })
-      await this.performDisconnect()
+      if (this.runtimes.has(config.project.id)) {
+        await this.performDisconnect(config.project.id)
+      }
       if (input.secrets) await this.secretStore.set(input.secrets)
-      this.config = await this.configStore.save(config)
-      return await this.performConnect()
+      const record = await this.configStore.saveProject(config)
+      this.runtimes.set(config.project.id, {
+        record,
+        phase: "disconnected",
+        lastError: null,
+        updatedAt: record.updatedAt,
+      })
+      this.selectedProjectId = config.project.id
+      await this.performConnect(config.project.id)
+      return this.snapshot(config.project.id)
     })
   }
 
-  async disconnect(): Promise<ControlPlaneSnapshot> {
-    return await this.enqueueTransition(() => this.performDisconnect())
+  async disconnect(projectId?: string): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      const id = this.resolveProjectId(projectId)
+      if (!id) return this.snapshot()
+      await this.performDisconnect(id)
+      return this.snapshot(id)
+    })
   }
 
   async close(): Promise<void> {
     await this.enqueueTransition(async () => {
-      this.setPhase("closing")
-      await this.performDisconnect()
+      this.closing = true
+      const failures: unknown[] = []
+      for (const projectId of this.runtimes.keys()) {
+        try {
+          await this.performDisconnect(projectId)
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "ControlPlane 关闭时资源清理失败")
+      }
       return this.snapshot()
     })
   }
 
-  private async performDisconnect(): Promise<ControlPlaneSnapshot> {
+  private async performDisconnect(projectId: string): Promise<void> {
+    const runtime = this.runtimes.get(projectId)
+    if (!runtime) return
     const failures: unknown[] = []
-    const scheduler = this.scheduler
-    const project = this.project
-    this.announcementPoller?.stop()
-    this.announcementPoller = undefined
-    this.scheduler = undefined
-    this.project = undefined
+    const scheduler = runtime.scheduler
+    const project = runtime.project
+    runtime.announcementPoller?.stop()
+    runtime.announcementPoller = undefined
+    runtime.scheduler = undefined
+    runtime.project = undefined
     if (scheduler) {
       try {
         await scheduler.shutdown()
@@ -224,55 +347,61 @@ export class ControlPlane {
         failures.push(error)
       }
     }
-    this.setPhase(this.config ? "disconnected" : "unconfigured")
+    this.setRuntimePhase(runtime, "disconnected")
     if (failures.length > 0) {
-      this.lastError = failures.map(errorText).join("\n")
-      this.setPhase("degraded")
-      throw new AggregateError(failures, "ControlPlane 断开时资源清理失败")
+      runtime.lastError = failures.map(errorText).join("\n")
+      this.setRuntimePhase(runtime, "degraded")
+      throw new AggregateError(
+        failures,
+        `Project ${projectId} 断开时资源清理失败`,
+      )
     }
-    return this.snapshot()
   }
 
-  private async performConnect(): Promise<ControlPlaneSnapshot> {
-    if (!this.config) {
-      this.setPhase("unconfigured")
-      return this.snapshot()
-    }
-    if (this.project) return this.snapshot()
-    this.lastError = null
-    this.setPhase("connecting")
+  private async performConnect(projectId: string): Promise<void> {
+    const runtime = this.runtimes.get(projectId)
+    if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+    if (runtime.project) return
+    runtime.lastError = null
+    this.setRuntimePhase(runtime, "connecting")
     try {
       const project = await Project.open({
         ...this.options.project,
         root: this.root,
-        config: this.config,
+        stateDirectory: runtime.record.stateDirectory,
+        workspaceNamespace: runtime.record.legacy
+          ? undefined
+          : `projects/${projectStorageKey(projectId)}`,
+        config: runtime.record.config,
         platforms: this.platforms,
         resolveSecret: this.secretResolver(),
       })
-      this.project = project
+      runtime.project = project
       try {
         await project.syncAnnouncements({ steerActive: false })
       } catch (error) {
         // 公告 baseline 降级不阻塞 Solver；后续 poll 可以恢复。
-        this.lastError = `公告 baseline 失败: ${errorText(error)}`
+        runtime.lastError = `公告 baseline 失败: ${errorText(error)}`
       }
-      this.scheduler = this.options.createScheduler?.(project)
-      this.announcementPoller = new AnnouncementPoller({
+      runtime.scheduler = this.options.createScheduler?.(project, {
+        projectId,
+        stateDirectory: runtime.record.stateDirectory,
+      })
+      runtime.announcementPoller = new AnnouncementPoller({
         intervalMs: this.options.announcementPollIntervalMs ?? 30_000,
         poll: async () => {
           await project.syncAnnouncements()
         },
         onError: (error) => {
-          this.lastError = `公告轮询失败: ${errorText(error)}`
-          this.updatedAt = new Date().toISOString()
+          runtime.lastError = `公告轮询失败: ${errorText(error)}`
+          runtime.updatedAt = new Date().toISOString()
         },
       })
-      this.announcementPoller.start()
-      this.setPhase("ready")
-      return this.snapshot()
+      runtime.announcementPoller.start()
+      this.setRuntimePhase(runtime, "ready")
     } catch (error) {
-      this.lastError = errorText(error)
-      this.setPhase("degraded")
+      runtime.lastError = errorText(error)
+      this.setRuntimePhase(runtime, "degraded")
       throw error
     }
   }
@@ -300,9 +429,37 @@ export class ControlPlane {
     return (name) => overrides[name] ?? this.secretStore.get(name)
   }
 
-  private setPhase(phase: ControlPlanePhase): void {
-    this.phase = phase
-    this.updatedAt = new Date().toISOString()
+  private resolveProjectId(projectId?: string): string | undefined {
+    return projectId ?? this.selectedProjectId
+  }
+
+  private resolveRuntime(
+    projectId?: string,
+  ): ManagedProjectRuntime | undefined {
+    const id = this.resolveProjectId(projectId)
+    return id ? this.runtimes.get(id) : undefined
+  }
+
+  private runtimeSnapshot(
+    runtime: ManagedProjectRuntime,
+  ): ControlPlaneProjectSnapshot {
+    return {
+      id: runtime.record.config.project.id,
+      name: runtime.record.config.project.name,
+      platformId: runtime.record.config.platform.plugin,
+      phase: runtime.phase,
+      lastError: runtime.lastError,
+      createdAt: runtime.record.createdAt,
+      updatedAt: runtime.updatedAt,
+    }
+  }
+
+  private setRuntimePhase(
+    runtime: ManagedProjectRuntime,
+    phase: ManagedProjectRuntime["phase"],
+  ): void {
+    runtime.phase = phase
+    runtime.updatedAt = new Date().toISOString()
   }
 
   private enqueueTransition(

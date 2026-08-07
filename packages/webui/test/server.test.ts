@@ -34,6 +34,21 @@ describe("WebUI HTTP server", () => {
       platformId: phase === "ready" ? "ctfd" : null,
       lastError: null,
       updatedAt: "2026-08-04T00:00:00.000Z",
+      selectedProjectId: phase === "ready" ? "demo" : null,
+      projects:
+        phase === "ready"
+          ? [
+              {
+                id: "demo",
+                name: "Demo CTF",
+                platformId: "ctfd",
+                phase: "ready" as const,
+                lastError: null,
+                createdAt: "2026-08-04T00:00:00.000Z",
+                updatedAt: "2026-08-04T00:00:00.000Z",
+              },
+            ]
+          : [],
     })
     const controlPlane: DashboardControlPlane = {
       snapshot,

@@ -85,10 +85,10 @@ class CredentialPlatform implements PlatformPlugin {
   }
 }
 
-function config(name = "Setup Test"): ProjectConfig {
+function config(name = "Setup Test", id = "setup-test"): ProjectConfig {
   return {
     version: 1,
-    project: { id: "setup-test", name },
+    project: { id, name },
     platform: { plugin: "credential-test", config: {} },
     sandbox: { image: "unused", privileged: false, networkMode: "none" },
   }
@@ -193,6 +193,39 @@ describe("ControlPlane", () => {
     expect(first.phase).toBe("ready")
     expect(second).toMatchObject({ phase: "ready", projectName: "Second" })
     expect((await control.currentProject()?.overview())?.name).toBe("Second")
+    await control.close()
+  })
+
+  it("同时托管多个隔离 Project，并允许按 ID 独立断开", async () => {
+    const root = await rootFixture()
+    const plugin = new CredentialPlatform()
+    const control = await ControlPlane.create({ root, platforms: [plugin] })
+
+    await control.applySetup({
+      config: config("First Project", "first"),
+      secrets: { TEST_TOKEN: "secret-token" },
+    })
+    await control.applySetup({
+      config: config("Second Project", "second"),
+      secrets: { TEST_TOKEN: "secret-token" },
+    })
+
+    expect(control.projectSnapshots()).toEqual([
+      expect.objectContaining({ id: "first", phase: "ready" }),
+      expect.objectContaining({ id: "second", phase: "ready" }),
+    ])
+    expect(control.currentProject("first")?.agentDirectory).not.toBe(
+      control.currentProject("second")?.agentDirectory,
+    )
+    expect(control.snapshot("first")).toMatchObject({
+      projectId: "first",
+      selectedProjectId: "second",
+    })
+
+    await control.disconnect("first")
+    expect(control.snapshot("first").phase).toBe("disconnected")
+    expect(control.snapshot("second").phase).toBe("ready")
+    expect(control.currentProject("second")).toBeDefined()
     await control.close()
   })
 })

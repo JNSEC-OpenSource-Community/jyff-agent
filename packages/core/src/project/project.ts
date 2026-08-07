@@ -96,6 +96,8 @@ export interface OpenProjectOptions {
   config?: ProjectConfig
   /** RunStore、session 与 challenge workspace 的隔离目录。 */
   stateDirectory?: string
+  /** Docker volume 中该 Project workspace 的相对命名空间。 */
+  workspaceNamespace?: string
   platforms: readonly PlatformPlugin[]
   /** Resolve a named secret without placing credentials in project config. */
   resolveSecret?: (name: string) => string | undefined
@@ -189,6 +191,7 @@ export class Project {
     private readonly subagentRoles: ReadonlyMap<string, SubagentRole>,
     private readonly runStore: RunStore,
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
+    private readonly workspaceNamespace: string | undefined,
     private readonly telemetry: Required<ProjectTelemetryOptions>,
     private readonly subagentRuntime: {
       maxConcurrent: number
@@ -243,6 +246,7 @@ export class Project {
         discoveredSubagents.roles,
         runStore,
         options.workspaceMount,
+        normalizeWorkspaceNamespace(options.workspaceNamespace),
         {
           level: options.telemetry?.level ?? "safe",
           maxTextLength: Math.max(
@@ -341,7 +345,7 @@ export class Project {
         workspaceMount: this.workspaceMount?.({
           runId: `tldr-${challengeId}`,
           workspace,
-          relativeWorkspace: `challenges/${challengeWorkspaceKey(challengeId)}/workspace`,
+          relativeWorkspace: this.relativeWorkspace(challengeId),
         }),
         privileged: this.config.sandbox.privileged,
         networkMode: this.config.sandbox.networkMode,
@@ -885,7 +889,7 @@ export class Project {
         workspaceMount: this.workspaceMount?.({
           runId,
           workspace,
-          relativeWorkspace: `challenges/${challengeWorkspaceKey(challengeId)}/workspace`,
+          relativeWorkspace: this.relativeWorkspace(challengeId),
         }),
         privileged: this.config.sandbox.privileged,
         networkMode: this.config.sandbox.networkMode,
@@ -1170,6 +1174,13 @@ export class Project {
         cause,
       )
     }
+  }
+
+  private relativeWorkspace(challengeId: string): string {
+    const relative = `challenges/${challengeWorkspaceKey(challengeId)}/workspace`
+    return this.workspaceNamespace
+      ? `${this.workspaceNamespace}/${relative}`
+      : relative
   }
 
   private configuredSubagentRoles(): ReadonlyMap<string, SubagentRole> {
@@ -1547,4 +1558,25 @@ function projectDiagnostics(
       createdAt,
     })),
   ]
+}
+
+function normalizeWorkspaceNamespace(
+  value: string | undefined,
+): string | undefined {
+  if (value === undefined) return undefined
+  const normalized = value.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "")
+  if (
+    !normalized ||
+    normalized
+      .split("/")
+      .some(
+        (segment) =>
+          segment === "." ||
+          segment === ".." ||
+          !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(segment),
+      )
+  ) {
+    throw new Error("workspaceNamespace 必须是安全的相对路径")
+  }
+  return normalized
 }
