@@ -94,6 +94,8 @@ export interface OpenProjectOptions {
   root?: string
   /** 已由控制面加载的配置；提供时不再从 .pi/ctf-config.json 重读。 */
   config?: ProjectConfig
+  /** RunStore、session 与 challenge workspace 的隔离目录。 */
+  stateDirectory?: string
   platforms: readonly PlatformPlugin[]
   /** Resolve a named secret without placing credentials in project config. */
   resolveSecret?: (name: string) => string | undefined
@@ -169,6 +171,7 @@ export class SolverCreationError extends Error {
 export class Project {
   readonly root: string
   readonly config: ProjectConfig
+  readonly agentDirectory: string
   private readonly solvers = new Set<CtfSolverAgent>()
   private readonly subagentManagers = new Map<string, CtfSubagentManager>()
   private readonly runChallengeContexts = new Map<string, string>()
@@ -177,6 +180,7 @@ export class Project {
   private constructor(
     root: string,
     config: ProjectConfig,
+    agentDirectory: string,
     private readonly platform: PlatformProject,
     private readonly sandboxFactory: (
       options: DockerSandboxOptions,
@@ -194,6 +198,7 @@ export class Project {
   ) {
     this.root = root
     this.config = config
+    this.agentDirectory = agentDirectory
     this.diagnosticLog = [...diagnostics]
   }
 
@@ -220,7 +225,9 @@ export class Project {
         discoverProjectSkillsWithDiagnostics(root, options.skillPaths),
         discoverSubagentRoles(root),
       ])
-      const agentDirectory = join(root, ".ctf-agent")
+      const agentDirectory = resolve(
+        options.stateDirectory ?? join(root, ".ctf-agent"),
+      )
       await mkdir(agentDirectory, { recursive: true })
       runStore = await RunStore.open(join(agentDirectory, "runs.sqlite"))
       // Project.open 只可能发生在新进程/新控制面中；遗留活跃记录不可继续信任。
@@ -229,6 +236,7 @@ export class Project {
       return new Project(
         root,
         config,
+        agentDirectory,
         platform,
         options.sandboxFactory ?? DockerSandbox.create,
         discovered.skills,
@@ -271,9 +279,6 @@ export class Project {
     }
   }
 
-  get agentDirectory(): string {
-    return join(this.root, ".ctf-agent")
-  }
   runSessionPath(runId: string): string {
     return join(this.agentDirectory, "runs", runId, "session.jsonl")
   }
