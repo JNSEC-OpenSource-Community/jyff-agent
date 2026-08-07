@@ -161,7 +161,7 @@ pnpm typecheck
 pnpm test
 
 # 本机启动；需要本机 Docker
-pnpm webui -- --root . --host 0.0.0.0 --port 3000
+pnpm webui --root . --host 0.0.0.0 --port 3000
 ```
 
 WebUI 可执行入口还支持：
