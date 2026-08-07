@@ -52,11 +52,14 @@ class CredentialPlatform implements PlatformPlugin {
   }
   connections = 0
   closes = 0
+  readonly connectedTokens: Array<{ projectId: string; token: string }> = []
 
   async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
-    if (options.resolveSecret("TEST_TOKEN") !== "secret-token") {
+    const token = options.resolveSecret("TEST_TOKEN")
+    if (!token) {
       throw new Error("缺少 TEST_TOKEN")
     }
+    this.connectedTokens.push({ projectId: options.project.id, token })
     this.connections++
     return {
       refresh: async () => await this.overview(options),
@@ -203,11 +206,11 @@ describe("ControlPlane", () => {
 
     await control.applySetup({
       config: config("First Project", "first"),
-      secrets: { TEST_TOKEN: "secret-token" },
+      secrets: { TEST_TOKEN: "first-token" },
     })
     await control.applySetup({
       config: config("Second Project", "second"),
-      secrets: { TEST_TOKEN: "secret-token" },
+      secrets: { TEST_TOKEN: "second-token" },
     })
 
     expect(control.projectSnapshots()).toEqual([
@@ -226,6 +229,39 @@ describe("ControlPlane", () => {
     expect(control.snapshot("first").phase).toBe("disconnected")
     expect(control.snapshot("second").phase).toBe("ready")
     expect(control.currentProject("second")).toBeDefined()
+    await control.connect("first")
+    expect(plugin.connectedTokens.slice(-2)).toEqual([
+      { projectId: "second", token: "second-token" },
+      { projectId: "first", token: "first-token" },
+    ])
+    expect(control.setupSnapshot("first").secrets).toMatchObject({
+      TEST_TOKEN: { configured: true },
+    })
+    expect(control.setupSnapshot("second").secrets).toMatchObject({
+      TEST_TOKEN: { configured: true },
+    })
+    await control.close()
+  })
+
+  it("旧版未命名空间的 Secret 仍可只读回退", async () => {
+    const root = await rootFixture()
+    await writeConfig(root, config())
+    const secretStore = await FileSecretStore.open(
+      join(root, ".ctf-agent", "secrets.json"),
+    )
+    await secretStore.set({ TEST_TOKEN: "legacy-token" })
+    const plugin = new CredentialPlatform()
+    const control = await ControlPlane.create({
+      root,
+      platforms: [plugin],
+      secretStore,
+    })
+
+    expect(await control.start()).toMatchObject({ phase: "ready" })
+    expect(plugin.connectedTokens).toContainEqual({
+      projectId: "setup-test",
+      token: "legacy-token",
+    })
     await control.close()
   })
 })

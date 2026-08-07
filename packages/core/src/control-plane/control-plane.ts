@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { join, resolve } from "node:path"
 import type {
   PlatformPlugin,
@@ -229,6 +230,7 @@ export class ControlPlane {
         ),
       ),
     )
+    const resolvedProjectId = this.resolveProjectId(projectId)
     return {
       state: this.snapshot(projectId),
       config: this.configuration(projectId) ?? null,
@@ -237,8 +239,10 @@ export class ControlPlane {
         [...names].map((name) => [
           name,
           {
-            configured: this.secretStore.has(name),
-            source: this.secretStore.has(name) ? "store" : "none",
+            configured: this.hasProjectSecret(resolvedProjectId, name),
+            source: this.hasProjectSecret(resolvedProjectId, name)
+              ? "store"
+              : "none",
           },
         ]),
       ),
@@ -292,7 +296,7 @@ export class ControlPlane {
     const platform = await plugin.connect({
       project: config.project,
       config: plugin.config.parse(config.platform.config),
-      resolveSecret: this.secretResolver(input.secrets),
+      resolveSecret: this.secretResolver(config.project.id, input.secrets),
     })
     return await inspectAndClose(platform)
   }
@@ -306,7 +310,11 @@ export class ControlPlane {
       if (this.runtimes.has(config.project.id)) {
         await this.performDisconnect(config.project.id)
       }
-      if (input.secrets) await this.secretStore.set(input.secrets)
+      if (input.secrets) {
+        await this.secretStore.set(
+          namespaceProjectSecrets(config.project.id, input.secrets),
+        )
+      }
       const record = await this.configStore.saveProject(config)
       this.runtimes.set(config.project.id, {
         record,
@@ -404,7 +412,7 @@ export class ControlPlane {
           : `projects/${projectStorageKey(projectId)}`,
         config: runtime.record.config,
         platforms: this.platforms,
-        resolveSecret: this.secretResolver(),
+        resolveSecret: this.secretResolver(projectId),
       })
       runtime.project = project
       try {
@@ -451,9 +459,23 @@ export class ControlPlane {
   }
 
   private secretResolver(
+    projectId: string,
     overrides: Readonly<Record<string, string | undefined>> = {},
   ): (name: string) => string | undefined {
-    return (name) => overrides[name] ?? this.secretStore.get(name)
+    return (name) =>
+      overrides[name] ??
+      this.secretStore.get(projectSecretName(projectId, name)) ??
+      this.secretStore.get(name)
+  }
+
+  private hasProjectSecret(
+    projectId: string | undefined,
+    name: string,
+  ): boolean {
+    return Boolean(
+      (projectId && this.secretStore.has(projectSecretName(projectId, name))) ||
+        this.secretStore.has(name),
+    )
   }
 
   private resolveProjectId(projectId?: string): string | undefined {
@@ -499,6 +521,29 @@ export class ControlPlane {
     )
     return result
   }
+}
+
+/** Project 平台凭据使用不可逆稳定键隔离，避免同名插件 Secret 跨比赛覆盖。 */
+export function projectSecretName(projectId: string, name: string): string {
+  const projectKey = projectStorageKey(projectId).slice(0, 16).toUpperCase()
+  const secretKey = createHash("sha256")
+    .update(name, "utf8")
+    .digest("hex")
+    .slice(0, 16)
+    .toUpperCase()
+  return `PROJECT_${projectKey}_${secretKey}`
+}
+
+function namespaceProjectSecrets(
+  projectId: string,
+  values: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [
+      projectSecretName(projectId, name),
+      value,
+    ]),
+  )
 }
 
 async function inspectAndClose(
