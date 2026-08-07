@@ -7,7 +7,11 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!packages/webui/src/client/app.js"]
+    "includes": [
+      "**",
+      "!packages/webui/src/client/app.js",
+      "!packages/webui/src/client/app.css"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -24,6 +28,11 @@
     "formatter": {
       "quoteStyle": "double",
       "semicolons": "asNeeded"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   },
   "overrides": [

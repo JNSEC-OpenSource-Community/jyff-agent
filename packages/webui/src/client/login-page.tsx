@@ -3,7 +3,7 @@ import { type FormEvent, useState } from "react"
 import { Navigate, useNavigate } from "react-router-dom"
 import { apiMutation } from "./api.ts"
 import { useApp } from "./app-context.tsx"
-import { Button, ErrorNotice } from "./ui.tsx"
+import { Button, ErrorNotice } from "./components/index.ts"
 
 export function LoginPage(): React.ReactElement {
   const { auth, refreshAuth } = useApp()

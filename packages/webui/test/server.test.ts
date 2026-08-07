@@ -297,6 +297,12 @@ describe("WebUI HTTP server", () => {
     expect(home.headers.get("content-type")).toContain("text/html")
     expect(await home.text()).toContain("正在载入控制面")
 
+    const styles = await fetch(`${server.url}/styles.css`)
+    expect(styles.headers.get("content-type")).toContain("text/css")
+    const compiledCss = await styles.text()
+    expect(compiledCss).toContain("--color-background")
+    expect(compiledCss).not.toContain('@import "tailwindcss"')
+
     const nestedRoute = await fetch(`${server.url}/projects/demo/settings`)
     expect(nestedRoute.status).toBe(200)
     expect(nestedRoute.headers.get("content-type")).toContain("text/html")

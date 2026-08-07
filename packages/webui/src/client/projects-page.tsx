@@ -17,7 +17,7 @@ import {
   ErrorNotice,
   PageHeader,
   Spinner,
-} from "./ui.tsx"
+} from "./components/index.ts"
 
 export function ProjectsPage(): React.ReactElement {
   const { projects, loading, refreshProjects } = useApp()

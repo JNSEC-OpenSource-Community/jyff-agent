@@ -1,15 +1,14 @@
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppProvider, useApp } from "./app-context.tsx"
 import { AppShell } from "./app-shell.tsx"
 import { ChallengePage } from "./challenge-page.tsx"
+import { Spinner, TooltipProvider } from "./components/index.ts"
 import { LoginPage } from "./login-page.tsx"
 import { ProjectPage } from "./project-page.tsx"
 import { NewProjectPage, ProjectsPage } from "./projects-page.tsx"
 import { GlobalSettingsPage, ProjectSettingsPage } from "./settings-page.tsx"
-import { Spinner } from "./ui.tsx"
 
 function AuthenticatedRoutes(): React.ReactElement {
   const { auth, loading } = useApp()
@@ -50,11 +49,11 @@ if (!root) throw new Error("缺少 #root 容器")
 createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
-      <TooltipPrimitive.Provider>
+      <TooltipProvider>
         <AppProvider>
           <AuthenticatedRoutes />
         </AppProvider>
-      </TooltipPrimitive.Provider>
+      </TooltipProvider>
     </BrowserRouter>
   </StrictMode>,
 )

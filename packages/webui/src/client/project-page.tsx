@@ -20,7 +20,6 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import type { DashboardChallenge, DashboardSnapshot } from "../types.ts"
 import { apiMutation, apiRequest, projectApi } from "./api.ts"
-import { relativeTime, STATUS_LABELS } from "./lib.ts"
 import {
   Badge,
   Button,
@@ -29,7 +28,8 @@ import {
   ErrorNotice,
   PageHeader,
   Spinner,
-} from "./ui.tsx"
+} from "./components/index.ts"
+import { relativeTime, STATUS_LABELS } from "./lib.ts"
 
 function statusTone(
   status: string,

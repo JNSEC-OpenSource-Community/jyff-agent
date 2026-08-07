@@ -19,7 +19,6 @@ import type {
 } from "../types.ts"
 import { apiMutation, apiRequest, projectApi } from "./api.ts"
 import { useApp } from "./app-context.tsx"
-import { errorMessage } from "./lib.ts"
 import {
   Badge,
   Button,
@@ -31,7 +30,8 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "./ui.tsx"
+} from "./components/index.ts"
+import { errorMessage } from "./lib.ts"
 
 interface GlobalConfigurationResponse {
   authentication: { enabled: boolean; username: string | null }

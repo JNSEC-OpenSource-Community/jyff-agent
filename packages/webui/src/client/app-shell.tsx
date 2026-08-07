@@ -2,7 +2,8 @@ import { Icon } from "@iconify/react"
 import { useMemo, useState } from "react"
 import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom"
 import { useApp } from "./app-context.tsx"
-import { cn, MobileSheet, Tooltip } from "./ui.tsx"
+import { MobileSheet, Tooltip } from "./components/index.ts"
+import { cn } from "./lib/utils.ts"
 
 interface NavItem {
   to: string

@@ -55,6 +55,8 @@ ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有�
 
 前端使用 React Router 的独立页面和 Misuzu 风格的全局图标栏 + Project 上下文栏。根页面列出所有 Project；全局设置管理 Provider 凭据、模型池和可选登录；Project 首页管理完整题目列表与可拖动持久队列；Project 设置只管理比赛连接、角色绑定和并发量；每道题拥有独立聊天工作区。
 
+通用 UI 采用 shadcn/ui 的源码托管结构：`packages/webui/components.json` 是 CLI 配置，Radix/CVA 组件位于 `src/client/components/ui/`，组合型业务组件位于 `src/client/components/`，`src/client/lib/utils.ts` 提供 `cn()`。Tailwind CSS v4 在构建期把 `styles.css` 编译为服务端实际发布的 `app.css`；图标继续统一通过 Iconify 渲染，不在业务组件中嵌入裸 SVG。
+
 聊天接口直接读取 Pi JSONL 当前分支上的结构化消息，不从 SQLite 事件拼接 transcript。Solver attempt 与 SubAgent 使用同一个消息渲染器；工具、thinking 和元数据可以折叠，黑板、Attempts 与 Writeup 放在独立 tab。只有至少存在一条 Assistant 消息时，结构化会话与 Pi HTML 导出才可查看。BrowserRouter 的非 API GET 路由由服务端回退到 `index.html`，刷新嵌套路由不会得到 404。
 
 WebUI 登录默认关闭。启用后 `global-config.json` 只保存 scrypt 参数、盐和摘要；成功登录签发内存 session，并使用 HttpOnly、SameSite=Strict Cookie。除静态 SPA、登录端点和最小健康状态外，API、SSE 与导出均经过同一鉴权门。

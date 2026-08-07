@@ -104,7 +104,7 @@ const STATIC_ASSETS = new Map<string, { file: URL; contentType: string }>([
   [
     "/styles.css",
     {
-      file: new URL("./client/styles.css", import.meta.url),
+      file: new URL("./client/app.css", import.meta.url),
       contentType: "text/css; charset=utf-8",
     },
   ],

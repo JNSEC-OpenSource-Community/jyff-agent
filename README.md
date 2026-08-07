@@ -17,6 +17,7 @@
 - 多 Project 控制面：每场比赛拥有独立调度器、数据库、workspace 与运行配置；
 - 可选 WebUI 登录、全局 Provider/模型池配置，以及按 Project 隔离的平台凭据；
 - React 路由式 WebUI、HTTP API 与按 Project 订阅的 SSE 实时更新。
+- shadcn/ui 源码组件、Tailwind CSS v4 与 Iconify 构成的可维护前端组件层。
 
 ## 使用 Docker Compose 启动
 

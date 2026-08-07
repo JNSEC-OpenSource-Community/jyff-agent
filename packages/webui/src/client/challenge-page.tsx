@@ -16,13 +16,6 @@ import type {
 } from "../types.ts"
 import { apiMutation, apiRequest, projectApi } from "./api.ts"
 import {
-  absoluteTime,
-  EVENT_LABELS,
-  errorMessage,
-  STATUS_LABELS,
-  TOOL_LABELS,
-} from "./lib.ts"
-import {
   Badge,
   Button,
   Card,
@@ -37,7 +30,14 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "./ui.tsx"
+} from "./components/index.ts"
+import {
+  absoluteTime,
+  EVENT_LABELS,
+  errorMessage,
+  STATUS_LABELS,
+  TOOL_LABELS,
+} from "./lib.ts"
 
 type ConversationTarget =
   | { type: "solver" }

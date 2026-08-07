@@ -34,6 +34,7 @@ docs/               当前架构与扩展协议
 - 使用 Node.js 22.19+、仓库锁定的 pnpm 11；不要绕过 workspace 依赖。
 - TypeScript 保持 strict、ESM 和显式 `.ts` 相对导入风格；公共类型从包 `src/index.ts` 导出。
 - 用 Biome 格式化/检查。尽量做小而集中的改动，不在同一提交混入无关重构。
+- WebUI 基础组件遵循 shadcn/ui 的源码托管方式，放在 `packages/webui/src/client/components/ui/`，配置入口为 `packages/webui/components.json`；图标统一使用 Iconify，不提交裸 SVG React 组件。
 - 修改行为时，在所属包的 `test/` 中补或更新 Vitest 测试；优先测试公开行为和失败边界，不复制实现细节。
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
 - 模型配置是全局 v2 模型池：凭据不进入 `model-config.json`；各 Project 在自己的 `runtime-config.json` 中为 Solver、TLDR 和 SubAgent role 绑定模型并保存最大并发量。传入 Agent 时必须保留完整 Pi `Models` registry。`scheduler-config.json` 和模型池中的旧绑定只用于兼容迁移。
