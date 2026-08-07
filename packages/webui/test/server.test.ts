@@ -52,6 +52,8 @@ describe("WebUI HTTP server", () => {
     })
     const controlPlane: DashboardControlPlane = {
       snapshot,
+      projectSnapshots: () => snapshot().projects,
+      selectProject: () => snapshot(),
       setupSnapshot: () => ({
         state: snapshot(),
         config: null,
@@ -119,7 +121,7 @@ describe("WebUI HTTP server", () => {
         networkMode: "bridge",
       },
     }
-    const tested = await fetch(`${server.url}/api/control-plane/test`, {
+    const tested = await fetch(`${server.url}/api/projects/test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config, secrets: { CTFD_TOKEN: "secret" } }),
@@ -127,17 +129,26 @@ describe("WebUI HTTP server", () => {
     expect(tested.status).toBe(200)
     expect(await tested.json()).toMatchObject({ ok: true })
 
-    const applied = await fetch(`${server.url}/api/control-plane/apply`, {
+    const applied = await fetch(`${server.url}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config, secrets: { CTFD_TOKEN: "secret" } }),
     })
-    expect(applied.status).toBe(200)
+    expect(applied.status).toBe(201)
     expect(appliedConfig).toEqual(config)
     expect(await applied.json()).toMatchObject({
-      setup: { state: { phase: "ready" } },
+      project: { phase: "ready", projectId: "demo" },
       snapshot: { overview: { name: "Test CTF" } },
     })
+    expect(
+      await (await fetch(`${server.url}/api/projects`)).json(),
+    ).toMatchObject({
+      selectedProjectId: "demo",
+      projects: [{ id: "demo", name: "Demo CTF", phase: "ready" }],
+    })
+    expect(
+      await (await fetch(`${server.url}/api/projects/demo/snapshot`)).json(),
+    ).toMatchObject({ overview: { name: "Test CTF" } })
   })
 
   it("提供健康检查、静态前端、快照、详情和平台刷新 API", async () => {

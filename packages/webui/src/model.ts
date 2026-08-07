@@ -29,6 +29,7 @@ export async function buildDashboardSnapshot(
   project: DashboardProject,
   scheduler?: DashboardScheduler,
   controlPlane?: DashboardControlPlane,
+  projectId?: string,
 ): Promise<DashboardSnapshot> {
   const [
     overview,
@@ -111,14 +112,15 @@ export async function buildDashboardSnapshot(
     announcementCandidates,
     environments,
     scheduler: schedulerSnapshot,
-    controlPlane: controlPlane?.snapshot() ?? null,
+    controlPlane: controlPlane?.snapshot(projectId) ?? null,
   }
 }
 
 export function buildEmptyDashboardSnapshot(
   controlPlane: DashboardControlPlane,
+  projectId?: string,
 ): DashboardSnapshot {
-  const state = controlPlane.snapshot()
+  const state = controlPlane.snapshot(projectId)
   return {
     generatedAt: new Date().toISOString(),
     overview: {

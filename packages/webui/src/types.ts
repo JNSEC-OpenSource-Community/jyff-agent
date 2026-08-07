@@ -6,6 +6,7 @@ import type {
   ChallengeSummary,
   ContestOverview,
   ContestSchedulerSnapshot,
+  ControlPlaneProjectSnapshot,
   ControlPlaneSetupSnapshot,
   ControlPlaneSnapshot,
   PlatformConnectionTest,
@@ -199,10 +200,12 @@ export interface DashboardScheduler {
 }
 
 export interface DashboardControlPlane {
-  snapshot(): ControlPlaneSnapshot
-  setupSnapshot(): ControlPlaneSetupSnapshot
-  currentProject(): DashboardProject | undefined
-  currentScheduler(): DashboardScheduler | undefined
+  snapshot(projectId?: string): ControlPlaneSnapshot
+  projectSnapshots(): ControlPlaneProjectSnapshot[]
+  setupSnapshot(projectId?: string): ControlPlaneSetupSnapshot
+  selectProject(projectId: string): ControlPlaneSnapshot
+  currentProject(projectId?: string): DashboardProject | undefined
+  currentScheduler(projectId?: string): DashboardScheduler | undefined
   testConnection(input: {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>
@@ -211,7 +214,7 @@ export interface DashboardControlPlane {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>
   }): Promise<ControlPlaneSnapshot>
-  connect(): Promise<ControlPlaneSnapshot>
+  connect(projectId?: string): Promise<ControlPlaneSnapshot>
 }
 
 export interface ModelPoolEntryView {

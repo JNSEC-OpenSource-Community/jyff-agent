@@ -103,26 +103,35 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const host = options.host ?? "127.0.0.1"
   const requestedPort = options.port ?? 3000
   const pollIntervalMs = Math.max(250, options.pollIntervalMs ?? 1_000)
-  const clients = new Set<ServerResponse>()
+  const clients = new Map<ServerResponse, string | undefined>()
   const assets = await loadStaticAssets()
-  const currentProject = (): DashboardProject | undefined =>
-    options.controlPlane?.currentProject() ?? options.project
-  const currentScheduler = (): DashboardScheduler | undefined =>
-    options.controlPlane?.currentScheduler() ?? options.scheduler
+  const currentProject = (projectId?: string): DashboardProject | undefined =>
+    options.controlPlane
+      ? options.controlPlane.currentProject(projectId)
+      : options.project
+  const currentScheduler = (
+    projectId?: string,
+  ): DashboardScheduler | undefined =>
+    options.controlPlane
+      ? options.controlPlane.currentScheduler(projectId)
+      : options.scheduler
   const exportSessionHtml = options.exportSessionHtml ?? exportPiSessionHtml
   const sessionHasConversation =
     options.sessionHasConversation ?? piSessionHasConversation
-  const buildCurrentSnapshot = async (): Promise<DashboardSnapshot> => {
-    const project = currentProject()
+  const buildCurrentSnapshot = async (
+    projectId?: string,
+  ): Promise<DashboardSnapshot> => {
+    const project = currentProject(projectId)
     if (project) {
       return await buildDashboardSnapshot(
         project,
-        currentScheduler(),
+        currentScheduler(projectId),
         options.controlPlane,
+        projectId,
       )
     }
     if (options.controlPlane) {
-      return buildEmptyDashboardSnapshot(options.controlPlane)
+      return buildEmptyDashboardSnapshot(options.controlPlane, projectId)
     }
     throw new Error("WebUI 当前没有可用的 project")
   }
@@ -185,7 +194,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     broadcast(
       clients,
       "dashboard_error",
-      JSON.stringify({ message, ...syncHealth }),
+      JSON.stringify({
+        message,
+        ...syncHealth,
+      }),
     )
   }
 
@@ -212,6 +224,12 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         pendingRefresh = undefined
       })
     return pendingRefresh
+  }
+
+  const refreshProject = async (
+    projectId?: string,
+  ): Promise<DashboardSnapshot> => {
+    return projectId ? await buildCurrentSnapshot(projectId) : await refresh()
   }
 
   const server = createServer((request, response) => {
@@ -245,6 +263,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   ): Promise<void> {
     const method = request.method ?? "GET"
     const url = new URL(request.url ?? "/", "http://localhost")
+    const scopedRoute = projectApiRoute(url.pathname)
+    const projectId = scopedRoute?.projectId
+    const apiPath = scopedRoute?.apiPath ?? url.pathname
 
     if (method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, {
@@ -253,11 +274,88 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         connectedClients: clients.size,
         platformSync: { ...syncHealth },
         controlPlane: options.controlPlane?.snapshot() ?? null,
-        scheduler: currentScheduler()?.snapshot() ?? null,
+        scheduler: currentScheduler(projectId)?.snapshot() ?? null,
         modelConfiguration: options.modelConfiguration?.snapshot() ?? null,
         modelAuthentication:
           (await options.modelAuthentication?.snapshot()) ?? null,
       })
+      return
+    }
+
+    if (method === "GET" && url.pathname === "/api/projects") {
+      requireControlPlane(options.controlPlane)
+      sendJson(response, 200, {
+        projects: options.controlPlane.projectSnapshots(),
+        selectedProjectId: options.controlPlane.snapshot().selectedProjectId,
+      })
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/projects/test") {
+      requireControlPlane(options.controlPlane)
+      requireJsonRequest(request)
+      const input = controlPlaneSetup(await readJsonBody(request))
+      try {
+        sendJson(
+          response,
+          200,
+          await options.controlPlane.testConnection(input),
+        )
+      } catch (error) {
+        throw new HttpRequestError(
+          422,
+          "platform_connection_failed",
+          errorText(error),
+        )
+      }
+      return
+    }
+
+    if (method === "POST" && url.pathname === "/api/projects") {
+      requireControlPlane(options.controlPlane)
+      requireJsonRequest(request)
+      const input = controlPlaneSetup(await readJsonBody(request))
+      try {
+        await options.controlPlane.applySetup(input)
+      } catch (error) {
+        throw new HttpRequestError(
+          422,
+          "platform_setup_failed",
+          errorText(error),
+        )
+      }
+      sendJson(response, 201, {
+        project: options.controlPlane.snapshot(input.config.project.id),
+        snapshot: await refreshProject(input.config.project.id),
+      })
+      return
+    }
+
+    if (method === "GET" && projectId && apiPath === "/api") {
+      requireControlPlane(options.controlPlane)
+      const snapshot = options.controlPlane.snapshot(projectId)
+      if (snapshot.projectId !== projectId) {
+        throw new HttpRequestError(404, "project_not_found", "Project 不存在")
+      }
+      sendJson(response, 200, snapshot)
+      return
+    }
+
+    if (method === "GET" && projectId && apiPath === "/api/control-plane") {
+      requireControlPlane(options.controlPlane)
+      sendJson(response, 200, options.controlPlane.setupSnapshot(projectId))
+      return
+    }
+
+    if (
+      method === "POST" &&
+      projectId &&
+      apiPath === "/api/control-plane/connect"
+    ) {
+      requireControlPlane(options.controlPlane)
+      requireJsonRequest(request)
+      await options.controlPlane.connect(projectId)
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
@@ -323,22 +421,22 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/snapshot") {
-      sendJson(response, 200, await refresh())
+    if (method === "GET" && apiPath === "/api/snapshot") {
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/refresh") {
+    if (method === "POST" && apiPath === "/api/refresh") {
       requireJsonRequest(request)
-      const project = currentProject()
+      const project = currentProject(projectId)
       if (project) await project.refresh()
-      await currentScheduler()?.reconcile()
-      sendJson(response, 200, await refresh())
+      await currentScheduler(projectId)?.reconcile()
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/announcements/review") {
-      const project = currentProject()
+    if (method === "POST" && apiPath === "/api/announcements/review") {
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const body = await readJsonBody(request)
@@ -383,35 +481,38 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         }
         throw error
       }
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/model-config") {
+    if (method === "GET" && apiPath === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
       sendJson(
         response,
         200,
-        modelConfigurationView(options.modelConfiguration, currentProject()),
+        modelConfigurationView(
+          options.modelConfiguration,
+          currentProject(projectId),
+        ),
       )
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/model-config") {
+    if (method === "POST" && apiPath === "/api/model-config") {
       requireModelConfiguration(options.modelConfiguration)
       requireJsonRequest(request)
       const configuration = await options.modelConfiguration.update(
         modelConfigurationUpdate(await readJsonBody(request, 256_000)),
       )
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       if (!configuration.configured) scheduler?.pauseAuto()
       else await scheduler?.reconcile()
       sendJson(response, 200, {
         configuration: modelConfigurationView(
           options.modelConfiguration,
-          currentProject(),
+          currentProject(projectId),
         ),
-        snapshot: await refresh(),
+        snapshot: await refreshProject(projectId),
       })
       return
     }
@@ -591,26 +692,26 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/scheduler/auto/start") {
-      const scheduler = currentScheduler()
+    if (method === "POST" && apiPath === "/api/scheduler/auto/start") {
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       await scheduler.startAuto()
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/scheduler/auto/pause") {
-      const scheduler = currentScheduler()
+    if (method === "POST" && apiPath === "/api/scheduler/auto/pause") {
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       scheduler.pauseAuto()
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    if (method === "POST" && url.pathname === "/api/scheduler/concurrency") {
-      const scheduler = currentScheduler()
+    if (method === "POST" && apiPath === "/api/scheduler/concurrency") {
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const body = await readJsonBody(request)
@@ -621,13 +722,13 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         "invalid_scheduler_configuration",
       )
       await scheduler.setMaxConcurrent(maxConcurrent)
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
-    const queueMove = /^\/api\/scheduler\/queue\/([^/]+)$/.exec(url.pathname)
+    const queueMove = /^\/api\/scheduler\/queue\/([^/]+)$/.exec(apiPath)
     if (method === "PATCH" && queueMove) {
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(queueMove[1] ?? "")
@@ -647,15 +748,15 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         ),
         overrideBlockedLane: body.overrideBlockedLane === true,
       })
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
     const action = /^\/api\/challenges\/([^/]+)\/(dispatch|cancel)$/.exec(
-      url.pathname,
+      apiPath,
     )
     if (method === "POST" && action) {
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(action[1] ?? "")
@@ -667,14 +768,14 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       } else {
         await scheduler.cancel(challengeId)
       }
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
     // 题目级对话框:向该题当前活跃的 solver 发送人工消息(走 project,不走调度器)
-    const message = /^\/api\/challenges\/([^/]+)\/message$/.exec(url.pathname)
+    const message = /^\/api\/challenges\/([^/]+)\/message$/.exec(apiPath)
     if (method === "POST" && message) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(message[1] ?? "")
@@ -707,10 +808,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     // 运行中切换思考强度:向该题当前活跃的 solver 设置 thinkingLevel(下一 turn 生效)
     const thinkingLevel = /^\/api\/challenges\/([^/]+)\/thinking-level$/.exec(
-      url.pathname,
+      apiPath,
     )
     if (method === "POST" && thinkingLevel) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const challengeId = decodeURIComponent(thinkingLevel[1] ?? "")
@@ -746,11 +847,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     }
 
     const subagentAction =
-      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/(steer|cancel)$/.exec(
-        url.pathname,
-      )
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/(steer|cancel)$/.exec(apiPath)
     if (method === "POST" && subagentAction) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       requireJsonRequest(request)
       const runId = decodeURIComponent(subagentAction[1] ?? "")
@@ -789,9 +888,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    const retryAttempt = /^\/api\/runs\/([^/]+)\/retry$/.exec(url.pathname)
+    const retryAttempt = /^\/api\/runs\/([^/]+)\/retry$/.exec(apiPath)
     if (method === "POST" && retryAttempt) {
-      const scheduler = currentScheduler()
+      const scheduler = currentScheduler(projectId)
       requireScheduler(scheduler)
       requireJsonRequest(request)
       const runId = decodeURIComponent(retryAttempt[1] ?? "")
@@ -808,14 +907,14 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       await scheduler.retryAttempt(runId, {
         ...(prompt ? { prompt } : {}),
       })
-      sendJson(response, 200, await refresh())
+      sendJson(response, 200, await refreshProject(projectId))
       return
     }
 
     const subagentExport =
-      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/export$/.exec(url.pathname)
+      /^\/api\/runs\/([^/]+)\/subagents\/([^/]+)\/export$/.exec(apiPath)
     if (method === "GET" && subagentExport) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       const runId = decodeURIComponent(subagentExport[1] ?? "")
       const subagentId = decodeURIComponent(subagentExport[2] ?? "")
@@ -844,9 +943,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(url.pathname)
+    const runExport = /^\/api\/runs\/([^/]+)\/export$/.exec(apiPath)
     if (method === "GET" && runExport) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       const runId = decodeURIComponent(runExport[1] ?? "")
       const run = project.runs().find((candidate) => candidate.id === runId)
@@ -867,9 +966,9 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     if (
       method === "POST" &&
-      /^\/api\/challenges\/[^/]+\/tldr\/refresh$/.test(url.pathname)
+      /^\/api\/challenges\/[^/]+\/tldr\/refresh$/.test(apiPath)
     ) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
       const modelConfiguration = options.modelConfiguration
       const modelSnapshot = modelConfiguration?.snapshot()
@@ -885,7 +984,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
           tldrModel?.unavailableReason ?? "TLDR 模型尚未配置",
         )
       }
-      const encodedId = url.pathname
+      const encodedId = apiPath
         .slice("/api/challenges/".length)
         .slice(0, -"/tldr/refresh".length)
       const challengeId = decodeURIComponent(encodedId)
@@ -900,13 +999,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (
-      method === "GET" &&
-      /^\/api\/challenges\/[^/]+\/tldr$/.test(url.pathname)
-    ) {
-      const project = currentProject()
+    if (method === "GET" && /^\/api\/challenges\/[^/]+\/tldr$/.test(apiPath)) {
+      const project = currentProject(projectId)
       requireProject(project)
-      const encodedId = url.pathname
+      const encodedId = apiPath
         .slice("/api/challenges/".length)
         .slice(0, -"/tldr".length)
       const challengeId = decodeURIComponent(encodedId)
@@ -916,11 +1012,11 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
 
     if (
       method === "GET" &&
-      /^\/api\/challenges\/[^/]+\/writeup$/.test(url.pathname)
+      /^\/api\/challenges\/[^/]+\/writeup$/.test(apiPath)
     ) {
-      const project = currentProject()
+      const project = currentProject(projectId)
       requireProject(project)
-      const encodedId = url.pathname
+      const encodedId = apiPath
         .slice("/api/challenges/".length)
         .slice(0, -"/writeup".length)
       const challengeId = decodeURIComponent(encodedId)
@@ -943,16 +1039,16 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname.startsWith("/api/challenges/")) {
-      const project = currentProject()
+    if (method === "GET" && apiPath.startsWith("/api/challenges/")) {
+      const project = currentProject(projectId)
       requireProject(project)
-      const encodedId = url.pathname.slice("/api/challenges/".length)
+      const encodedId = apiPath.slice("/api/challenges/".length)
       const challengeId = decodeURIComponent(encodedId)
       const details = await buildChallengeDetails(
         project,
         challengeId,
-        currentScheduler(),
-        latestSnapshot,
+        currentScheduler(projectId),
+        projectId ? undefined : latestSnapshot,
       )
       if (!details) {
         sendJson(response, 404, { error: "challenge_not_found" })
@@ -962,7 +1058,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       return
     }
 
-    if (method === "GET" && url.pathname === "/api/events") {
+    if (method === "GET" && apiPath === "/api/events") {
       response.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
@@ -970,12 +1066,15 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         "X-Accel-Buffering": "no",
       })
       response.write(": connected\n\n")
-      clients.add(response)
+      clients.set(response, projectId)
+      const eventSnapshot = projectId
+        ? await buildCurrentSnapshot(projectId)
+        : latestSnapshot
       writeEvent(
         response,
         "snapshot",
-        serializedSnapshot,
-        latestSnapshot.generatedAt,
+        projectId ? JSON.stringify(eventSnapshot) : serializedSnapshot,
+        eventSnapshot.generatedAt,
       )
       writeEvent(response, "dashboard_status", JSON.stringify(syncHealth))
       request.once("close", () => clients.delete(response))
@@ -1013,6 +1112,31 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     refreshTimer = setTimeout(async () => {
       try {
         await refresh()
+        const scopedProjectIds = new Set(
+          [...clients.values()].filter(
+            (projectId): projectId is string => projectId !== undefined,
+          ),
+        )
+        for (const projectId of scopedProjectIds) {
+          try {
+            const snapshot = await buildCurrentSnapshot(projectId)
+            broadcast(
+              clients,
+              "snapshot",
+              JSON.stringify(snapshot),
+              snapshot.generatedAt,
+              projectId,
+            )
+          } catch (error) {
+            broadcast(
+              clients,
+              "dashboard_error",
+              JSON.stringify({ message: errorText(error) }),
+              undefined,
+              projectId,
+            )
+          }
+        }
       } catch {
         // refresh() already records and broadcasts the failure exactly once.
       } finally {
@@ -1031,7 +1155,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   scheduleRefresh(pollIntervalMs)
 
   const heartbeat = setInterval(() => {
-    for (const client of clients) client.write(": heartbeat\n\n")
+    for (const client of clients.keys()) client.write(": heartbeat\n\n")
   }, 15_000)
   heartbeat.unref()
   const schedulerReconcileDelay = Math.max(
@@ -1042,8 +1166,13 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const scheduleReconcile = (delayMs: number): void => {
     if (!options.scheduler && !options.controlPlane) return
     schedulerReconcileTimer = setTimeout(async () => {
-      const scheduler = currentScheduler()
-      if (scheduler?.snapshot().autoEnabled) {
+      const schedulers = options.controlPlane
+        ? options.controlPlane
+            .projectSnapshots()
+            .map(({ id }) => currentScheduler(id))
+        : [currentScheduler()]
+      for (const scheduler of schedulers) {
+        if (!scheduler?.snapshot().autoEnabled) continue
         try {
           await scheduler.reconcile()
         } catch (error) {
@@ -1066,7 +1195,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       if (refreshTimer) clearTimeout(refreshTimer)
       clearInterval(heartbeat)
       if (schedulerReconcileTimer) clearTimeout(schedulerReconcileTimer)
-      for (const client of clients) client.end()
+      for (const client of clients.keys()) client.end()
       clients.clear()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
@@ -1141,12 +1270,33 @@ async function exportConversationHtml(
 }
 
 function broadcast(
-  clients: Set<ServerResponse>,
+  clients: ReadonlyMap<ServerResponse, string | undefined>,
   event: string,
   data: string,
   id?: string,
+  projectId?: string,
 ): void {
-  for (const client of clients) writeEvent(client, event, data, id)
+  for (const [client, subscribedProjectId] of clients) {
+    if (subscribedProjectId === projectId) writeEvent(client, event, data, id)
+  }
+}
+
+function projectApiRoute(
+  pathname: string,
+): { projectId: string; apiPath: string } | undefined {
+  const match = /^\/api\/projects\/([^/]+)(\/.*)?$/.exec(pathname)
+  if (!match) return undefined
+  let projectId: string
+  try {
+    projectId = decodeURIComponent(match[1] ?? "")
+  } catch {
+    throw new HttpRequestError(400, "invalid_project_id", "Project ID 编码无效")
+  }
+  if (!projectId) {
+    throw new HttpRequestError(400, "invalid_project_id", "Project ID 不能为空")
+  }
+  const suffix = match[2] ?? ""
+  return { projectId, apiPath: suffix ? `/api${suffix}` : "/api" }
 }
 
 function writeEvent(
