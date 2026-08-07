@@ -4,11 +4,11 @@ import { join } from "node:path"
 import { FileSecretStore, modelsFromAgentOptions } from "@ctf-agent/core"
 import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import { afterEach, describe, expect, it } from "vitest"
-import { createFileModelAuthentication } from "../src/model-authentication.ts"
+import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
 import {
   createFileModelConfiguration,
   omitOutputTokenLimit,
-} from "../src/model-configuration.ts"
+} from "../src/domain/model-pool.ts"
 
 const roots: string[] = []
 

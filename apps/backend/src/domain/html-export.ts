@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { RunSessionExportMetadata } from "@ctf-agent/core"
 import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent"
-import type { DashboardConversation } from "./types.ts"
+import type { DashboardConversation } from "../types.ts"
 
 interface PiHtmlExportModule {
   exportFromFile(inputPath: string, outputPath?: string): Promise<string>

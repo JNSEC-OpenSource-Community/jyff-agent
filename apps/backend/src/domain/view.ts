@@ -9,7 +9,7 @@ import type {
   DashboardScheduler,
   DashboardSnapshot,
   DashboardStats,
-} from "./types.ts"
+} from "../types.ts"
 
 const ACTIVE = new Set<RunRecord["status"]>([
   "preparing",

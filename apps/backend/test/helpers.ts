@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { App } from "../src/http/types.ts"
+import type { App } from "../src/http/context.ts"
 import type { WebUiOptions } from "../src/server.ts"
 import { createWebUiApp, startWebUi, type WebUiServer } from "../src/server.ts"
 import type { DashboardControlPlane } from "../src/types.ts"

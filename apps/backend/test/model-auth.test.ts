@@ -6,7 +6,7 @@ import {
   createFileModelAuthentication,
   FileCredentialStore,
   parseCredentialImport,
-} from "../src/model-authentication.ts"
+} from "../src/domain/model-auth.ts"
 
 const roots: string[] = []
 

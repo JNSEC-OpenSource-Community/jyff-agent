@@ -1,7 +1,7 @@
 import { Hono } from "hono"
-import { errorText, HttpError, hasCode } from "../http/errors.ts"
-import type { Services } from "../http/services.ts"
-import type { App, AppContext, AppEnv } from "../http/types.ts"
+import { buildChallengeDetails } from "../../domain/view.ts"
+import type { App, AppContext, AppEnv } from "../context.ts"
+import { errorText, HttpError, hasCode } from "../errors.ts"
 import {
   announcementReviewSchema,
   challengeMessageSchema,
@@ -9,8 +9,8 @@ import {
   parseJsonBody,
   readJsonBody,
   thinkingLevelSchema,
-} from "../http/validation.ts"
-import { buildChallengeDetails } from "../model.ts"
+} from "../schema.ts"
+import type { Services } from "../services.ts"
 
 /** 题目级路由：派发/取消、人工消息、思考强度、TLDR、writeup、详情。 */
 export function challengeRoutes(services: Services): App {

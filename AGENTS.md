@@ -21,8 +21,8 @@ docs/               当前架构与扩展协议
 
 主要入口：
 
-- `apps/backend/src/main.ts`：进程和 CLI；`apps/backend/src/server.ts`：Hono 装配（`createWebUiApp`/`startWebUi`）；
-- `apps/backend/src/routes/`：按域拆分的路由（system/projects/scheduler/challenges/runs/models）；
+- `apps/backend/src/main.ts`：进程和 CLI；`apps/backend/src/server.ts`：应用装配（`createWebUiApp`/`startWebUi`）；`apps/backend/src/http/app.ts`：路由树组装；
+- `apps/backend/src/http/routes/`：按域拆分的路由（system/projects/scheduler/challenges/runs/models）；`apps/backend/src/domain/`：模型池/凭据/runtime/调度器配置等领域服务；
 - `packages/core/src/project/project.ts`：单个 Solver Run 的装配；
 - `packages/core/src/orchestration/contest-scheduler.ts`：生产调度；
 - `packages/core/src/persistence/run-store.ts`：SQLite 权威状态；

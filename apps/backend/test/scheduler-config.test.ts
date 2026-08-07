@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { createFileSchedulerConfiguration } from "../src/scheduler-configuration.ts"
+import { createFileSchedulerConfiguration } from "../src/domain/scheduler-config.ts"
 
 const roots: string[] = []
 

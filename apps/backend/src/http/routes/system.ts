@@ -1,21 +1,21 @@
 import { parseProjectConfig } from "@ctf-agent/core"
 import { Hono } from "hono"
+import type { App, AppContext, AppEnv, ProjectScope } from "../context.ts"
+import { errorText, HttpError } from "../errors.ts"
 import {
   expiredSessionCookie,
   isAuthenticated,
   sessionCookie,
   sessionToken,
-} from "../http/auth.ts"
-import { errorText, HttpError } from "../http/errors.ts"
-import type { Services } from "../http/services.ts"
-import { sseRoute } from "../http/sse.ts"
-import type { App, AppContext, AppEnv, ProjectScope } from "../http/types.ts"
+} from "../middleware/auth.ts"
 import {
   parseJsonBody,
   readJsonBody,
   webUiAuthenticationSchema,
   webUiLoginSchema,
-} from "../http/validation.ts"
+} from "../schema.ts"
+import type { Services } from "../services.ts"
+import { sseRoute } from "../sse/events.ts"
 
 function authenticationOf(services: Services) {
   return (

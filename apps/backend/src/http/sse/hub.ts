@@ -1,18 +1,10 @@
 /**
- * SSE 客户端注册表。
+ * SSE 客户端注册表：hub + 每连接串行队列。
  *
  * 每个连接拥有独立的串行消息队列：广播只做同步入队，实际写入由该连接
  * 唯一的消费循环执行，因此任意时刻不会有两个写者竞争同一个 socket。
  */
-import type { Context } from "hono"
-import { streamSSE } from "hono/streaming"
-import type { AppEnv } from "./types.ts"
-
-export interface SseMessage {
-  event: string
-  data: string
-  id?: string
-}
+import type { SseMessage } from "./events.ts"
 
 type QueueItem = SseMessage | { raw: string }
 
@@ -101,55 +93,4 @@ export class SseHub {
   close(): void {
     for (const client of [...this.clients]) this.disconnect(client)
   }
-}
-
-/** 注册 SSE 路由：写入响应头并启动逐客户端消费循环。 */
-export function sseRoute(
-  c: Context<AppEnv>,
-  hub: SseHub,
-  sync: {
-    refresh(): Promise<{ generatedAt: string }>
-    refreshProject(projectId: string): Promise<{ generatedAt: string }>
-    serializedSnapshot(): string
-    health(): {
-      status: string
-      consecutiveFailures: number
-      lastAttemptAt: string
-      lastSuccessAt: string | null
-      lastError: string | null
-    }
-  },
-  projectId?: string,
-): Response {
-  const client = hub.connect(projectId)
-  c.header("Content-Type", "text/event-stream; charset=utf-8")
-  c.header("Cache-Control", "no-cache, no-transform")
-  c.header("Connection", "keep-alive")
-  c.header("X-Accel-Buffering", "no")
-  return streamSSE(c, async (stream) => {
-    stream.onAbort(() => hub.disconnect(client))
-    try {
-      const snapshot = projectId
-        ? await sync.refreshProject(projectId)
-        : await sync.refresh()
-      await stream.write(": connected\n\n")
-      await stream.writeSSE({
-        event: "snapshot",
-        data: projectId ? JSON.stringify(snapshot) : sync.serializedSnapshot(),
-        id: snapshot.generatedAt,
-      })
-      await stream.writeSSE({
-        event: "dashboard_status",
-        data: JSON.stringify(sync.health()),
-      })
-      for (;;) {
-        const item = await client.queue.next()
-        if (!item) break
-        if ("raw" in item) await stream.write(item.raw)
-        else await stream.writeSSE(item)
-      }
-    } catch {
-      hub.disconnect(client)
-    }
-  })
 }

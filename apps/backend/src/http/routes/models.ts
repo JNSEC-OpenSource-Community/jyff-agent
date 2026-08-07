@@ -1,7 +1,6 @@
 import { Hono } from "hono"
-import { errorText, HttpError } from "../http/errors.ts"
-import type { Services } from "../http/services.ts"
-import type { App, AppContext, AppEnv } from "../http/types.ts"
+import type { App, AppContext, AppEnv } from "../context.ts"
+import { errorText, HttpError } from "../errors.ts"
 import {
   modelConfigurationUpdateSchema,
   modelImportSchema,
@@ -9,7 +8,8 @@ import {
   modelPromptSchema,
   parseJsonBody,
   readJsonBody,
-} from "../http/validation.ts"
+} from "../schema.ts"
+import type { Services } from "../services.ts"
 
 /** 包装模型登录动作：统一映射为 400 invalid_model_authentication。 */
 async function modelAuthenticationAction<T>(

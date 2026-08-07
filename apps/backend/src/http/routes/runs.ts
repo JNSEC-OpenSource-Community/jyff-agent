@@ -1,12 +1,12 @@
 import { Hono } from "hono"
-import { errorText, HttpError, hasCode } from "../http/errors.ts"
-import type { Services } from "../http/services.ts"
-import type { App, AppContext, AppEnv } from "../http/types.ts"
+import type { App, AppContext, AppEnv } from "../context.ts"
+import { errorText, HttpError, hasCode } from "../errors.ts"
 import {
   parseJsonBody,
   retryAttemptSchema,
   subagentMessageSchema,
-} from "../http/validation.ts"
+} from "../schema.ts"
+import type { Services } from "../services.ts"
 
 /** Run/SubAgent 会话端点（全局 + 项目级复用，projectId 可选）。 */
 export function runRoutes(services: Services): App {
@@ -141,14 +141,14 @@ export function runRoutes(services: Services): App {
 function scopedSnapshot(
   services: Services,
   projectId: string,
-): Promise<import("../types.ts").DashboardSnapshot> {
+): Promise<import("../../types.ts").DashboardSnapshot> {
   return projectId
     ? services.sync.refreshProject(projectId)
     : services.sync.refresh()
 }
 
 function requireRunAndSubagent(
-  project: import("../types.ts").DashboardProject,
+  project: import("../../types.ts").DashboardProject,
   runId: string,
   subagentId: string,
 ): void {
@@ -199,9 +199,9 @@ function readConversation(
   exporters: {
     readSessionConversation: (
       sessionPath: string,
-    ) => import("../types.ts").DashboardConversation
+    ) => import("../../types.ts").DashboardConversation
   },
-): import("../types.ts").DashboardConversation {
+): import("../../types.ts").DashboardConversation {
   try {
     const conversation = exporters.readSessionConversation(sessionPath)
     if (

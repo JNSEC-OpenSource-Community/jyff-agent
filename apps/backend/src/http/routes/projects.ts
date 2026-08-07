@@ -1,14 +1,14 @@
 import { Hono } from "hono"
-import { errorText, HttpError } from "../http/errors.ts"
-import type { Services } from "../http/services.ts"
-import type { App, AppContext, AppEnv, ProjectScope } from "../http/types.ts"
+import type { App, AppContext, AppEnv, ProjectScope } from "../context.ts"
+import { errorText, HttpError } from "../errors.ts"
 import {
   parseJsonBody,
   parseProjectSetup,
   projectRuntimeConfigurationSchema,
   projectSetupSchema,
   readJsonBody,
-} from "../http/validation.ts"
+} from "../schema.ts"
+import type { Services } from "../services.ts"
 
 /** 全局项目管理：列表、创建、连接测试。 */
 export function projectsRoutes(services: Services): App {
@@ -122,7 +122,7 @@ export function scopedProjectRoutes(services: Services): App {
     const body = await parseJsonBody(c, projectRuntimeConfigurationSchema, {
       code: "invalid_project_runtime_configuration",
     })
-    let configuration: import("../types.ts").ProjectRuntimeConfigurationView
+    let configuration: import("../../types.ts").ProjectRuntimeConfigurationView
     try {
       configuration = await runtime.update(body)
     } catch (error) {

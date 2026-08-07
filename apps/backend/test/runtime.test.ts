@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { createFileProjectRuntimeConfiguration } from "../src/project-runtime-configuration.ts"
+import { createFileProjectRuntimeConfiguration } from "../src/domain/runtime.ts"
 
 const roots: string[] = []
 

@@ -32,7 +32,7 @@ import type {
   ModelConfigurationView,
   ModelPoolEntryUpdate,
   ModelPoolEntryView,
-} from "./types.ts"
+} from "../types.ts"
 
 const LEGACY_MODEL_API_KEY_SECRET = "CTF_MODEL_API_KEY"
 const MODEL_API_KEY_SECRET_PREFIX = "CTF_MODEL_API_KEY_"

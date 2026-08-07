@@ -4,7 +4,7 @@ import {
   exportPiSessionHtml,
   piSessionHasConversation,
   readPiSessionConversation,
-} from "../pi-html-export.ts"
+} from "../domain/html-export.ts"
 import type {
   DashboardControlPlane,
   DashboardConversation,
@@ -16,10 +16,10 @@ import type {
   DashboardWebUiAuthentication,
   ModelConfigurationView,
 } from "../types.ts"
+import type { ProjectScope } from "./context.ts"
 import { HttpError } from "./errors.ts"
-import { SseHub } from "./sse.ts"
+import { SseHub } from "./sse/hub.ts"
 import { SnapshotSync } from "./sync.ts"
-import type { ProjectScope } from "./types.ts"
 
 export interface ServicesOptions {
   project?: DashboardProject

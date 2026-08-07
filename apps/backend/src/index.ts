@@ -1,26 +1,26 @@
 export {
-  createFileWebUiAuthentication,
-  type WebUiAuthentication,
-  type WebUiAuthenticationView,
-  type WebUiLoginSession,
-} from "./authentication.ts"
-export {
-  buildChallengeDetails,
-  buildDashboardSnapshot,
-  buildEmptyDashboardSnapshot,
-} from "./model.ts"
-export {
   createFileModelAuthentication,
   FileCredentialStore,
   type FileModelAuthenticationOptions,
   parseCredentialImport,
-} from "./model-authentication.ts"
+} from "./domain/model-auth.ts"
 export {
   type AgentModelConfiguration,
   createFileModelConfiguration,
   type FileModelConfigurationOptions,
-} from "./model-configuration.ts"
-export { createFileProjectRuntimeConfiguration } from "./project-runtime-configuration.ts"
+} from "./domain/model-pool.ts"
+export { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
+export {
+  buildChallengeDetails,
+  buildDashboardSnapshot,
+  buildEmptyDashboardSnapshot,
+} from "./domain/view.ts"
+export {
+  createFileWebUiAuthentication,
+  type WebUiAuthentication,
+  type WebUiAuthenticationView,
+  type WebUiLoginSession,
+} from "./domain/webui-auth.ts"
 export type { WebUiApp, WebUiOptions, WebUiServer } from "./server.ts"
 export { createWebUiApp, startWebUi } from "./server.ts"
 export type {

@@ -24,7 +24,7 @@ import type {
   ModelAuthLoginSessionView,
   ModelAuthMethodId,
   ModelAuthProviderId,
-} from "./types.ts"
+} from "../types.ts"
 
 const PROVIDERS: ReadonlyArray<{
   id: ModelAuthProviderId

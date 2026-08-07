@@ -6,7 +6,7 @@ import {
   exportPiSessionHtml,
   piSessionHasConversation,
   readPiSessionConversation,
-} from "../src/pi-html-export.ts"
+} from "../src/domain/html-export.ts"
 
 const roots: string[] = []
 

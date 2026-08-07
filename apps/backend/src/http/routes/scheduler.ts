@@ -1,12 +1,12 @@
 import { Hono } from "hono"
-import type { Services } from "../http/services.ts"
-import type { App, AppContext, AppEnv } from "../http/types.ts"
+import type { App, AppContext, AppEnv } from "../context.ts"
 import {
   parseJsonBody,
   queueMoveSchema,
   readJsonBody,
   schedulerConcurrencySchema,
-} from "../http/validation.ts"
+} from "../schema.ts"
+import type { Services } from "../services.ts"
 
 /** 调度器路由（全局 + 项目级复用同一实现，projectId 可选）。 */
 export function schedulerRoutes(services: Services): App {

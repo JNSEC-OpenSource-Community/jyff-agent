@@ -1,7 +1,7 @@
 import {
   buildDashboardSnapshot,
   buildEmptyDashboardSnapshot,
-} from "../model.ts"
+} from "../domain/view.ts"
 import type {
   DashboardControlPlane,
   DashboardProject,
@@ -9,7 +9,7 @@ import type {
   DashboardSnapshot,
 } from "../types.ts"
 import { errorText } from "./errors.ts"
-import type { SseHub } from "./sse.ts"
+import type { SseHub } from "./sse/hub.ts"
 
 export interface DashboardSyncHealth {
   status: "ok" | "degraded"

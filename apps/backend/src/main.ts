@@ -5,11 +5,11 @@ import {
   FileSecretStore,
 } from "@ctf-agent/core"
 import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
-import { createFileWebUiAuthentication } from "./authentication.ts"
-import { createFileModelAuthentication } from "./model-authentication.ts"
-import { createFileModelConfiguration } from "./model-configuration.ts"
-import { createFileProjectRuntimeConfiguration } from "./project-runtime-configuration.ts"
-import { createFileSchedulerConfiguration } from "./scheduler-configuration.ts"
+import { createFileModelAuthentication } from "./domain/model-auth.ts"
+import { createFileModelConfiguration } from "./domain/model-pool.ts"
+import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
+import { createFileSchedulerConfiguration } from "./domain/scheduler-config.ts"
+import { createFileWebUiAuthentication } from "./domain/webui-auth.ts"
 import { startWebUi } from "./server.ts"
 
 interface WebUiProcessOptions {

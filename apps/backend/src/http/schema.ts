@@ -1,8 +1,8 @@
 import { parseProjectConfig } from "@ctf-agent/core"
 import type { Context } from "hono"
 import { z } from "zod"
+import type { AppEnv } from "./context.ts"
 import { errorText, HttpError } from "./errors.ts"
-import type { AppEnv } from "./types.ts"
 
 /** 思考强度档位全集（与 pi ThinkingLevel 一致，不含 off——off 由 thinkingEnabled 表达）。 */
 export const THINKING_LEVELS = [

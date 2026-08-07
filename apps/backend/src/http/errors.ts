@@ -1,6 +1,6 @@
 import { ContestSchedulerError } from "@ctf-agent/core"
 import type { Context } from "hono"
-import type { AppEnv } from "./types.ts"
+import type { AppEnv } from "./context.ts"
 
 /** 带状态码与稳定错误码的 HTTP 错误，由全局 onError 中间件统一序列化。 */
 export class HttpError extends Error {

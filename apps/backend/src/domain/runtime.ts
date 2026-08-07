@@ -4,7 +4,7 @@ import type {
   AgentModelBindings,
   DashboardProjectRuntimeConfiguration,
   ProjectRuntimeConfigurationView,
-} from "./types.ts"
+} from "../types.ts"
 
 interface StoredProjectRuntimeConfiguration extends AgentModelBindings {
   version: 1

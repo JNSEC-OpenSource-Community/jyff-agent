@@ -3,7 +3,7 @@ import {
   agentCacheStats,
   buildChallengeDetails,
   buildDashboardSnapshot,
-} from "../src/model.ts"
+} from "../src/domain/view.ts"
 import { FakeDashboardProject, FakeDashboardScheduler } from "./fake-project.ts"
 
 describe("WebUI dashboard model", () => {
