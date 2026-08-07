@@ -95,6 +95,8 @@ export function ProjectPage(): React.ReactElement {
   const [queue, setQueue] = useState<SchedulerQueueEntry[]>([])
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
@@ -197,6 +199,37 @@ export function ProjectPage(): React.ReactElement {
         Date.parse(left.lastActivityAt ?? "0"),
     )
     .slice(0, 8)
+  const visibleChallenges = snapshot.challenges
+    .filter((challenge) => {
+      if (statusFilter === "all") return true
+      if (statusFilter === "active") {
+        return ["preparing", "running", "blocking", "writing_writeup"].includes(
+          challenge.status,
+        )
+      }
+      if (statusFilter === "attention") {
+        return ["failed", "timed_out", "blocked", "interrupted"].includes(
+          challenge.status,
+        )
+      }
+      return challenge.status === statusFilter
+    })
+    .filter((challenge) => {
+      const normalized = query.trim().toLocaleLowerCase("zh-CN")
+      return (
+        !normalized ||
+        challenge.title.toLocaleLowerCase("zh-CN").includes(normalized) ||
+        challenge.category.toLocaleLowerCase("zh-CN").includes(normalized)
+      )
+    })
+    .sort((left, right) => {
+      if (left.status === "running" && right.status !== "running") return -1
+      if (right.status === "running" && left.status !== "running") return 1
+      return (
+        right.score - left.score ||
+        left.title.localeCompare(right.title, "zh-CN")
+      )
+    })
 
   return (
     <div className="page project-dashboard">
@@ -334,6 +367,77 @@ export function ProjectPage(): React.ReactElement {
           </div>
         </Card>
       </div>
+      <Card className="panel all-challenges-panel">
+        <div className="challenge-browser-heading">
+          <div>
+            <p className="eyebrow">ALL TARGETS</p>
+            <h2>全部题目</h2>
+          </div>
+          <div className="challenge-filters">
+            <label className="search-field">
+              <Icon icon="lucide:search" width="15" />
+              <span className="sr-only">搜索题目</span>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索名称或分类"
+              />
+            </label>
+            <select
+              aria-label="状态筛选"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">全部状态</option>
+              <option value="active">执行中</option>
+              <option value="queued">队列中</option>
+              <option value="pending">未调度</option>
+              <option value="solved">已解出</option>
+              <option value="attention">需处理</option>
+            </select>
+          </div>
+        </div>
+        <div className="challenge-table">
+          <div className="challenge-table-header">
+            <span>题目</span>
+            <span>分类</span>
+            <span>分值</span>
+            <span>尝试</span>
+            <span>状态</span>
+            <span />
+          </div>
+          {visibleChallenges.map((challenge) => (
+            <Link
+              key={challenge.id}
+              to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(challenge.id)}`}
+              className="challenge-table-row"
+            >
+              <span>
+                <strong>{challenge.title}</strong>
+                <small>{challenge.progress}</small>
+              </span>
+              <span>{challenge.category}</span>
+              <span>{challenge.score}</span>
+              <span>{challenge.attempts}</span>
+              <span>
+                <Badge tone={statusTone(challenge.status)}>
+                  {STATUS_LABELS[challenge.status] ?? challenge.status}
+                </Badge>
+              </span>
+              <span>
+                <Icon icon="lucide:arrow-up-right" width="15" />
+              </span>
+            </Link>
+          ))}
+          {visibleChallenges.length === 0 ? (
+            <EmptyState
+              icon="lucide:search-x"
+              title="没有匹配的题目"
+              description="调整关键词或状态筛选后重试。"
+            />
+          ) : null}
+        </div>
+      </Card>
     </div>
   )
 }

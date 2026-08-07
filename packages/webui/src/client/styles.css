@@ -929,6 +929,106 @@ p {
 .challenge-row > svg {
   color: var(--quiet);
 }
+.all-challenges-panel {
+  margin-top: 16px;
+  overflow: hidden;
+}
+.challenge-browser-heading {
+  min-height: 78px;
+  padding: 15px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.challenge-browser-heading h2 {
+  margin-top: 5px;
+  font-size: 17px;
+}
+.challenge-filters {
+  display: flex;
+  gap: 8px;
+}
+.challenge-filters select,
+.search-field {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #101310;
+  color: var(--muted);
+}
+.challenge-filters select {
+  padding: 0 28px 0 10px;
+}
+.search-field {
+  width: min(250px, 32vw);
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.search-field input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+.challenge-table-header,
+.challenge-table-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(100px, 0.8fr) 70px 70px 110px 26px;
+  gap: 12px;
+  align-items: center;
+}
+.challenge-table-header {
+  min-height: 34px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line);
+  background: #111411;
+  color: var(--quiet);
+  font:
+    550 9px / 1 "Cascadia Code",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.challenge-table-row {
+  min-height: 59px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  transition: background 120ms ease;
+}
+.challenge-table-row:last-child {
+  border-bottom: 0;
+}
+.challenge-table-row:hover {
+  background: rgba(255, 255, 255, 0.026);
+}
+.challenge-table-row > span:first-child {
+  min-width: 0;
+  display: grid;
+}
+.challenge-table-row strong,
+.challenge-table-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.challenge-table-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.challenge-table-row small {
+  color: var(--quiet);
+  font-size: 10px;
+}
+.challenge-table-row > span:last-child {
+  color: var(--quiet);
+}
 .placeholder-card {
   min-height: 320px;
   display: flex;
@@ -1903,6 +2003,31 @@ p {
   .provider-grid,
   .auth-prompt {
     grid-template-columns: 1fr;
+  }
+  .challenge-browser-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .challenge-filters,
+  .search-field {
+    width: 100%;
+  }
+  .challenge-filters select {
+    flex: 1;
+  }
+  .challenge-table-header {
+    display: none;
+  }
+  .challenge-table-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .challenge-table-row > span:nth-child(2),
+  .challenge-table-row > span:nth-child(3),
+  .challenge-table-row > span:nth-child(4) {
+    display: none;
+  }
+  .challenge-table-row > span:last-child {
+    display: none;
   }
   .form-section {
     padding: 24px 18px;
