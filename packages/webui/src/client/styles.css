@@ -1422,6 +1422,213 @@ p {
   white-space: pre-wrap;
 }
 
+.page-settings {
+  width: min(1180px, 100%);
+}
+.settings-tabs {
+  gap: 5px;
+  border-bottom: 1px solid var(--line);
+}
+.settings-content {
+  padding-top: 24px;
+}
+.settings-intro {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+.settings-intro h2 {
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+.settings-intro p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-stack,
+.provider-grid {
+  display: grid;
+  gap: 12px;
+}
+.provider-grid {
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+}
+.provider-card {
+  padding: 16px;
+}
+.provider-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.provider-heading > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+}
+.provider-heading strong {
+  font-size: 13px;
+}
+.provider-heading small {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--signal);
+}
+.provider-connect {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+.provider-actions {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+.auth-session {
+  margin-top: 14px;
+  padding-top: 14px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+.auth-session-status,
+.auth-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.auth-link {
+  width: fit-content;
+  color: var(--cyan);
+}
+.device-code {
+  padding: 10px;
+  display: grid;
+  border: 1px dashed var(--line-strong);
+  background: #101310;
+}
+.device-code span {
+  color: var(--quiet);
+  font-size: 10px;
+}
+.device-code strong {
+  color: var(--signal);
+  font:
+    650 18px / 1.5 "Cascadia Code",
+    monospace;
+  letter-spacing: 0.12em;
+}
+.auth-prompt {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px;
+}
+.model-card {
+  overflow: hidden;
+}
+.model-card-heading {
+  min-height: 52px;
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: #141714;
+}
+.model-card-heading > span {
+  color: var(--quiet);
+  font:
+    550 10px / 1 "Cascadia Code",
+    monospace;
+}
+.model-card-heading > input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font:
+    600 13px / 1.4 "Cascadia Code",
+    monospace;
+}
+.model-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 18px 18px 0;
+}
+.toggle-row {
+  padding: 0 18px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.toggle-row label,
+.toggle-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.toggle-row input,
+.toggle-line input {
+  accent-color: var(--signal);
+}
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.security-form,
+.runtime-card {
+  padding: 22px;
+}
+.toggle-line {
+  margin-bottom: 22px;
+  align-items: flex-start;
+}
+.toggle-line > span {
+  display: grid;
+}
+.toggle-line strong {
+  color: var(--text);
+}
+.toggle-line small {
+  color: var(--quiet);
+}
+.role-bindings {
+  margin: 22px 0;
+  padding-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border-top: 1px solid var(--line);
+}
+.role-bindings h3 {
+  grid-column: 1 / -1;
+  font-size: 14px;
+}
+
 .login-page {
   min-height: 100vh;
   display: grid;
@@ -1604,6 +1811,9 @@ p {
   .challenge-aside {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .model-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1686,6 +1896,12 @@ p {
     border-bottom: 1px solid var(--line);
   }
   .retry-row {
+    grid-template-columns: 1fr;
+  }
+  .model-grid,
+  .role-bindings,
+  .provider-grid,
+  .auth-prompt {
     grid-template-columns: 1fr;
   }
   .form-section {

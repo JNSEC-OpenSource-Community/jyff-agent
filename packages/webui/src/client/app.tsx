@@ -8,10 +8,7 @@ import { ChallengePage } from "./challenge-page.tsx"
 import { LoginPage } from "./login-page.tsx"
 import { ProjectPage } from "./project-page.tsx"
 import { NewProjectPage, ProjectsPage } from "./projects-page.tsx"
-import {
-  GlobalSettingsPlaceholder,
-  ProjectSettingsPlaceholder,
-} from "./route-placeholders.tsx"
+import { GlobalSettingsPage, ProjectSettingsPage } from "./settings-page.tsx"
 import { Spinner } from "./ui.tsx"
 
 function AuthenticatedRoutes(): React.ReactElement {
@@ -25,11 +22,11 @@ function AuthenticatedRoutes(): React.ReactElement {
         <Route element={<AppShell />}>
           <Route index element={<ProjectsPage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
-          <Route path="settings" element={<GlobalSettingsPlaceholder />} />
+          <Route path="settings" element={<GlobalSettingsPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route
             path="projects/:projectId/settings"
-            element={<ProjectSettingsPlaceholder />}
+            element={<ProjectSettingsPage />}
           />
           <Route
             path="projects/:projectId/challenges/:challengeId"
