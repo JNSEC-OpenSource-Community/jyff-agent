@@ -128,12 +128,15 @@ function stringValue(value: unknown): string {
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {}
   return Object.fromEntries(
-    Object.entries(value).filter(
-      (entry): entry is [string, string] =>
-        Boolean(entry[0].trim()) &&
-        typeof entry[1] === "string" &&
-        Boolean(entry[1].trim()),
-    ),
+    Object.entries(value)
+      .map(
+        ([key, entryValue]) =>
+          [
+            key.trim(),
+            typeof entryValue === "string" ? entryValue.trim() : "",
+          ] as const,
+      )
+      .filter(([key, entryValue]) => Boolean(key) && Boolean(entryValue)),
   )
 }
 
