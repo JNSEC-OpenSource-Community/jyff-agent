@@ -105,10 +105,10 @@ function MessageBody({
   if (message.role === "assistant") {
     return (
       <div className="message-parts">
-        {message.content.map((part) => {
+        {message.content.map((part, index) => {
           if (part.type === "text")
             return (
-              <div className="message-text" key={`text-${part.text}`}>
+              <div className="message-text" key={`text-${index}`}>
                 {part.text}
               </div>
             )
@@ -116,7 +116,7 @@ function MessageBody({
             return (
               <Collapsible
                 className="thinking-block"
-                key={`thinking-${part.thinking}`}
+                key={`thinking-${index}`}
               >
                 <CollapsibleTrigger className="thinking-trigger">
                   <Icon icon="lucide:brain" width="15" /> 推理记录
