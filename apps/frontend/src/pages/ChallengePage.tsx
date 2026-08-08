@@ -126,7 +126,18 @@ export function ChallengePage() {
             </div>
 
             <div className="shrink-0 border-b border-border lg:hidden">
-              <div className="flex h-12 items-center gap-2 pr-2 pl-12">
+              <div className="flex h-12 items-center gap-2 pr-12 pl-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 shrink-0 px-2.5"
+                  onClick={() => setMobileDetailsOpen(true)}
+                  aria-label="打开题目与 Agents"
+                >
+                  <Icon icon="lucide:panel-bottom-open" width="14" />
+                  <span className="max-[460px]:hidden">题目与 Agents</span>
+                </Button>
                 {selectedRun ? (
                   <Select value={selectedRun.id} onValueChange={selectRun}>
                     <SelectTrigger className="h-8 min-w-0 flex-1 text-xs">
@@ -143,17 +154,6 @@ export function ChallengePage() {
                 ) : (
                   <span className="flex-1" />
                 )}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="h-8 shrink-0 px-2.5"
-                  onClick={() => setMobileDetailsOpen(true)}
-                  aria-label="打开题目与 Agents"
-                >
-                  <Icon icon="lucide:panel-bottom-open" width="14" />
-                  <span className="max-[460px]:hidden">题目与 Agents</span>
-                </Button>
               </div>
               <TabsList className="grid h-9 w-full grid-cols-4 gap-0 rounded-none border-x-0 border-b-0 bg-transparent p-0 px-2">
                 <TabsTrigger value="conversation" className="px-1 text-xs">
