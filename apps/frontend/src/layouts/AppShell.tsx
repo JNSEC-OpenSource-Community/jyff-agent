@@ -126,7 +126,7 @@ function SidebarContent({
           className="mb-3 flex size-9 items-center justify-center rounded-xl text-primary transition-colors hover:bg-primary/5"
           aria-label="首页"
         >
-          <Icon icon="lucide:crosshair" width={20} />
+          <Icon icon="unjs:automd" width={20} />
         </NavLink>
 
         {/* Three nav icons */}
@@ -213,7 +213,7 @@ function SidebarContent({
           className="flex size-8 shrink-0 items-center justify-center rounded-xl text-primary transition-colors hover:bg-primary/5"
           aria-label="首页"
         >
-          <Icon icon="lucide:crosshair" width={18} />
+          <Icon icon="unjs:automd" width={18} />
         </NavLink>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -228,7 +228,7 @@ function SidebarContent({
             </span>
           </div>
           <h2 className="mt-0.5 truncate text-sm font-semibold tracking-tight">
-            {project?.name ?? "CTF Agent"}
+            {project?.name ?? "JYFF Agent"}
           </h2>
         </div>
       </div>

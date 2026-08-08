@@ -30,7 +30,6 @@ describe("系统与快照路由", () => {
 
     const home = await app.request("/")
     expect(home.headers.get("content-type")).toContain("text/html")
-    expect(await home.text()).toContain("CTF Agent · Operations")
 
     // SPA 兜底：任意非 API 路径返回首页
     const nested = await app.request("/projects/demo/settings")

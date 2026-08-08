@@ -107,7 +107,7 @@ function EmptyState({
         <Icon icon={icon} width="24" />
       </div>
       <h3 className="text-sm font-semibold">{title}</h3>
-      <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+      <p className="mt-2! max-w-sm text-sm leading-6 text-muted-foreground">
         {description}
       </p>
       {action ? <div className="mt-3">{action}</div> : null}

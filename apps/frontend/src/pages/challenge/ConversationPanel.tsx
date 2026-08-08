@@ -139,7 +139,7 @@ export function ConversationPanel({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 max-lg:px-3 max-lg:py-3"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 max-lg:px-3 max-lg:py-3"
         style={{ scrollbarGutter: "stable" }}
       >
         {loading ? <Spinner label="读取 Pi 会话" /> : null}
@@ -195,11 +195,7 @@ export function ConversationPanel({
           <Textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
-            placeholder={
-              target.type === "solver"
-                ? "向当前 Solver 发送补充指令…"
-                : "Steer 这个 SubAgent；完成的会话会从持久化状态恢复…"
-            }
+            placeholder="steer prompt to this agent..."
             rows={1}
             className="min-h-11 flex-1 resize-none"
             onKeyDown={(event) => {

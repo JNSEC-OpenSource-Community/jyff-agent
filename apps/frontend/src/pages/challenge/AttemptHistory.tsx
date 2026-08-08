@@ -104,7 +104,7 @@ export function AttemptHistory({
                   className="transition-transform group-data-[state=open]:rotate-180"
                 />
               </CollapsibleTrigger>
-              <CollapsibleContent className="mt-2 flex flex-col gap-1">
+              <CollapsibleContent className="mt-2! flex flex-col gap-1">
                 {run.events.map((event) => (
                   <div
                     key={event.id}
@@ -129,7 +129,7 @@ export function AttemptHistory({
                   [run.id]: event.target.value,
                 }))
               }
-              placeholder="留空使用默认继续提示词，或输入自定义提示词"
+              placeholder="留空使用默认提示词"
               className="h-8 flex-1"
             />
             <Button

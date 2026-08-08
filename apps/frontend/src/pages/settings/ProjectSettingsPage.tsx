@@ -122,7 +122,7 @@ export function ProjectSettingsPage() {
           比赛配置
         </h1>
         <p className="hero-desc mt-3 max-w-2xl text-sm text-muted-foreground">
-          模型绑定与并发量在当前比赛内独立配置。
+          The hardest part in today's CTF.
         </p>
       </header>
 
@@ -138,7 +138,7 @@ export function ProjectSettingsPage() {
           <div>
             <h2 className="text-lg font-semibold">Agent 模型绑定</h2>
             <p className="text-sm text-muted-foreground">
-              应用于新 turn 与新 SubAgent。
+              请选择你的英雄。
             </p>
           </div>
           <Card className="space-y-6 p-6">

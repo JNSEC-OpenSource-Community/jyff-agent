@@ -181,7 +181,7 @@ export function GlobalSettingsPage() {
           全局配置
         </h1>
         <p className="hero-desc mt-3 max-w-2xl text-sm text-muted-foreground">
-          Provider 凭据与模型池全局共享，角色绑定在各场比赛中独立配置。
+          充值 648 以升级你的军火库。
         </p>
       </header>
 
@@ -422,7 +422,7 @@ export function GlobalSettingsPage() {
             <div>
               <h2 className="text-lg font-semibold">模型池</h2>
               <p className="text-sm text-muted-foreground">
-                管理可用模型，支持自动补全 Provider 目录。
+                管理可用模型。
               </p>
             </div>
             <Badge className="text-[10px]">

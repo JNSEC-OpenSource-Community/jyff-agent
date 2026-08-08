@@ -53,7 +53,7 @@ export function TldrPanel({
       <EmptyState
         icon="lucide:file-text"
         title="尚未生成 TLDR"
-        description="TLDR 由独立 Agent 在后台生成，浓缩题目目标与已知情报。"
+        description="Generate tl;dr for your lazy ass by a background agent."
         action={
           <Button size="sm" onClick={() => void refresh()} disabled={busy}>
             <Icon

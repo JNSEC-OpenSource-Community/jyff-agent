@@ -342,7 +342,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
           models: entries.map(({ model }) => model),
           auth: {
             apiKey: {
-              name: `${provider} CTF Agent credential`,
+              name: `${provider} JYFF Agent credential`,
               resolve: async () => ({
                 // 原生 Provider 在内层 Models registry 中解析 OAuth/API Key；
                 // 外层只负责聚合模型，不能用占位 key 覆盖真实凭据。

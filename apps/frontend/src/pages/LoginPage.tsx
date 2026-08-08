@@ -46,7 +46,7 @@ export function LoginPage() {
           }}
         />
         <div className="relative z-10 flex items-center gap-3 font-mono text-sm font-bold tracking-wide">
-          <span className="text-primary">CTF</span>
+          <span className="text-primary">JYFF</span>
           <span className="text-foreground/50">AGENT</span>
         </div>
         <div className="relative z-10">
@@ -54,17 +54,17 @@ export function LoginPage() {
             Operations Console
           </p>
           <h1 className="mt-4 max-w-md text-4xl font-bold leading-tight tracking-tight lg:text-5xl">
-            进入控制中心
+            进入 JYFF Agent
           </h1>
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
-            管理多场比赛调度、追踪 Agent 解题进度、审查黑板书证。
+            Burning money and win the game.
           </p>
         </div>
         <div
           className="relative z-10 flex items-center gap-10 font-mono text-[80px] font-extralight leading-none tracking-tighter text-foreground/[0.03] lg:text-[96px]"
           aria-hidden
         >
-          01<span className="text-primary/20">14</span>∞
+          ∞<span className="text-primary/20">SL</span>OP
         </div>
       </div>
 
@@ -134,7 +134,7 @@ export function LoginPage() {
           </Button>
 
           <p className="text-center text-xs text-muted-foreground lg:hidden">
-            <span className="font-semibold text-primary">CTF</span> Agent ·
+            <span className="font-semibold text-primary">JYFF</span> Agent ·
             Operations Console
           </p>
         </form>

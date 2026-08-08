@@ -33,7 +33,7 @@ const FALLBACK_HTML = `<!doctype html>
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CTF Agent · Operations</title>
+    <title>JYFF Agent · Operations</title>
   </head>
   <body>
     <main id="root" class="boot-screen" aria-busy="true">正在载入控制面…</main>

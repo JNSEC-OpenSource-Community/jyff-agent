@@ -142,7 +142,7 @@ const webui = await startWebUi({
   pollIntervalMs: options.pollIntervalMs,
 })
 
-console.log(`CTF Agent WebUI 已启动：${webui.url}`)
+console.log(`JYFF Agent WebUI 已启动：${webui.url}`)
 if (controlPlane.snapshot().phase !== "ready") {
   console.log("比赛平台尚未连接，请在 WebUI 中完成配置")
 }

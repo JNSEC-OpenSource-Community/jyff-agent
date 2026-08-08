@@ -89,7 +89,7 @@ export function ProjectsPage() {
             比赛列表
           </h1>
           <p className="hero-desc mt-3 max-w-xl text-sm text-muted-foreground">
-            每场比赛都有独立的调度器、Sandbox 与工作区。
+            CTFs to be slopped or already slopped.
           </p>
         </div>
         <Button asChild>
@@ -399,7 +399,7 @@ export function NewProjectPage() {
           连接比赛平台
         </h1>
         <p className="hero-desc mt-3 max-w-xl text-sm text-muted-foreground">
-          验证成功后自动从平台读取比赛信息并生成配置。
+          Show your token power.
         </p>
       </header>
 
@@ -433,7 +433,7 @@ export function NewProjectPage() {
               emptyText="没有可用的平台插件"
             />
             {plat ? (
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              <p className="mt-2! text-xs leading-5 text-muted-foreground">
                 {plat.setup.description}
               </p>
             ) : null}
@@ -524,7 +524,7 @@ export function NewProjectPage() {
                 <Input
                   id="project-name"
                   value={pname}
-                  placeholder="例如：巅峰极客 2026"
+                  placeholder="例如：SlopCON CTF 2026"
                   onChange={(e) => setPname(e.target.value)}
                 />
               </div>
@@ -533,17 +533,14 @@ export function NewProjectPage() {
                   htmlFor="project-id"
                   className="mb-1.5 block text-xs font-medium text-muted-foreground"
                 >
-                  比赛 ID（自动生成）
+                  比赛 ID
                 </label>
                 <Input
                   id="project-id"
                   value={pid}
-                  placeholder="输入比赛名称后生成"
+                  placeholder="自动生成"
                   disabled
                 />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  用于路由与持久化，创建后不可修改。
-                </p>
               </div>
             </div>
           </section>
