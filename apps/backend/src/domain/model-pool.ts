@@ -14,7 +14,9 @@ import {
   createProvider,
   type Models,
 } from "@earendil-works/pi-ai"
-import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions"
+import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages"
+import { streamSimple as streamOpenAiCompletions } from "@earendil-works/pi-ai/api/openai-completions"
+import { streamSimple as streamOpenAiResponses } from "@earendil-works/pi-ai/api/openai-responses"
 import {
   type Api,
   type Context,
@@ -26,11 +28,12 @@ import {
 } from "@earendil-works/pi-ai/compat"
 import type {
   AgentModelBindings,
+  CustomModelProviderApi,
+  CustomModelProviderUpdate,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   ModelConfigurationUpdate,
   ModelConfigurationView,
-  ModelPoolEntryUpdate,
   ModelPoolEntryView,
 } from "../types.ts"
 
@@ -47,15 +50,22 @@ interface StoredModelEntry {
   id: string
   provider: string
   modelId: string
-  baseUrl: string
   contextWindow: number
   thinkingEnabled: boolean
   reasoningEffort: string
   passthroughThinking: boolean
 }
 
+interface StoredCustomProvider {
+  id: string
+  name: string
+  api: CustomModelProviderApi
+  baseUrl: string
+}
+
 interface StoredModelConfiguration {
-  version: 2
+  version: 3
+  providers: StoredCustomProvider[]
   models: StoredModelEntry[]
   solverModelId: string
   tldrModelId: string
@@ -112,6 +122,12 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     )
     return {
       models,
+      customProviders: this.values.providers.map((provider) => ({
+        ...provider,
+        apiKeyConfigured: this.options.secretStore.has(
+          providerSecret(provider.id),
+        ),
+      })),
       solverModelId: selectedBindings.solverModelId,
       tldrModelId: selectedBindings.tldrModelId,
       subagentModels: { ...selectedBindings.subagentModels },
@@ -131,6 +147,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView> {
     const next = normalizeUpdate(configuration)
+    next.configuration.providers = this.values.providers
     await persistConfiguration(this.options.storagePath, next.configuration)
     for (const [provider, credential] of next.credentials) {
       await this.options.secretStore.set({
@@ -138,6 +155,54 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       })
     }
     this.values = next.configuration
+    return this.snapshot()
+  }
+
+  async addCustomProvider(
+    input: CustomModelProviderUpdate,
+  ): Promise<ModelConfigurationView> {
+    const base = slugifyProvider(input.name)
+    let id = `custom-${base || "provider"}`
+    let suffix = 2
+    while (this.values.providers.some((provider) => provider.id === id)) {
+      id = `custom-${base || "provider"}-${suffix++}`
+    }
+    const provider: StoredCustomProvider = {
+      id,
+      name: input.name.trim(),
+      api: input.api,
+      baseUrl: input.baseUrl.replace(/\/+$/, ""),
+    }
+    const next = {
+      ...this.values,
+      providers: [...this.values.providers, provider],
+    }
+    await this.options.secretStore.set({ [providerSecret(id)]: input.apiKey })
+    await persistConfiguration(this.options.storagePath, next)
+    this.values = next
+    return this.snapshot()
+  }
+
+  async removeCustomProvider(
+    providerId: string,
+  ): Promise<ModelConfigurationView> {
+    if (this.values.models.some((model) => model.provider === providerId)) {
+      throw new Error("该供应商仍被模型池引用，请先移除相关模型")
+    }
+    const next = {
+      ...this.values,
+      providers: this.values.providers.filter(
+        (provider) => provider.id !== providerId,
+      ),
+    }
+    if (next.providers.length === this.values.providers.length) {
+      throw new Error(`自定义供应商不存在: ${providerId}`)
+    }
+    await this.options.secretStore.set({
+      [providerSecret(providerId)]: undefined,
+    })
+    await persistConfiguration(this.options.storagePath, next)
+    this.values = next
     return this.snapshot()
   }
 
@@ -156,7 +221,11 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     }
     const unavailableReason = this.entryUnavailableReason(selected)
     if (unavailableReason) throw new Error(unavailableReason)
-    const model = resolveModel(selected, this.options.authentication)
+    const model = resolveModel(
+      selected,
+      this.values.providers,
+      this.options.authentication,
+    )
     const models = this.createModelsRegistry()
     const agent: AgentOptions = {
       streamFn: ((candidate, context, streamOptions) =>
@@ -186,26 +255,17 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   }
 
   private entryView(entry: StoredModelEntry): ModelPoolEntryView {
-    const providerCredentialConfigured = this.hasProviderCredential(entry)
-    const secretConfigured = this.options.secretStore.has(
-      providerSecret(entry.provider),
-    )
     const unavailableReason = this.entryUnavailableReason(entry)
     let model: Model<Api> | undefined
     if (!unavailableReason) {
       model = resolveModel(
         { ...entry, thinkingEnabled: true },
+        this.values.providers,
         this.options.authentication,
       )
     }
     return {
       ...entry,
-      apiKeyConfigured: providerCredentialConfigured || secretConfigured,
-      apiKeySource: providerCredentialConfigured
-        ? "provider-credential"
-        : secretConfigured
-          ? "secret-store"
-          : "none",
       supportedThinkingLevels: model
         ? getSupportedThinkingLevels(model).filter((level) => level !== "off")
         : [],
@@ -223,7 +283,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       return `模型 ${entry.id} 未配置凭据或 API Key`
     }
     try {
-      resolveModel(entry, this.options.authentication)
+      resolveModel(entry, this.values.providers, this.options.authentication)
       return undefined
     } catch (error) {
       return error instanceof Error ? error.message : String(error)
@@ -232,8 +292,9 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
 
   private hasProviderCredential(entry: StoredModelEntry): boolean {
     return (
-      !entry.baseUrl &&
-      this.options.authentication?.hasCredential(entry.provider) === true
+      !this.values.providers.some(
+        (provider) => provider.id === entry.provider,
+      ) && this.options.authentication?.hasCredential(entry.provider) === true
     )
   }
 
@@ -242,7 +303,14 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     const available = this.values.models.flatMap((entry) => {
       if (this.entryUnavailableReason(entry)) return []
       return [
-        { entry, model: resolveModel(entry, this.options.authentication) },
+        {
+          entry,
+          model: resolveModel(
+            entry,
+            this.values.providers,
+            this.options.authentication,
+          ),
+        },
       ]
     })
     const providers = new Map<string, typeof available>()
@@ -266,11 +334,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
               context,
               streamOptions,
             )
-          : streamWithoutOutputTokenLimit(
-              model as Model<"openai-completions">,
-              context,
-              streamOptions,
-            )
+          : streamCustomModel(model, context, streamOptions)
       registry.setProvider(
         createProvider({
           id: provider,
@@ -314,8 +378,11 @@ async function readStoredConfiguration(path: string): Promise<{
     throw new Error(`无法读取模型配置: ${path}`, { cause: error })
   }
   if (!isRecord(parsed)) throw new Error(`模型配置格式无效: ${path}`)
+  if (parsed.version === 3 && Array.isArray(parsed.models)) {
+    return { configuration: parseVersionThree(parsed) }
+  }
   if (parsed.version === 2 && Array.isArray(parsed.models)) {
-    return { configuration: parseVersionTwo(parsed) }
+    return { configuration: migrateVersionTwo(parsed), needsRewrite: true }
   }
 
   const modelId = stringValue(parsed.modelId)
@@ -326,7 +393,6 @@ async function readStoredConfiguration(path: string): Promise<{
           id: "default",
           provider,
           modelId,
-          baseUrl: stringValue(parsed.baseUrl) ?? "",
           contextWindow: positiveInteger(parsed.contextWindow)
             ? parsed.contextWindow
             : 64_000,
@@ -343,7 +409,17 @@ async function readStoredConfiguration(path: string): Promise<{
     : []
   return {
     configuration: {
-      version: 2,
+      version: 3,
+      providers: stringValue(parsed.baseUrl)
+        ? [
+            {
+              id: provider,
+              name: provider,
+              api: "openai-completions",
+              baseUrl: stringValue(parsed.baseUrl) ?? "",
+            },
+          ]
+        : [],
       models,
       solverModelId: models[0]?.id ?? "",
       tldrModelId: models[0]?.id ?? "",
@@ -356,7 +432,7 @@ async function readStoredConfiguration(path: string): Promise<{
   }
 }
 
-function parseVersionTwo(
+function parseVersionThree(
   parsed: Record<string, unknown>,
 ): StoredModelConfiguration {
   const models = (parsed.models as unknown[]).map((value, index) => {
@@ -368,9 +444,45 @@ function parseVersionTwo(
   const tldrModelId = stringValue(parsed.tldrModelId) ?? solverModelId
   const subagentModels = stringRecord(parsed.subagentModels)
   validateReferences(ids, solverModelId, tldrModelId, subagentModels)
+  const providers = parseStoredProviders(parsed.providers)
   validateProviderGroups(models)
   return {
-    version: 2,
+    version: 3,
+    providers,
+    models,
+    solverModelId,
+    tldrModelId,
+    subagentModels,
+  }
+}
+
+function migrateVersionTwo(
+  parsed: Record<string, unknown>,
+): StoredModelConfiguration {
+  const rawModels = parsed.models as unknown[]
+  const providers = new Map<string, StoredCustomProvider>()
+  const models = rawModels.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`模型配置 models[${index}] 格式无效`)
+    const baseUrl = stringValue(value.baseUrl)?.replace(/\/+$/, "") ?? ""
+    const entry = storedEntry(value, index)
+    if (baseUrl) {
+      providers.set(entry.provider, {
+        id: entry.provider,
+        name: entry.provider,
+        api: "openai-completions",
+        baseUrl,
+      })
+    }
+    return entry
+  })
+  const ids = new Set(models.map((entry) => entry.id))
+  const solverModelId = stringValue(parsed.solverModelId) ?? ""
+  const tldrModelId = stringValue(parsed.tldrModelId) ?? solverModelId
+  const subagentModels = stringRecord(parsed.subagentModels)
+  validateReferences(ids, solverModelId, tldrModelId, subagentModels)
+  return {
+    version: 3,
+    providers: [...providers.values()],
     models,
     solverModelId,
     tldrModelId,
@@ -384,7 +496,6 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
 } {
   const credentials = new Map<string, string | undefined>()
   const models = configuration.models.map((entry, index) => {
-    captureCredential(credentials, entry)
     return storedEntry(entry as unknown as Record<string, unknown>, index)
   })
   const ids = new Set(models.map((entry) => entry.id))
@@ -397,7 +508,8 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
   validateProviderGroups(models)
   return {
     configuration: {
-      version: 2,
+      version: 3,
+      providers: [],
       models,
       solverModelId: configuration.solverModelId,
       tldrModelId: configuration.tldrModelId || configuration.solverModelId,
@@ -424,7 +536,6 @@ function storedEntry(
     id,
     provider,
     modelId,
-    baseUrl: stringValue(value.baseUrl)?.replace(/\/+$/, "") ?? "",
     contextWindow,
     thinkingEnabled: value.thinkingEnabled !== false,
     reasoningEffort:
@@ -465,37 +576,13 @@ function validateReferences(
 function validateProviderGroups(models: readonly StoredModelEntry[]): void {
   const ids = new Set<string>()
   const references = new Set<string>()
-  const baseUrls = new Map<string, string>()
   for (const entry of models) {
     if (ids.has(entry.id)) throw new Error(`模型配置 ID 重复: ${entry.id}`)
     ids.add(entry.id)
     const reference = `${entry.provider}/${entry.modelId}`
     if (references.has(reference)) throw new Error(`模型重复: ${reference}`)
     references.add(reference)
-    const previous = baseUrls.get(entry.provider)
-    if (previous !== undefined && previous !== entry.baseUrl) {
-      throw new Error(`同一 Provider 的 Base URL 必须一致: ${entry.provider}`)
-    }
-    baseUrls.set(entry.provider, entry.baseUrl)
   }
-}
-
-function captureCredential(
-  credentials: Map<string, string | undefined>,
-  entry: ModelPoolEntryUpdate,
-): void {
-  if (entry.apiKey !== undefined && entry.clearApiKey) {
-    throw new Error(`模型 ${entry.id} 不能同时设置和清除 API Key`)
-  }
-  if (entry.apiKey === undefined && !entry.clearApiKey) return
-  const next = entry.clearApiKey ? undefined : entry.apiKey
-  if (
-    credentials.has(entry.provider) &&
-    credentials.get(entry.provider) !== next
-  ) {
-    throw new Error(`同一 Provider 不能提交不同的 API Key: ${entry.provider}`)
-  }
-  credentials.set(entry.provider, next)
 }
 
 async function persistConfiguration(
@@ -514,7 +601,8 @@ async function persistConfiguration(
 
 function emptyConfiguration(): StoredModelConfiguration {
   return {
-    version: 2,
+    version: 3,
+    providers: [],
     models: [],
     solverModelId: "",
     tldrModelId: "",
@@ -532,11 +620,15 @@ function providerSecret(provider: string): string {
 
 function resolveModel(
   configuration: StoredModelEntry,
+  customProviders: readonly StoredCustomProvider[],
   authentication?: DashboardModelAuthentication,
 ): Model<Api> {
   const provider = configuration.provider
   const modelId = configuration.modelId
-  const baseUrl = configuration.baseUrl.replace(/\/+$/, "")
+  const customProvider = customProviders.find(
+    (candidate) => candidate.id === provider,
+  )
+  const baseUrl = customProvider?.baseUrl ?? ""
   const contextWindow = configuration.contextWindow
   const reasoning = configuration.thinkingEnabled
 
@@ -550,7 +642,7 @@ function resolveModel(
     return {
       id: modelId,
       name: modelId,
-      api: "openai-completions",
+      api: customProvider?.api ?? "openai-completions",
       provider,
       baseUrl,
       reasoning,
@@ -559,14 +651,17 @@ function resolveModel(
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow,
       maxTokens: contextWindow,
-      compat: {
-        supportsStore: false,
-        supportsDeveloperRole: false,
-        supportsUsageInStreaming: false,
-        supportsStrictMode: false,
-        supportsLongCacheRetention: false,
-        maxTokensField: "max_tokens",
-      },
+      compat:
+        customProvider?.api === "openai-completions"
+          ? {
+              supportsStore: false,
+              supportsDeveloperRole: false,
+              supportsUsageInStreaming: false,
+              supportsStrictMode: false,
+              supportsLongCacheRetention: false,
+              maxTokensField: "max_tokens",
+            }
+          : undefined,
     }
   }
 
@@ -602,13 +697,71 @@ function streamWithoutOutputTokenLimit(
   options?: SimpleStreamOptions,
 ) {
   const upstreamOnPayload = options?.onPayload
-  return streamSimple(model, context, {
+  return streamOpenAiCompletions(model, context, {
     ...options,
     onPayload: async (payload, payloadModel) => {
       const transformed = await upstreamOnPayload?.(payload, payloadModel)
       return omitOutputTokenLimit(transformed ?? payload)
     },
   })
+}
+
+function streamCustomModel(
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) {
+  if (model.api === "openai-responses") {
+    return streamOpenAiResponses(
+      model as Model<"openai-responses">,
+      context,
+      options,
+    )
+  }
+  if (model.api === "anthropic-messages") {
+    return streamAnthropic(
+      model as Model<"anthropic-messages">,
+      context,
+      options,
+    )
+  }
+  return streamWithoutOutputTokenLimit(
+    model as Model<"openai-completions">,
+    context,
+    options,
+  )
+}
+
+function parseStoredProviders(value: unknown): StoredCustomProvider[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((candidate) => {
+    if (!isRecord(candidate)) return []
+    const id = stringValue(candidate.id)
+    const name = stringValue(candidate.name)
+    const baseUrl = stringValue(candidate.baseUrl)?.replace(/\/+$/, "")
+    const api = candidate.api
+    if (
+      !id ||
+      !name ||
+      !baseUrl ||
+      ![
+        "openai-completions",
+        "openai-responses",
+        "anthropic-messages",
+      ].includes(String(api))
+    )
+      return []
+    return [{ id, name, baseUrl, api: api as CustomModelProviderApi }]
+  })
+}
+
+function slugifyProvider(value: string): string {
+  return value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48)
 }
 
 export function omitOutputTokenLimit(payload: unknown): unknown {

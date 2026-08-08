@@ -478,6 +478,7 @@ export class FakeDashboardScheduler implements DashboardScheduler {
 export class FakeModelConfiguration implements DashboardModelConfiguration {
   value: ModelConfigurationView = {
     models: [],
+    customProviders: [],
     solverModelId: "",
     tldrModelId: "",
     subagentModels: {},
@@ -485,7 +486,6 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     configured: false,
     unavailableReason: "missing model configuration",
   }
-  lastApiKey: string | undefined
 
   snapshot(): ModelConfigurationView {
     return structuredClone(this.value)
@@ -506,28 +506,17 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
   async update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView> {
-    const secretUpdate = configuration.models.find(
-      (model) => model.apiKey !== undefined || model.clearApiKey,
-    )
-    if (secretUpdate?.apiKey) this.lastApiKey = secretUpdate.apiKey
-    if (secretUpdate?.clearApiKey) this.lastApiKey = undefined
-    const apiKeyConfigured = Boolean(this.lastApiKey)
     const models = configuration.models.map((model) => ({
       id: model.id,
       provider: model.provider,
       modelId: model.modelId,
-      baseUrl: model.baseUrl,
       contextWindow: model.contextWindow,
-      apiKeyConfigured,
-      apiKeySource: apiKeyConfigured
-        ? ("secret-store" as const)
-        : ("none" as const),
       thinkingEnabled: model.thinkingEnabled,
       reasoningEffort: model.reasoningEffort,
       passthroughThinking: model.passthroughThinking,
       supportedThinkingLevels: ["low", "medium", "high", "max"],
-      configured: apiKeyConfigured && Boolean(model.modelId),
-      ...(!apiKeyConfigured || !model.modelId
+      configured: Boolean(model.modelId),
+      ...(!model.modelId
         ? { unavailableReason: "missing model configuration" }
         : {}),
     }))
@@ -536,6 +525,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     )
     this.value = {
       models,
+      customProviders: this.value.customProviders,
       solverModelId: configuration.solverModelId,
       tldrModelId: configuration.tldrModelId,
       subagentModels: { ...configuration.subagentModels },
@@ -545,6 +535,28 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
         ? { unavailableReason: "missing model configuration" }
         : {}),
     }
+    return this.snapshot()
+  }
+
+  async addCustomProvider(
+    provider: import("../src/types.ts").CustomModelProviderUpdate,
+  ): Promise<ModelConfigurationView> {
+    this.value.customProviders.push({
+      id: `custom-${provider.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: provider.name,
+      api: provider.api,
+      baseUrl: provider.baseUrl,
+      apiKeyConfigured: true,
+    })
+    return this.snapshot()
+  }
+
+  async removeCustomProvider(
+    providerId: string,
+  ): Promise<ModelConfigurationView> {
+    this.value.customProviders = this.value.customProviders.filter(
+      (provider) => provider.id !== providerId,
+    )
     return this.snapshot()
   }
 }

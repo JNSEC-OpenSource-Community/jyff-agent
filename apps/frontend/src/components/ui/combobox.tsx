@@ -22,6 +22,7 @@ interface ComboboxProps {
   disabled?: boolean
   className?: string
   id?: string
+  compactOptions?: boolean
 }
 
 function Combobox({
@@ -35,6 +36,7 @@ function Combobox({
   disabled = false,
   className,
   id,
+  compactOptions = false,
 }: ComboboxProps): React.ReactElement {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -122,6 +124,7 @@ function Combobox({
                   onSelect={() => select(option.value)}
                   label={option.label}
                   description={option.description}
+                  compact={compactOptions}
                 />
               ))}
             </Command.List>
@@ -138,12 +141,14 @@ function CommandItem({
   onSelect,
   label,
   description,
+  compact = false,
 }: {
   active: boolean
   disabled?: boolean
   onSelect(value: string): void
   label: string
   description?: string
+  compact?: boolean
 }): React.ReactElement {
   return (
     <Command.Item
@@ -157,10 +162,21 @@ function CommandItem({
         active && "bg-accent/60",
       )}
     >
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{label}</span>
+      <span
+        className={cn(
+          "min-w-0 flex-1",
+          compact && "flex items-baseline gap-2 truncate",
+        )}
+      >
+        <span className={cn("truncate", !compact && "block")}>{label}</span>
         {description ? (
-          <span className="block truncate text-xs text-muted-foreground">
+          <span
+            className={cn(
+              "truncate text-xs text-muted-foreground",
+              !compact && "block",
+            )}
+          >
+            {compact ? "· " : ""}
             {description}
           </span>
         ) : null}

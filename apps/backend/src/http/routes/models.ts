@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import type { App, AppContext, AppEnv } from "../context.ts"
 import { errorText, HttpError } from "../errors.ts"
 import {
+  customModelProviderSchema,
   modelConfigurationUpdateSchema,
   modelImportSchema,
   modelLoginSchema,
@@ -19,6 +20,14 @@ async function modelAuthenticationAction<T>(
     return await action()
   } catch (error) {
     throw new HttpError(400, "invalid_model_authentication", errorText(error))
+  }
+}
+
+async function modelProviderAction<T>(action: () => Promise<T>): Promise<T> {
+  try {
+    return await action()
+  } catch (error) {
+    throw new HttpError(400, "invalid_model_provider", errorText(error))
   }
 }
 
@@ -43,6 +52,28 @@ export function modelsRoutes(services: Services): App {
     return c.json({
       configuration: services.modelView(),
       snapshot: await services.sync.refresh(),
+    })
+  })
+
+  app.post("/model-config/providers", async (c) => {
+    const modelConfiguration = services.requireModelConfiguration()
+    const body = await parseJsonBody(c, customModelProviderSchema, {
+      code: "invalid_model_provider",
+    })
+    return c.json({
+      configuration: await modelProviderAction(() =>
+        modelConfiguration.addCustomProvider(body),
+      ),
+    })
+  })
+
+  app.delete("/model-config/providers/:providerId", async (c) => {
+    const modelConfiguration = services.requireModelConfiguration()
+    await readJsonBody(c)
+    return c.json({
+      configuration: await modelProviderAction(() =>
+        modelConfiguration.removeCustomProvider(c.req.param("providerId")),
+      ),
     })
   })
 

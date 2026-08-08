@@ -48,7 +48,7 @@ apps/
 
 平台配置只保存非敏感字段和 secret 名称。平台凭据虽然集中写入全局 `secrets.json`，键名会同时散列 Project ID 和插件 Secret 名，因此两个 CTFd/GZCTF Project 可以使用不同账号而不会覆盖。旧版 `CTFD_TOKEN`、`GZCTF_*` 等未命名空间键只作为兼容读取回退；新的保存永远写入 Project 命名空间。Provider OAuth/API Key 与模型池属于全局配置，不进入这个命名空间。
 
-`model-config.json` 保存全局 v2 模型池，不保存密钥。自定义 Provider 的 API Key 按 Provider 隔离在 Secret Store；原生 Provider 继续使用 Pi CredentialStore。每个 Project 的 `runtime-config.json` 保存 Solver、TLDR、SubAgent role 模型绑定和 `maxConcurrent`。控制面为每次调度构造完整 Pi `Models` registry，再应用所属 Project 的绑定；未覆盖的角色仍使用 frontmatter 的 `model`。旧版单模型文件、模型池内的角色绑定、`scheduler-config.json` 和遗留明文 Key 会作为迁移回退读取，新保存则遵循全局模型池/Project runtime 的边界。
+`model-config.json` 保存全局 v3 模型池与自定义 Provider 元数据，不保存密钥。自定义 Provider 负责 API 类型、Base URL 与共享凭据，支持 OpenAI Completions、OpenAI Responses 和 Anthropic Messages；API Key 按 Provider 隔离在 Secret Store，原生 Provider 继续使用 Pi CredentialStore。模型条目只引用已连接 Provider。每个 Project 的 `runtime-config.json` 保存 Solver、TLDR、SubAgent role 模型绑定和 `maxConcurrent`。控制面为每次调度构造完整 Pi `Models` registry，再应用所属 Project 的绑定；未覆盖的角色仍使用 frontmatter 的 `model`。v2/旧版单模型文件、模型池内的角色绑定、`scheduler-config.json` 和遗留明文 Key 会作为迁移回退读取，新保存则遵循全局模型池/Project runtime 的边界。
 
 ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有自己的 `Project`、`ContestScheduler`、`AnnouncementPoller` 和状态目录；一个 Project 连接降级、断开或关闭不会替换其他 runtime。WebUI 的 Project 路由使用 `/api/projects/:projectId/...`，SSE 客户端也绑定显式 Project ID，业务代码不得依赖 UI 当前选择项来定位 Run 或 Scheduler。
 

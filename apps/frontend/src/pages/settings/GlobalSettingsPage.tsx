@@ -1,15 +1,15 @@
 import { Icon } from "@iconify/react"
-import { type FormEvent, useCallback, useEffect, useId, useState } from "react"
+import { type FormEvent, useCallback, useEffect, useState } from "react"
 import { useApp } from "../../app/AppProvider.tsx"
 import {
   Badge,
   Button,
   Card,
-  Checkbox,
   Combobox,
   ErrorNotice,
   Input,
   Spinner,
+  Switch,
   Tabs,
   TabsContent,
   TabsList,
@@ -18,6 +18,7 @@ import {
 import { apiMutation, apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import type {
+  CustomModelProviderApi,
   ModelAuthenticationView,
   ModelConfigurationView,
 } from "../../types.ts"
@@ -40,6 +41,11 @@ export function GlobalSettingsPage() {
   const [busy, setBusy] = useState(false)
   const [importing, setImporting] = useState(false)
   const [providerChoice, setProviderChoice] = useState("")
+  const [customName, setCustomName] = useState("")
+  const [customApi, setCustomApi] =
+    useState<CustomModelProviderApi>("openai-completions")
+  const [customBaseUrl, setCustomBaseUrl] = useState("")
+  const [customKey, setCustomKey] = useState("")
 
   const load = useCallback(async () => {
     const c = await apiRequest<Cfg>("/api/global-config")
@@ -89,29 +95,77 @@ export function GlobalSettingsPage() {
     }
   }
 
+  const addCustomProvider = async () => {
+    setBusy(true)
+    setErr("")
+    try {
+      await apiMutation("/api/model-config/providers", "POST", {
+        name: customName,
+        api: customApi,
+        baseUrl: customBaseUrl,
+        apiKey: customKey,
+      })
+      setCustomName("")
+      setCustomBaseUrl("")
+      setCustomKey("")
+      await load()
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeCustomProvider = async (providerId: string) => {
+    setBusy(true)
+    setErr("")
+    try {
+      await apiMutation(
+        `/api/model-config/providers/${encodeURIComponent(providerId)}`,
+        "DELETE",
+        {},
+      )
+      await load()
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (!g) return <Spinner label="加载全局配置" />
   const auth = g.modelAuthentication
   const configuredProviders = auth?.providers.filter((p) => p.configured) ?? []
   const subscriptionOptions =
-    auth?.providers.flatMap((provider) =>
-      provider.methods
-        .filter((method) => method.id.startsWith("oauth_"))
-        .map((method) => ({
-          value: `${provider.id}:${method.id}`,
-          label: provider.name,
-          description: method.label,
-        })),
-    ) ?? []
+    auth?.providers.flatMap((provider) => {
+      const method = provider.methods.find((candidate) =>
+        candidate.id.startsWith("oauth_"),
+      )
+      return method
+        ? [
+            {
+              value: `${provider.id}:${method.id}`,
+              label: provider.name,
+              description: method.label,
+            },
+          ]
+        : []
+    }) ?? []
   const keyOptions =
-    auth?.providers.flatMap((provider) =>
-      provider.methods
-        .filter((method) => method.id === "api_key")
-        .map((method) => ({
-          value: `${provider.id}:${method.id}`,
-          label: provider.name,
-          description: method.description,
-        })),
-    ) ?? []
+    auth?.providers.flatMap((provider) => {
+      const method = provider.methods.find(
+        (candidate) => candidate.id === "api_key",
+      )
+      return method
+        ? [
+            {
+              value: `${provider.id}:${method.id}`,
+              label: provider.name,
+              description: method.description,
+            },
+          ]
+        : []
+    }) ?? []
   const [chosenProviderId, chosenMethodId] = providerChoice.split(":")
   const chosenProvider = auth?.providers.find(
     (provider) => provider.id === chosenProviderId,
@@ -152,6 +206,58 @@ export function GlobalSettingsPage() {
               {configuredProviders.length} 已连接
             </Badge>
           </div>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">已有供应商</h3>
+              <span className="text-xs text-muted-foreground">
+                {configuredProviders.length +
+                  (g.modelConfiguration?.customProviders.length ?? 0)}{" "}
+                个
+              </span>
+            </div>
+            <div className="space-y-3">
+              {configuredProviders.map((p) => (
+                <ProviderCredentialCard
+                  key={p.id}
+                  provider={p}
+                  onRefresh={load}
+                />
+              ))}
+              {g.modelConfiguration?.customProviders.map((p) => (
+                <Card key={p.id} className="flex items-center gap-3 p-4">
+                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-primary">
+                    <Icon icon="lucide:waypoints" width="16" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{p.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {p.api} · {p.baseUrl}
+                    </p>
+                  </div>
+                  <Badge tone="positive" className="text-[10px]">
+                    已连接
+                  </Badge>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => void removeCustomProvider(p.id)}
+                    aria-label={`删除 ${p.name}`}
+                  >
+                    <Icon icon="lucide:trash-2" width="14" />
+                  </Button>
+                </Card>
+              ))}
+              {configuredProviders.length +
+                (g.modelConfiguration?.customProviders.length ?? 0) ===
+              0 ? (
+                <div className="border-y border-border px-1 py-8 text-sm text-muted-foreground">
+                  尚未添加供应商。
+                </div>
+              ) : null}
+            </div>
+          </section>
 
           {auth ? (
             <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -233,6 +339,67 @@ export function GlobalSettingsPage() {
                   onChange={setProviderChoice}
                 />
               </div>
+              <div className="mt-5 border-t border-border pt-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Icon
+                    icon="lucide:waypoints"
+                    width="15"
+                    className="text-primary"
+                  />
+                  <h4 className="text-sm font-medium">自定义兼容 Provider</h4>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <Input
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="供应商名称"
+                  />
+                  <Combobox
+                    value={customApi}
+                    onChange={(value) =>
+                      setCustomApi(value as CustomModelProviderApi)
+                    }
+                    options={[
+                      {
+                        value: "openai-completions",
+                        label: "OpenAI Completions",
+                      },
+                      { value: "openai-responses", label: "OpenAI Responses" },
+                      {
+                        value: "anthropic-messages",
+                        label: "Anthropic Messages",
+                      },
+                    ]}
+                    compactOptions
+                  />
+                  <Input
+                    type="url"
+                    value={customBaseUrl}
+                    onChange={(e) => setCustomBaseUrl(e.target.value)}
+                    placeholder="Base URL"
+                  />
+                  <Input
+                    type="password"
+                    value={customKey}
+                    onChange={(e) => setCustomKey(e.target.value)}
+                    placeholder="API Key"
+                  />
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={
+                      busy ||
+                      !customName.trim() ||
+                      !customBaseUrl.trim() ||
+                      !customKey.trim()
+                    }
+                    onClick={() => void addCustomProvider()}
+                  >
+                    <Icon icon="lucide:plus" width="13" /> 添加自定义供应商
+                  </Button>
+                </div>
+              </div>
             </Card>
           ) : null}
 
@@ -248,29 +415,6 @@ export function GlobalSettingsPage() {
               }}
             />
           ) : null}
-
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">已有供应商</h3>
-              <span className="text-xs text-muted-foreground">
-                {configuredProviders.length} 个
-              </span>
-            </div>
-            <div className="space-y-3">
-              {configuredProviders.map((p) => (
-                <ProviderCredentialCard
-                  key={p.id}
-                  provider={p}
-                  onRefresh={load}
-                />
-              ))}
-              {configuredProviders.length === 0 ? (
-                <Card className="p-5 text-sm text-muted-foreground">
-                  尚未添加供应商。请从上方选择登录类型。
-                </Card>
-              ) : null}
-            </div>
-          </div>
         </TabsContent>
 
         <TabsContent value="models" className="space-y-5">
@@ -310,54 +454,66 @@ export function GlobalSettingsPage() {
               {on ? "启用" : "禁用"}
             </Badge>
           </div>
-          <Card className="max-w-lg">
-            <form className="space-y-5 p-6" onSubmit={(e) => void saveAuth(e)}>
-              <EnableLoginCheckbox checked={on} onChange={setOn} />
-              {on ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label
-                      htmlFor="auth-username"
-                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                    >
-                      用户名
-                    </label>
-                    <Input
-                      id="auth-username"
-                      value={uname}
-                      onChange={(e) => setUname(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="auth-password"
-                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                    >
-                      {g.authentication.enabled ? "新密码（可选）" : "密码"}
-                    </label>
-                    <Input
-                      id="auth-password"
-                      type="password"
-                      value={pw}
-                      onChange={(e) => setPw(e.target.value)}
-                    />
-                  </div>
-                </div>
-              ) : null}
-              <div className="flex justify-end">
-                <Button
-                  type="submit"
-                  disabled={
-                    busy ||
-                    (on && (!uname || (!g.authentication.enabled && !pw)))
-                  }
-                >
-                  <Icon icon="lucide:shield-check" width="14" />
-                  保存
-                </Button>
+          <form
+            className="max-w-3xl border-y border-border"
+            onSubmit={(e) => void saveAuth(e)}
+          >
+            <div className="flex items-center justify-between gap-6 py-5">
+              <div>
+                <p className="text-sm font-medium">WebUI 登录</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  通过 SameSite=Strict、HttpOnly 会话 Cookie 保护控制台。
+                </p>
               </div>
-            </form>
-          </Card>
+              <Switch
+                checked={on}
+                onCheckedChange={setOn}
+                aria-label="启用 WebUI 登录"
+              />
+            </div>
+            {on ? (
+              <div className="grid gap-4 border-t border-border bg-muted/20 py-5 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="auth-username"
+                    className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                  >
+                    用户名
+                  </label>
+                  <Input
+                    id="auth-username"
+                    value={uname}
+                    onChange={(e) => setUname(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="auth-password"
+                    className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                  >
+                    {g.authentication.enabled ? "新密码（可选）" : "密码"}
+                  </label>
+                  <Input
+                    id="auth-password"
+                    type="password"
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className="flex justify-end border-t border-border py-4">
+              <Button
+                type="submit"
+                disabled={
+                  busy || (on && (!uname || (!g.authentication.enabled && !pw)))
+                }
+              >
+                <Icon icon="lucide:shield-check" width="14" />
+                保存
+              </Button>
+            </div>
+          </form>
         </TabsContent>
       </Tabs>
     </div>
@@ -397,35 +553,8 @@ function ProviderPicker({
         placeholder="选择供应商…"
         searchPlaceholder="搜索供应商…"
         emptyText="没有可用供应商"
+        compactOptions
       />
     </div>
-  )
-}
-
-function EnableLoginCheckbox({
-  checked,
-  onChange,
-}: {
-  checked: boolean
-  onChange(v: boolean): void
-}) {
-  const id = useId()
-  return (
-    <label
-      htmlFor={id}
-      className="flex cursor-pointer items-start gap-3 text-sm"
-    >
-      <Checkbox
-        id={id}
-        checked={checked}
-        onCheckedChange={(c) => onChange(c === true)}
-      />
-      <div>
-        <p className="font-medium">启用 WebUI 登录</p>
-        <p className="text-xs text-muted-foreground">
-          SameSite=Strict 会话 Cookie
-        </p>
-      </div>
-    </label>
   )
 }

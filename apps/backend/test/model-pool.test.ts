@@ -17,19 +17,16 @@ function modelEntry(
     id: string
     provider: string
     modelId: string
-    baseUrl: string
     contextWindow: number
     thinkingEnabled: boolean
     reasoningEffort: string
     passthroughThinking: boolean
-    apiKey: string
   }> = {},
 ) {
   return {
     id: "solver",
     provider: "custom-openai",
     modelId: "solver-model",
-    baseUrl: "https://models.example.test/v1",
     contextWindow: 64_000,
     thinkingEnabled: true,
     reasoningEffort: "medium",
@@ -54,9 +51,15 @@ describe("file model configuration", () => {
       storagePath,
       secretStore: await FileSecretStore.open(secretsPath),
     })
+    await configuration.addCustomProvider({
+      name: "OpenAI",
+      api: "openai-completions",
+      baseUrl: "https://models.example.test/v1",
+      apiKey: "secret-key",
+    })
 
     const view = await configuration.update({
-      models: [modelEntry({ reasoningEffort: "high", apiKey: "secret-key" })],
+      models: [modelEntry({ reasoningEffort: "high" })],
       solverModelId: "solver",
       tldrModelId: "solver",
       subagentModels: {},
@@ -64,8 +67,6 @@ describe("file model configuration", () => {
 
     expect(view.models[0]).toMatchObject({
       configured: true,
-      apiKeyConfigured: true,
-      apiKeySource: "secret-store",
     })
     expect(JSON.stringify(view)).not.toContain("secret-key")
     expect(await readFile(storagePath, "utf8")).not.toContain("secret-key")
@@ -108,14 +109,11 @@ describe("file model configuration", () => {
       }),
     )
 
-    const configuration = await createFileModelConfiguration({
+    await createFileModelConfiguration({
       storagePath,
       secretStore: await FileSecretStore.open(secretsPath),
     })
 
-    expect(configuration.snapshot().models[0]?.apiKeySource).toBe(
-      "secret-store",
-    )
     expect(await readFile(storagePath, "utf8")).not.toContain("legacy-key")
     expect(await readFile(storagePath, "utf8")).not.toContain("maxTokens")
     expect(await readFile(secretsPath, "utf8")).toContain("legacy-key")
@@ -172,7 +170,6 @@ describe("file model configuration", () => {
         modelEntry({
           provider: "openai",
           modelId,
-          baseUrl: "",
           reasoningEffort: "high",
         }),
       ],
@@ -183,8 +180,6 @@ describe("file model configuration", () => {
 
     expect(view.models[0]).toMatchObject({
       configured: true,
-      apiKeyConfigured: true,
-      apiKeySource: "provider-credential",
     })
     expect(configuration.createAgentOptions()).toMatchObject({
       initialState: { model: { provider: "openai", id: modelId } },
@@ -198,16 +193,37 @@ describe("file model configuration", () => {
       storagePath: join(root, "model-config.json"),
       secretStore: await FileSecretStore.open(join(root, "secrets.json")),
     })
+    await configuration.addCustomProvider({
+      name: "OpenAI",
+      api: "openai-completions",
+      baseUrl: "https://models.example.test/v1",
+      apiKey: "solver-key",
+    })
+    await configuration.addCustomProvider({
+      name: "Worker Provider",
+      api: "openai-responses",
+      baseUrl: "https://workers.example.test/v1",
+      apiKey: "worker-key",
+    })
+    await configuration.addCustomProvider({
+      name: "Anthropic Proxy",
+      api: "anthropic-messages",
+      baseUrl: "https://anthropic.example.test",
+      apiKey: "anthropic-key",
+    })
 
     const view = await configuration.update({
       models: [
-        modelEntry({ apiKey: "solver-key" }),
+        modelEntry(),
         modelEntry({
           id: "worker",
-          provider: "worker-provider",
+          provider: "custom-worker-provider",
           modelId: "worker-model",
-          baseUrl: "https://workers.example.test/v1",
-          apiKey: "worker-key",
+        }),
+        modelEntry({
+          id: "anthropic",
+          provider: "custom-anthropic-proxy",
+          modelId: "claude-compatible",
         }),
       ],
       solverModelId: "solver",
@@ -228,15 +244,21 @@ describe("file model configuration", () => {
       id: "solver-model",
     })
     expect(tldr.initialState?.model).toMatchObject({
-      provider: "worker-provider",
+      provider: "custom-worker-provider",
       id: "worker-model",
+      api: "openai-responses",
     })
     const solverModel = solver.initialState?.model
     if (!solverModel) throw new Error("missing solver model")
     const registry = modelsFromAgentOptions(solver, solverModel)
-    expect(registry.getModel("worker-provider", "worker-model")).toBeDefined()
+    expect(
+      registry.getModel("custom-worker-provider", "worker-model"),
+    ).toBeDefined()
+    expect(
+      registry.getModel("custom-anthropic-proxy", "claude-compatible"),
+    ).toMatchObject({ api: "anthropic-messages" })
     expect(configuration.modelForSubagent("explorer")).toBe(
-      "worker-provider/worker-model",
+      "custom-worker-provider/worker-model",
     )
 
     const projectBindings = {
@@ -247,7 +269,7 @@ describe("file model configuration", () => {
     expect(
       configuration.createAgentOptions("solver", projectBindings).initialState
         ?.model,
-    ).toMatchObject({ provider: "worker-provider", id: "worker-model" })
+    ).toMatchObject({ provider: "custom-worker-provider", id: "worker-model" })
     expect(configuration.modelForSubagent("explorer", projectBindings)).toBe(
       "custom-openai/solver-model",
     )

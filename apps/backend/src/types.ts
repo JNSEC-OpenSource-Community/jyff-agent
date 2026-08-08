@@ -232,10 +232,7 @@ export interface ModelPoolEntryView {
   id: string
   provider: string
   modelId: string
-  baseUrl: string
   contextWindow: number
-  apiKeyConfigured: boolean
-  apiKeySource: "secret-store" | "provider-credential" | "none"
   /** 思维链开关(模型级配置,下次创建 solver 生效)。 */
   thinkingEnabled: boolean
   /** 思考强度档位(当前模型支持的档位之一,见 supportedThinkingLevels)。 */
@@ -252,17 +249,35 @@ export interface ModelPoolEntryUpdate {
   id: string
   provider: string
   modelId: string
-  baseUrl: string
   contextWindow: number
   thinkingEnabled: boolean
   reasoningEffort: string
   passthroughThinking: boolean
-  apiKey?: string
-  clearApiKey?: boolean
+}
+
+export type CustomModelProviderApi =
+  | "openai-completions"
+  | "openai-responses"
+  | "anthropic-messages"
+
+export interface CustomModelProviderView {
+  id: string
+  name: string
+  api: CustomModelProviderApi
+  baseUrl: string
+  apiKeyConfigured: boolean
+}
+
+export interface CustomModelProviderUpdate {
+  name: string
+  api: CustomModelProviderApi
+  baseUrl: string
+  apiKey: string
 }
 
 export interface ModelConfigurationView {
   models: ModelPoolEntryView[]
+  customProviders: CustomModelProviderView[]
   solverModelId: string
   tldrModelId: string
   subagentModels: Record<string, string>
@@ -311,6 +326,10 @@ export interface DashboardModelConfiguration {
   update(
     configuration: ModelConfigurationUpdate,
   ): Promise<ModelConfigurationView>
+  addCustomProvider(
+    provider: CustomModelProviderUpdate,
+  ): Promise<ModelConfigurationView>
+  removeCustomProvider(providerId: string): Promise<ModelConfigurationView>
 }
 
 export type ModelAuthProviderId =

@@ -34,76 +34,65 @@ const httpUrl = (value: string) => {
 }
 
 /** 模型池单条目的完整校验（与旧版 requiredString/requiredPositiveInteger 语义一致）。 */
-export const modelPoolEntrySchema = z
-  .object({
-    id: z
-      .string({ message: "Models[?] ID 必须是字符串" })
-      .trim()
-      .min(1, { message: "模型配置 ID 不能为空" })
-      .max(128, { message: "模型配置 ID 长度不能超过 128" })
-      .regex(ID_PATTERN, {
-        message: "模型配置 ID 只能包含字母、数字、点、下划线和连字符",
-      }),
-    provider: z
-      .string({ message: "Provider 必须是字符串" })
-      .trim()
-      .min(1, { message: "Provider 不能为空" })
-      .max(128, { message: "Provider 长度不能超过 128" })
-      .regex(ID_PATTERN, {
-        message: "Provider 只能包含字母、数字、点、下划线和连字符",
-      }),
-    modelId: z
-      .string({ message: "Model ID 必须是字符串" })
-      .trim()
-      .min(1, { message: "Model ID 不能为空" })
-      .max(256, { message: "Model ID 长度不能超过 256" })
-      .refine((value) => !hasControlCharacter(value), {
-        message: "Model ID 不能包含控制字符",
-      }),
-    baseUrl: z
-      .string({ message: "Base URL 必须是字符串" })
-      .trim()
-      .max(2_048, { message: "Base URL 长度不能超过 2048" })
-      .refine(httpUrl, { message: "Base URL 不是有效 URL" })
-      .transform((value) => value.replace(/\/+$/, "")),
-    contextWindow: z
-      .number({ message: "Context Window 必须是整数" })
-      .int()
-      .min(1)
-      .max(2_000_000),
-    thinkingEnabled: z.boolean(),
-    passthroughThinking: z.boolean(),
-    reasoningEffort: z.enum([...THINKING_LEVELS, "off"], {
-      message: `Reasoning Effort 必须是 ${[...THINKING_LEVELS, "off"].join("/")} 之一`,
+export const modelPoolEntrySchema = z.object({
+  id: z
+    .string({ message: "Models[?] ID 必须是字符串" })
+    .trim()
+    .min(1, { message: "模型配置 ID 不能为空" })
+    .max(128, { message: "模型配置 ID 长度不能超过 128" })
+    .regex(ID_PATTERN, {
+      message: "模型配置 ID 只能包含字母、数字、点、下划线和连字符",
     }),
-    apiKey: z
-      .string({ message: "API Key 必须是字符串" })
-      .trim()
-      .max(8_192, { message: "API Key 长度不能超过 8192" })
-      .optional(),
-    clearApiKey: z.boolean().optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.apiKey && value.clearApiKey) {
-      ctx.addIssue({
-        code: "custom",
-        message: "不能同时设置和清除 API Key",
-      })
-    }
-  })
+  provider: z
+    .string({ message: "Provider 必须是字符串" })
+    .trim()
+    .min(1, { message: "Provider 不能为空" })
+    .max(128, { message: "Provider 长度不能超过 128" })
+    .regex(ID_PATTERN, {
+      message: "Provider 只能包含字母、数字、点、下划线和连字符",
+    }),
+  modelId: z
+    .string({ message: "Model ID 必须是字符串" })
+    .trim()
+    .min(1, { message: "Model ID 不能为空" })
+    .max(256, { message: "Model ID 长度不能超过 256" })
+    .refine((value) => !hasControlCharacter(value), {
+      message: "Model ID 不能包含控制字符",
+    }),
+  contextWindow: z
+    .number({ message: "Context Window 必须是整数" })
+    .int()
+    .min(1)
+    .max(2_000_000),
+  thinkingEnabled: z.boolean(),
+  passthroughThinking: z.boolean(),
+  reasoningEffort: z.enum([...THINKING_LEVELS, "off"], {
+    message: `Reasoning Effort 必须是 ${[...THINKING_LEVELS, "off"].join("/")} 之一`,
+  }),
+})
 
 export interface ModelPoolEntryOutput {
   id: string
   provider: string
   modelId: string
-  baseUrl: string
   contextWindow: number
   thinkingEnabled: boolean
   passthroughThinking: boolean
   reasoningEffort: string
-  apiKey?: string
-  clearApiKey?: boolean
 }
+
+export const customModelProviderSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]),
+  baseUrl: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2_048)
+    .refine(httpUrl, { message: "Base URL 不是有效 URL" })
+    .transform((value) => value.replace(/\/+$/, "")),
+  apiKey: z.string().trim().min(1).max(8_192),
+})
 
 const optionalBinding = (label: string) =>
   z
@@ -148,16 +137,10 @@ export const modelConfigurationUpdateSchema = z
       if (!ids.has(modelId)) issue(`SubAgent ${role} 的模型不存在: ${modelId}`)
     }
     const references = new Set<string>()
-    const providerBaseUrls = new Map<string, string>()
     for (const model of models) {
       const reference = `${model.provider}/${model.modelId}`
       if (references.has(reference)) issue(`模型不能重复: ${reference}`)
       references.add(reference)
-      const previous = providerBaseUrls.get(model.provider)
-      if (previous !== undefined && previous !== model.baseUrl) {
-        issue(`同一 Provider 的 Base URL 必须一致: ${model.provider}`)
-      }
-      providerBaseUrls.set(model.provider, model.baseUrl)
     }
   })
   .transform((value) => ({

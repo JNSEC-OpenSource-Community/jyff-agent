@@ -34,7 +34,7 @@ describe("模型配置与模型鉴权路由", () => {
     return { app, authentication }
   }
 
-  it("模型配置保存时不会把 API key 回传到快照", async () => {
+  it("模型配置保存时只接受模型元数据", async () => {
     const project = new FakeDashboardProject()
     const modelConfiguration = new FakeModelConfiguration()
     const { app } = createWebUiApp({
@@ -52,30 +52,24 @@ describe("模型配置与模型鉴权路由", () => {
           id: "solver",
           provider: "openai",
           modelId: "gpt-4o",
-          baseUrl: "https://api.openai.com/v1",
           contextWindow: 128_000,
           thinkingEnabled: false,
           reasoningEffort: "off",
           passthroughThinking: false,
-          apiKey: "sk-secret-1",
         },
         {
           id: "helper",
           provider: "openai",
           modelId: "gpt-4o-mini",
-          baseUrl: "https://api.openai.com/v1",
           contextWindow: 128_000,
           thinkingEnabled: false,
           reasoningEffort: "off",
           passthroughThinking: false,
-          apiKey: "sk-secret-2",
         },
       ],
     })
     expect(saved.status).toBe(200)
-    expect(modelConfiguration.lastApiKey).toBe("sk-secret-1")
     const body = await jsonOf(saved)
-    expect(JSON.stringify(body)).not.toContain("sk-secret")
     expect(body).toMatchObject({
       configuration: {
         solverModelId: "solver",
@@ -84,7 +78,54 @@ describe("模型配置与模型鉴权路由", () => {
     })
   })
 
-  it("模型配置校验：空 apiKey 或未绑定 id 时 400", async () => {
+  it("创建和删除自定义兼容供应商", async () => {
+    const modelConfiguration = new FakeModelConfiguration()
+    const { app } = createWebUiApp({
+      project: new FakeDashboardProject(),
+      modelConfiguration,
+      frontendDist: "/nonexistent",
+    })
+
+    const created = await jsonRequest(
+      app,
+      "/api/model-config/providers",
+      "POST",
+      {
+        name: "Internal Gateway",
+        api: "openai-responses",
+        baseUrl: "https://models.example.test/v1/",
+        apiKey: "provider-secret",
+      },
+    )
+    expect(created.status).toBe(200)
+    const createdBody = await jsonOf(created)
+    expect(createdBody).toMatchObject({
+      configuration: {
+        customProviders: [
+          {
+            id: "custom-internal-gateway",
+            api: "openai-responses",
+            baseUrl: "https://models.example.test/v1",
+          },
+        ],
+      },
+    })
+    expect(JSON.stringify(createdBody)).not.toContain("provider-secret")
+
+    const removed = await jsonRequest(
+      app,
+      "/api/model-config/providers/custom-internal-gateway",
+      "DELETE",
+      {},
+    )
+    expect(removed.status).toBe(200)
+    const removedBody = (await jsonOf(removed)) as {
+      configuration: { customProviders: unknown[] }
+    }
+    expect(removedBody.configuration.customProviders).toEqual([])
+  })
+
+  it("模型配置校验：多余凭据字段或未绑定 id 时 400", async () => {
     const project = new FakeDashboardProject()
     const { app } = createWebUiApp({
       project,
@@ -94,7 +135,6 @@ describe("模型配置与模型鉴权路由", () => {
     const base = {
       provider: "openai",
       modelId: "gpt-4o",
-      baseUrl: "https://api.openai.com/v1",
       contextWindow: 128_000,
       thinkingEnabled: false,
       reasoningEffort: "off",
@@ -104,7 +144,7 @@ describe("模型配置与模型鉴权路由", () => {
     expect(
       (
         await jsonRequest(app, "/api/model-config", "POST", {
-          models: [{ id: "solver", ...base, apiKey: "  " }],
+          models: [{ id: "solver", ...base, apiKey: "sk-should-not-be-here" }],
         })
       ).status,
     ).toBe(400)

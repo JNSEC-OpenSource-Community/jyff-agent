@@ -24,7 +24,6 @@ import type {
 
 interface EM extends ModelPoolEntryUpdate {
   uiKey: string
-  apiKeyConfigured: boolean
   supportedThinkingLevels: string[]
 }
 
@@ -33,12 +32,10 @@ const ed = (m: ModelConfigurationView["models"][number]): EM => ({
   id: m.id,
   provider: m.provider,
   modelId: m.modelId,
-  baseUrl: m.baseUrl,
   contextWindow: m.contextWindow,
   thinkingEnabled: m.thinkingEnabled,
   reasoningEffort: m.reasoningEffort,
   passthroughThinking: m.passthroughThinking,
-  apiKeyConfigured: m.apiKeyConfigured,
   supportedThinkingLevels: m.supportedThinkingLevels,
 })
 
@@ -56,14 +53,21 @@ export function ModelPoolEditor({
   const [busy, setBusy] = useState(false)
 
   const providerOptions = useMemo(
-    () =>
-      authentication.providers.map((p) => ({
+    () => [
+      ...authentication.providers
+        .filter((p) => p.configured)
+        .map((p) => ({
+          value: p.id,
+          label: p.name,
+          description: "已连接",
+        })),
+      ...configuration.customProviders.map((p) => ({
         value: p.id,
         label: p.name,
-        description: p.configured ? "已认证" : "未连接",
-        disabled: false,
+        description: p.api,
       })),
-    [authentication.providers],
+    ],
+    [authentication.providers, configuration.customProviders],
   )
 
   function up(i: number, p: Partial<EM>) {
@@ -86,12 +90,7 @@ export function ModelPoolEditor({
     try {
       const payload: ModelConfigurationUpdate = {
         models: models.map(
-          ({
-            uiKey: _,
-            apiKeyConfigured: __,
-            supportedThinkingLevels: ___,
-            ...m
-          }) => m,
+          ({ uiKey: _, supportedThinkingLevels: __, ...m }) => m,
         ),
         solverModelId: configuration.solverModelId,
         tldrModelId: configuration.tldrModelId,
@@ -116,6 +115,9 @@ export function ModelPoolEditor({
       {err ? <ErrorNotice message={err} /> : null}
       {models.map((m, i) => {
         const prov = authentication.providers.find((p) => p.id === m.provider)
+        const customProvider = configuration.customProviders.find(
+          (p) => p.id === m.provider,
+        )
         return (
           <Card key={m.uiKey} className="overflow-hidden p-0">
             <div className="flex items-center gap-3 border-b border-border bg-muted px-4 py-2.5">
@@ -165,38 +167,34 @@ export function ModelPoolEditor({
                 />
               </Field>
               <Field label="模型 ID">
-                <Combobox
-                  value={m.modelId}
-                  onChange={(v) => {
-                    const s = prov?.models.find((x) => x.id === v)
-                    up(i, {
-                      modelId: v,
-                      ...(s
-                        ? {
-                            contextWindow: s.contextWindow,
-                            thinkingEnabled: s.reasoning,
-                            reasoningEffort: s.reasoning ? "medium" : "off",
-                          }
-                        : {}),
-                    })
-                  }}
-                  options={modelOptions(m.provider)}
-                  placeholder="选择模型"
-                  searchPlaceholder="搜索…"
-                  emptyText="无匹配"
-                />
-              </Field>
-              <Field
-                label="Base URL（可选）"
-                description="留空时使用供应商官方端点；仅兼容网关或中转服务需要填写。"
-              >
-                <Input
-                  type="url"
-                  value={m.baseUrl}
-                  onChange={(e) => up(i, { baseUrl: e.target.value })}
-                  placeholder="默认"
-                  className="h-8 text-xs"
-                />
+                {customProvider ? (
+                  <Input
+                    value={m.modelId}
+                    onChange={(e) => up(i, { modelId: e.target.value })}
+                    placeholder="输入兼容端点的模型 ID"
+                  />
+                ) : (
+                  <Combobox
+                    value={m.modelId}
+                    onChange={(v) => {
+                      const s = prov?.models.find((x) => x.id === v)
+                      up(i, {
+                        modelId: v,
+                        ...(s
+                          ? {
+                              contextWindow: s.contextWindow,
+                              thinkingEnabled: s.reasoning,
+                              reasoningEffort: s.reasoning ? "medium" : "off",
+                            }
+                          : {}),
+                      })
+                    }}
+                    options={modelOptions(m.provider)}
+                    placeholder="选择模型"
+                    searchPlaceholder="搜索…"
+                    emptyText="无匹配"
+                  />
+                )}
               </Field>
               <Field
                 label="上下文窗口"
@@ -240,20 +238,6 @@ export function ModelPoolEditor({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field
-                label="模型专用 API Key（可选）"
-                description="留空时继承供应商凭据。"
-              >
-                <Input
-                  type="password"
-                  value={m.apiKey ?? ""}
-                  onChange={(e) =>
-                    up(i, { apiKey: e.target.value, clearApiKey: false })
-                  }
-                  placeholder={m.apiKeyConfigured ? "已配置" : "继承"}
-                  className="h-8 text-xs"
-                />
-              </Field>
             </div>
             <div className="flex flex-wrap gap-4 border-t border-border bg-muted/30 px-4 py-2.5">
               <label
@@ -282,21 +266,6 @@ export function ModelPoolEditor({
                 />
                 向自定义端点透传推理档位
               </label>
-              {m.apiKeyConfigured ? (
-                <label
-                  htmlFor={`${m.uiKey}-clear`}
-                  className="flex items-center gap-2 text-xs text-muted-foreground"
-                >
-                  <Checkbox
-                    id={`${m.uiKey}-clear`}
-                    checked={m.clearApiKey === true}
-                    onCheckedChange={(c) =>
-                      up(i, { clearApiKey: c === true, apiKey: "" })
-                    }
-                  />
-                  删除模型专用 API Key
-                </label>
-              ) : null}
             </div>
           </Card>
         )
@@ -306,22 +275,22 @@ export function ModelPoolEditor({
           variant="secondary"
           onClick={() => {
             const p =
-              authentication.providers.find((x) => x.id === "openai") ??
-              authentication.providers[0]
+              authentication.providers.find(
+                (x) => x.configured && x.id === "openai",
+              ) ?? authentication.providers.find((x) => x.configured)
+            const cp = configuration.customProviders[0]
             const s = p?.models[0]
             setModels((c) => [
               ...c,
               {
                 uiKey: crypto.randomUUID(),
                 id: `m-${c.length + 1}`,
-                provider: p?.id ?? "openai",
+                provider: p?.id ?? cp?.id ?? "",
                 modelId: s?.id ?? "",
-                baseUrl: "",
                 contextWindow: s?.contextWindow ?? 128000,
                 thinkingEnabled: s?.reasoning ?? true,
                 reasoningEffort: s?.reasoning ? "medium" : "off",
                 passthroughThinking: false,
-                apiKeyConfigured: false,
                 supportedThinkingLevels: s?.reasoning
                   ? ["off", "low", "medium", "high"]
                   : ["off"],
