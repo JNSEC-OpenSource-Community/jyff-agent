@@ -454,66 +454,66 @@ export function GlobalSettingsPage() {
               {on ? "启用" : "禁用"}
             </Badge>
           </div>
-          <form
-            className="max-w-3xl border-y border-border"
-            onSubmit={(e) => void saveAuth(e)}
-          >
-            <div className="flex items-center justify-between gap-6 py-5">
-              <div>
-                <p className="text-sm font-medium">WebUI 登录</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  通过 SameSite=Strict、HttpOnly 会话 Cookie 保护控制台。
-                </p>
-              </div>
-              <Switch
-                checked={on}
-                onCheckedChange={setOn}
-                aria-label="启用 WebUI 登录"
-              />
-            </div>
-            {on ? (
-              <div className="grid gap-4 border-t border-border bg-muted/20 py-5 sm:grid-cols-2">
+          <Card className="w-full overflow-hidden p-0">
+            <form onSubmit={(e) => void saveAuth(e)}>
+              <div className="flex items-center justify-between gap-6 px-6 py-5">
                 <div>
-                  <label
-                    htmlFor="auth-username"
-                    className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                  >
-                    用户名
-                  </label>
-                  <Input
-                    id="auth-username"
-                    value={uname}
-                    onChange={(e) => setUname(e.target.value)}
-                  />
+                  <p className="text-sm font-medium">WebUI 登录</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    通过 SameSite=Strict、HttpOnly 会话 Cookie 保护控制台。
+                  </p>
                 </div>
-                <div>
-                  <label
-                    htmlFor="auth-password"
-                    className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                  >
-                    {g.authentication.enabled ? "新密码（可选）" : "密码"}
-                  </label>
-                  <Input
-                    id="auth-password"
-                    type="password"
-                    value={pw}
-                    onChange={(e) => setPw(e.target.value)}
-                  />
-                </div>
+                <Switch
+                  checked={on}
+                  onCheckedChange={setOn}
+                  aria-label="启用 WebUI 登录"
+                />
               </div>
-            ) : null}
-            <div className="flex justify-end border-t border-border py-4">
-              <Button
-                type="submit"
-                disabled={
-                  busy || (on && (!uname || (!g.authentication.enabled && !pw)))
-                }
-              >
-                <Icon icon="lucide:shield-check" width="14" />
-                保存
-              </Button>
-            </div>
-          </form>
+              {on ? (
+                <div className="grid gap-4 border-t border-border bg-muted/20 px-6 py-5 sm:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="auth-username"
+                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >
+                      用户名
+                    </label>
+                    <Input
+                      id="auth-username"
+                      value={uname}
+                      onChange={(e) => setUname(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="auth-password"
+                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >
+                      {g.authentication.enabled ? "新密码（可选）" : "密码"}
+                    </label>
+                    <Input
+                      id="auth-password"
+                      type="password"
+                      value={pw}
+                      onChange={(e) => setPw(e.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex justify-end border-t border-border px-6 py-4">
+                <Button
+                  type="submit"
+                  disabled={
+                    busy ||
+                    (on && (!uname || (!g.authentication.enabled && !pw)))
+                  }
+                >
+                  <Icon icon="lucide:shield-check" width="14" />
+                  保存
+                </Button>
+              </div>
+            </form>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
