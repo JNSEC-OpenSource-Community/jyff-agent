@@ -61,6 +61,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/web-access/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
     }
   ],
   "assist": {
