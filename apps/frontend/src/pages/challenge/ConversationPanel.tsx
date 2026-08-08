@@ -103,11 +103,11 @@ export function ConversationPanel({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* Header bar */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 max-lg:px-3 max-lg:py-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span
             className={cn(
-              "flex size-8 shrink-0 items-center justify-center rounded-full border text-primary",
+              "flex size-8 shrink-0 items-center justify-center rounded-full border text-primary max-lg:size-7",
               "border-primary/30 bg-primary/5",
             )}
           >
@@ -126,9 +126,10 @@ export function ConversationPanel({
           </div>
         </div>
         {exportUrl ? (
-          <Button variant="ghost" size="sm" asChild>
+          <Button variant="ghost" size="sm" className="max-lg:px-2" asChild>
             <a href={exportUrl} target="_blank" rel="noreferrer">
-              <Icon icon="lucide:file-code-2" width="15" /> 查看 HTML
+              <Icon icon="lucide:file-code-2" width="15" />
+              <span className="max-lg:sr-only">查看 HTML</span>
             </a>
           </Button>
         ) : null}
@@ -138,7 +139,7 @@ export function ConversationPanel({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 max-lg:px-3 max-lg:py-3"
         style={{ scrollbarGutter: "stable" }}
       >
         {loading ? <Spinner label="读取 Pi 会话" /> : null}
@@ -187,7 +188,7 @@ export function ConversationPanel({
 
       {/* Input area */}
       <form
-        className="shrink-0 border-t border-border p-3"
+        className="shrink-0 border-t border-border p-3 max-lg:p-2"
         onSubmit={(event) => void onSubmit(event)}
       >
         <div className="flex items-end gap-2">
@@ -199,8 +200,8 @@ export function ConversationPanel({
                 ? "向当前 Solver 发送补充指令…"
                 : "Steer 这个 SubAgent；完成的会话会从持久化状态恢复…"
             }
-            rows={2}
-            className="min-h-12 flex-1 resize-none"
+            rows={1}
+            className="min-h-11 flex-1 resize-none"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault()

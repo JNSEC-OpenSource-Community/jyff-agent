@@ -56,7 +56,7 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* ── Unified sidebar (wide) ── */}
       <aside
         className={cn(
@@ -87,7 +87,7 @@ export function AppShell() {
       <main className="main-mobile relative min-w-0 flex-1 overflow-y-auto">
         <button
           type="button"
-          className="show-mobile-menu fixed right-3 top-3 z-40 hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm"
+          className="show-mobile-menu fixed left-3 top-3 z-40 hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm"
           onClick={() => setMobileOpen(true)}
           aria-label="菜单"
         >

@@ -285,12 +285,6 @@ p {
   }
 }
 
-@media (max-width: 640px) {
-  .main-mobile {
-    padding-bottom: 60px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

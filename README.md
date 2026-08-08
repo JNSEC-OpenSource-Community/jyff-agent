@@ -41,7 +41,7 @@ docker compose -f compose.webui.yaml ps
 
 1. 在“全局配置 → Provider”中按 Subscription 登录或 API Key 两类添加供应商，再在“模型池”加入可用模型；
 2. 从首页创建比赛，通过可搜索的平台插件选择器填写插件声明的站点、比赛与认证信息；
-3. 先测试连接；成功后系统从比赛名称自动填充 Project ID 和显示名称，再创建并连接；
+3. 先测试连接，再输入比赛名称；浏览器会实时生成不可编辑的拼音 Project ID，确认后创建并连接；
 4. 在该 Project 的“比赛配置”中分别绑定 Solver、TLDR、各类 SubAgent 模型并设置并发数；
 5. 从 Project 首页拖动调度队列、人工派发单题，或开启自主调度整场比赛。
 

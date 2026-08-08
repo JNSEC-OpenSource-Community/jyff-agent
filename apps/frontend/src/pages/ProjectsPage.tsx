@@ -296,7 +296,6 @@ export function NewProjectPage() {
   const [setup, setSetup] = useState<ControlPlaneSetupSnapshot | null>(null)
   const [platId, setPlatId] = useState("")
   const [stratId, setStratId] = useState("")
-  const [pid, setPid] = useState("")
   const [pname, setPname] = useState("")
   const [cfg, setCfg] = useState<Record<string, unknown>>({})
   const [secrets, setSecrets] = useState<Record<string, string>>({})
@@ -321,6 +320,7 @@ export function NewProjectPage() {
 
   const plats = setup?.platforms ?? []
   const plat = plats.find((c) => c.id === platId)
+  const pid = useMemo(() => contestIdFromName(pname), [pname])
   function pickPlat(p: SP) {
     setPlatId(p.id)
     const s = p.setup.authStrategies[0]
@@ -334,7 +334,7 @@ export function NewProjectPage() {
     const c: ProjectConfig = {
       version: 1,
       project: {
-        id: pid.trim() || `c-${Date.now()}`,
+        id: pid || "connection-test",
         name: pname.trim() || "新比赛",
       },
       platform: { plugin: platId, config: cfg },
@@ -357,8 +357,6 @@ export function NewProjectPage() {
         payload,
       )
       setTestR(r)
-      setPname(r.overview.name)
-      setPid(contestIdFromName(r.overview.name) || r.overview.id)
     } catch (e) {
       setTestR(null)
       setErr(String(e instanceof Error ? e.message : e))
@@ -511,28 +509,11 @@ export function NewProjectPage() {
               <h2 className="font-semibold">比赛标识</h2>
             </div>
             <p className="mt-1 pl-10 text-sm text-muted-foreground">
-              平台名称会同步为比赛名称，并自动生成拼音 ID。
+              输入比赛名称，浏览器会实时生成对应的拼音 ID。
             </p>
           </div>
           <section className="p-6">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="project-id"
-                  className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                >
-                  比赛 ID
-                </label>
-                <Input
-                  id="project-id"
-                  value={pid}
-                  placeholder="自动生成"
-                  onChange={(e) => setPid(e.target.value)}
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  用于路由与持久化，不可修改。
-                </p>
-              </div>
               <div>
                 <label
                   htmlFor="project-name"
@@ -543,9 +524,26 @@ export function NewProjectPage() {
                 <Input
                   id="project-name"
                   value={pname}
-                  placeholder="自动读取"
+                  placeholder="例如：巅峰极客 2026"
                   onChange={(e) => setPname(e.target.value)}
                 />
+              </div>
+              <div>
+                <label
+                  htmlFor="project-id"
+                  className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                >
+                  比赛 ID（自动生成）
+                </label>
+                <Input
+                  id="project-id"
+                  value={pid}
+                  placeholder="输入比赛名称后生成"
+                  disabled
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  用于路由与持久化，创建后不可修改。
+                </p>
               </div>
             </div>
           </section>

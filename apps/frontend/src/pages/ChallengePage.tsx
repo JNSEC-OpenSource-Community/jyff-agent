@@ -102,7 +102,7 @@ export function ChallengePage() {
             defaultValue="conversation"
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+            <div className="hidden shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2.5 lg:flex">
               <TabsList>
                 <TabsTrigger value="conversation">对话</TabsTrigger>
                 <TabsTrigger value="intelligence">情报</TabsTrigger>
@@ -123,16 +123,52 @@ export function ChallengePage() {
                   </SelectContent>
                 </Select>
               ) : null}
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="lg:hidden"
-                onClick={() => setMobileDetailsOpen(true)}
-              >
-                <Icon icon="lucide:panel-bottom-open" width="14" />
-                题目与 Agents
-              </Button>
+            </div>
+
+            <div className="shrink-0 border-b border-border lg:hidden">
+              <div className="flex h-12 items-center gap-2 pr-2 pl-12">
+                {selectedRun ? (
+                  <Select value={selectedRun.id} onValueChange={selectRun}>
+                    <SelectTrigger className="h-8 min-w-0 flex-1 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {details.runs.map((r) => (
+                        <SelectItem value={r.id} key={r.id}>
+                          #{r.attempt} · {STATUS_LABELS[r.status] ?? r.status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="flex-1" />
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 shrink-0 px-2.5"
+                  onClick={() => setMobileDetailsOpen(true)}
+                  aria-label="打开题目与 Agents"
+                >
+                  <Icon icon="lucide:panel-bottom-open" width="14" />
+                  <span className="max-[460px]:hidden">题目与 Agents</span>
+                </Button>
+              </div>
+              <TabsList className="grid h-9 w-full grid-cols-4 gap-0 rounded-none border-x-0 border-b-0 bg-transparent p-0 px-2">
+                <TabsTrigger value="conversation" className="px-1 text-xs">
+                  对话
+                </TabsTrigger>
+                <TabsTrigger value="intelligence" className="px-1 text-xs">
+                  情报
+                </TabsTrigger>
+                <TabsTrigger value="attempts" className="px-1 text-xs">
+                  Attempts
+                </TabsTrigger>
+                <TabsTrigger value="writeup" className="px-1 text-xs">
+                  Writeup
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             <TabsContent
@@ -253,7 +289,7 @@ export function ChallengePage() {
       <Sheet open={mobileDetailsOpen} onOpenChange={setMobileDetailsOpen}>
         <SheetContent side="bottom" className="p-0 lg:hidden">
           <SheetTitle className="sr-only">题目与 Agents</SheetTitle>
-          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border" />
+          <div className="mx-auto mt-2! h-1 w-10 rounded-full bg-border" />
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pt-3">
             <Card className="overflow-hidden p-0">
               <div className="border-b border-border px-4 py-3 pr-12">
