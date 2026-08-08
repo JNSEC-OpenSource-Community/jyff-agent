@@ -86,12 +86,6 @@ export const ctfdSetup: PlatformSetupDescriptor = {
       required: true,
       placeholder: "https://demo.ctfd.io",
     },
-    {
-      key: "name",
-      label: "比赛显示名称",
-      type: "text",
-      required: false,
-    },
   ],
   authStrategies: [
     {

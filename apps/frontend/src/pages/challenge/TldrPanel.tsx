@@ -1,6 +1,7 @@
 import type { TldrRecord } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
 import { useState } from "react"
+import { MarkdownContent } from "../../components/content/MarkdownContent.tsx"
 import {
   Button,
   EmptyState,
@@ -111,9 +112,7 @@ export function TldrPanel({
           busy && "opacity-60",
         )}
       >
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-          {tldr.content}
-        </p>
+        <MarkdownContent>{tldr.content}</MarkdownContent>
       </div>
       <div className="flex items-center gap-2">
         <Button

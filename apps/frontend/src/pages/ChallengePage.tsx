@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react"
 import { useParams } from "react-router-dom"
+import { MarkdownContent } from "../components/content/MarkdownContent.tsx"
 import {
   Badge,
   Button,
@@ -173,9 +174,9 @@ export function ChallengePage() {
 
             <TabsContent value="writeup" className="flex-1 overflow-y-auto p-5">
               {details.writeup.content ? (
-                <pre className="rounded-lg border border-border bg-muted p-4 font-mono text-sm whitespace-pre-wrap">
-                  {details.writeup.content}
-                </pre>
+                <div className="rounded-lg border border-border bg-muted/30 p-5">
+                  <MarkdownContent>{details.writeup.content}</MarkdownContent>
+                </div>
               ) : (
                 <EmptyState
                   icon="lucide:file-pen-line"

@@ -21,6 +21,7 @@ import {
   Spinner,
 } from "../components/index.ts"
 import { apiMutation, apiRequest } from "../lib/api.ts"
+import { contestIdFromName } from "../lib/contest-name.ts"
 import { cn } from "../lib/utils.ts"
 
 const ARCHIVED_KEY = "ctf-agent-archived-projects"
@@ -293,13 +294,6 @@ function ProjectCard({
 /* ═══════════════════════════ Create project ═══════════════════════════ */
 
 type SP = ControlPlaneSetupSnapshot["platforms"][number]
-const slg = (v: string) =>
-  v
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
 
 export function NewProjectPage() {
   const nav = useNavigate()
@@ -309,7 +303,6 @@ export function NewProjectPage() {
   const [stratId, setStratId] = useState("")
   const [pid, setPid] = useState("")
   const [pname, setPname] = useState("")
-  const [touched, setTouched] = useState(false)
   const [cfg, setCfg] = useState<Record<string, unknown>>({})
   const [secrets, setSecrets] = useState<Record<string, string>>({})
   const [testR, setTestR] = useState<PlatformConnectionTest | null>(null)
@@ -369,10 +362,8 @@ export function NewProjectPage() {
         payload,
       )
       setTestR(r)
-      if (!touched) {
-        setPname(r.overview.name)
-        setPid(slg(r.overview.name) || r.overview.id)
-      }
+      setPname(r.overview.name)
+      setPid(contestIdFromName(r.overview.name) || r.overview.id)
     } catch (e) {
       setTestR(null)
       setErr(String(e instanceof Error ? e.message : e))
@@ -421,169 +412,169 @@ export function NewProjectPage() {
 
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
 
-      <Card className="overflow-hidden">
-        <div className="border-b border-border bg-muted px-6 py-4">
-          <div className="flex items-center gap-3">
-            <StepBadge n={1} active={true} />
-            <h2 className="font-semibold">平台类型</h2>
-          </div>
-          <p className="mt-1 pl-10 text-sm text-muted-foreground">
-            选择要接入的比赛平台插件。
-          </p>
-        </div>
-        <div className="p-6">
-          <Combobox
-            value={platId}
-            onChange={(id) => {
-              const next = plats.find((item) => item.id === id)
-              if (next) pickPlat(next)
-            }}
-            options={plats.map((item) => ({
-              value: item.id,
-              label: item.setup.label,
-              description: item.setup.description,
-            }))}
-            placeholder="选择平台插件"
-            searchPlaceholder="搜索平台插件…"
-            emptyText="没有可用的平台插件"
-          />
-          {plat ? (
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              {plat.setup.description}
+      <div className="space-y-4">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-border bg-muted px-6 py-4">
+            <div className="flex items-center gap-3">
+              <StepBadge n={1} active={true} />
+              <h2 className="font-semibold">平台类型</h2>
+            </div>
+            <p className="mt-1 pl-10 text-sm text-muted-foreground">
+              选择要接入的比赛平台插件。
             </p>
-          ) : null}
-        </div>
-
-        <div className="border-t border-border bg-muted px-6 py-4">
-          <div className="flex items-center gap-3">
-            <StepBadge n={2} active={Boolean(platId)} />
-            <h2 className="font-semibold">连接信息</h2>
           </div>
-          <p className="mt-1 pl-10 text-sm text-muted-foreground">
-            填写站点、认证和比赛信息，并验证连接。
-          </p>
-        </div>
-        <section className="space-y-5 p-6">
-          {plat ? (
-            <PlatformSetupForm
-              platform={plat}
-              strategyId={stratId}
-              config={cfg}
-              secrets={secrets}
-              onStrategyChange={(id, defaults) => {
-                setStratId(id)
-                setCfg((current) => ({ ...current, ...defaults }))
-                setSecrets({})
-                setTestR(null)
+          <div className="p-6">
+            <Combobox
+              value={platId}
+              onChange={(id) => {
+                const next = plats.find((item) => item.id === id)
+                if (next) pickPlat(next)
               }}
-              onConfigChange={(next) => {
-                setCfg(next)
-                setTestR(null)
-              }}
-              onSecretsChange={(next) => {
-                setSecrets(next)
-                setTestR(null)
-              }}
+              options={plats.map((item) => ({
+                value: item.id,
+                label: item.setup.label,
+                description: item.setup.description,
+              }))}
+              placeholder="选择平台插件"
+              searchPlaceholder="搜索平台插件…"
+              emptyText="没有可用的平台插件"
             />
-          ) : null}
-
-          <Button
-            variant="secondary"
-            onClick={() => void testConn()}
-            disabled={busy !== null}
-          >
-            <Icon
-              icon={
-                busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"
-              }
-              className={busy === "test" ? "animate-spin" : ""}
-              width="14"
-            />
-            验证连接
-          </Button>
-
-          {testR ? (
-            <div className="flex items-center gap-3 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm text-green">
-              <Icon icon="lucide:circle-check" width="17" />
-              <span>
-                <strong>{testR.overview.name}</strong> ·{" "}
-                {testR.overview.challenges} 题 · {testR.overview.announcements}{" "}
-                公告
-              </span>
-            </div>
-          ) : null}
-        </section>
-
-        <div className="border-t border-border bg-muted px-6 py-4">
-          <div className="flex items-center gap-3">
-            <StepBadge n={3} active={testR !== null} />
-            <h2 className="font-semibold">比赛标识</h2>
-          </div>
-          <p className="mt-1 pl-10 text-sm text-muted-foreground">
-            确认比赛 ID 与显示名称。
-          </p>
-        </div>
-        <section className="p-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="project-id"
-                className="mb-1.5 block text-xs font-medium text-muted-foreground"
-              >
-                比赛 ID
-              </label>
-              <Input
-                id="project-id"
-                value={pid}
-                placeholder="自动生成"
-                onChange={(e) => {
-                  setTouched(true)
-                  setPid(e.target.value)
-                }}
-              />
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                用于路由与持久化，不可修改。
+            {plat ? (
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                {plat.setup.description}
               </p>
-            </div>
-            <div>
-              <label
-                htmlFor="project-name"
-                className="mb-1.5 block text-xs font-medium text-muted-foreground"
-              >
-                显示名称
-              </label>
-              <Input
-                id="project-name"
-                value={pname}
-                placeholder="自动读取"
-                onChange={(e) => {
-                  setTouched(true)
-                  setPname(e.target.value)
-                }}
-              />
-            </div>
+            ) : null}
           </div>
-        </section>
+        </Card>
 
-        <div className="flex justify-end gap-3 border-t border-border bg-muted px-6 py-4">
-          <Button variant="ghost" asChild>
-            <Link to="/">取消</Link>
-          </Button>
-          <Button
-            onClick={() => void submit()}
-            disabled={!testR || !pid.trim() || !pname.trim() || busy !== null}
-          >
-            {busy === "create" ? (
-              <Icon
-                icon="lucide:loader-circle"
-                className="animate-spin"
-                width="14"
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-border bg-muted px-6 py-4">
+            <div className="flex items-center gap-3">
+              <StepBadge n={2} active={Boolean(platId)} />
+              <h2 className="font-semibold">连接信息</h2>
+            </div>
+            <p className="mt-1 pl-10 text-sm text-muted-foreground">
+              填写站点、认证和比赛信息，并验证连接。
+            </p>
+          </div>
+          <section className="space-y-5 p-6">
+            {plat ? (
+              <PlatformSetupForm
+                platform={plat}
+                strategyId={stratId}
+                config={cfg}
+                secrets={secrets}
+                onStrategyChange={(id, defaults) => {
+                  setStratId(id)
+                  setCfg((current) => ({ ...current, ...defaults }))
+                  setSecrets({})
+                  setTestR(null)
+                }}
+                onConfigChange={(next) => {
+                  setCfg(next)
+                  setTestR(null)
+                }}
+                onSecretsChange={(next) => {
+                  setSecrets(next)
+                  setTestR(null)
+                }}
               />
             ) : null}
-            创建比赛
-          </Button>
-        </div>
-      </Card>
+
+            <Button
+              variant="secondary"
+              onClick={() => void testConn()}
+              disabled={busy !== null}
+            >
+              <Icon
+                icon={
+                  busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"
+                }
+                className={busy === "test" ? "animate-spin" : ""}
+                width="14"
+              />
+              验证连接
+            </Button>
+
+            {testR ? (
+              <div className="flex items-center gap-3 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm text-green">
+                <Icon icon="lucide:circle-check" width="17" />
+                <span>
+                  <strong>{testR.overview.name}</strong> ·{" "}
+                  {testR.overview.challenges} 题 ·{" "}
+                  {testR.overview.announcements} 公告
+                </span>
+              </div>
+            ) : null}
+          </section>
+        </Card>
+
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-border bg-muted px-6 py-4">
+            <div className="flex items-center gap-3">
+              <StepBadge n={3} active={testR !== null} />
+              <h2 className="font-semibold">比赛标识</h2>
+            </div>
+            <p className="mt-1 pl-10 text-sm text-muted-foreground">
+              平台名称会同步为比赛名称，并自动生成拼音 ID。
+            </p>
+          </div>
+          <section className="p-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="project-id"
+                  className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                >
+                  比赛 ID
+                </label>
+                <Input
+                  id="project-id"
+                  value={pid}
+                  placeholder="自动生成"
+                  onChange={(e) => setPid(e.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  用于路由与持久化，不可修改。
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="project-name"
+                  className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                >
+                  比赛名称
+                </label>
+                <Input
+                  id="project-name"
+                  value={pname}
+                  placeholder="自动读取"
+                  onChange={(e) => setPname(e.target.value)}
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="flex justify-end gap-3 border-t border-border bg-muted px-6 py-4">
+            <Button variant="ghost" asChild>
+              <Link to="/">取消</Link>
+            </Button>
+            <Button
+              onClick={() => void submit()}
+              disabled={!testR || !pid.trim() || !pname.trim() || busy !== null}
+            >
+              {busy === "create" ? (
+                <Icon
+                  icon="lucide:loader-circle"
+                  className="animate-spin"
+                  width="14"
+                />
+              ) : null}
+              创建比赛
+            </Button>
+          </div>
+        </Card>
+      </div>
     </div>
   )
 }

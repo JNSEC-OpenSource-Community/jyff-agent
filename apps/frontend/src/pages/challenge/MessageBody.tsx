@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { Icon } from "@iconify/react"
+import { MarkdownContent } from "../../components/content/MarkdownContent.tsx"
 import {
   Badge,
   Collapsible,
@@ -187,7 +188,7 @@ export function MessageBody({
     if (xml.isXml) {
       return <XmlContent tag={xml.tag} content={xml.content} />
     }
-    return <div className="whitespace-pre-wrap text-sm">{raw}</div>
+    return <MarkdownContent>{raw}</MarkdownContent>
   }
   if (message.role === "assistant") {
     return (
@@ -205,12 +206,9 @@ export function MessageBody({
               )
             }
             return (
-              <div
-                className="whitespace-pre-wrap text-sm"
-                key={`text-${index}`}
-              >
+              <MarkdownContent key={`text-${index}`}>
                 {part.text}
-              </div>
+              </MarkdownContent>
             )
           }
           if (part.type === "thinking")
@@ -263,9 +261,9 @@ export function MessageBody({
     )
   }
   return (
-    <div className="whitespace-pre-wrap text-sm">
+    <MarkdownContent>
       {textContent(custom.content) || String(custom.summary ?? "系统消息")}
-    </div>
+    </MarkdownContent>
   )
 }
 

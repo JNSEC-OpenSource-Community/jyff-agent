@@ -153,12 +153,6 @@ export const gzctfSetup: PlatformSetupDescriptor = {
       required: true,
       minimum: 1,
     },
-    {
-      key: "name",
-      label: "比赛显示名称",
-      type: "text",
-      required: false,
-    },
   ],
   authStrategies: [
     {
