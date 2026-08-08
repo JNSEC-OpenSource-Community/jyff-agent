@@ -8,6 +8,7 @@ interface ProjectRegistryEntry {
   directory: string
   createdAt: string
   updatedAt: string
+  archived: boolean
 }
 
 interface ProjectRegistryFile {
@@ -20,6 +21,7 @@ export interface StoredProjectConfig {
   stateDirectory: string
   createdAt: string
   updatedAt: string
+  archived: boolean
   legacy: boolean
 }
 
@@ -64,6 +66,7 @@ export class ProjectConfigStore {
         stateDirectory,
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
+        archived: entry.archived,
         legacy: entry.directory === ".",
       })
     }
@@ -79,6 +82,7 @@ export class ProjectConfigStore {
         stateDirectory: this.stateDirectory,
         createdAt: timestamp,
         updatedAt: timestamp,
+        archived: false,
         legacy: true,
       })
     }
@@ -126,6 +130,7 @@ export class ProjectConfigStore {
             : `projects/${projectStorageKey(validated.project.id)}`,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
+        archived: existing?.archived ?? false,
       }
       registry.projects.push(entry)
     } else {
@@ -143,6 +148,7 @@ export class ProjectConfigStore {
       stateDirectory,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
+      archived: entry.archived,
       legacy: entry.directory === ".",
     }
   }
@@ -194,6 +200,42 @@ export class ProjectConfigStore {
       ),
     )
     return cloneRecord(record)
+  }
+
+  async setArchived(
+    projectId: string,
+    archived: boolean,
+  ): Promise<StoredProjectConfig> {
+    const registry = await this.readRegistry()
+    const record = (await this.list()).find(
+      (candidate) => candidate.config.project.id === projectId,
+    )
+    if (!record) throw new Error(`Project 不存在: ${projectId}`)
+    const now = new Date().toISOString()
+    let entry = registry.projects.find(
+      (candidate) => candidate.id === projectId,
+    )
+    if (!entry) {
+      entry = {
+        id: projectId,
+        directory: record.legacy
+          ? "."
+          : `projects/${projectStorageKey(projectId)}`,
+        createdAt: record.createdAt,
+        updatedAt: now,
+        archived,
+      }
+      registry.projects.push(entry)
+    } else {
+      entry.archived = archived
+      entry.updatedAt = now
+    }
+    await writeJsonAtomic(this.registryPath, registry)
+    return {
+      ...record,
+      updatedAt: now,
+      archived,
+    }
   }
 
   private async readRegistry(): Promise<ProjectRegistryFile> {
@@ -257,7 +299,8 @@ function parseRegistry(value: unknown): ProjectRegistryFile {
     }
     ids.add(id)
     directories.add(directory)
-    return { id, directory, createdAt, updatedAt }
+    const archived = candidate.archived === true
+    return { id, directory, createdAt, updatedAt, archived }
   })
   return { version: 1, projects }
 }

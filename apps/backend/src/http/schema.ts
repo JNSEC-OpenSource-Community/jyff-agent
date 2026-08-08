@@ -14,6 +14,8 @@ export const THINKING_LEVELS = [
   "max",
 ] as const
 
+export const projectArchiveSchema = z.object({ archived: z.boolean() })
+
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 function hasControlCharacter(value: string): boolean {

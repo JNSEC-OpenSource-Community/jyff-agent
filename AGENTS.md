@@ -42,6 +42,7 @@ docs/               当前架构与扩展协议
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
 - 模型配置是全局 v3 模型池：凭据不进入 `model-config.json`，自定义 Provider 持有 API 类型和 Base URL；各 Project 在自己的 `runtime-config.json` 中为 Solver、TLDR 和 SubAgent role 绑定模型并保存最大并发量。传入 Agent 时必须保留完整 Pi `Models` registry。v2、`scheduler-config.json` 和模型池中的旧绑定只用于兼容迁移。
 - 多 Project 代码不得依赖“当前选中 Project”的隐式全局状态：HTTP API、SSE、Scheduler、RunStore、workspace 和平台 Secret 都必须按显式 Project ID 隔离。平台 Secret 写入全局 `secrets.json` 时必须使用 Project 命名空间；旧未命名空间键只允许作为兼容读取回退。
+- Project 的创建时间与归档状态由 `project-registry.json` 持久化；归档只影响列表分组，不停止调度器或 Agent，也不得退回浏览器本地状态。
 - WebUI 使用 React Router 页面路由、Iconify 图标和基于 Radix/CVA 的 shadcn 风格组件。业务页面不使用裸 `<svg>`，不要重新引入巨型设置/详情弹窗；Solver 与 SubAgent 对话复用同一结构化 Pi session 组件。
 - 多进行 git commit，commit message 遵循 gitmoji + conventional 混合规范，如 `✨ feat(solver): add a new feature`, `🐛 fix(core): fix something`
 

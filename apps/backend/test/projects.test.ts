@@ -8,6 +8,7 @@ import { jsonOf, jsonRequest } from "./helpers.ts"
 function createControlPlane(projectName = "Demo CTF") {
   let project: FakeDashboardProject | undefined
   let phase: "unconfigured" | "ready" = "unconfigured"
+  let archived = false
   let appliedConfig: unknown
   const deletedProjects: string[] = []
   const state = () => ({
@@ -30,6 +31,7 @@ function createControlPlane(projectName = "Demo CTF") {
               lastError: null,
               createdAt: "2026-08-04T00:00:00.000Z",
               updatedAt: "2026-08-04T00:00:00.000Z",
+              archived,
             },
           ]
         : [],
@@ -88,6 +90,10 @@ function createControlPlane(projectName = "Demo CTF") {
       return state()
     },
     connect: async () => state(),
+    archiveProject: async (_projectId, nextArchived) => {
+      archived = nextArchived
+      return state()
+    },
     deleteProject: async (projectId) => {
       deletedProjects.push(projectId)
       project = undefined
@@ -176,7 +182,27 @@ describe("动态控制面与项目管理", () => {
     const listed = await app.request("/api/projects")
     expect(await jsonOf(listed)).toMatchObject({
       selectedProjectId: "demo",
-      projects: [{ id: "demo", name: "Demo CTF", phase: "ready" }],
+      projects: [
+        {
+          id: "demo",
+          name: "Demo CTF",
+          phase: "ready",
+          archived: false,
+          solved: 1,
+          total: 3,
+        },
+      ],
+    })
+
+    const archived = await jsonRequest(
+      app,
+      "/api/projects/demo/archive",
+      "POST",
+      { archived: true },
+    )
+    expect(archived.status).toBe(200)
+    expect(await jsonOf(archived)).toMatchObject({
+      controlPlane: { projects: [{ id: "demo", archived: true }] },
     })
 
     const scoped = await app.request("/api/projects/demo/snapshot")

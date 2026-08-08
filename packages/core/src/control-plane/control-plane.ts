@@ -32,6 +32,7 @@ export interface ControlPlaneProjectSnapshot {
   lastError: string | null
   createdAt: string
   updatedAt: string
+  archived: boolean
 }
 
 export interface ControlPlaneSnapshot {
@@ -370,6 +371,19 @@ export class ControlPlane {
     })
   }
 
+  async archiveProject(
+    projectId: string,
+    archived: boolean,
+  ): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      const runtime = this.runtimes.get(projectId)
+      if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+      runtime.record = await this.configStore.setArchived(projectId, archived)
+      runtime.updatedAt = runtime.record.updatedAt
+      return this.snapshot(projectId)
+    })
+  }
+
   async close(): Promise<void> {
     await this.enqueueTransition(async () => {
       this.closing = true
@@ -533,6 +547,7 @@ export class ControlPlane {
       lastError: runtime.lastError,
       createdAt: runtime.record.createdAt,
       updatedAt: runtime.updatedAt,
+      archived: runtime.record.archived,
     }
   }
 

@@ -4,6 +4,7 @@ import { errorText, HttpError } from "../errors.ts"
 import {
   parseJsonBody,
   parseProjectSetup,
+  projectArchiveSchema,
   projectRuntimeConfigurationSchema,
   projectSetupSchema,
   readJsonBody,
@@ -14,10 +15,24 @@ import type { Services } from "../services.ts"
 export function projectsRoutes(services: Services): App {
   const app = new Hono<AppEnv>()
 
-  app.get("/projects", (c) => {
+  app.get("/projects", async (c) => {
     const controlPlane = services.requireControlPlane()
+    const projects = await Promise.all(
+      controlPlane.projectSnapshots().map(async (project) => {
+        try {
+          const snapshot = await services.sync.refreshProject(project.id)
+          return {
+            ...project,
+            solved: snapshot.stats.solved,
+            total: snapshot.stats.total,
+          }
+        } catch {
+          return { ...project, solved: 0, total: 0 }
+        }
+      }),
+    )
     return c.json({
-      projects: controlPlane.projectSnapshots(),
+      projects,
       selectedProjectId: controlPlane.snapshot().selectedProjectId,
     })
   })
@@ -92,6 +107,25 @@ export function scopedProjectRoutes(services: Services): App {
       controlPlane: services.requireControlPlane().snapshot(),
       snapshot: await services.sync.refresh(),
     })
+  })
+
+  app.post("/archive", async (c) => {
+    const projectId = projectIdOf(c)
+    const body = await parseJsonBody(c, projectArchiveSchema, {
+      code: "invalid_project_archive_state",
+    })
+    try {
+      const controlPlane = await services
+        .requireControlPlane()
+        .archiveProject(projectId, body.archived)
+      return c.json({ controlPlane })
+    } catch (error) {
+      const message = errorText(error)
+      if (message.includes("Project 不存在")) {
+        throw new HttpError(404, "project_not_found", message)
+      }
+      throw error
+    }
   })
 
   app.get("/control-plane", (c) => {

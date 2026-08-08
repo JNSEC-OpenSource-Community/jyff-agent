@@ -107,6 +107,26 @@ describe("ProjectConfigStore", () => {
     await expect(store.deleteProject("missing")).resolves.toBeUndefined()
   })
 
+  it("在服务端注册表持久化归档状态并兼容旧字段缺失", async () => {
+    const root = await fixture()
+    const store = new ProjectConfigStore(root)
+    await store.saveProject(config("spring-ctf"))
+
+    expect((await store.loadProject("spring-ctf"))?.archived).toBe(false)
+    await expect(store.setArchived("spring-ctf", true)).resolves.toMatchObject({
+      archived: true,
+    })
+    expect((await new ProjectConfigStore(root).list())[0]?.archived).toBe(true)
+
+    const persisted = JSON.parse(await readFile(store.registryPath, "utf8"))
+    delete persisted.projects[0].archived
+    await writeFile(store.registryPath, JSON.stringify(persisted))
+    expect((await new ProjectConfigStore(root).list())[0]?.archived).toBe(false)
+    await expect(store.setArchived("missing", true)).rejects.toThrow(
+      "Project 不存在",
+    )
+  })
+
   it("删除旧版 Project 时只清理项目状态并保留全局配置", async () => {
     const root = await fixture()
     const stateDirectory = join(root, ".ctf-agent")

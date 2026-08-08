@@ -226,6 +226,10 @@ export interface DashboardControlPlane {
   }): Promise<ControlPlaneSnapshot>
   connect(projectId?: string): Promise<ControlPlaneSnapshot>
   deleteProject(projectId: string): Promise<ControlPlaneSnapshot>
+  archiveProject(
+    projectId: string,
+    archived: boolean,
+  ): Promise<ControlPlaneSnapshot>
 }
 
 export interface ModelPoolEntryView {

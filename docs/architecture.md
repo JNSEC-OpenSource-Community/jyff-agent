@@ -44,7 +44,7 @@ apps/
     └── challenges/<safe-key>/workspace/
 ```
 
-`.pi/ctf-config.json` 只作为旧配置的只读回退。`project-registry.json` 是 Project ID 到状态目录的权威映射；附加 Project 使用 Project ID 的稳定 SHA-256 前缀作为目录名，避免路径注入和重命名冲突。首个或升级自旧版本的 Project 继续使用 `.ctf-agent` 根目录，原有 `runs.sqlite`、session 和 workspace 无需搬迁。
+`.pi/ctf-config.json` 只作为旧配置的只读回退。`project-registry.json` 是 Project ID 到状态目录、创建时间与归档状态的权威映射；归档不停止运行时，只影响列表分组，并在不同客户端间保持一致。附加 Project 使用 Project ID 的稳定 SHA-256 前缀作为目录名，避免路径注入和重命名冲突。首个或升级自旧版本的 Project 继续使用 `.ctf-agent` 根目录，原有 `runs.sqlite`、session 和 workspace 无需搬迁；旧注册项缺少 `archived` 时按 `false` 读取。
 
 平台配置只保存非敏感字段和 secret 名称。平台凭据虽然集中写入全局 `secrets.json`，键名会同时散列 Project ID 和插件 Secret 名，因此两个 CTFd/GZCTF Project 可以使用不同账号而不会覆盖。旧版 `CTFD_TOKEN`、`GZCTF_*` 等未命名空间键只作为兼容读取回退；新的保存永远写入 Project 命名空间。Provider OAuth/API Key 与模型池属于全局配置，不进入这个命名空间。
 
