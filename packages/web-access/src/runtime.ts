@@ -1,4 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import type { SecretResolver } from "./index.ts"
+
+/** DNS 解析器（SSRF 校验用）；主要作为测试接缝。 */
+export type LookupAddress = { address: string; family: number }
+export type Lookup = (hostname: string) => Promise<LookupAddress[]>
 
 /**
  * Model 认证解析器：把宿主模型池适配成 pi-web-access 期望的
@@ -35,6 +40,8 @@ export interface WebAccessRuntime {
   workflow?: "none" | "auto-summary"
   ssrf: { allowRanges: string[]; trustEnvProxy: boolean }
   fetchContent?: { allowDomains?: string[]; denyDomains?: string[] }
+  /** 自定义 DNS 解析器，用于 SSRF 校验；主要作为测试接缝。 */
+  lookup?: Lookup
   /** 宿主 challenge workspace（bind-mount 到容器 /workspace）。缺省则 clone/PDF 禁用。 */
   workspaceHostPath?: string
   /** = workspaceHostPath + "/.web-access/github" */
@@ -47,19 +54,31 @@ export interface WebAccessRuntime {
   sessionSignal?: AbortSignal
 }
 
-let runtime: WebAccessRuntime | null = null
+/**
+ * runtime 经 AsyncLocalStorage 按工具执行上下文隔离：多个 Project/run 并发时，
+ * 每个工具的 execute 只读到属于它自己的配置（密钥 / workspace / allowlist）。
+ * `setRuntime` 只设置 fallback（例如测试直接调用 vendored 函数时的兜底）。
+ */
+const runtimeContext = new AsyncLocalStorage<WebAccessRuntime>()
+let fallbackRuntime: WebAccessRuntime | null = null
 
 export function setRuntime(r: WebAccessRuntime): void {
-  runtime = r
+  fallbackRuntime = r
+}
+
+/** 在指定 runtime 上下文中执行（createWebAccessTools 包装每个工具的 execute）。 */
+export function withRuntime<T>(r: WebAccessRuntime, fn: () => T): T {
+  return runtimeContext.run(r, fn)
 }
 
 export function getRuntime(): WebAccessRuntime {
-  if (!runtime) {
+  const current = runtimeContext.getStore() ?? fallbackRuntime
+  if (!current) {
     throw new Error(
       "web-access runtime 未初始化：必须先调用 createWebAccessTools(config)",
     )
   }
-  return runtime
+  return current
 }
 
 /**

@@ -20,9 +20,11 @@ import { answerFromPage } from "./page-query.ts"
 import type { SearchOptions, SearchResult } from "./perplexity.ts"
 import {
   getRuntime,
+  type Lookup,
   type ModelAuthResolver,
   setRuntime,
   type WebAccessRuntime,
+  withRuntime,
 } from "./runtime.ts"
 import {
   buildResearchArtifact,
@@ -94,6 +96,8 @@ export interface WebAccessConfig {
   workspaceHostPath?: string
   ssrf?: { allowRanges?: string[]; trustEnvProxy?: boolean }
   fetchContent?: { allowDomains?: string[]; denyDomains?: string[] }
+  /** 自定义 DNS 解析器，用于 SSRF 校验；主要作为测试接缝。 */
+  lookup?: Lookup
   timeouts?: { fetchMs?: number; searchMs?: number; cloneMs?: number }
   limits?: { maxContentSliceLength?: number; maxInlineChars?: number }
   /** run 结束时 abort → 清理 fetch / clone 缓存。 */
@@ -147,6 +151,7 @@ function buildRuntime(config: WebAccessConfig): WebAccessRuntime {
             denyDomains: config.fetchContent.denyDomains,
           }
         : undefined,
+    lookup: config.lookup,
     workspaceHostPath,
     githubClonePath: workspaceHostPath
       ? join(workspaceHostPath, ".web-access", "github")
@@ -721,7 +726,9 @@ function createSourceCheckTool(): AgentTool<typeof sourceCheckParams> {
       if (params.fetchContent && results.length > 0) {
         const urls = results.slice(0, 5).map((entry) => entry.url)
         try {
-          fetched = await fetchAllContent(urls, signal)
+          fetched = await fetchAllContent(urls, signal, {
+            ...(rt.lookup ? { lookup: rt.lookup } : {}),
+          })
         } catch (err) {
           if (signal?.aborted || isAbortError(err)) throw err
           fetched = urls.map((url) => ({
@@ -885,7 +892,10 @@ function createFetchContentTool(): AgentTool<typeof fetchContentParams> {
               return rest
             })()
           : options
-      const fetchResults = await fetchAllContent(urlList, signal, fetchOptions)
+      const fetchResults = await fetchAllContent(urlList, signal, {
+        ...fetchOptions,
+        ...(rt.lookup ? { lookup: rt.lookup } : {}),
+      })
       const presentedResults =
         mode === "answer"
           ? await Promise.all(
@@ -1392,8 +1402,24 @@ function createGetSearchContentTool(): AgentTool<
  * 工具在宿主进程内用 Node fetch 执行，受 SSRF 守卫约束；GitHub clone / PDF 等本地路径
  * 能力仅在提供 sandbox 可见的 `workspaceHostPath` 时可用，否则返回明确的禁用错误。
  */
+/** 把工具 execute 绑定到指定 runtime 上下文，保证多 Project/run 并发时隔离。 */
+function bindRuntime<T extends AgentTool>(
+  runtime: WebAccessRuntime,
+  tool: T,
+): T {
+  const execute = tool.execute
+  return {
+    ...tool,
+    execute: ((toolCallId, params, signal, onUpdate) =>
+      withRuntime(runtime, () =>
+        execute(toolCallId, params, signal, onUpdate),
+      )) as T["execute"],
+  }
+}
+
 export function createWebAccessTools(config: WebAccessConfig): AgentTool[] {
-  setRuntime(buildRuntime(config))
+  const runtime = buildRuntime(config)
+  setRuntime(runtime)
 
   // run 结束（sessionSignal abort）时清理进程内缓存与进行中的抓取。
   config.sessionSignal?.addEventListener(
@@ -1407,9 +1433,9 @@ export function createWebAccessTools(config: WebAccessConfig): AgentTool[] {
   )
 
   return [
-    createWebSearchTool(),
-    createSourceCheckTool(),
-    createFetchContentTool(),
-    createGetSearchContentTool(),
+    bindRuntime(runtime, createWebSearchTool()),
+    bindRuntime(runtime, createSourceCheckTool()),
+    bindRuntime(runtime, createFetchContentTool()),
+    bindRuntime(runtime, createGetSearchContentTool()),
   ]
 }

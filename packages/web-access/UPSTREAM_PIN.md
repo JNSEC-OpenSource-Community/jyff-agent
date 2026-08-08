@@ -29,9 +29,10 @@
 | `gemini-api.ts` | `loadConfig().geminiApiKey` → `getRuntime().resolveSecret("gemini")`；移除 `process.env.GEMINI_API_KEY` 兜底。 |
 | `gemini-search.ts` | `extensionContext?: ExtensionContext` → `modelAuth?: ModelAuthResolver`；`searchWithOpenAI` / `searchWithXai` 改用 `getRuntime().modelAuth`。 |
 | `ssrf-protection.ts` | `loadConfigRoot()` / `loadSsrfConfig()` / `loadFetchContentDomainPolicy()` → `getRuntime().ssrf` + `getRuntime().fetchContent`。SSRF 私网拦截、重定向限制、超时、AbortSignal 保持原样。 |
-| `extract.ts` | 配置读取改走 `getRuntime()`。 |
+| `extract.ts` | 配置读取改走 `getRuntime()`；GitHub clone 禁用/失败的错误现在正确浮出（上游会静默吞掉后继续走 HTTP）；直接图片改由本地 `resizeImage` 透传（无浏览器 canvas，返回原字节）。 |
 | `github-extract.ts` | clone 路径 `/tmp/pi-github-repos` → `getRuntime().githubClonePath`（落 sandbox 可见 workspace）。 |
 | `pdf-extract.ts` | 输出目录 `os.tmpdir()/pi-web-pdf` → `getRuntime().pdfDir`。 |
+| `runtime.ts`（新增） | `WebAccessRuntime` + `setRuntime` / `getRuntime` / `withRuntime`；runtime 经 **AsyncLocalStorage** 按工具执行上下文隔离，多 Project/run 并发时各自读到自己的配置。 |
 | `summary-review.ts` | `SummaryGenerationContext` 去 `modelRegistry`，改用 `ModelAuthResolver`。 |
 | `summary-model-scope.ts` | 去文件读取，enabled-patterns 由 runtime 提供。 |
 | 所有 provider 模块 | `loadConfig()` / `getApiKey()` 改用 `getRuntime().resolveSecret(provider)`；移除 `process.env.<PROVIDER>_API_KEY` 兜底。 |

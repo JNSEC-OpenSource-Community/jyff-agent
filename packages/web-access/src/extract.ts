@@ -745,9 +745,8 @@ export async function extractContent(
   } catch (err) {
     const message = errorMessage(err)
     if (isAbortError(err)) return abortedResult(url)
-    if (isConfigParseError(err)) {
-      return { url, title: "", content: "", error: message }
-    }
+    // clone 禁用/失败等错误需要浮出，而不是静默吞掉后继续走 HTTP。
+    return { url, title: "", content: "", error: message }
   }
 
   const ytInfo = isYouTubeURL(url)
