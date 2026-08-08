@@ -8,6 +8,7 @@ import {
   CollapsibleTrigger,
 } from "../../components/index.ts"
 import { roleLabel, textContent, toolLabel } from "../../lib/conversation.ts"
+import { absoluteTime } from "../../lib/time.ts"
 import { cn } from "../../lib/utils.ts"
 
 /** 解析 XML 内容，检测顶层标签并返回语义化渲染所需的数据。 */
@@ -463,8 +464,11 @@ function AnnouncementsCard({
               <span className="text-xs font-medium text-foreground">
                 {ann.title}
               </span>
-              <time className="ml-auto text-[10px] text-muted-foreground">
-                {ann.publishedAt}
+              <time
+                dateTime={ann.publishedAt}
+                className="ml-auto text-[10px] text-muted-foreground"
+              >
+                {absoluteTime(ann.publishedAt)}
               </time>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">

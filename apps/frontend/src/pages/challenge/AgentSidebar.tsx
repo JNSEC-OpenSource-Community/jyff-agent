@@ -28,7 +28,7 @@ export function AgentSidebar({
     details.runs.find((r) => r.id === selectedRunId) ?? details.runs[0]
 
   return (
-    <aside className="flex min-w-0 flex-1 flex-col gap-4 max-lg:w-full max-lg:min-w-max max-lg:flex-row">
+    <aside className="flex min-w-0 flex-1 flex-col gap-4">
       <Card className="overflow-hidden p-0">
         <Collapsible defaultOpen>
           <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted">
@@ -76,7 +76,7 @@ export function AgentSidebar({
         </Collapsible>
       </Card>
 
-      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden p-0 max-lg:min-w-64">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <span className="flex items-center gap-2.5 text-sm font-medium">
             <Icon icon="lucide:network" width="15" />

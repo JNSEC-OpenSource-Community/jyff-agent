@@ -39,7 +39,7 @@ import {
   toneForStatus,
 } from "../lib/challenge.ts"
 import { STATUS_LABELS } from "../lib/labels.ts"
-import { relativeTime } from "../lib/time.ts"
+import { absoluteTime, relativeTime } from "../lib/time.ts"
 import { cn } from "../lib/utils.ts"
 import type { DashboardChallenge, DashboardSnapshot } from "../types.ts"
 
@@ -130,7 +130,7 @@ function StatCard({
   color,
 }: {
   label: string
-  value: number
+  value: number | string
   icon: string
   color: string
 }) {
@@ -356,8 +356,8 @@ export function ProjectPage() {
       {/* ── Stat cards ── */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="已解出"
-          value={snapshot.stats.solved}
+          label="解题情况"
+          value={`${snapshot.stats.solved}/${snapshot.stats.total}`}
           icon="lucide:flag"
           color="green"
         />
@@ -412,9 +412,12 @@ export function ProjectPage() {
                   <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
                     {candidate.content}
                   </p>
-                  <span className="mt-1 block text-[10px] text-muted-foreground">
-                    {candidate.publishedAt}
-                  </span>
+                  <time
+                    dateTime={candidate.publishedAt}
+                    className="mt-1 block text-[10px] text-muted-foreground"
+                  >
+                    {absoluteTime(candidate.publishedAt)}
+                  </time>
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <Button

@@ -1,13 +1,12 @@
 import type {
-  ControlPlaneProjectSnapshot,
   ControlPlaneSetupSnapshot,
   PlatformConnectionTest,
   ProjectConfig,
 } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { useApp } from "../app/AppProvider.tsx"
+import { type ProjectListItem, useApp } from "../app/AppProvider.tsx"
 import {
   Badge,
   Button,
@@ -22,57 +21,42 @@ import {
 } from "../components/index.ts"
 import { apiMutation, apiRequest } from "../lib/api.ts"
 import { contestIdFromName } from "../lib/contest-name.ts"
+import { absoluteTime } from "../lib/time.ts"
 import { cn } from "../lib/utils.ts"
-
-const ARCHIVED_KEY = "ctf-agent-archived-projects"
-
-function loadArchived(): Set<string> {
-  try {
-    const raw = localStorage.getItem(ARCHIVED_KEY)
-    if (!raw) return new Set()
-    const arr = JSON.parse(raw)
-    if (Array.isArray(arr) && arr.every((x) => typeof x === "string")) {
-      return new Set(arr)
-    }
-  } catch {
-    // 忽略
-  }
-  return new Set()
-}
-
-function saveArchived(ids: Set<string>) {
-  localStorage.setItem(ARCHIVED_KEY, JSON.stringify([...ids]))
-}
 
 /* ═══════════════════════════ Project list ═══════════════════════════ */
 
 export function ProjectsPage() {
   const { projects, loading, refreshProjects } = useApp()
-  const [archived, setArchived] = useState<Set<string>>(loadArchived)
   const [deleting, setDeleting] = useState<(typeof projects)[number] | null>(
     null,
   )
   const [busy, setBusy] = useState(false)
+  const [archivingId, setArchivingId] = useState<string | null>(null)
   const [err, setErr] = useState("")
 
-  const toggleArchived = useCallback((id: string) => {
-    setArchived((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      saveArchived(next)
-      return next
-    })
-  }, [])
-
-  const running = useMemo(
-    () => projects.filter((p) => !archived.has(p.id)),
-    [projects, archived],
-  )
+  const running = useMemo(() => projects.filter((p) => !p.archived), [projects])
   const archivedList = useMemo(
-    () => projects.filter((p) => archived.has(p.id)),
-    [projects, archived],
+    () => projects.filter((p) => p.archived),
+    [projects],
   )
+
+  async function toggleArchived(project: ProjectListItem) {
+    setArchivingId(project.id)
+    setErr("")
+    try {
+      await apiMutation(
+        `/api/projects/${encodeURIComponent(project.id)}/archive`,
+        "POST",
+        { archived: !project.archived },
+      )
+      await refreshProjects()
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e))
+    } finally {
+      setArchivingId(null)
+    }
+  }
 
   async function del() {
     if (!deleting) return
@@ -83,10 +67,6 @@ export function ProjectsPage() {
         `/api/projects/${encodeURIComponent(deleting.id)}`,
         "DELETE",
       )
-      const next = new Set(archived)
-      next.delete(deleting.id)
-      saveArchived(next)
-      setArchived(next)
       await refreshProjects()
       setDeleting(null)
     } catch (e) {
@@ -149,17 +129,17 @@ export function ProjectsPage() {
                 </h2>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {running.map((p, i) => (
+                {running.map((p) => (
                   <ProjectCard
                     key={p.id}
-                    index={i}
                     project={p}
                     isArchived={false}
                     onDelete={() => {
                       setErr("")
                       setDeleting(p)
                     }}
-                    onToggleArchived={() => toggleArchived(p.id)}
+                    archiveBusy={archivingId === p.id}
+                    onToggleArchived={() => void toggleArchived(p)}
                   />
                 ))}
               </div>
@@ -176,17 +156,17 @@ export function ProjectsPage() {
                 </h2>
               </div>
               <div className="grid grid-cols-1 gap-5 opacity-60 md:grid-cols-2 xl:grid-cols-3">
-                {archivedList.map((p, i) => (
+                {archivedList.map((p) => (
                   <ProjectCard
                     key={p.id}
-                    index={i}
                     project={p}
                     isArchived={true}
                     onDelete={() => {
                       setErr("")
                       setDeleting(p)
                     }}
-                    onToggleArchived={() => toggleArchived(p.id)}
+                    archiveBusy={archivingId === p.id}
+                    onToggleArchived={() => void toggleArchived(p)}
                   />
                 ))}
               </div>
@@ -211,15 +191,15 @@ export function ProjectsPage() {
 }
 
 function ProjectCard({
-  index,
   project,
   isArchived = false,
+  archiveBusy = false,
   onDelete,
   onToggleArchived,
 }: {
-  index: number
-  project: ControlPlaneProjectSnapshot
+  project: ProjectListItem
   isArchived?: boolean
+  archiveBusy?: boolean
   onDelete(): void
   onToggleArchived(): void
 }) {
@@ -232,22 +212,29 @@ function ProjectCard({
         className="block flex-1 p-5"
       >
         <div className="flex items-start justify-between gap-3">
-          <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
-            {String(index + 1).padStart(2, "0")}
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
+            {project.platformId}
           </span>
           <Badge tone={ready ? "positive" : "warning"} className="text-[10px]">
             {ready ? "已连接" : "待恢复"}
           </Badge>
         </div>
-        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
-          {project.platformId}
-        </p>
-        <h3 className="mt-1.5 truncate text-[17px] font-semibold tracking-tight">
+        <h3 className="mt-5 truncate text-[17px] font-semibold tracking-tight">
           {project.name}
         </h3>
-        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-          {project.id}
-        </p>
+        <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 border-t border-border/70 pt-3 text-xs">
+          <span className="text-muted-foreground">解题进度</span>
+          <strong className="text-right font-mono tabular-nums">
+            {project.solved} / {project.total}
+          </strong>
+          <span className="text-muted-foreground">创建时间</span>
+          <time
+            dateTime={project.createdAt}
+            className="text-right font-mono text-[11px] tabular-nums"
+          >
+            {absoluteTime(project.createdAt)}
+          </time>
+        </div>
       </Link>
       <div className="flex items-center justify-between border-t border-border bg-muted px-5 py-3">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -262,6 +249,7 @@ function ProjectCard({
         <div className="flex items-center gap-1">
           <button
             type="button"
+            disabled={archiveBusy}
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-all hover:-translate-y-px hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
             aria-label={isArchived ? "取消归档" : "归档"}
             onClick={(e) => {
@@ -270,7 +258,14 @@ function ProjectCard({
             }}
           >
             <Icon
-              icon={isArchived ? "lucide:archive-restore" : "lucide:archive"}
+              icon={
+                archiveBusy
+                  ? "lucide:loader-circle"
+                  : isArchived
+                    ? "lucide:archive-restore"
+                    : "lucide:archive"
+              }
+              className={archiveBusy ? "animate-spin" : undefined}
               width="13"
             />
           </button>

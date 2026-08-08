@@ -17,13 +17,18 @@ export interface AuthenticationState {
 }
 
 interface ProjectListResponse {
-  projects: ControlPlaneProjectSnapshot[]
+  projects: ProjectListItem[]
   selectedProjectId: string | null
+}
+
+export interface ProjectListItem extends ControlPlaneProjectSnapshot {
+  solved: number
+  total: number
 }
 
 interface AppContextValue {
   auth: AuthenticationState | null
-  projects: ControlPlaneProjectSnapshot[]
+  projects: ProjectListItem[]
   selectedProjectId: string | null
   loading: boolean
   refreshAuth(): Promise<AuthenticationState>
@@ -39,7 +44,7 @@ export function AppProvider({
   children: ReactNode
 }): React.ReactElement {
   const [auth, setAuth] = useState<AuthenticationState | null>(null)
-  const [projects, setProjects] = useState<ControlPlaneProjectSnapshot[]>([])
+  const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   )

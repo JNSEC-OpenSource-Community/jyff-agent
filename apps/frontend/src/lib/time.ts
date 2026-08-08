@@ -16,7 +16,9 @@ export function relativeTime(value: string | null | undefined): string {
 export function absoluteTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "时间未知"
+  const currentYear = new Date().getFullYear()
   return new Intl.DateTimeFormat("zh-CN", {
+    ...(date.getFullYear() === currentYear ? {} : { year: "numeric" }),
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

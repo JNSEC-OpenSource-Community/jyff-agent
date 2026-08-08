@@ -12,10 +12,11 @@ const SheetDescription = SheetPrimitive.Description
 function SheetContent({
   className,
   children,
+  side = "left",
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof SheetPrimitive.Content
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
+  side?: "left" | "bottom"
+}): React.ReactElement {
   return (
     <SheetPrimitive.Portal>
       <SheetPrimitive.Overlay
@@ -25,7 +26,10 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "bg-sidebar data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border shadow-xl outline-none",
+          "bg-sidebar data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col border-border shadow-xl outline-none",
+          side === "left"
+            ? "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 w-72 border-r"
+            : "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t",
           className,
         )}
         {...props}

@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react"
+import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { MarkdownContent } from "../components/content/MarkdownContent.tsx"
 import {
@@ -12,6 +13,10 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Sheet,
+  SheetCloseButton,
+  SheetContent,
+  SheetTitle,
   Spinner,
   Tabs,
   TabsContent,
@@ -28,6 +33,7 @@ import { ConversationPanel } from "./challenge/ConversationPanel.tsx"
 import { IntelligencePanel } from "./challenge/IntelligencePanel.tsx"
 
 export function ChallengePage() {
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const { projectId = "", challengeId = "" } = useParams()
   const {
     details,
@@ -117,6 +123,16 @@ export function ChallengePage() {
                   </SelectContent>
                 </Select>
               ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="lg:hidden"
+                onClick={() => setMobileDetailsOpen(true)}
+              >
+                <Icon icon="lucide:panel-bottom-open" width="14" />
+                题目与 Agents
+              </Button>
             </div>
 
             <TabsContent
@@ -193,7 +209,7 @@ export function ChallengePage() {
       </div>
 
       {/* ── Sidebar with header info ── */}
-      <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4 max-lg:w-full max-lg:flex-row max-lg:overflow-x-auto max-lg:border-l-0 max-lg:border-t max-lg:p-3">
+      <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4 max-lg:hidden">
         {/* Challenge header moved into sidebar */}
         <Card className="overflow-hidden p-0">
           <div className="border-b border-border px-4 py-3">
@@ -233,6 +249,61 @@ export function ChallengePage() {
           onSelectSubagent={selectSubagent}
         />
       </aside>
+
+      <Sheet open={mobileDetailsOpen} onOpenChange={setMobileDetailsOpen}>
+        <SheetContent side="bottom" className="p-0 lg:hidden">
+          <SheetTitle className="sr-only">题目与 Agents</SheetTitle>
+          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border" />
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pt-3">
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border px-4 py-3 pr-12">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  {c.category} · {c.score} PTS
+                </p>
+                <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
+                  {c.title}
+                </h1>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {c.progress}
+                </p>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <Badge tone={toneForStatus(c.status)} className="text-[10px]">
+                  {STATUS_LABELS[c.status] ?? c.status}
+                </Badge>
+                <Button
+                  variant={active ? "danger" : "primary"}
+                  disabled={busy}
+                  onClick={() =>
+                    void challengeAction(active ? "cancel" : "dispatch")
+                  }
+                  size="sm"
+                >
+                  <Icon
+                    icon={active ? "lucide:square" : "lucide:play"}
+                    width="14"
+                  />
+                  {active
+                    ? "终止"
+                    : c.status === "blocked"
+                      ? "重新派发"
+                      : "派发"}
+                </Button>
+              </div>
+            </Card>
+            <AgentSidebar
+              details={details}
+              selectedRunId={rid}
+              selectedSubagentId={selectedSubagent?.id ?? null}
+              onSelectSubagent={(id) => {
+                selectSubagent(id)
+                setMobileDetailsOpen(false)
+              }}
+            />
+          </div>
+          <SheetCloseButton aria-label="关闭题目与 Agents" />
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
