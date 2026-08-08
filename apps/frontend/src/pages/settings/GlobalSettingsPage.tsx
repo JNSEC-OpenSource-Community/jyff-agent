@@ -1,14 +1,14 @@
 import { Icon } from "@iconify/react"
-import { type FormEvent, useCallback, useEffect, useState } from "react"
+import { type FormEvent, useCallback, useEffect, useId, useState } from "react"
 import { useApp } from "../../app/AppProvider.tsx"
 import {
   Badge,
   Button,
   Card,
   Checkbox,
+  Combobox,
   ErrorNotice,
   Input,
-  PageHeader,
   Spinner,
   Tabs,
   TabsContent,
@@ -24,133 +24,162 @@ import type {
 import { ModelPoolEditor } from "./ModelPoolEditor.tsx"
 import { ProviderCredentialCard } from "./ProviderCredentialCard.tsx"
 
-interface GlobalConfigurationResponse {
+interface Cfg {
   authentication: { enabled: boolean; username: string | null }
   modelConfiguration: ModelConfigurationView | null
   modelAuthentication: ModelAuthenticationView | null
 }
 
-export function GlobalSettingsPage(): React.ReactElement {
+export function GlobalSettingsPage() {
   const { refreshAuth } = useApp()
-  const [configuration, setConfiguration] =
-    useState<GlobalConfigurationResponse | null>(null)
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [authEnabled, setAuthEnabled] = useState(false)
-  const [error, setError] = useState("")
+  const [g, setG] = useState<Cfg | null>(null)
+  const [uname, setUname] = useState("")
+  const [pw, setPw] = useState("")
+  const [on, setOn] = useState(false)
+  const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [providerChoice, setProviderChoice] = useState("")
 
-  const load = useCallback(async (): Promise<void> => {
-    const next =
-      await apiRequest<GlobalConfigurationResponse>("/api/global-config")
-    setConfiguration(next)
-    setUsername(next.authentication.username ?? "")
-    setAuthEnabled(next.authentication.enabled)
+  const load = useCallback(async () => {
+    const c = await apiRequest<Cfg>("/api/global-config")
+    setG(c)
+    setUname(c.authentication.username ?? "")
+    setOn(c.authentication.enabled)
   }, [])
-
   useEffect(() => {
-    void load().catch((cause) => setError(errorMessage(cause)))
+    void load().catch((e) => setErr(errorMessage(e)))
   }, [load])
 
-  async function saveWebAuthentication(event: FormEvent): Promise<void> {
-    event.preventDefault()
+  const saveAuth = async (e: FormEvent) => {
+    e.preventDefault()
     setBusy(true)
-    setError("")
+    setErr("")
     try {
       await apiMutation("/api/global-config/authentication", "POST", {
-        enabled: authEnabled,
-        ...(authEnabled ? { username, ...(password ? { password } : {}) } : {}),
+        enabled: on,
+        ...(on ? { username: uname, ...(pw && { password: pw }) } : {}),
       })
-      setPassword("")
+      setPw("")
       await refreshAuth()
       await load()
-    } catch (cause) {
-      setError(errorMessage(cause))
+    } catch (e) {
+      setErr(errorMessage(e))
     } finally {
       setBusy(false)
     }
   }
 
-  async function importAuthentication(
-    source: { json: string } | "file",
-  ): Promise<void> {
+  const doImport = async (src: { json: string } | "file") => {
     setImporting(true)
-    setError("")
+    setErr("")
     try {
       await apiMutation(
-        source === "file"
+        src === "file"
           ? "/api/model-auth/import-file"
           : "/api/model-auth/import",
         "POST",
-        source === "file" ? {} : source,
+        src === "file" ? {} : src,
       )
       await load()
-    } catch (cause) {
-      setError(errorMessage(cause))
+    } catch (e) {
+      setErr(errorMessage(e))
     } finally {
       setImporting(false)
     }
   }
 
-  if (!configuration) return <Spinner label="正在读取全局配置" />
-  const modelAuth = configuration.modelAuthentication
-  const models = configuration.modelConfiguration
+  if (!g) return <Spinner label="加载全局配置" />
+  const auth = g.modelAuthentication
+  const configuredProviders = auth?.providers.filter((p) => p.configured) ?? []
+  const subscriptionOptions =
+    auth?.providers.flatMap((provider) =>
+      provider.methods
+        .filter((method) => method.id.startsWith("oauth_"))
+        .map((method) => ({
+          value: `${provider.id}:${method.id}`,
+          label: provider.name,
+          description: method.label,
+        })),
+    ) ?? []
+  const keyOptions =
+    auth?.providers.flatMap((provider) =>
+      provider.methods
+        .filter((method) => method.id === "api_key")
+        .map((method) => ({
+          value: `${provider.id}:${method.id}`,
+          label: provider.name,
+          description: method.description,
+        })),
+    ) ?? []
+  const [chosenProviderId, chosenMethodId] = providerChoice.split(":")
+  const chosenProvider = auth?.providers.find(
+    (provider) => provider.id === chosenProviderId,
+  )
+
   return (
-    <div className="page page-settings">
-      <PageHeader
-        eyebrow="GLOBAL CONTROL"
-        title="全局配置"
-        description="Provider 凭据和模型池由所有项目共享；角色绑定与并发量留在各项目内部。"
-      />
-      {error ? <ErrorNotice message={error} /> : null}
+    <div className="page-container">
+      <header className="mb-8">
+        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          Global Config
+        </p>
+        <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+          全局配置
+        </h1>
+        <p className="hero-desc mt-3 max-w-2xl text-sm text-muted-foreground">
+          Provider 凭据与模型池全局共享，角色绑定在各场比赛中独立配置。
+        </p>
+      </header>
+
+      {err ? <ErrorNotice message={err} className="mb-6" /> : null}
+
       <Tabs defaultValue="providers">
-        <TabsList className="settings-tabs">
-          <TabsTrigger value="providers">Provider 凭据</TabsTrigger>
+        <TabsList className="mb-6">
+          <TabsTrigger value="providers">Provider</TabsTrigger>
           <TabsTrigger value="models">模型池</TabsTrigger>
-          <TabsTrigger value="security">WebUI 登录</TabsTrigger>
+          <TabsTrigger value="security">登录</TabsTrigger>
         </TabsList>
-        <TabsContent value="providers" className="settings-content">
-          <div className="settings-intro">
+
+        <TabsContent value="providers" className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2>模型供应商</h2>
-              <p>凭据写入独立 Secret Store，不进入 model-config.json。</p>
+              <h2 className="text-lg font-semibold">模型供应商</h2>
+              <p className="text-sm text-muted-foreground">
+                凭据写入 Secret Store。
+              </p>
             </div>
-            <Badge>
-              {modelAuth?.providers.filter((provider) => provider.configured)
-                .length ?? 0}{" "}
-              connected
+            <Badge className="text-[10px]">
+              {configuredProviders.length} 已连接
             </Badge>
           </div>
-          {modelAuth ? (
-            <Card className="auth-import-bar">
-              <div>
-                <Icon icon="lucide:file-key-2" width="17" />
-                <span>
-                  <strong>导入现有凭据</strong>
-                  <small>兼容 Pi、Codex CLI 与 Claude Code auth JSON。</small>
+
+          {auth ? (
+            <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
+                  <Icon icon="lucide:file-key-2" width="16" />
                 </span>
+                <div>
+                  <p className="text-sm font-medium">导入凭据</p>
+                  <p className="text-xs text-muted-foreground">
+                    兼容 Pi · Codex CLI · Claude Code auth JSON
+                  </p>
+                </div>
               </div>
-              <div>
+              <div className="flex gap-2">
                 <Button size="sm" variant="secondary" asChild>
                   <label className="cursor-pointer">
-                    <Icon icon="lucide:upload" width="14" />
-                    上传 JSON
+                    <Icon icon="lucide:upload" width="13" />
+                    上传
                     <input
                       className="sr-only"
                       type="file"
-                      accept="application/json,.json"
+                      accept=".json"
                       disabled={importing}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0]
-                        if (!file) return
-                        void file
-                          .text()
-                          .then(
-                            async (json) =>
-                              await importAuthentication({ json }),
-                          )
-                        event.target.value = ""
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) void f.text().then((j) => doImport({ json: j }))
+                        e.target.value = ""
                       }}
                     />
                   </label>
@@ -158,117 +187,173 @@ export function GlobalSettingsPage(): React.ReactElement {
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={importing || !modelAuth.importFileAvailable}
-                  title={
-                    modelAuth.importFileAvailable
-                      ? modelAuth.importPath
-                      : "容器内未找到导入文件"
-                  }
-                  onClick={() => void importAuthentication("file")}
+                  disabled={importing || !auth.importFileAvailable}
+                  onClick={() => void doImport("file")}
                 >
-                  <Icon icon="lucide:folder-key" width="14" />
-                  读取 {modelAuth.importPath}
+                  <Icon icon="lucide:folder-key" width="13" />
+                  {auth.importPath}
                 </Button>
               </div>
             </Card>
           ) : null}
-          <div className="provider-grid">
-            {modelAuth?.providers.map((provider) => (
-              <ProviderCredentialCard
-                key={provider.id}
-                provider={provider}
-                onRefresh={load}
-              />
-            ))}
+
+          {auth ? (
+            <Card className="p-5">
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold">添加供应商</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  订阅账号使用官方登录；按量计费或兼容端点使用 API Key。
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <ProviderPicker
+                  icon="lucide:badge-check"
+                  label="Subscription 登录"
+                  description="Codex、Claude 等订阅账号"
+                  value={
+                    subscriptionOptions.some(
+                      (option) => option.value === providerChoice,
+                    )
+                      ? providerChoice
+                      : ""
+                  }
+                  options={subscriptionOptions}
+                  onChange={setProviderChoice}
+                />
+                <ProviderPicker
+                  icon="lucide:key-round"
+                  label="API Key"
+                  description="官方 API 与兼容供应商"
+                  value={
+                    keyOptions.some((option) => option.value === providerChoice)
+                      ? providerChoice
+                      : ""
+                  }
+                  options={keyOptions}
+                  onChange={setProviderChoice}
+                />
+              </div>
+            </Card>
+          ) : null}
+
+          {chosenProvider && !chosenProvider.configured ? (
+            <ProviderCredentialCard
+              key={providerChoice}
+              provider={chosenProvider}
+              initialMethod={chosenMethodId}
+              onCancel={() => setProviderChoice("")}
+              onRefresh={async () => {
+                setProviderChoice("")
+                await load()
+              }}
+            />
+          ) : null}
+
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">已有供应商</h3>
+              <span className="text-xs text-muted-foreground">
+                {configuredProviders.length} 个
+              </span>
+            </div>
+            <div className="space-y-3">
+              {configuredProviders.map((p) => (
+                <ProviderCredentialCard
+                  key={p.id}
+                  provider={p}
+                  onRefresh={load}
+                />
+              ))}
+              {configuredProviders.length === 0 ? (
+                <Card className="p-5 text-sm text-muted-foreground">
+                  尚未添加供应商。请从上方选择登录类型。
+                </Card>
+              ) : null}
+            </div>
           </div>
         </TabsContent>
-        <TabsContent value="models" className="settings-content">
-          <div className="settings-intro">
+
+        <TabsContent value="models" className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2>可用模型池</h2>
-              <p>
-                Provider 与 Model ID
-                支持从已认证供应商的目录自动补全，也允许自定义兼容端点。
+              <h2 className="text-lg font-semibold">模型池</h2>
+              <p className="text-sm text-muted-foreground">
+                管理可用模型，支持自动补全 Provider 目录。
               </p>
             </div>
-            <Badge>{models?.models.length ?? 0} models</Badge>
+            <Badge className="text-[10px]">
+              {g.modelConfiguration?.models.length ?? 0} 个
+            </Badge>
           </div>
-          {models && modelAuth ? (
+          {g.modelConfiguration && auth ? (
             <ModelPoolEditor
-              configuration={models}
-              authentication={modelAuth}
-              onSaved={(next) =>
-                setConfiguration((current) =>
-                  current ? { ...current, modelConfiguration: next } : current,
-                )
+              configuration={g.modelConfiguration}
+              authentication={auth}
+              onSaved={(n) =>
+                setG((c) => (c ? { ...c, modelConfiguration: n } : c))
               }
             />
           ) : (
-            <ErrorNotice message="模型配置服务当前不可用" />
+            <ErrorNotice message="模型配置不可用" />
           )}
         </TabsContent>
-        <TabsContent value="security" className="settings-content">
-          <div className="settings-intro">
+
+        <TabsContent value="security" className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2>访问控制</h2>
-              <p>默认关闭。启用后，所有 API、SSE 与导出端点都要求有效会话。</p>
+              <h2 className="text-lg font-semibold">访问控制</h2>
+              <p className="text-sm text-muted-foreground">
+                启用后要求 HttpOnly 会话 Cookie 认证。
+              </p>
             </div>
-            <Badge tone={authEnabled ? "positive" : "warning"}>
-              {authEnabled ? "ENABLED" : "DISABLED"}
+            <Badge tone={on ? "positive" : "warning"} className="text-[10px]">
+              {on ? "启用" : "禁用"}
             </Badge>
           </div>
-          <Card>
-            <form
-              className="security-form"
-              onSubmit={(event) => void saveWebAuthentication(event)}
-            >
-              <div className="toggle-line">
-                <Checkbox
-                  checked={authEnabled}
-                  onCheckedChange={(checked) =>
-                    setAuthEnabled(checked === true)
-                  }
-                />
-                <span>
-                  <strong>启用 WebUI 登录</strong>
-                  <small>使用 HttpOnly、SameSite=Strict 会话 Cookie。</small>
-                </span>
-              </div>
-              {authEnabled ? (
-                <div className="form-grid form-grid-two">
-                  <div className="field">
-                    <span>管理员用户名</span>
+          <Card className="max-w-lg">
+            <form className="space-y-5 p-6" onSubmit={(e) => void saveAuth(e)}>
+              <EnableLoginCheckbox checked={on} onChange={setOn} />
+              {on ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="auth-username"
+                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >
+                      用户名
+                    </label>
                     <Input
-                      value={username}
-                      onChange={(event) => setUsername(event.target.value)}
+                      id="auth-username"
+                      value={uname}
+                      onChange={(e) => setUname(e.target.value)}
                     />
                   </div>
-                  <div className="field">
-                    <span>
-                      {configuration.authentication.enabled
-                        ? "新密码（留空保持）"
-                        : "管理员密码"}
-                    </span>
+                  <div>
+                    <label
+                      htmlFor="auth-password"
+                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >
+                      {g.authentication.enabled ? "新密码（可选）" : "密码"}
+                    </label>
                     <Input
+                      id="auth-password"
                       type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
+                      value={pw}
+                      onChange={(e) => setPw(e.target.value)}
                     />
                   </div>
                 </div>
               ) : null}
-              <div className="settings-actions">
+              <div className="flex justify-end">
                 <Button
                   type="submit"
                   disabled={
                     busy ||
-                    (authEnabled &&
-                      (!username ||
-                        (!configuration.authentication.enabled && !password)))
+                    (on && (!uname || (!g.authentication.enabled && !pw)))
                   }
                 >
-                  <Icon icon="lucide:shield-check" width="15" />
-                  保存访问策略
+                  <Icon icon="lucide:shield-check" width="14" />
+                  保存
                 </Button>
               </div>
             </form>
@@ -276,5 +361,71 @@ export function GlobalSettingsPage(): React.ReactElement {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function ProviderPicker({
+  icon,
+  label,
+  description,
+  value,
+  options,
+  onChange,
+}: {
+  icon: string
+  label: string
+  description: string
+  value: string
+  options: Array<{ value: string; label: string; description?: string }>
+  onChange(value: string): void
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-background/30 p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-8 items-center justify-center rounded-md bg-muted text-primary">
+          <Icon icon={icon} width="15" />
+        </span>
+        <div>
+          <p className="text-sm font-medium">{label}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <Combobox
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder="选择供应商…"
+        searchPlaceholder="搜索供应商…"
+        emptyText="没有可用供应商"
+      />
+    </div>
+  )
+}
+
+function EnableLoginCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean
+  onChange(v: boolean): void
+}) {
+  const id = useId()
+  return (
+    <label
+      htmlFor={id}
+      className="flex cursor-pointer items-start gap-3 text-sm"
+    >
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(c) => onChange(c === true)}
+      />
+      <div>
+        <p className="font-medium">启用 WebUI 登录</p>
+        <p className="text-xs text-muted-foreground">
+          SameSite=Strict 会话 Cookie
+        </p>
+      </div>
+    </label>
   )
 }

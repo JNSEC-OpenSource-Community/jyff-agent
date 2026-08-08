@@ -313,7 +313,31 @@ export interface DashboardModelConfiguration {
   ): Promise<ModelConfigurationView>
 }
 
-export type ModelAuthProviderId = "openai-codex" | "openai" | "anthropic"
+export type ModelAuthProviderId =
+  | "openai-codex"
+  | "openai"
+  | "anthropic"
+  | "deepseek"
+  | "nvidia"
+  | "google"
+  | "mistral"
+  | "groq"
+  | "cerebras"
+  | "xai"
+  | "fireworks"
+  | "together"
+  | "openrouter"
+  | "huggingface"
+  | "moonshotai"
+  | "ant-ling"
+  | "azure-openai-responses"
+  | "vercel-ai-gateway"
+  | "cloudflare-ai-gateway"
+  | "kimi-coding"
+  | "opencode"
+  | "opencode-go"
+  | "zai"
+  | "minimax"
 export type ModelAuthMethodId =
   | "oauth_browser"
   | "oauth_device"

@@ -86,6 +86,279 @@ const PROVIDERS: ReadonlyArray<{
       },
     ],
   },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    description: "使用 DeepSeek Platform API Key，兼容 OpenAI 协议。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 DeepSeek API Key。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    description: "使用 NVIDIA NIM API Key 调用开源模型。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 NVIDIA API Key。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "google",
+    name: "Google Gemini",
+    description: "使用 Gemini API Key 调用 Google AI Studio。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 GEMINI_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    description: "使用 Mistral Platform API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 MISTRAL_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    description: "使用 Groq API Key，高速推理。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 GROQ_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "cerebras",
+    name: "Cerebras",
+    description: "使用 Cerebras API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 CEREBRAS_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "xai",
+    name: "xAI",
+    description: "使用 xAI (Grok) API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 XAI_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "fireworks",
+    name: "Fireworks",
+    description: "使用 Fireworks AI API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 FIREWORKS_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "together",
+    name: "Together AI",
+    description: "使用 Together AI API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 TOGETHER_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    description: "使用 OpenRouter API Key，统一接入多种模型。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 OPENROUTER_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "huggingface",
+    name: "Hugging Face",
+    description: "使用 Hugging Face Inference API。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 HF_TOKEN。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "moonshotai",
+    name: "Moonshot AI",
+    description: "使用 Moonshot AI (Kimi) API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 MOONSHOT_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "ant-ling",
+    name: "Ant Ling",
+    description: "使用 Ant Ling API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 ANT_LING_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "azure-openai-responses",
+    name: "Azure OpenAI",
+    description: "使用 Azure OpenAI Service API Key + Base URL。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 AZURE_OPENAI_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "vercel-ai-gateway",
+    name: "Vercel AI Gateway",
+    description: "使用 Vercel AI Gateway API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 AI_GATEWAY_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "cloudflare-ai-gateway",
+    name: "Cloudflare AI Gateway",
+    description: "使用 Cloudflare AI Gateway API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 CLOUDFLARE_API_KEY + Gateway 凭据。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "kimi-coding",
+    name: "Kimi For Coding",
+    description: "使用 Moonshot AI 订阅端点的 Anthropic 兼容 API。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 KIMI_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "opencode",
+    name: "OpenCode Zen",
+    description: "使用 OpenCode Zen API。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 OPENCODE_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "opencode-go",
+    name: "OpenCode Go",
+    description: "使用 OpenCode Go API。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 OPENCODE_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "zai",
+    name: "ZAI Coding Plan",
+    description: "使用 ZAI Coding Plan API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 ZAI_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
+  {
+    id: "minimax",
+    name: "MiniMax",
+    description: "使用 MiniMax API Key。",
+    methods: [
+      {
+        id: "api_key",
+        label: "API Key",
+        description: "使用 MINIMAX_API_KEY。",
+        requiresSecret: true,
+      },
+    ],
+  },
 ]
 
 const PROVIDER_IDS = new Set<ModelAuthProviderId>(

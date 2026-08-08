@@ -1,9 +1,10 @@
 import { Icon } from "@iconify/react"
-import { useState } from "react"
+import { cloneElement, type ReactNode, useId, useMemo, useState } from "react"
 import {
   Button,
   Card,
   Checkbox,
+  Combobox,
   ErrorNotice,
   Input,
   Select,
@@ -21,29 +22,25 @@ import type {
   ModelPoolEntryUpdate,
 } from "../../types.ts"
 
-interface EditableModel extends ModelPoolEntryUpdate {
+interface EM extends ModelPoolEntryUpdate {
   uiKey: string
   apiKeyConfigured: boolean
   supportedThinkingLevels: string[]
 }
 
-function editableModel(
-  model: ModelConfigurationView["models"][number],
-): EditableModel {
-  return {
-    uiKey: crypto.randomUUID(),
-    id: model.id,
-    provider: model.provider,
-    modelId: model.modelId,
-    baseUrl: model.baseUrl,
-    contextWindow: model.contextWindow,
-    thinkingEnabled: model.thinkingEnabled,
-    reasoningEffort: model.reasoningEffort,
-    passthroughThinking: model.passthroughThinking,
-    apiKeyConfigured: model.apiKeyConfigured,
-    supportedThinkingLevels: model.supportedThinkingLevels,
-  }
-}
+const ed = (m: ModelConfigurationView["models"][number]): EM => ({
+  uiKey: crypto.randomUUID(),
+  id: m.id,
+  provider: m.provider,
+  modelId: m.modelId,
+  baseUrl: m.baseUrl,
+  contextWindow: m.contextWindow,
+  thinkingEnabled: m.thinkingEnabled,
+  reasoningEffort: m.reasoningEffort,
+  passthroughThinking: m.passthroughThinking,
+  apiKeyConfigured: m.apiKeyConfigured,
+  supportedThinkingLevels: m.supportedThinkingLevels,
+})
 
 export function ModelPoolEditor({
   configuration,
@@ -52,48 +49,40 @@ export function ModelPoolEditor({
 }: {
   configuration: ModelConfigurationView
   authentication: ModelAuthenticationView
-  onSaved(next: ModelConfigurationView): void
-}): React.ReactElement {
-  const [models, setModels] = useState<EditableModel[]>(
-    configuration.models.map(editableModel),
-  )
-  const [error, setError] = useState("")
+  onSaved(n: ModelConfigurationView): void
+}) {
+  const [models, setModels] = useState<EM[]>(configuration.models.map(ed))
+  const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
 
-  function update(index: number, patch: Partial<EditableModel>): void {
-    setModels((current) =>
-      current.map((model, candidate) =>
-        candidate === index ? { ...model, ...patch } : model,
-      ),
-    )
+  const providerOptions = useMemo(
+    () =>
+      authentication.providers.map((p) => ({
+        value: p.id,
+        label: p.name,
+        description: p.configured ? "已认证" : "未连接",
+        disabled: false,
+      })),
+    [authentication.providers],
+  )
+
+  function up(i: number, p: Partial<EM>) {
+    setModels((c) => c.map((m, j) => (j === i ? { ...m, ...p } : m)))
   }
 
-  function addModel(): void {
-    const provider = authentication.providers[0]
-    const suggested = provider?.models[0]
-    setModels((current) => [
-      ...current,
-      {
-        uiKey: crypto.randomUUID(),
-        id: `model-${current.length + 1}`,
-        provider: provider?.id ?? "openai",
-        modelId: suggested?.id ?? "",
-        baseUrl: "",
-        contextWindow: suggested?.contextWindow ?? 128_000,
-        thinkingEnabled: suggested?.reasoning ?? true,
-        reasoningEffort: suggested?.reasoning ? "medium" : "off",
-        passthroughThinking: false,
-        apiKeyConfigured: false,
-        supportedThinkingLevels: suggested?.reasoning
-          ? ["off", "low", "medium", "high"]
-          : ["off"],
-      },
-    ])
+  function modelOptions(providerId: string) {
+    const prov = authentication.providers.find((p) => p.id === providerId)
+    if (!prov) return []
+    return prov.models.map((x) => ({
+      value: x.id,
+      label: x.name,
+      description: `${(x.contextWindow / 1000).toFixed(0)}k · ${x.reasoning ? "支持推理" : "无推理"}`,
+    }))
   }
 
-  async function save(): Promise<void> {
+  async function save() {
     setBusy(true)
-    setError("")
+    setErr("")
     try {
       const payload: ModelConfigurationUpdate = {
         models: models.map(
@@ -101,128 +90,137 @@ export function ModelPoolEditor({
             uiKey: _,
             apiKeyConfigured: __,
             supportedThinkingLevels: ___,
-            ...model
-          }) => model,
+            ...m
+          }) => m,
         ),
         solverModelId: configuration.solverModelId,
         tldrModelId: configuration.tldrModelId,
         subagentModels: configuration.subagentModels,
       }
-      const result = await apiMutation<{
-        configuration: ModelConfigurationView
-      }>("/api/model-config", "POST", payload)
-      setModels(result.configuration.models.map(editableModel))
-      onSaved(result.configuration)
-    } catch (cause) {
-      setError(errorMessage(cause))
+      const r = await apiMutation<{ configuration: ModelConfigurationView }>(
+        "/api/model-config",
+        "POST",
+        payload,
+      )
+      setModels(r.configuration.models.map(ed))
+      onSaved(r.configuration)
+    } catch (e) {
+      setErr(errorMessage(e))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="settings-stack">
-      {error ? <ErrorNotice message={error} /> : null}
-      {models.map((model, index) => {
-        const provider = authentication.providers.find(
-          (candidate) => candidate.id === model.provider,
-        )
+    <div className="space-y-4">
+      {err ? <ErrorNotice message={err} /> : null}
+      {models.map((m, i) => {
+        const prov = authentication.providers.find((p) => p.id === m.provider)
         return (
-          <Card className="model-card" key={model.uiKey}>
-            <div className="model-card-heading">
-              <span>{String(index + 1).padStart(2, "0")}</span>
+          <Card key={m.uiKey} className="overflow-hidden p-0">
+            <div className="flex items-center gap-3 border-b border-border bg-muted px-4 py-2.5">
+              <span className="flex size-6 items-center justify-center rounded-md bg-muted font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                {String(i + 1).padStart(2, "0")}
+              </span>
               <Input
-                aria-label="模型配置 ID"
-                value={model.id}
-                onChange={(event) => update(index, { id: event.target.value })}
-                className="h-8 w-48"
+                aria-label="模型 ID"
+                value={m.id}
+                onChange={(e) => up(i, { id: e.target.value })}
+                className="h-7 flex-1 border-0 bg-transparent text-sm font-medium shadow-none focus-visible:ring-0"
               />
               <Button
                 size="icon"
                 variant="ghost"
-                aria-label="删除模型"
-                onClick={() =>
-                  setModels((current) =>
-                    current.filter((_, candidate) => candidate !== index),
-                  )
-                }
+                className="size-7 text-muted-foreground hover:text-danger"
+                onClick={() => setModels((c) => c.filter((_, j) => j !== i))}
               >
-                <Icon icon="lucide:trash-2" width="15" />
+                <Icon icon="lucide:trash-2" width="13" />
               </Button>
             </div>
-            <div className="form-grid model-grid">
-              <div className="field">
-                <span>Provider</span>
-                <Input
-                  list="provider-options"
-                  value={model.provider}
-                  onChange={(event) =>
-                    update(index, { provider: event.target.value })
-                  }
-                />
-              </div>
-              <div className="field">
-                <span>Model ID</span>
-                <Input
-                  list={`model-options-${index}`}
-                  value={model.modelId}
-                  onChange={(event) => {
-                    const selected = provider?.models.find(
-                      (candidate) => candidate.id === event.target.value,
+            <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="供应商">
+                <Combobox
+                  value={m.provider}
+                  onChange={(v) => {
+                    const newProv = authentication.providers.find(
+                      (p) => p.id === v,
                     )
-                    update(index, {
-                      modelId: event.target.value,
-                      ...(selected
+                    const s = newProv?.models[0]
+                    up(i, {
+                      provider: v,
+                      modelId: s?.id ?? "",
+                      ...(s
                         ? {
-                            contextWindow: selected.contextWindow,
-                            thinkingEnabled: selected.reasoning,
-                            reasoningEffort: selected.reasoning
-                              ? "medium"
-                              : "off",
+                            contextWindow: s.contextWindow,
+                            thinkingEnabled: s.reasoning,
+                            reasoningEffort: s.reasoning ? "medium" : "off",
                           }
                         : {}),
                     })
                   }}
+                  options={providerOptions}
+                  placeholder="选择 Provider"
+                  searchPlaceholder="搜索…"
+                  emptyText="无匹配"
                 />
-                <datalist id={`model-options-${index}`}>
-                  {provider?.models.map((candidate) => (
-                    <option value={candidate.id} key={candidate.id}>
-                      {candidate.name}
-                    </option>
-                  ))}
-                </datalist>
-              </div>
-              <div className="field">
-                <span>Base URL（可选）</span>
+              </Field>
+              <Field label="模型 ID">
+                <Combobox
+                  value={m.modelId}
+                  onChange={(v) => {
+                    const s = prov?.models.find((x) => x.id === v)
+                    up(i, {
+                      modelId: v,
+                      ...(s
+                        ? {
+                            contextWindow: s.contextWindow,
+                            thinkingEnabled: s.reasoning,
+                            reasoningEffort: s.reasoning ? "medium" : "off",
+                          }
+                        : {}),
+                    })
+                  }}
+                  options={modelOptions(m.provider)}
+                  placeholder="选择模型"
+                  searchPlaceholder="搜索…"
+                  emptyText="无匹配"
+                />
+              </Field>
+              <Field
+                label="Base URL（可选）"
+                description="留空时使用供应商官方端点；仅兼容网关或中转服务需要填写。"
+              >
                 <Input
                   type="url"
-                  value={model.baseUrl}
-                  onChange={(event) =>
-                    update(index, { baseUrl: event.target.value })
-                  }
-                  placeholder="使用 Provider 默认地址"
+                  value={m.baseUrl}
+                  onChange={(e) => up(i, { baseUrl: e.target.value })}
+                  placeholder="默认"
+                  className="h-8 text-xs"
                 />
-              </div>
-              <div className="field">
-                <span>Context Window</span>
+              </Field>
+              <Field
+                label="上下文窗口"
+                description="模型可接收的最大 token 数。"
+              >
                 <Input
                   type="number"
                   min="1"
-                  value={model.contextWindow}
-                  onChange={(event) =>
-                    update(index, { contextWindow: Number(event.target.value) })
+                  value={m.contextWindow}
+                  onChange={(e) =>
+                    up(i, { contextWindow: Number(e.target.value) })
                   }
+                  className="h-8 text-xs"
                 />
-              </div>
-              <div className="field">
-                <span>Reasoning Effort</span>
+              </Field>
+              <Field
+                label="默认推理强度"
+                description="新建 Agent 时使用；关闭推理后该值不会发送。"
+              >
                 <Select
-                  value={model.reasoningEffort}
-                  onValueChange={(level) =>
-                    update(index, { reasoningEffort: level })
-                  }
+                  value={m.reasoningEffort}
+                  onValueChange={(v) => up(i, { reasoningEffort: v })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -234,81 +232,105 @@ export function ModelPoolEditor({
                       "high",
                       "xhigh",
                       "max",
-                    ].map((level) => (
-                      <SelectItem value={level} key={level}>
-                        {level}
+                    ].map((l) => (
+                      <SelectItem value={l} key={l}>
+                        {l}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="field">
-                <span>模型专用 API Key</span>
+              </Field>
+              <Field
+                label="模型专用 API Key（可选）"
+                description="留空时继承供应商凭据。"
+              >
                 <Input
                   type="password"
-                  value={model.apiKey ?? ""}
-                  onChange={(event) =>
-                    update(index, {
-                      apiKey: event.target.value,
-                      clearApiKey: false,
-                    })
+                  value={m.apiKey ?? ""}
+                  onChange={(e) =>
+                    up(i, { apiKey: e.target.value, clearApiKey: false })
                   }
-                  placeholder={
-                    model.apiKeyConfigured
-                      ? "已配置；留空保持不变"
-                      : "优先使用 Provider 凭据"
-                  }
+                  placeholder={m.apiKeyConfigured ? "已配置" : "继承"}
+                  className="h-8 text-xs"
                 />
-              </div>
+              </Field>
             </div>
-            <div className="toggle-row">
-              <div>
+            <div className="flex flex-wrap gap-4 border-t border-border bg-muted/30 px-4 py-2.5">
+              <label
+                htmlFor={`${m.uiKey}-thinking`}
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
                 <Checkbox
-                  checked={model.thinkingEnabled}
-                  onCheckedChange={(checked) =>
-                    update(index, { thinkingEnabled: checked === true })
+                  id={`${m.uiKey}-thinking`}
+                  checked={m.thinkingEnabled}
+                  onCheckedChange={(c) =>
+                    up(i, { thinkingEnabled: c === true })
                   }
                 />
-                启用模型推理
-              </div>
-              <div>
+                启用推理输出
+              </label>
+              <label
+                htmlFor={`${m.uiKey}-passthrough`}
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
                 <Checkbox
-                  checked={model.passthroughThinking}
-                  onCheckedChange={(checked) =>
-                    update(index, { passthroughThinking: checked === true })
+                  id={`${m.uiKey}-passthrough`}
+                  checked={m.passthroughThinking}
+                  onCheckedChange={(c) =>
+                    up(i, { passthroughThinking: c === true })
                   }
                 />
-                透传自定义推理档位
-              </div>
-              {model.apiKeyConfigured ? (
-                <div>
+                向自定义端点透传推理档位
+              </label>
+              {m.apiKeyConfigured ? (
+                <label
+                  htmlFor={`${m.uiKey}-clear`}
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                >
                   <Checkbox
-                    checked={model.clearApiKey === true}
-                    onCheckedChange={(checked) =>
-                      update(index, {
-                        clearApiKey: checked === true,
-                        apiKey: "",
-                      })
+                    id={`${m.uiKey}-clear`}
+                    checked={m.clearApiKey === true}
+                    onCheckedChange={(c) =>
+                      up(i, { clearApiKey: c === true, apiKey: "" })
                     }
                   />
-                  清除专用 Key
-                </div>
+                  删除模型专用 API Key
+                </label>
               ) : null}
             </div>
           </Card>
         )
       })}
-      <datalist id="provider-options">
-        {authentication.providers.map((provider) => (
-          <option value={provider.id} key={provider.id}>
-            {provider.name}
-          </option>
-        ))}
-      </datalist>
-      <div className="settings-actions">
-        <Button variant="secondary" onClick={addModel}>
-          <Icon icon="lucide:plus" width="15" />
-          添加模型
+      <div className="flex justify-end gap-3">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            const p =
+              authentication.providers.find((x) => x.id === "openai") ??
+              authentication.providers[0]
+            const s = p?.models[0]
+            setModels((c) => [
+              ...c,
+              {
+                uiKey: crypto.randomUUID(),
+                id: `m-${c.length + 1}`,
+                provider: p?.id ?? "openai",
+                modelId: s?.id ?? "",
+                baseUrl: "",
+                contextWindow: s?.contextWindow ?? 128000,
+                thinkingEnabled: s?.reasoning ?? true,
+                reasoningEffort: s?.reasoning ? "medium" : "off",
+                passthroughThinking: false,
+                apiKeyConfigured: false,
+                supportedThinkingLevels: s?.reasoning
+                  ? ["off", "low", "medium", "high"]
+                  : ["off"],
+              } as EM,
+            ])
+          }}
+        >
+          <Icon icon="lucide:plus" width="13" />
+          添加
         </Button>
         <Button
           onClick={() => void save()}
@@ -317,11 +339,39 @@ export function ModelPoolEditor({
           <Icon
             icon={busy ? "lucide:loader-circle" : "lucide:save"}
             className={busy ? "animate-spin" : ""}
-            width="15"
-          />
-          保存模型池
+            width="13"
+          />{" "}
+          保存
         </Button>
       </div>
+    </div>
+  )
+}
+
+function Field({
+  label,
+  description,
+  children,
+}: {
+  label: string
+  description?: string
+  children: ReactNode
+}) {
+  const id = useId()
+  return (
+    <div className="space-y-1">
+      <label
+        htmlFor={id}
+        className="block text-[11px] font-medium text-muted-foreground"
+      >
+        {label}
+      </label>
+      {cloneElement(children as React.ReactElement<{ id?: string }>, { id })}
+      {description ? (
+        <p className="text-[10px] leading-4 text-muted-foreground/80">
+          {description}
+        </p>
+      ) : null}
     </div>
   )
 }
