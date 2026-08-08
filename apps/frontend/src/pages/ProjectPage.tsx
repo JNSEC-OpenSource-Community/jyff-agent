@@ -290,6 +290,10 @@ export function ProjectPage() {
     return <Spinner label="同步比赛数据" />
   }
 
+  const pendingAnnouncements = snapshot.announcementCandidates.filter(
+    (candidate) => candidate.approvalStatus === "pending",
+  )
+
   const recent = recentChallenges(snapshot.challenges, 5)
   const visible = sortChallenges(
     filterChallenges(snapshot.challenges, { query, statusFilter }),
@@ -378,7 +382,7 @@ export function ProjectPage() {
       </div>
 
       {/* ── Announcement candidates ── */}
-      {snapshot.announcementCandidates.length > 0 ? (
+      {pendingAnnouncements.length > 0 ? (
         <Card className="mb-6 p-0">
           <div className="flex items-center justify-between border-b border-border px-5 py-3">
             <div>
@@ -388,11 +392,11 @@ export function ProjectPage() {
               <h2 className="mt-0.5 font-semibold">待审核公告</h2>
             </div>
             <Badge tone="warning" className="text-[10px]">
-              {snapshot.announcementCandidates.length}
+              {pendingAnnouncements.length}
             </Badge>
           </div>
           <div className="divide-y divide-border/60">
-            {snapshot.announcementCandidates.map((candidate) => (
+            {pendingAnnouncements.map((candidate) => (
               <div
                 key={`${candidate.challengeId}:${candidate.key}`}
                 className="flex flex-wrap items-start justify-between gap-3 px-5 py-3"
@@ -640,7 +644,7 @@ export function ProjectPage() {
               width="28"
               className="text-muted-foreground/40"
             />
-            <p className="mt-3 text-sm text-muted-foreground">无匹配题目</p>
+            <p className="mt-3! text-sm text-muted-foreground">无匹配题目</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
