@@ -1,4 +1,5 @@
 export * from "./common/AppPrimitives.tsx"
+export * from "./platform/PlatformSetupForm.tsx"
 export * from "./ui/alert-dialog.tsx"
 export * from "./ui/badge.tsx"
 export * from "./ui/button.tsx"

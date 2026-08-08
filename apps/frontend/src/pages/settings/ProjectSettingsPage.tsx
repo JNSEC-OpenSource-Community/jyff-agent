@@ -1,6 +1,6 @@
 import type { ControlPlaneSetupSnapshot, ProjectConfig } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useApp } from "../../app/AppProvider.tsx"
 import {
@@ -11,7 +11,7 @@ import {
   ErrorNotice,
   Input,
   Label,
-  PageHeader,
+  PlatformSetupForm,
   Spinner,
   Tabs,
   TabsContent,
@@ -25,22 +25,22 @@ import type {
   ProjectRuntimeConfigurationView,
 } from "../../types.ts"
 
-interface ProjectRuntimeResponse {
+interface RT {
   runtime: ProjectRuntimeConfigurationView
   models: ModelConfigurationView
 }
 
-export function ProjectSettingsPage(): React.ReactElement {
+export function ProjectSettingsPage() {
   const { projectId = "" } = useParams()
   const { refreshProjects } = useApp()
+  const maxConcurrentId = useId()
   const [setup, setSetup] = useState<ControlPlaneSetupSnapshot | null>(null)
-  const [runtimeResponse, setRuntimeResponse] =
-    useState<ProjectRuntimeResponse | null>(null)
-  const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null)
+  const [rt, setRt] = useState<RT | null>(null)
+  const [pcfg, setPcfg] = useState<ProjectConfig | null>(null)
   const [runtime, setRuntime] =
     useState<ProjectRuntimeConfigurationView | null>(null)
   const [secrets, setSecrets] = useState<Record<string, string>>({})
-  const [error, setError] = useState("")
+  const [err, setErr] = useState("")
   const [busy, setBusy] = useState<"platform" | "runtime" | null>(null)
 
   useEffect(() => {
@@ -48,275 +48,260 @@ export function ProjectSettingsPage(): React.ReactElement {
       apiRequest<ControlPlaneSetupSnapshot>(
         projectApi(projectId, "/api/control-plane"),
       ),
-      apiRequest<ProjectRuntimeResponse>(
-        projectApi(projectId, "/api/runtime-config"),
-      ),
+      apiRequest<RT>(projectApi(projectId, "/api/runtime-config")),
     ])
-      .then(([setupValue, runtimeValue]) => {
-        setSetup(setupValue)
-        setProjectConfig(setupValue.config)
-        setRuntimeResponse(runtimeValue)
-        setRuntime(runtimeValue.runtime)
+      .then(([s, r]) => {
+        setSetup(s)
+        setPcfg(s.config)
+        setRt(r)
+        setRuntime(r.runtime)
       })
-      .catch((cause) => setError(errorMessage(cause)))
+      .catch((e) => setErr(errorMessage(e)))
   }, [projectId])
 
-  const platform = useMemo(
-    () =>
-      setup?.platforms.find(
-        (candidate) => candidate.id === projectConfig?.platform.plugin,
-      ),
-    [projectConfig?.platform.plugin, setup],
+  const plat = useMemo(
+    () => setup?.platforms.find((p) => p.id === pcfg?.platform.plugin),
+    [pcfg?.platform.plugin, setup],
   )
-  const platformConfig = (projectConfig?.platform.config ?? {}) as Record<
-    string,
-    unknown
-  >
-  const strategy =
-    platform?.setup.authStrategies.find((candidate) => {
-      const configuredAuth = (
-        platformConfig.auth as { type?: string } | undefined
-      )?.type
-      return (
-        candidate.id === configuredAuth ||
-        platform?.setup.authStrategies.length === 1
-      )
-    }) ?? platform?.setup.authStrategies[0]
+  const pconf = (pcfg?.platform.config ?? {}) as Record<string, unknown>
+  const strat =
+    plat?.setup.authStrategies.find((s) => {
+      const a = (pconf.auth as { type?: string })?.type
+      return s.id === a || plat.setup.authStrategies.length === 1
+    }) ?? plat?.setup.authStrategies[0]
 
-  async function savePlatform(): Promise<void> {
-    if (!projectConfig) return
+  async function savePlat() {
+    if (!pcfg) return
     setBusy("platform")
-    setError("")
+    setErr("")
     try {
       await apiMutation("/api/projects", "POST", {
-        config: projectConfig,
+        config: pcfg,
         secrets: Object.fromEntries(
-          Object.entries(secrets).filter(([, value]) => value.length > 0),
+          Object.entries(secrets).filter(([, v]) => v),
         ),
       })
       setSecrets({})
       await refreshProjects()
-    } catch (cause) {
-      setError(errorMessage(cause))
+    } catch (e) {
+      setErr(errorMessage(e))
     } finally {
       setBusy(null)
     }
   }
-
-  async function saveRuntime(): Promise<void> {
+  async function saveRt() {
     if (!runtime) return
     setBusy("runtime")
-    setError("")
+    setErr("")
     try {
-      const next = await apiMutation<ProjectRuntimeResponse>(
+      const n = await apiMutation<RT>(
         projectApi(projectId, "/api/runtime-config"),
         "POST",
         runtime,
       )
-      setRuntimeResponse(next)
-      setRuntime(next.runtime)
-    } catch (cause) {
-      setError(errorMessage(cause))
+      setRt(n)
+      setRuntime(n.runtime)
+    } catch (e) {
+      setErr(errorMessage(e))
     } finally {
       setBusy(null)
     }
   }
 
-  if (!setup || !runtimeResponse || !projectConfig || !runtime)
-    return <Spinner label="正在读取项目配置" />
-  const modelOptions = runtimeResponse.models.models
+  if (!setup || !rt || !pcfg || !runtime)
+    return <Spinner label="加载比赛配置" />
+  const models = rt.models.models
+
   return (
-    <div className="page page-settings">
-      <PageHeader
-        eyebrow={projectConfig.project.id}
-        title="项目配置"
-        description="平台连接属于项目；Solver、TLDR、SubAgent 角色和并发量可以独立绑定。"
-      />
-      {error ? <ErrorNotice message={error} /> : null}
+    <div className="page-container">
+      <header className="mb-8">
+        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          {pcfg.project.id}
+        </p>
+        <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+          比赛配置
+        </h1>
+        <p className="hero-desc mt-3 max-w-2xl text-sm text-muted-foreground">
+          模型绑定与并发量在当前比赛内独立配置。
+        </p>
+      </header>
+
+      {err ? <ErrorNotice message={err} className="mb-6" /> : null}
+
       <Tabs defaultValue="runtime">
-        <TabsList className="settings-tabs">
-          <TabsTrigger value="runtime">运行策略</TabsTrigger>
-          <TabsTrigger value="platform">比赛平台</TabsTrigger>
+        <TabsList className="mb-6">
+          <TabsTrigger value="runtime">运行</TabsTrigger>
+          <TabsTrigger value="platform">平台</TabsTrigger>
         </TabsList>
-        <TabsContent value="runtime" className="settings-content">
-          <div className="settings-intro">
-            <div>
-              <h2>Agent 模型绑定</h2>
-              <p>保存后应用于新 turn 与新 SubAgent；全局模型池保持不变。</p>
-            </div>
+
+        <TabsContent value="runtime" className="space-y-5">
+          <div>
+            <h2 className="text-lg font-semibold">Agent 模型绑定</h2>
+            <p className="text-sm text-muted-foreground">
+              应用于新 turn 与新 SubAgent。
+            </p>
           </div>
-          <Card className="runtime-card">
-            <div className="form-grid form-grid-two">
-              <ModelBindingField
+          <Card className="space-y-6 p-6">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <ModelField
                 label="Solver Agent"
                 value={runtime.solverModelId}
-                models={modelOptions}
-                onChange={(value) =>
-                  setRuntime((current) =>
-                    current ? { ...current, solverModelId: value } : current,
-                  )
+                models={models}
+                onChange={(v) =>
+                  setRuntime((c) => (c ? { ...c, solverModelId: v } : c))
                 }
               />
-              <ModelBindingField
+              <ModelField
                 label="TLDR Agent"
                 value={runtime.tldrModelId}
-                models={modelOptions}
-                onChange={(value) =>
-                  setRuntime((current) =>
-                    current ? { ...current, tldrModelId: value } : current,
-                  )
+                models={models}
+                onChange={(v) =>
+                  setRuntime((c) => (c ? { ...c, tldrModelId: v } : c))
                 }
               />
-              <div className="field">
-                <span>最大并发 Solver</span>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor={maxConcurrentId}
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  最大并发
+                </Label>
                 <Input
+                  id={maxConcurrentId}
                   type="number"
                   min="1"
                   max="64"
                   value={runtime.maxConcurrent}
-                  onChange={(event) =>
-                    setRuntime((current) =>
-                      current
-                        ? {
-                            ...current,
-                            maxConcurrent: Number(event.target.value),
-                          }
-                        : current,
+                  onChange={(e) =>
+                    setRuntime((c) =>
+                      c ? { ...c, maxConcurrent: Number(e.target.value) } : c,
                     )
                   }
+                  className="h-8 text-xs"
                 />
               </div>
             </div>
-            <div className="role-bindings">
-              <h3>SubAgent Roles</h3>
-              {runtimeResponse.models.subagentRoles?.map((role) => (
-                <ModelBindingField
-                  key={role.name}
-                  label={role.displayName}
-                  hint={role.name}
-                  value={runtime.subagentModels[role.name] ?? ""}
-                  models={modelOptions}
-                  onChange={(value) =>
-                    setRuntime((current) =>
-                      current
-                        ? {
-                            ...current,
-                            subagentModels: {
-                              ...current.subagentModels,
-                              [role.name]: value,
-                            },
-                          }
-                        : current,
-                    )
-                  }
-                />
-              ))}
-            </div>
-            <div className="settings-actions">
+            {rt.models.subagentRoles?.length ? (
+              <div className="border-t border-border pt-5">
+                <h3 className="mb-3 text-sm font-semibold">SubAgent Roles</h3>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  {rt.models.subagentRoles.map((r) => (
+                    <ModelField
+                      key={r.name}
+                      label={r.displayName}
+                      hint={r.name}
+                      value={runtime.subagentModels[r.name] ?? ""}
+                      models={models}
+                      onChange={(v) =>
+                        setRuntime((c) =>
+                          c
+                            ? {
+                                ...c,
+                                subagentModels: {
+                                  ...c.subagentModels,
+                                  [r.name]: v,
+                                },
+                              }
+                            : c,
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="flex justify-end">
               <Button
-                onClick={() => void saveRuntime()}
+                onClick={() => void saveRt()}
                 disabled={busy !== null}
+                size="sm"
               >
-                <Icon icon="lucide:save" width="15" />
-                保存运行策略
+                <Icon icon="lucide:save" width="13" /> 保存
               </Button>
             </div>
           </Card>
         </TabsContent>
-        <TabsContent value="platform" className="settings-content">
-          <div className="settings-intro">
+
+        <TabsContent value="platform" className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2>{platform?.setup.label ?? projectConfig.platform.plugin}</h2>
-              <p>{platform?.setup.description}</p>
+              <h2 className="text-lg font-semibold">
+                {plat?.setup.label ?? pcfg.platform.plugin}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {plat?.setup.description}
+              </p>
             </div>
             <Badge
               tone={setup.state.phase === "ready" ? "positive" : "warning"}
+              className="text-[10px]"
             >
               {setup.state.phase}
             </Badge>
           </div>
-          <Card className="runtime-card">
-            <div className="form-grid form-grid-two">
-              <div className="field">
-                <span>项目显示名称</span>
+          <Card className="space-y-6 p-6">
+            <div className="mb-5 max-w-md space-y-1.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  显示名称
+                </Label>
                 <Input
-                  value={projectConfig.project.name}
-                  onChange={(event) =>
-                    setProjectConfig((current) =>
-                      current
+                  value={pcfg.project.name}
+                  onChange={(e) =>
+                    setPcfg((c) =>
+                      c
                         ? {
-                            ...current,
-                            project: {
-                              ...current.project,
-                              name: event.target.value,
-                            },
+                            ...c,
+                            project: { ...c.project, name: e.target.value },
                           }
-                        : current,
+                        : c,
                     )
                   }
+                  className="h-8 text-xs"
                 />
               </div>
-              {platform?.setup.fields.map((field) => (
-                <div key={field.key} className="field">
-                  <span>{field.label}</span>
-                  <Input
-                    type={field.type === "integer" ? "number" : field.type}
-                    min={field.minimum}
-                    max={field.maximum}
-                    value={String(platformConfig[field.key] ?? "")}
-                    onChange={(event) =>
-                      setProjectConfig((current) =>
-                        current
-                          ? {
-                              ...current,
-                              platform: {
-                                ...current.platform,
-                                config: {
-                                  ...(current.platform.config as Record<
-                                    string,
-                                    unknown
-                                  >),
-                                  [field.key]:
-                                    field.type === "integer"
-                                      ? Number(event.target.value)
-                                      : event.target.value,
-                                },
-                              },
-                            }
-                          : current,
-                      )
-                    }
-                  />
-                </div>
-              ))}
-              {strategy?.secrets.map((field) => (
-                <div key={field.name} className="field">
-                  <span>{field.label}</span>
-                  <Input
-                    type={field.type === "text" ? "text" : "password"}
-                    value={secrets[field.name] ?? ""}
-                    onChange={(event) =>
-                      setSecrets((current) => ({
-                        ...current,
-                        [field.name]: event.target.value,
-                      }))
-                    }
-                    placeholder={
-                      setup.secrets[field.name]?.configured
-                        ? "已保存；留空保持不变"
-                        : "尚未配置"
-                    }
-                  />
-                </div>
-              ))}
             </div>
-            <div className="settings-actions">
+            {plat && strat ? (
+              <PlatformSetupForm
+                platform={plat}
+                strategyId={strat.id}
+                config={pconf}
+                secrets={secrets}
+                configuredSecrets={setup.secrets}
+                onStrategyChange={(_id, defaults) => {
+                  setPcfg((current) =>
+                    current
+                      ? {
+                          ...current,
+                          platform: {
+                            ...current.platform,
+                            config: { ...pconf, ...defaults },
+                          },
+                        }
+                      : current,
+                  )
+                  setSecrets({})
+                }}
+                onConfigChange={(next) =>
+                  setPcfg((current) =>
+                    current
+                      ? {
+                          ...current,
+                          platform: { ...current.platform, config: next },
+                        }
+                      : current,
+                  )
+                }
+                onSecretsChange={setSecrets}
+              />
+            ) : null}
+            <div className="flex justify-end">
               <Button
-                onClick={() => void savePlatform()}
+                onClick={() => void savePlat()}
                 disabled={busy !== null}
+                size="sm"
               >
-                <Icon icon="lucide:plug-zap" width="15" />
-                保存并重新连接
+                <Icon icon="lucide:plug-zap" width="13" /> 保存并重连
               </Button>
             </div>
           </Card>
@@ -326,7 +311,7 @@ export function ProjectSettingsPage(): React.ReactElement {
   )
 }
 
-function ModelBindingField({
+function ModelField({
   label,
   hint,
   value,
@@ -337,26 +322,28 @@ function ModelBindingField({
   hint?: string
   value: string
   models: ModelConfigurationView["models"]
-  onChange(value: string): void
-}): React.ReactElement {
+  onChange(v: string): void
+}) {
+  const id = useId()
   return (
-    <div className="grid gap-2">
-      <Label>
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
         {label}
         {hint ? ` · ${hint}` : ""}
       </Label>
       <Combobox
+        id={id}
         value={value}
         onChange={onChange}
-        placeholder="选择模型…"
+        placeholder="选择"
         emptyLabel="继承 Solver"
-        searchPlaceholder="搜索模型 ID…"
-        emptyText="没有匹配的模型"
-        options={models.map((model) => ({
-          value: model.id,
-          label: `${model.id} · ${model.provider}/${model.modelId}`,
-          description: model.configured ? undefined : "不可用（未配置凭据）",
-          disabled: !model.configured,
+        searchPlaceholder="搜索..."
+        emptyText="无匹配"
+        options={models.map((m) => ({
+          value: m.id,
+          label: `${m.id} · ${m.provider}/${m.modelId}`,
+          description: m.configured ? undefined : "不可用",
+          disabled: !m.configured,
         }))}
       />
     </div>

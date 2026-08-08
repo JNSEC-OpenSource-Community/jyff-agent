@@ -6,7 +6,6 @@ import {
   Card,
   EmptyState,
   ErrorNotice,
-  PageHeader,
   Select,
   SelectContent,
   SelectItem,
@@ -27,8 +26,7 @@ import { AttemptHistory } from "./challenge/AttemptHistory.tsx"
 import { ConversationPanel } from "./challenge/ConversationPanel.tsx"
 import { IntelligencePanel } from "./challenge/IntelligencePanel.tsx"
 
-/** 单题工作区：对话 / 情报 / Attempts / Writeup 四个页签 + Agent 侧栏。 */
-export function ChallengePage(): React.ReactElement {
+export function ChallengePage() {
   const { projectId = "", challengeId = "" } = useParams()
   const {
     details,
@@ -44,36 +42,34 @@ export function ChallengePage(): React.ReactElement {
   } = useChallengeDetails(projectId, challengeId)
 
   if (!details) {
-    return error ? (
-      <div className="page">
-        <ErrorNotice message={error} />
-      </div>
-    ) : (
-      <Spinner label="正在读取题目工作区" />
-    )
+    if (error) {
+      return (
+        <div className="flex h-full items-center justify-center p-8">
+          <ErrorNotice message={error} />
+        </div>
+      )
+    }
+    return <Spinner label="加载题目" />
   }
 
-  const challenge = details.challenge
+  const c = details.challenge
   const active = [
     "preparing",
     "running",
     "blocking",
     "writing_writeup",
-  ].includes(challenge.status)
-  const runId = selectedRun?.id ?? ""
-  const conversationUrl = selectedSubagent
+  ].includes(c.status)
+  const rid = selectedRun?.id ?? ""
+  const convoUrl = selectedSubagent
     ? projectApi(
         projectId,
-        `/api/runs/${encodeURIComponent(runId)}/subagents/${encodeURIComponent(selectedSubagent.id)}/conversation`,
+        `/api/runs/${encodeURIComponent(rid)}/subagents/${encodeURIComponent(selectedSubagent.id)}/conversation`,
       )
-    : projectApi(
-        projectId,
-        `/api/runs/${encodeURIComponent(runId)}/conversation`,
-      )
+    : projectApi(projectId, `/api/runs/${encodeURIComponent(rid)}/conversation`)
   const sendUrl = selectedSubagent
     ? projectApi(
         projectId,
-        `/api/runs/${encodeURIComponent(runId)}/subagents/${encodeURIComponent(selectedSubagent.id)}/steer`,
+        `/api/runs/${encodeURIComponent(rid)}/subagents/${encodeURIComponent(selectedSubagent.id)}/steer`,
       )
     : projectApi(
         projectId,
@@ -82,49 +78,24 @@ export function ChallengePage(): React.ReactElement {
   const exportUrl = selectedSubagent
     ? projectApi(
         projectId,
-        `/api/runs/${encodeURIComponent(runId)}/subagents/${encodeURIComponent(selectedSubagent.id)}/export`,
+        `/api/runs/${encodeURIComponent(rid)}/subagents/${encodeURIComponent(selectedSubagent.id)}/export`,
       )
-    : projectApi(projectId, `/api/runs/${encodeURIComponent(runId)}/export`)
+    : projectApi(projectId, `/api/runs/${encodeURIComponent(rid)}/export`)
 
   return (
-    <div className="page challenge-page">
-      <PageHeader
-        eyebrow={`${challenge.category} · ${challenge.score} PTS`}
-        title={challenge.title}
-        description={challenge.progress}
-        actions={
-          <>
-            <Badge tone={toneForStatus(challenge.status)}>
-              {STATUS_LABELS[challenge.status] ?? challenge.status}
-            </Badge>
-            <Button
-              variant={active ? "danger" : "primary"}
-              disabled={busy}
-              onClick={() =>
-                void challengeAction(active ? "cancel" : "dispatch")
-              }
-            >
-              <Icon
-                icon={active ? "lucide:square" : "lucide:play"}
-                width="16"
-              />
-              {active
-                ? "终止当前运行"
-                : challenge.status === "blocked"
-                  ? "强制重新派发"
-                  : "派发 Solver"}
-            </Button>
-          </>
-        }
-      />
-      {error ? <ErrorNotice message={error} /> : null}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
-        <Card className="min-h-0 flex-1 p-0 lg:flex lg:flex-col">
+    <div className="flex h-full min-w-0 overflow-hidden max-lg:flex-col">
+      {/* ── Main content ── */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4 max-lg:p-3">
+        <Card className="flex min-h-0 flex-1 flex-col border-border p-0">
+          {error ? (
+            <ErrorNotice message={error} className="m-3 shrink-0" />
+          ) : null}
+
           <Tabs
             defaultValue="conversation"
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
               <TabsList>
                 <TabsTrigger value="conversation">对话</TabsTrigger>
                 <TabsTrigger value="intelligence">情报</TabsTrigger>
@@ -133,21 +104,24 @@ export function ChallengePage(): React.ReactElement {
               </TabsList>
               {selectedRun ? (
                 <Select value={selectedRun.id} onValueChange={selectRun}>
-                  <SelectTrigger className="w-56 h-8">
+                  <SelectTrigger className="h-7 w-48 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {details.runs.map((run) => (
-                      <SelectItem value={run.id} key={run.id}>
-                        Attempt {run.attempt} ·{" "}
-                        {STATUS_LABELS[run.status] ?? run.status}
+                    {details.runs.map((r) => (
+                      <SelectItem value={r.id} key={r.id}>
+                        #{r.attempt} · {STATUS_LABELS[r.status] ?? r.status}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               ) : null}
             </div>
-            <TabsContent value="conversation" className="min-h-0 flex-1">
+
+            <TabsContent
+              value="conversation"
+              className="flex min-h-0 flex-1 flex-col"
+            >
               {selectedRun ? (
                 <ConversationPanel
                   target={target}
@@ -157,22 +131,25 @@ export function ChallengePage(): React.ReactElement {
                       ? selectedSubagent.hasConversation
                       : selectedRun.hasConversation
                   }
-                  conversationUrl={conversationUrl}
+                  conversationUrl={convoUrl}
                   sendUrl={sendUrl}
                   exportUrl={exportUrl}
                   onChanged={reload}
                 />
               ) : (
-                <EmptyState
-                  icon="lucide:bot"
-                  title="尚无 Attempt"
-                  description="派发 Solver 后，对话会在这里实时出现。"
-                />
+                <div className="flex flex-1 items-center justify-center">
+                  <EmptyState
+                    icon="lucide:bot"
+                    title="尚无 Attempt"
+                    description="派发 Solver 后对话实时出现。"
+                  />
+                </div>
               )}
             </TabsContent>
+
             <TabsContent
               value="intelligence"
-              className="flex-1 overflow-y-auto p-4"
+              className="flex-1 overflow-y-auto p-5"
             >
               <IntelligencePanel
                 projectId={projectId}
@@ -182,9 +159,10 @@ export function ChallengePage(): React.ReactElement {
                 onChanged={reload}
               />
             </TabsContent>
+
             <TabsContent
               value="attempts"
-              className="flex-1 overflow-y-auto p-4"
+              className="flex-1 overflow-y-auto p-5"
             >
               <AttemptHistory
                 projectId={projectId}
@@ -192,31 +170,68 @@ export function ChallengePage(): React.ReactElement {
                 onChanged={reload}
               />
             </TabsContent>
-            <TabsContent value="writeup" className="flex-1 overflow-y-auto p-4">
+
+            <TabsContent value="writeup" className="flex-1 overflow-y-auto p-5">
               {details.writeup.content ? (
-                <pre className="border-border/60 bg-muted/20 rounded-lg border p-4 text-sm whitespace-pre-wrap">
+                <pre className="rounded-lg border border-border bg-muted p-4 font-mono text-sm whitespace-pre-wrap">
                   {details.writeup.content}
                 </pre>
               ) : (
                 <EmptyState
                   icon="lucide:file-pen-line"
-                  title="Writeup 尚未生成"
+                  title="尚无 Writeup"
                   description={
                     details.writeup.validation.errors.join("；") ||
-                    "Solver 解出题目后会生成结构化 Writeup。"
+                    "解出后生成。"
                   }
                 />
               )}
             </TabsContent>
           </Tabs>
         </Card>
+      </div>
+
+      {/* ── Sidebar with header info ── */}
+      <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4 max-lg:w-full max-lg:flex-row max-lg:overflow-x-auto max-lg:border-l-0 max-lg:border-t max-lg:p-3">
+        {/* Challenge header moved into sidebar */}
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+              {c.category} · {c.score} PTS
+            </p>
+            <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
+              {c.title}
+            </h1>
+            <p className="mt-1 text-xs text-muted-foreground">{c.progress}</p>
+          </div>
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <Badge tone={toneForStatus(c.status)} className="text-[10px]">
+              {STATUS_LABELS[c.status] ?? c.status}
+            </Badge>
+            <Button
+              variant={active ? "danger" : "primary"}
+              disabled={busy}
+              onClick={() =>
+                void challengeAction(active ? "cancel" : "dispatch")
+              }
+              size="sm"
+            >
+              <Icon
+                icon={active ? "lucide:square" : "lucide:play"}
+                width="14"
+              />
+              {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
+            </Button>
+          </div>
+        </Card>
+
         <AgentSidebar
           details={details}
-          selectedRunId={selectedRun?.id ?? ""}
+          selectedRunId={rid}
           selectedSubagentId={selectedSubagent?.id ?? null}
           onSelectSubagent={selectSubagent}
         />
-      </div>
+      </aside>
     </div>
   )
 }

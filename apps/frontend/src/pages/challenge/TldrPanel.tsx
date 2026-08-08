@@ -10,11 +10,8 @@ import {
 import { apiMutation, projectApi } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import { absoluteTime } from "../../lib/time.ts"
+import { cn } from "../../lib/utils.ts"
 
-/**
- * TLDR 情报面板：展示已生成的 TLDR 摘要，支持手动重新生成。
- * 接线 GET /tldr（数据随 ChallengeDetails 下发）与 POST /tldr/refresh。
- */
 export function TldrPanel({
   projectId,
   challengeId,
@@ -25,11 +22,11 @@ export function TldrPanel({
   challengeId: string
   tldr: TldrRecord | null
   onChanged(): Promise<void>
-}): React.ReactElement {
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
 
-  async function refresh(): Promise<void> {
+  async function refresh() {
     setBusy(true)
     setError("")
     try {
@@ -62,7 +59,7 @@ export function TldrPanel({
               icon={busy ? "lucide:loader-circle" : "lucide:sparkles"}
               className={busy ? "animate-spin" : ""}
               width="14"
-            />
+            />{" "}
             生成 TLDR
           </Button>
         }
@@ -85,7 +82,7 @@ export function TldrPanel({
               icon={busy ? "lucide:loader-circle" : "lucide:rotate-ccw"}
               className={busy ? "animate-spin" : ""}
               width="14"
-            />
+            />{" "}
             重试
           </Button>
         </div>
@@ -95,7 +92,7 @@ export function TldrPanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <Icon icon="lucide:bot" width="13" />
           {tldr.model}
@@ -108,8 +105,13 @@ export function TldrPanel({
           </span>
         ) : null}
       </div>
-      <div className="border-border/60 bg-muted/20 rounded-lg border p-4">
-        <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap">
+      <div
+        className={cn(
+          "rounded-xl border border-border bg-muted/30 p-4",
+          busy && "opacity-60",
+        )}
+      >
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
           {tldr.content}
         </p>
       </div>
@@ -124,7 +126,7 @@ export function TldrPanel({
             icon={busy ? "lucide:loader-circle" : "lucide:rotate-ccw"}
             className={busy ? "animate-spin" : ""}
             width="14"
-          />
+          />{" "}
           重新生成
         </Button>
         {busy ? <Spinner label="生成中" /> : null}

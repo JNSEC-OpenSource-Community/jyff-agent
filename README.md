@@ -39,10 +39,10 @@ docker compose -f compose.webui.yaml ps
 
 服务启动时允许没有模型和比赛配置，此时控制面保持可恢复的 `unconfigured` 状态，不会退出。首次进入 WebUI 后按以下顺序操作：
 
-1. 在“全局配置 → Provider 凭据”中登录 Codex / Claude 或填写 API Key，再在“模型池”加入可用模型；
-2. 从首页创建 Project，选择 CTFd 或 GZCTF 并填写站点、比赛与认证信息；
+1. 在“全局配置 → Provider”中按 Subscription 登录或 API Key 两类添加供应商，再在“模型池”加入可用模型；
+2. 从首页创建比赛，通过可搜索的平台插件选择器填写插件声明的站点、比赛与认证信息；
 3. 先测试连接；成功后系统从比赛名称自动填充 Project ID 和显示名称，再创建并连接；
-4. 在该 Project 的“项目配置”中分别绑定 Solver、TLDR、各类 SubAgent 模型并设置并发数；
+4. 在该 Project 的“比赛配置”中分别绑定 Solver、TLDR、各类 SubAgent 模型并设置并发数；
 5. 从 Project 首页拖动调度队列、人工派发单题，或开启自主调度整场比赛。
 
 Project 列表提供带二次确认的永久删除操作。删除前系统会停止该 Project 的调度器、Solver 与 SubAgent，然后清理其 Run、Pi 会话、题目 workspace、运行配置和命名空间凭据；其他 Project 与全局模型配置保持不变。

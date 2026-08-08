@@ -1,9 +1,9 @@
 import type { BlackboardSummary, TldrRecord } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
 import { Badge } from "../../components/index.ts"
+import { cn } from "../../lib/utils.ts"
 import { TldrPanel } from "./TldrPanel.tsx"
 
-/** 黑板情报：TLDR 摘要 + 已确认证据 + 待验证机会。 */
 export function IntelligencePanel({
   projectId,
   challengeId,
@@ -16,13 +16,15 @@ export function IntelligencePanel({
   tldr: TldrRecord | null
   blackboard: BlackboardSummary
   onChanged(): Promise<void>
-}): React.ReactElement {
+}) {
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-2">
-        <div className="section-heading">
-          <Icon icon="lucide:file-text" width="17" />
-          <h3>TLDR 摘要</h3>
+    <div className="space-y-6">
+      <section>
+        <div className="mb-3 flex items-center gap-2.5">
+          <span className="flex size-7 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
+            <Icon icon="lucide:file-text" width="15" />
+          </span>
+          <h3 className="text-sm font-semibold">TLDR 摘要</h3>
         </div>
         <TldrPanel
           projectId={projectId}
@@ -31,44 +33,75 @@ export function IntelligencePanel({
           onChanged={onChanged}
         />
       </section>
-      <div className="intelligence-grid">
-        <section>
-          <div className="section-heading">
-            <Icon icon="lucide:check-check" width="17" />
-            <h3>已确认事实</h3>
-            <Badge>{blackboard.evidence.length}</Badge>
-          </div>
-          {blackboard.evidence.length ? (
-            blackboard.evidence.map((item) => (
-              <article key={item.id}>
-                <span>E-{item.id}</span>
-                <p>{item.description}</p>
-              </article>
-            ))
-          ) : (
-            <p className="text-muted-foreground text-sm">黑板暂无证据。</p>
-          )}
-        </section>
-        <section>
-          <div className="section-heading">
-            <Icon icon="lucide:lightbulb" width="17" />
-            <h3>待验证机会</h3>
-            <Badge>{blackboard.opportunities.length}</Badge>
-          </div>
-          {blackboard.opportunities.length ? (
-            blackboard.opportunities.map((item) => (
-              <article key={item.id}>
-                <span>O-{item.id}</span>
-                <p>{item.description}</p>
-                <Badge tone={item.status === "open" ? "warning" : "neutral"}>
-                  {item.status}
-                </Badge>
-              </article>
-            ))
-          ) : (
-            <p className="text-muted-foreground text-sm">黑板暂无机会项。</p>
-          )}
-        </section>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {(
+          [
+            {
+              kind: "evidence" as const,
+              title: "已确认事实",
+              icon: "lucide:check-check",
+              tone: "bg-green/10 text-green",
+            },
+            {
+              kind: "opportunities" as const,
+              title: "待验证机会",
+              icon: "lucide:lightbulb",
+              tone: "bg-warning/10 text-warning",
+            },
+          ] as const
+        ).map(({ kind, title, icon, tone }) => {
+          const items =
+            kind === "evidence" ? blackboard.evidence : blackboard.opportunities
+          return (
+            <section
+              key={kind}
+              className="overflow-hidden rounded-xl border border-border bg-card"
+            >
+              <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+                <span
+                  className={cn(
+                    "flex size-6 items-center justify-center rounded-md text-[10px]",
+                    tone,
+                  )}
+                >
+                  <Icon icon={icon} width="14" />
+                </span>
+                <h3 className="flex-1 text-sm font-medium">{title}</h3>
+                <Badge className="text-[10px]">{items.length}</Badge>
+              </div>
+              {items.length ? (
+                <div className="max-h-80 overflow-y-auto">
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex gap-3 border-b border-border px-4 py-3 text-xs last:border-b-0"
+                    >
+                      <span className="shrink-0 font-mono font-semibold text-primary">
+                        {kind === "evidence" ? "E" : "O"}-{item.id}
+                      </span>
+                      <p className="flex-1 text-muted-foreground">
+                        {item.description}
+                      </p>
+                      {"status" in item ? (
+                        <Badge
+                          tone={item.status === "open" ? "warning" : "neutral"}
+                          className="ml-auto shrink-0 text-[10px]"
+                        >
+                          {item.status}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+                  暂无数据
+                </p>
+              )}
+            </section>
+          )
+        })}
       </div>
     </div>
   )

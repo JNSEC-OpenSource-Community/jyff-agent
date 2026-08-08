@@ -3,7 +3,6 @@ import * as PopoverPrimitive from "@radix-ui/react-popover"
 import { Command } from "cmdk"
 import { useMemo, useState } from "react"
 import { cn } from "#lib/utils"
-import { Button } from "./button.tsx"
 
 export interface ComboboxOption {
   value: string
@@ -13,24 +12,18 @@ export interface ComboboxOption {
 }
 
 interface ComboboxProps {
-  /** 当前选中值；传 "" 表示未选择。 */
   value: string
   onChange(value: string): void
   options: ComboboxOption[]
-  /** 未选择时 trigger 上显示的文字。 */
   placeholder?: string
-  /** 未选择时列表里可选的“空值”选项（例如“继承 Solver”）。 */
   emptyLabel?: string
   searchPlaceholder?: string
   emptyText?: string
   disabled?: boolean
   className?: string
+  id?: string
 }
 
-/**
- * shadcn 风格 Combobox：Popover + cmdk 命令面板。
- * 受控组件，配合空值选项实现“可选留空”的绑定语义。
- */
 function Combobox({
   value,
   onChange,
@@ -41,6 +34,7 @@ function Combobox({
   emptyText = "没有匹配的选项",
   disabled = false,
   className,
+  id,
 }: ComboboxProps): React.ReactElement {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -65,58 +59,75 @@ function Combobox({
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger asChild disabled={disabled}>
-        <Button
+        <button
           type="button"
-          variant="outline"
           role="combobox"
+          id={id}
           aria-expanded={open}
           className={cn(
-            "w-full justify-between font-normal",
-            !selected && "text-muted-foreground/70",
+            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background/40 px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-all hover:border-border focus-visible:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50",
+            !selected && "text-muted-foreground/60",
             className,
           )}
         >
-          {selected ? selected.label : placeholder}
-          <Icon icon="lucide:chevrons-up-down" width="14" />
-        </Button>
+          <span className="truncate">
+            {selected ? selected.label : placeholder}
+          </span>
+          <Icon
+            icon="lucide:chevrons-up-down"
+            width="14"
+            className="shrink-0 text-muted-foreground/70"
+          />
+        </button>
       </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Content
-        align="start"
-        className="bg-popover text-popover-foreground z-50 w-(--radix-popover-trigger-width) rounded-md border shadow-md"
-      >
-        <Command className="overflow-hidden">
-          <div className="border-b p-1">
-            <Command.Input
-              value={query}
-              onValueChange={setQuery}
-              placeholder={searchPlaceholder}
-              className="placeholder:text-muted-foreground/60 h-8 w-full bg-transparent px-2 text-sm outline-none"
-            />
-          </div>
-          <Command.List className="max-h-56 overflow-y-auto p-1">
-            <Command.Empty className="text-muted-foreground py-4 text-center text-sm">
-              {emptyText}
-            </Command.Empty>
-            {emptyLabel ? (
-              <CommandItem
-                active={value === ""}
-                onSelect={() => select("")}
-                label={emptyLabel}
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={4}
+          className={cn(
+            "z-50 w-[--radix-popover-trigger-width] rounded-md border border-border bg-popover text-popover-foreground shadow-lg",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+          )}
+        >
+          <Command className="overflow-hidden rounded-md">
+            <div className="flex items-center border-b border-border px-3">
+              <Icon
+                icon="lucide:search"
+                width="14"
+                className="mr-2 shrink-0 text-muted-foreground/60"
               />
-            ) : null}
-            {filtered.map((option) => (
-              <CommandItem
-                key={option.value}
-                active={value === option.value}
-                disabled={option.disabled}
-                onSelect={() => select(option.value)}
-                label={option.label}
-                description={option.description}
+              <Command.Input
+                value={query}
+                onValueChange={setQuery}
+                placeholder={searchPlaceholder}
+                className="flex h-9 w-full bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground/60"
               />
-            ))}
-          </Command.List>
-        </Command>
-      </PopoverPrimitive.Content>
+            </div>
+            <Command.List className="max-h-60 overflow-y-auto p-1">
+              <Command.Empty className="py-6 text-center text-sm text-muted-foreground">
+                {emptyText}
+              </Command.Empty>
+              {emptyLabel ? (
+                <CommandItem
+                  active={value === ""}
+                  onSelect={() => select("")}
+                  label={emptyLabel}
+                />
+              ) : null}
+              {filtered.map((option) => (
+                <CommandItem
+                  key={option.value}
+                  active={value === option.value}
+                  disabled={option.disabled}
+                  onSelect={() => select(option.value)}
+                  label={option.label}
+                  description={option.description}
+                />
+              ))}
+            </Command.List>
+          </Command>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
   )
 }
@@ -140,22 +151,26 @@ function CommandItem({
       disabled={disabled}
       onSelect={onSelect}
       className={cn(
-        "flex cursor-pointer items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm select-none",
+        "relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 pr-8 text-sm outline-none select-none",
         "data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground",
         "data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
         active && "bg-accent/60",
       )}
     >
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <span className="block truncate">{label}</span>
         {description ? (
-          <span className="text-muted-foreground block truncate text-xs">
+          <span className="block truncate text-xs text-muted-foreground">
             {description}
           </span>
         ) : null}
       </span>
       {active ? (
-        <Icon icon="lucide:check" className="shrink-0" width="14" />
+        <Icon
+          icon="lucide:check"
+          className="absolute right-2 shrink-0"
+          width="14"
+        />
       ) : null}
     </Command.Item>
   )

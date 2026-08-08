@@ -22,10 +22,8 @@ import {
   Badge,
   Button,
   Card,
-  EmptyState,
   ErrorNotice,
   Input,
-  PageHeader,
   Select,
   SelectContent,
   SelectItem,
@@ -42,15 +40,18 @@ import {
 } from "../lib/challenge.ts"
 import { STATUS_LABELS } from "../lib/labels.ts"
 import { relativeTime } from "../lib/time.ts"
+import { cn } from "../lib/utils.ts"
 import type { DashboardChallenge, DashboardSnapshot } from "../types.ts"
 
-function SortableQueueItem({
+/* ── Sortable queue item ── */
+
+function QueueItem({
   entry,
   challenge,
 }: {
   entry: SchedulerQueueEntry
   challenge?: DashboardChallenge
-}): React.ReactElement {
+}) {
   const {
     attributes,
     listeners,
@@ -62,35 +63,120 @@ function SortableQueueItem({
   return (
     <div
       ref={setNodeRef}
-      className={isDragging ? "queue-item is-dragging" : "queue-item"}
       style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "flex cursor-grab items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm transition-all hover:border-primary/30 hover:cursor-grab active:cursor-grabbing",
+        isDragging &&
+          "cursor-grabbing border-dashed border-primary/40 opacity-60 shadow-lg",
+      )}
     >
-      <button
-        type="button"
-        className="drag-handle"
-        aria-label={`拖动 ${challenge?.title ?? entry.challengeId}`}
-        {...attributes}
-        {...listeners}
-      >
-        <Icon icon="lucide:grip-vertical" width="18" />
-      </button>
-      <span className="queue-position">
-        {String(entry.position).padStart(2, "0")}
+      <Icon
+        icon="lucide:grip-vertical"
+        width="14"
+        className="shrink-0 text-muted-foreground"
+      />
+      <span className="w-5 text-center font-mono text-[11px] text-muted-foreground tabular-nums">
+        {entry.position}
       </span>
-      <div className="queue-copy">
-        <strong>{challenge?.title ?? entry.challengeId}</strong>
-        <small>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">
+          {challenge?.title ?? entry.challengeId}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
           {challenge?.category ?? entry.source} · {challenge?.score ?? 0} pts
-        </small>
+        </p>
       </div>
-      {entry.lane === "blocked" ? (
-        <Badge tone="danger">Blocked lane</Badge>
-      ) : null}
+      {entry.lane === "blocked" && (
+        <Badge tone="danger" className="shrink-0 text-[10px]">
+          Blocked
+        </Badge>
+      )}
     </div>
   )
 }
 
-export function ProjectPage(): React.ReactElement {
+/* ── Stat card ── */
+
+const statColors: Record<string, { icon: string; tone: string; text: string }> =
+  {
+    green: {
+      icon: "text-green",
+      tone: "bg-green/10",
+      text: "text-green",
+    },
+    cyan: {
+      icon: "text-info",
+      tone: "bg-info/10",
+      text: "text-info",
+    },
+    amber: {
+      icon: "text-warning",
+      tone: "bg-warning/10",
+      text: "text-warning",
+    },
+    danger: {
+      icon: "text-danger",
+      tone: "bg-danger/10",
+      text: "text-danger",
+    },
+  }
+
+function StatCard({
+  label,
+  value,
+  icon,
+  color,
+}: {
+  label: string
+  value: number
+  icon: string
+  color: string
+}) {
+  const c =
+    statColors[color] ??
+    ({
+      icon: "text-green",
+      tone: "bg-green/10",
+      text: "text-green",
+    } as {
+      icon: string
+      tone: string
+      text: string
+    })
+  return (
+    <Card className="surface-hover relative overflow-hidden p-0">
+      <div className="flex items-center gap-4 p-5">
+        <div
+          className={cn(
+            "flex size-11 shrink-0 items-center justify-center rounded-lg",
+            c.tone,
+          )}
+        >
+          <Icon icon={icon} width="21" className={c.icon} />
+        </div>
+        <div>
+          <p
+            className={cn(
+              "text-3xl font-bold tabular-nums tracking-tight font-mono",
+              c.text,
+            )}
+          >
+            {value}
+          </p>
+          <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {label}
+          </p>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/* ── Page ── */
+
+export function ProjectPage() {
   const { projectId = "" } = useParams()
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null)
   const [queue, setQueue] = useState<SchedulerQueueEntry[]>([])
@@ -98,6 +184,7 @@ export function ProjectPage(): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
@@ -107,267 +194,436 @@ export function ProjectPage(): React.ReactElement {
 
   const load = useCallback(async () => {
     setError("")
-    const next = await apiRequest<DashboardSnapshot>(
+    const s = await apiRequest<DashboardSnapshot>(
       projectApi(projectId, "/api/snapshot"),
     )
-    setSnapshot(next)
-    setQueue(next.scheduler?.queued ?? [])
+    setSnapshot(s)
+    setQueue(s.scheduler?.queued ?? [])
   }, [projectId])
 
   useEffect(() => {
-    setError("")
-    void load().catch((cause) =>
-      setError(cause instanceof Error ? cause.message : String(cause)),
+    void load().catch((e) =>
+      setError(String(e instanceof Error ? e.message : e)),
     )
-    const events = new EventSource(projectApi(projectId, "/api/events"))
-    events.addEventListener("snapshot", (event) => {
-      const next = JSON.parse(
-        (event as MessageEvent<string>).data,
+    const es = new EventSource(projectApi(projectId, "/api/events"))
+    es.addEventListener("snapshot", (ev) => {
+      const s = JSON.parse(
+        (ev as MessageEvent<string>).data,
       ) as DashboardSnapshot
-      setSnapshot(next)
-      setQueue(next.scheduler?.queued ?? [])
+      setSnapshot(s)
+      setQueue(s.scheduler?.queued ?? [])
     })
-    return () => events.close()
+    return () => es.close()
   }, [load, projectId])
 
-  const challengeById = useMemo(
-    () =>
-      new Map(
-        snapshot?.challenges.map((challenge) => [challenge.id, challenge]) ??
-          [],
-      ),
+  const byId = useMemo(
+    () => new Map(snapshot?.challenges.map((c) => [c.id, c]) ?? []),
     [snapshot],
   )
 
-  async function schedulerAction(path: string): Promise<void> {
+  async function action(path: string) {
     setBusy(true)
     setError("")
     try {
-      const next = await apiMutation<DashboardSnapshot>(
+      const s = await apiMutation<DashboardSnapshot>(
         projectApi(projectId, path),
         "POST",
       )
-      setSnapshot(next)
-      setQueue(next.scheduler?.queued ?? [])
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setSnapshot(s)
+      setQueue(s.scheduler?.queued ?? [])
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e))
     } finally {
       setBusy(false)
     }
   }
 
-  async function onDragEnd(event: DragEndEvent): Promise<void> {
+  async function onDragEnd(event: DragEndEvent) {
     if (!event.over || event.active.id === event.over.id) return
-    const oldIndex = queue.findIndex(
-      (item) => item.challengeId === event.active.id,
+    const oi = queue.findIndex((i) => i.challengeId === event.active.id)
+    const ni = queue.findIndex((i) => i.challengeId === event.over?.id)
+    if (oi < 0 || ni < 0) return
+    const m = queue[oi]
+    if (!m) return
+    // 先乐观更新本地顺序，避免拖拽后闪烁
+    setQueue(
+      arrayMove(queue, oi, ni).map((i, idx) => ({ ...i, position: idx + 1 })),
     )
-    const newIndex = queue.findIndex(
-      (item) => item.challengeId === event.over?.id,
-    )
-    if (oldIndex < 0 || newIndex < 0) return
-    const moving = queue[oldIndex]
-    if (!moving) return
-    const optimistic = arrayMove(queue, oldIndex, newIndex).map(
-      (item, index) => ({ ...item, position: index + 1 }),
-    )
-    setQueue(optimistic)
     try {
-      const next = await apiMutation<DashboardSnapshot>(
+      const s = await apiMutation<DashboardSnapshot>(
         projectApi(
           projectId,
-          `/api/scheduler/queue/${encodeURIComponent(moving.challengeId)}`,
+          `/api/scheduler/queue/${encodeURIComponent(m.challengeId)}`,
         ),
         "PATCH",
         {
-          position: newIndex + 1,
-          expectedVersion: moving.version,
+          position: ni + 1,
+          expectedVersion: m.version,
           overrideBlockedLane: false,
         },
       )
-      setSnapshot(next)
-      setQueue(next.scheduler?.queued ?? [])
-    } catch (cause) {
-      setQueue(snapshot?.scheduler?.queued ?? [])
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setSnapshot(s)
+      setQueue(s.scheduler?.queued ?? [])
+    } catch (e) {
+      // version conflict 静默回退到服务端权威状态，不显示错误
+      void load().catch(() => {
+        setQueue(snapshot?.scheduler?.queued ?? [])
+      })
+      const msg = String(e instanceof Error ? e.message : e)
+      if (!msg.includes("version conflict")) {
+        setError(msg)
+      }
     }
   }
 
   if (!snapshot) {
     if (error) {
       return (
-        <div className="page">
+        <div className="page-container">
           <ErrorNotice message={error} />
-          <Button onClick={() => void load()}>重新同步</Button>
+          <Button className="mt-4" onClick={() => void load()}>
+            重试
+          </Button>
         </div>
       )
     }
-    return <Spinner label="正在同步比赛状态" />
+    return <Spinner label="同步比赛数据" />
   }
 
-  const recent = recentChallenges(snapshot.challenges, 8)
-  const visibleChallenges = sortChallenges(
+  const recent = recentChallenges(snapshot.challenges, 5)
+  const visible = sortChallenges(
     filterChallenges(snapshot.challenges, { query, statusFilter }),
   )
 
   return (
-    <div className="page project-dashboard">
-      <PageHeader
-        eyebrow={`${snapshot.overview.id} · LIVE CONTROL`}
-        title={snapshot.overview.name}
-        description={`${snapshot.overview.challenges} 道题目，最近同步于 ${relativeTime(snapshot.generatedAt)}。`}
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => void schedulerAction("/api/refresh")}
-              disabled={busy}
-            >
-              <Icon
-                icon="lucide:refresh-cw"
-                className={busy ? "animate-spin" : ""}
-                width="16"
-              />{" "}
-              同步
-            </Button>
-            <Button
-              onClick={() =>
-                void schedulerAction(
-                  snapshot.scheduler?.autoEnabled
-                    ? "/api/scheduler/auto/pause"
-                    : "/api/scheduler/auto/start",
-                )
+    <div className="page-container">
+      {/* Header */}
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            {snapshot.overview.id} · Live
+          </p>
+          <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+            {snapshot.overview.name}
+          </h1>
+          <p className="hero-desc mt-3 text-sm text-muted-foreground">
+            {snapshot.overview.challenges} 题 ·{" "}
+            {relativeTime(snapshot.generatedAt)}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => void action("/api/refresh")}
+            disabled={busy}
+            size="sm"
+          >
+            <Icon
+              icon="lucide:refresh-cw"
+              className={busy ? "animate-spin" : ""}
+              width="14"
+            />
+            同步
+          </Button>
+          <Button
+            size="sm"
+            onClick={() =>
+              void action(
+                snapshot.scheduler?.autoEnabled
+                  ? "/api/scheduler/auto/pause"
+                  : "/api/scheduler/auto/start",
+              )
+            }
+            disabled={busy || !snapshot.scheduler?.available}
+          >
+            <Icon
+              icon={
+                snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"
               }
-              disabled={busy || !snapshot.scheduler?.available}
-            >
-              <Icon
-                icon={
-                  snapshot.scheduler?.autoEnabled
-                    ? "lucide:pause"
-                    : "lucide:play"
-                }
-                width="16"
-              />
-              {snapshot.scheduler?.autoEnabled
-                ? "暂停自动调度"
-                : "启动自动调度"}
-            </Button>
-          </>
-        }
-      />
-      {error ? <ErrorNotice message={error} /> : null}
-      <div className="metric-grid">
-        {[
-          ["已解出", snapshot.stats.solved, "lucide:flag", "positive"],
-          ["执行中", snapshot.stats.active, "lucide:activity", "info"],
-          ["队列中", snapshot.stats.queued, "lucide:list-ordered", "warning"],
-          ["需处理", snapshot.stats.failed, "lucide:triangle-alert", "danger"],
-        ].map(([label, value, icon, tone]) => (
-          <Card className="metric-card" key={String(label)}>
-            <div className={`metric-icon metric-${tone}`}>
-              <Icon icon={String(icon)} width="19" />
-            </div>
-            <strong>{value}</strong>
-            <span>{label}</span>
-          </Card>
-        ))}
+              width="14"
+            />
+            {snapshot.scheduler?.autoEnabled ? "暂停调度" : "启动调度"}
+          </Button>
+        </div>
+      </header>
+
+      {error ? <ErrorNotice message={error} className="mb-6" /> : null}
+
+      {/* ── Stat cards ── */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="已解出"
+          value={snapshot.stats.solved}
+          icon="lucide:flag"
+          color="green"
+        />
+        <StatCard
+          label="执行中"
+          value={snapshot.stats.active}
+          icon="lucide:activity"
+          color="cyan"
+        />
+        <StatCard
+          label="队列中"
+          value={snapshot.stats.queued}
+          icon="lucide:list-ordered"
+          color="amber"
+        />
+        <StatCard
+          label="需处理"
+          value={snapshot.stats.failed}
+          icon="lucide:triangle-alert"
+          color="danger"
+        />
       </div>
-      <div className="dashboard-columns">
-        <Card className="panel queue-panel">
-          <div className="panel-heading">
+
+      {/* ── Announcement candidates ── */}
+      {snapshot.announcementCandidates.length > 0 ? (
+        <Card className="mb-6 p-0">
+          <div className="flex items-center justify-between border-b border-border px-5 py-3">
             <div>
-              <p className="eyebrow">SCHEDULER</p>
-              <h2>待执行队列</h2>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                Review
+              </p>
+              <h2 className="mt-0.5 font-semibold">待审核公告</h2>
             </div>
-            <Badge
-              tone={snapshot.scheduler?.autoEnabled ? "positive" : "neutral"}
-            >
-              {snapshot.scheduler?.autoEnabled ? "AUTO ON" : "AUTO OFF"}
+            <Badge tone="warning" className="text-[10px]">
+              {snapshot.announcementCandidates.length}
             </Badge>
           </div>
-          {queue.length ? (
-            <DndContext
-              sensors={sensors}
-              onDragEnd={(event) => void onDragEnd(event)}
-            >
-              <SortableContext
-                items={queue.map((item) => item.challengeId)}
-                strategy={verticalListSortingStrategy}
+          <div className="divide-y divide-border/60">
+            {snapshot.announcementCandidates.map((candidate) => (
+              <div
+                key={`${candidate.challengeId}:${candidate.key}`}
+                className="flex flex-wrap items-start justify-between gap-3 px-5 py-3"
               >
-                <div className="queue-list">
-                  {queue.map((entry) => (
-                    <SortableQueueItem
-                      key={entry.challengeId}
-                      entry={entry}
-                      challenge={challengeById.get(entry.challengeId)}
-                    />
-                  ))}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {candidate.challengeId}
+                    </span>
+                    <Badge className="text-[9px]">{candidate.kind}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm font-medium">{candidate.title}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                    {candidate.content}
+                  </p>
+                  <span className="mt-1 block text-[10px] text-muted-foreground">
+                    {candidate.publishedAt}
+                  </span>
                 </div>
-              </SortableContext>
-            </DndContext>
-          ) : (
-            <EmptyState
-              icon="lucide:list-checks"
-              title="队列为空"
-              description="启动自动调度，或从题目列表手动派发 Solver。"
-            />
-          )}
-        </Card>
-        <Card className="panel activity-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">CHALLENGES</p>
-              <h2>最近题目</h2>
-            </div>
-            <span className="panel-count">{snapshot.stats.total}</span>
-          </div>
-          <div className="challenge-list">
-            {recent.map((challenge) => (
-              <Link
-                key={challenge.id}
-                to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(challenge.id)}`}
-                className="challenge-row"
-              >
-                <div className="challenge-category">
-                  {challenge.category.slice(0, 3).toUpperCase()}
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      setError("")
+                      try {
+                        await apiMutation(
+                          projectApi(projectId, "/api/announcements/review"),
+                          "POST",
+                          {
+                            challengeId: candidate.challengeId,
+                            announcementKey: candidate.key,
+                            status: "approved",
+                          },
+                        )
+                        await load()
+                      } catch (e) {
+                        setError(String(e instanceof Error ? e.message : e))
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                  >
+                    <Icon icon="lucide:check" width="14" />
+                    批准
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      setError("")
+                      try {
+                        await apiMutation(
+                          projectApi(projectId, "/api/announcements/review"),
+                          "POST",
+                          {
+                            challengeId: candidate.challengeId,
+                            announcementKey: candidate.key,
+                            status: "rejected",
+                          },
+                        )
+                        await load()
+                      } catch (e) {
+                        setError(String(e instanceof Error ? e.message : e))
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                  >
+                    <Icon icon="lucide:x" width="14" />
+                    拒绝
+                  </Button>
                 </div>
-                <div className="challenge-copy">
-                  <strong>{challenge.title}</strong>
-                  <small>
-                    {challenge.score} pts · {challenge.progress}
-                  </small>
-                </div>
-                <Badge tone={toneForStatus(challenge.status)}>
-                  {STATUS_LABELS[challenge.status] ?? challenge.status}
-                </Badge>
-                <Icon icon="lucide:chevron-right" width="16" />
-              </Link>
+              </div>
             ))}
           </div>
         </Card>
-      </div>
-      <Card className="panel all-challenges-panel">
-        <div className="challenge-browser-heading">
-          <div>
-            <p className="eyebrow">ALL TARGETS</p>
-            <h2>全部题目</h2>
+      ) : null}
+
+      {/* ── Two columns ── */}
+      <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_1.5fr]">
+        {/* Queue */}
+        <Card className="flex min-h-0 flex-col p-0">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                Scheduler
+              </p>
+              <h2 className="mt-0.5 font-semibold">待执行队列</h2>
+            </div>
+            <Badge
+              tone={snapshot.scheduler?.autoEnabled ? "positive" : "neutral"}
+              className="text-[10px]"
+            >
+              {snapshot.scheduler?.autoEnabled ? "AUTO" : "MANUAL"}
+            </Badge>
           </div>
-          <div className="challenge-filters">
-            <div className="search-field">
-              <Icon icon="lucide:search" width="15" />
-              <span className="sr-only">搜索题目</span>
+          <div className="flex flex-1 flex-col p-3">
+            {queue.length > 0 ? (
+              <DndContext
+                sensors={sensors}
+                onDragEnd={(event) => void onDragEnd(event)}
+              >
+                <SortableContext
+                  items={queue.map((i) => i.challengeId)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="flex flex-col gap-1.5">
+                    {queue.map((e) => (
+                      <QueueItem
+                        key={e.challengeId}
+                        entry={e}
+                        challenge={byId.get(e.challengeId)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted/50">
+                  <Icon
+                    icon="lucide:list-checks"
+                    width="22"
+                    className="text-muted-foreground"
+                  />
+                </div>
+                <p className="mt-3 text-sm font-medium text-muted-foreground">
+                  队列为空
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  启动调度或手动派发题目
+                </p>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Recent */}
+        <Card className="flex min-h-0 flex-col p-0">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                Recent
+              </p>
+              <h2 className="mt-0.5 font-semibold">最近活跃</h2>
+            </div>
+            <span className="font-mono text-lg font-semibold tabular-nums text-muted-foreground">
+              {snapshot.stats.total}
+            </span>
+          </div>
+          <div className="flex-1 divide-y divide-border/60">
+            {recent.map((c) => (
+              <Link
+                key={c.id}
+                to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
+                className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted"
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border font-mono text-[10px] font-bold text-muted-foreground">
+                  {c.category.slice(0, 3).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium group-hover:text-primary transition-colors">
+                    {c.title}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {c.score} pts
+                    {c.status === "solved" && c.lastActivityAt
+                      ? ` · 解出 ${relativeTime(c.lastActivityAt)}`
+                      : ` · ${c.progress}`}
+                  </p>
+                </div>
+                <Badge
+                  tone={toneForStatus(c.status)}
+                  className="shrink-0 text-[10px]"
+                >
+                  {STATUS_LABELS[c.status] ?? c.status}
+                </Badge>
+                <Icon
+                  icon="lucide:chevron-right"
+                  width="13"
+                  className="shrink-0 text-muted-foreground/40"
+                />
+              </Link>
+            ))}
+            {snapshot.challenges.length > 5 && (
+              <a
+                href="#all"
+                className="flex items-center justify-center gap-1.5 px-5 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                全部 {snapshot.challenges.length} 题{" "}
+                <Icon icon="lucide:arrow-down" width="13" />
+              </a>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* ── All challenges table ── */}
+      <Card id="all" className="p-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              All Targets
+            </p>
+            <h2 className="mt-0.5 font-semibold">全部题目</h2>
+          </div>
+          <div className="flex w-full items-center gap-1 rounded-lg border border-border bg-background/40 p-1 sm:w-auto">
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-2 sm:w-52">
+              <Icon
+                icon="lucide:search"
+                width="14"
+                className="text-muted-foreground"
+              />
               <Input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索名称或分类"
-                className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索..."
+                className="h-8 min-w-0 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:bg-transparent focus-visible:ring-0"
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-8 w-32">
+              <SelectTrigger className="h-8 w-28 shrink-0 border-0 bg-muted/70 text-xs shadow-none">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="all">全部</SelectItem>
                 <SelectItem value="active">执行中</SelectItem>
                 <SelectItem value="queued">队列中</SelectItem>
                 <SelectItem value="pending">未调度</SelectItem>
@@ -377,46 +633,88 @@ export function ProjectPage(): React.ReactElement {
             </Select>
           </div>
         </div>
-        <div className="challenge-table">
-          <div className="challenge-table-header">
-            <span>题目</span>
-            <span>分类</span>
-            <span>分值</span>
-            <span>尝试</span>
-            <span>状态</span>
-            <span />
-          </div>
-          {visibleChallenges.map((challenge) => (
-            <Link
-              key={challenge.id}
-              to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(challenge.id)}`}
-              className="challenge-table-row"
-            >
-              <span>
-                <strong>{challenge.title}</strong>
-                <small>{challenge.progress}</small>
-              </span>
-              <span>{challenge.category}</span>
-              <span>{challenge.score}</span>
-              <span>{challenge.attempts}</span>
-              <span>
-                <Badge tone={toneForStatus(challenge.status)}>
-                  {STATUS_LABELS[challenge.status] ?? challenge.status}
-                </Badge>
-              </span>
-              <span>
-                <Icon icon="lucide:arrow-up-right" width="15" />
-              </span>
-            </Link>
-          ))}
-          {visibleChallenges.length === 0 ? (
-            <EmptyState
+        {visible.length === 0 ? (
+          <div className="flex flex-col items-center py-16 text-center">
+            <Icon
               icon="lucide:search-x"
-              title="没有匹配的题目"
-              description="调整关键词或状态筛选后重试。"
+              width="28"
+              className="text-muted-foreground/40"
             />
-          ) : null}
-        </div>
+            <p className="mt-3 text-sm text-muted-foreground">无匹配题目</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                  <th className="py-3 pl-5 pr-3 font-medium">题目</th>
+                  <th className="hidden py-3 px-3 font-medium md:table-cell">
+                    分类
+                  </th>
+                  <th className="hidden py-3 px-3 font-medium sm:table-cell">
+                    分值
+                  </th>
+                  <th className="hidden py-3 px-3 font-medium lg:table-cell">
+                    尝试
+                  </th>
+                  <th className="py-3 px-3 font-medium">状态</th>
+                  <th className="py-3 pr-5"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {visible.map((c) => (
+                  <tr
+                    key={c.id}
+                    className="cursor-pointer transition-colors hover:bg-muted"
+                    onClick={() => {
+                      window.location.href = `/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        window.location.href = `/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`
+                      }
+                    }}
+                    tabIndex={0}
+                    role="link"
+                  >
+                    <td className="py-3 pl-5 pr-3">
+                      <p className="text-sm font-medium">{c.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {c.status === "solved" && c.lastActivityAt
+                          ? `解出于 ${relativeTime(c.lastActivityAt)}`
+                          : c.progress}
+                      </p>
+                    </td>
+                    <td className="hidden py-3 px-3 text-sm text-muted-foreground md:table-cell">
+                      {c.category}
+                    </td>
+                    <td className="hidden py-3 px-3 font-mono text-sm tabular-nums text-muted-foreground sm:table-cell">
+                      {c.score}
+                    </td>
+                    <td className="hidden py-3 px-3 font-mono text-sm tabular-nums text-muted-foreground lg:table-cell">
+                      {c.attempts}
+                    </td>
+                    <td className="py-3 px-3">
+                      <Badge
+                        tone={toneForStatus(c.status)}
+                        className="text-[10px]"
+                      >
+                        {STATUS_LABELS[c.status] ?? c.status}
+                      </Badge>
+                    </td>
+                    <td className="py-3 pr-5">
+                      <Icon
+                        icon="lucide:chevron-right"
+                        width="14"
+                        className="text-muted-foreground/40"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )

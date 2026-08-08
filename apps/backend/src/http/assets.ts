@@ -88,5 +88,5 @@ async function collectFiles(
 }
 
 function relativeRoute(base: string, absolute: string): string {
-  return absolute.slice(base.length).replaceAll("\\", "/")
+  return absolute.slice(base.length).replaceAll("\\", "/").replace(/^\//, "")
 }

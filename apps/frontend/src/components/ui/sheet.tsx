@@ -25,7 +25,7 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-4 border-r p-4 shadow-lg",
+          "bg-sidebar data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border shadow-xl outline-none",
           className,
         )}
         {...props}
@@ -44,7 +44,7 @@ function SheetCloseButton({
     <SheetPrimitive.Close
       data-slot="sheet-close"
       className={cn(
-        "text-muted-foreground hover:text-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100",
+        "text-muted-foreground hover:text-foreground absolute top-3 right-3 flex size-8 items-center justify-center rounded-lg opacity-70 transition-all hover:bg-muted hover:opacity-100",
         className,
       )}
       {...props}

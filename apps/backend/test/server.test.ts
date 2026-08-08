@@ -31,6 +31,29 @@ describe("WebUI 服务集成", () => {
     expect(home.headers.get("content-type")).toContain("text/html")
   })
 
+  it("静态资源：dist 产物按单斜杠路径提供，index.html 映射到 /", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const dist = await mkdtemp(join(tmpdir(), "webui-dist-"))
+    await writeFile(join(dist, "index.html"), "<html>index</html>")
+    await writeFile(join(dist, "app.js"), "console.log(1)")
+    await writeFile(join(dist, "app.css"), "body{}")
+    const { app } = createWebUiApp({
+      project: new FakeDashboardProject(),
+      frontendDist: dist,
+    })
+    const home = await app.request("/")
+    expect(await home.text()).toBe("<html>index</html>")
+    const script = await app.request("/app.js")
+    expect(script.status).toBe(200)
+    expect(await script.text()).toBe("console.log(1)")
+    expect(script.headers.get("content-type")).toContain("javascript")
+    const style = await app.request("/app.css")
+    expect(style.status).toBe(200)
+    expect(await style.text()).toBe("body{}")
+  })
+
   it("createWebUiApp 与 startWebUi 共享同一条健康路径", async () => {
     const { app } = createWebUiApp({
       project: new FakeDashboardProject(),

@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react"
-import type { FormEvent } from "react"
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import {
   Button,
   EmptyState,
@@ -10,6 +10,7 @@ import {
 import type { ConversationTarget } from "../../hooks/useChallengeDetails.ts"
 import { useConversation } from "../../hooks/useConversation.ts"
 import { absoluteTime } from "../../lib/time.ts"
+import { cn } from "../../lib/utils.ts"
 import { MessageBody, MessageMeta } from "./MessageBody.tsx"
 
 function targetLabel(target: ConversationTarget): string {
@@ -20,10 +21,6 @@ function targetSubLabel(target: ConversationTarget, attempt: number): string {
   return target.type === "solver" ? `Attempt ${attempt}` : target.subagent.role
 }
 
-/**
- * 结构化 Pi 会话面板：读取持久化对话、渲染消息流、发送/引导消息。
- * Solver 对话与 SubAgent steer 共用同一组件。
- */
 export function ConversationPanel({
   target,
   attempt,
@@ -44,17 +41,76 @@ export function ConversationPanel({
   const { conversation, loading, error, message, sending, setMessage, send } =
     useConversation({ conversationUrl, sendUrl, hasConversation }, onChanged)
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [newBelow, setNewBelow] = useState(0)
+  const prevLenRef = useRef(0)
+
+  const messages = conversation?.messages ?? []
+
+  // Track message count and auto-scroll
+  useEffect(() => {
+    const currentLen = messages.length
+    if (currentLen > prevLenRef.current && prevLenRef.current > 0) {
+      // New messages arrived
+      const el = scrollRef.current
+      if (el) {
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        if (atBottom) {
+          // Auto scroll to bottom
+          requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight
+          })
+        } else {
+          // Not at bottom — increment new message counter
+          setNewBelow((n) => n + (currentLen - prevLenRef.current))
+        }
+      }
+    } else if (currentLen > 0 && prevLenRef.current === 0) {
+      // Initial load — scroll to bottom
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+        }
+      })
+    }
+    prevLenRef.current = currentLen
+  }, [messages.length])
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+      setNewBelow(0)
+    }
+  }, [])
+
+  // Reset new message counter when user manually scrolls to bottom
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (el) {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+      if (atBottom && newBelow > 0) {
+        setNewBelow(0)
+      }
+    }
+  }, [newBelow])
+
   async function onSubmit(event: FormEvent): Promise<void> {
     event.preventDefault()
     await send(message)
   }
 
-  const messages = conversation?.messages ?? []
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="border-border/60 flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5">
+      {/* Header bar */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full">
+          <span
+            className={cn(
+              "flex size-8 shrink-0 items-center justify-center rounded-full border text-primary",
+              "border-primary/30 bg-primary/5",
+            )}
+          >
             <Icon
               icon={target.type === "solver" ? "lucide:bot" : "lucide:network"}
               width="17"
@@ -64,7 +120,7 @@ export function ConversationPanel({
             <strong className="block truncate text-sm">
               {targetLabel(target)}
             </strong>
-            <small className="text-muted-foreground block truncate text-xs">
+            <small className="block truncate text-xs text-muted-foreground">
               {targetSubLabel(target, attempt)}
             </small>
           </div>
@@ -77,9 +133,16 @@ export function ConversationPanel({
           </Button>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+
+      {/* Messages area */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        style={{ scrollbarGutter: "stable" }}
+      >
         {loading ? <Spinner label="读取 Pi 会话" /> : null}
-        {error ? <ErrorNotice message={error} /> : null}
+        {error ? <ErrorNotice message={error} className="mb-3" /> : null}
         {!loading && !hasConversation ? (
           <EmptyState
             icon="lucide:message-circle-dashed"
@@ -91,11 +154,12 @@ export function ConversationPanel({
           {messages.map(({ entryId, message: item, timestamp }) => (
             <article
               key={entryId}
-              className={
+              className={cn(
+                "max-w-[85%] rounded-2xl border px-4 py-2.5 shadow-sm",
                 item.role === "user"
-                  ? "border-border/60 bg-muted/30 max-w-[85%] self-end rounded-lg border px-3 py-2"
-                  : "border-border/60 max-w-[85%] self-start rounded-lg border bg-background/40 px-3 py-2"
-              }
+                  ? "self-end border-border bg-muted text-foreground"
+                  : "self-start border-border bg-card",
+              )}
             >
               <MessageMeta
                 role={item.role}
@@ -106,8 +170,24 @@ export function ConversationPanel({
           ))}
         </div>
       </div>
+
+      {/* New messages popover */}
+      {newBelow > 0 ? (
+        <div className="flex shrink-0 justify-center pb-1">
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-all hover:bg-muted hover:border-primary/30"
+          >
+            <Icon icon="lucide:arrow-down" width="13" />
+            {newBelow} 条新消息
+          </button>
+        </div>
+      ) : null}
+
+      {/* Input area */}
       <form
-        className="border-border/60 shrink-0 border-t p-3"
+        className="shrink-0 border-t border-border p-3"
         onSubmit={(event) => void onSubmit(event)}
       >
         <div className="flex items-end gap-2">

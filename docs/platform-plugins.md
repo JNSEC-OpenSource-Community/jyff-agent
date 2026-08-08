@@ -6,8 +6,11 @@ the first/legacy project in `.ctf-agent/project-config.json` and additional proj
 legacy fallback. Each plugin parses its own `config` object. Credentials are referenced by secret
 name and never persisted in the project configuration.
 
-The WebUI renders setup fields from each plugin's `setup` descriptor. It can test a temporary
-connection before replacing the selected Project runtime. Secrets entered there are stored in
+The WebUI renders both the new-contest and contest-settings forms from each plugin's `setup`
+descriptor. Platform and authentication strategy selectors are searchable comboboxes; config and
+secret fields come from `fields` and `authStrategies`, so adding a plugin does not require a
+platform-specific React form. The UI can test a temporary connection before replacing the selected
+Project runtime. Secrets entered there are stored in
 `.ctf-agent/secrets.json` with service-only file permissions and a key derived from both the Project
 ID and plugin secret name, so multiple Projects can use different platform accounts. Legacy
 unscoped keys remain a read-only fallback. The runtime resolves credentials only from this Secret
@@ -92,7 +95,9 @@ GZCTF notice types are normalized without matching challenges: `FirstBlood`, `Se
 `solve_broadcast`, or `unknown`). Platform adapters do not decide which challenge an announcement
 belongs to. Core first filters explicit solve broadcasts and conservative title/action patterns,
 then performs deterministic NFKC/case/whitespace-normalized full-title or tokenized challenge-ID
-matching. Very short titles require quoting or brackets, and duplicate normalized titles remain
+matching. Common first/second/third-blood broadcasts and new-challenge notices are discarded before
+manual review, leaving only hints or changes that may affect solving. Very short titles require
+quoting or brackets, and duplicate normalized titles remain
 ambiguous matches rather than being silently assigned to one challenge.
 Remote-environment enumeration includes instances observed by the current plugin process because
 GZCTF exposes challenge-scoped status but no player-wide instance-list endpoint.

@@ -1,496 +1,604 @@
 import type {
+  ControlPlaneProjectSnapshot,
   ControlPlaneSetupSnapshot,
   PlatformConnectionTest,
   ProjectConfig,
 } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { useApp } from "../app/AppProvider.tsx"
 import {
   Badge,
   Button,
   Card,
+  Combobox,
   ConfirmDialog,
   EmptyState,
   ErrorNotice,
   Input,
-  PageHeader,
+  PlatformSetupForm,
   Spinner,
 } from "../components/index.ts"
 import { apiMutation, apiRequest } from "../lib/api.ts"
+import { cn } from "../lib/utils.ts"
 
-export function ProjectsPage(): React.ReactElement {
+const ARCHIVED_KEY = "ctf-agent-archived-projects"
+
+function loadArchived(): Set<string> {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_KEY)
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw)
+    if (Array.isArray(arr) && arr.every((x) => typeof x === "string")) {
+      return new Set(arr)
+    }
+  } catch {
+    // 忽略
+  }
+  return new Set()
+}
+
+function saveArchived(ids: Set<string>) {
+  localStorage.setItem(ARCHIVED_KEY, JSON.stringify([...ids]))
+}
+
+/* ═══════════════════════════ Project list ═══════════════════════════ */
+
+export function ProjectsPage() {
   const { projects, loading, refreshProjects } = useApp()
-  const [deletingProject, setDeletingProject] = useState<
-    (typeof projects)[number] | null
-  >(null)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const [deleteError, setDeleteError] = useState("")
+  const [archived, setArchived] = useState<Set<string>>(loadArchived)
+  const [deleting, setDeleting] = useState<(typeof projects)[number] | null>(
+    null,
+  )
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
 
-  async function deleteProject(): Promise<void> {
-    if (!deletingProject) return
-    setDeleteBusy(true)
-    setDeleteError("")
+  const toggleArchived = useCallback((id: string) => {
+    setArchived((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      saveArchived(next)
+      return next
+    })
+  }, [])
+
+  const running = useMemo(
+    () => projects.filter((p) => !archived.has(p.id)),
+    [projects, archived],
+  )
+  const archivedList = useMemo(
+    () => projects.filter((p) => archived.has(p.id)),
+    [projects, archived],
+  )
+
+  async function del() {
+    if (!deleting) return
+    setBusy(true)
+    setErr("")
     try {
       await apiMutation(
-        `/api/projects/${encodeURIComponent(deletingProject.id)}`,
+        `/api/projects/${encodeURIComponent(deleting.id)}`,
         "DELETE",
       )
+      const next = new Set(archived)
+      next.delete(deleting.id)
+      saveArchived(next)
+      setArchived(next)
       await refreshProjects()
-      setDeletingProject(null)
-    } catch (cause) {
-      setDeleteError(cause instanceof Error ? cause.message : String(cause))
+      setDeleting(null)
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e))
     } finally {
-      setDeleteBusy(false)
+      setBusy(false)
     }
   }
 
-  if (loading) return <Spinner label="正在读取项目注册表" />
+  if (loading) return <Spinner label="读取比赛列表" />
 
   return (
-    <div className="page page-projects">
-      <PageHeader
-        eyebrow="WORKSPACES"
-        title="比赛项目"
-        description="每个项目拥有独立的运行状态、调度队列与 Sandbox 工作区。"
-        actions={
-          <Button asChild>
-            <Link to="/projects/new">
-              <Icon icon="lucide:plus" width="17" /> 新建项目
-            </Link>
-          </Button>
-        }
-      />
-      {deleteError ? <ErrorNotice message={deleteError} /> : null}
+    <div className="page-container">
+      <header className="mb-10 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            Workspaces
+          </p>
+          <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+            比赛列表
+          </h1>
+          <p className="hero-desc mt-3 max-w-xl text-sm text-muted-foreground">
+            每场比赛都有独立的调度器、Sandbox 与工作区。
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/projects/new">
+            <Icon icon="lucide:plus" width="15" />
+            新建比赛
+          </Link>
+        </Button>
+      </header>
+
+      {err ? <ErrorNotice message={err} className="mb-6" /> : null}
+
       {projects.length === 0 ? (
-        <Card>
+        <Card className="relative overflow-hidden py-24">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
           <EmptyState
             icon="lucide:radar"
-            title="还没有比赛项目"
-            description="连接 CTFd 或 GZCTF 后，Agent 才能同步题目并开始调度。"
+            title="暂无比赛"
+            description="连接 CTFd 或 GZCTF 后，Agent 自动同步题目并开始调度。"
             action={
               <Button asChild>
-                <Link to="/projects/new">连接第一个平台</Link>
+                <Link to="/projects/new">连接平台</Link>
               </Button>
             }
           />
         </Card>
       ) : (
-        <div className="project-grid">
-          {projects.map((project, index) => (
-            <article key={project.id} className="project-card">
-              <Link
-                className="project-card-main"
-                to={`/projects/${encodeURIComponent(project.id)}`}
-              >
-                <div className="project-card-index">
-                  {String(index + 1).padStart(2, "0")}
-                </div>
-                <div className="project-card-platform">
-                  {project.platformId}
-                </div>
-                <h2>{project.name}</h2>
-                <p className="project-card-id">{project.id}</p>
-                <div className="project-card-footer">
-                  <Badge
-                    tone={project.phase === "ready" ? "positive" : "warning"}
-                  >
-                    {project.phase === "ready" ? "已连接" : "待恢复"}
-                  </Badge>
-                  <span>
-                    进入作战面板
-                    <Icon icon="lucide:arrow-up-right" width="16" />
-                  </span>
-                </div>
-              </Link>
-              <Button
-                className="project-card-delete"
-                variant="ghost"
-                size="icon"
-                aria-label={`删除 ${project.name}`}
-                onClick={() => {
-                  setDeleteError("")
-                  setDeletingProject(project)
-                }}
-              >
-                <Icon icon="lucide:trash-2" width="16" />
-              </Button>
-            </article>
-          ))}
-        </div>
+        <>
+          {running.length > 0 ? (
+            <section className="mb-10">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="flex size-6 items-center justify-center rounded-md bg-green/10 text-green">
+                  <Icon icon="lucide:play" width="13" />
+                </span>
+                <h2 className="text-sm font-semibold text-muted-foreground">
+                  Running · {running.length}
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {running.map((p, i) => (
+                  <ProjectCard
+                    key={p.id}
+                    index={i}
+                    project={p}
+                    isArchived={false}
+                    onDelete={() => {
+                      setErr("")
+                      setDeleting(p)
+                    }}
+                    onToggleArchived={() => toggleArchived(p.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {archivedList.length > 0 ? (
+            <section>
+              <div className="mb-4 flex items-center gap-3">
+                <span className="flex size-6 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                  <Icon icon="lucide:archive" width="13" />
+                </span>
+                <h2 className="text-sm font-semibold text-muted-foreground">
+                  Archived · {archivedList.length}
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 gap-5 opacity-60 md:grid-cols-2 xl:grid-cols-3">
+                {archivedList.map((p, i) => (
+                  <ProjectCard
+                    key={p.id}
+                    index={i}
+                    project={p}
+                    isArchived={true}
+                    onDelete={() => {
+                      setErr("")
+                      setDeleting(p)
+                    }}
+                    onToggleArchived={() => toggleArchived(p.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </>
       )}
+
       <ConfirmDialog
-        open={deletingProject !== null}
-        onOpenChange={(open) => {
-          if (!open && !deleteBusy) setDeletingProject(null)
+        open={deleting !== null}
+        onOpenChange={(o) => {
+          if (!o && !busy) setDeleting(null)
         }}
-        title={`删除 ${deletingProject?.name ?? "Project"}？`}
-        description="这会停止该项目的调度器和 Agent，并永久删除 Run、对话、题目工作区、项目配置与独立凭据。全局模型配置和其他项目不会受到影响。"
-        confirmLabel="永久删除"
-        busy={deleteBusy}
-        onConfirm={() => void deleteProject()}
+        title={`删除 ${deleting?.name}？`}
+        description="永久删除此比赛的调度器、Agent、Run、对话、工作区与配置。全局模型不受影响。"
+        confirmLabel="删除"
+        busy={busy}
+        onConfirm={() => void del()}
       />
     </div>
   )
 }
 
-interface SetupField {
-  key: string
-  label: string
-  type: "text" | "url" | "integer"
-  required: boolean
-  placeholder?: string
-  minimum?: number
-  maximum?: number
+function ProjectCard({
+  index,
+  project,
+  isArchived = false,
+  onDelete,
+  onToggleArchived,
+}: {
+  index: number
+  project: ControlPlaneProjectSnapshot
+  isArchived?: boolean
+  onDelete(): void
+  onToggleArchived(): void
+}) {
+  const ready = project.phase === "ready"
+  return (
+    <Card className="surface-hover group relative flex flex-col overflow-hidden p-0">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+      <Link
+        to={`/projects/${encodeURIComponent(project.id)}`}
+        className="block flex-1 p-5"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+            {String(index + 1).padStart(2, "0")}
+          </span>
+          <Badge tone={ready ? "positive" : "warning"} className="text-[10px]">
+            {ready ? "已连接" : "待恢复"}
+          </Badge>
+        </div>
+        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
+          {project.platformId}
+        </p>
+        <h3 className="mt-1.5 truncate text-[17px] font-semibold tracking-tight">
+          {project.name}
+        </h3>
+        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+          {project.id}
+        </p>
+      </Link>
+      <div className="flex items-center justify-between border-t border-border bg-muted px-5 py-3">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              ready ? "bg-green animate-pulse" : "bg-amber",
+            )}
+          />
+          {ready ? "运行正常" : "需要关注"}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-all hover:-translate-y-px hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            aria-label={isArchived ? "取消归档" : "归档"}
+            onClick={(e) => {
+              e.preventDefault()
+              onToggleArchived()
+            }}
+          >
+            <Icon
+              icon={isArchived ? "lucide:archive-restore" : "lucide:archive"}
+              width="13"
+            />
+          </button>
+          <button
+            type="button"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+            aria-label={`删除 ${project.name}`}
+            onClick={(e) => {
+              e.preventDefault()
+              onDelete()
+            }}
+          >
+            <Icon icon="lucide:trash-2" width="13" />
+          </button>
+        </div>
+      </div>
+    </Card>
+  )
 }
 
-interface SecretField {
-  name: string
-  label: string
-  type: "text" | "password" | "token" | "cookie"
-  required: boolean
-}
+/* ═══════════════════════════ Create project ═══════════════════════════ */
 
-interface SetupStrategy {
-  id: string
-  label: string
-  config: Record<string, unknown>
-  secrets: SecretField[]
-}
-
-interface SetupPlatform {
-  id: string
-  setup: {
-    label: string
-    description: string
-    defaultConfig: Record<string, unknown>
-    fields: SetupField[]
-    authStrategies: SetupStrategy[]
-  }
-}
-
-function slugify(value: string): string {
-  return value
+type SP = ControlPlaneSetupSnapshot["platforms"][number]
+const slg = (v: string) =>
+  v
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)
-}
 
-export function NewProjectPage(): React.ReactElement {
-  const navigate = useNavigate()
+export function NewProjectPage() {
+  const nav = useNavigate()
   const { refreshProjects } = useApp()
   const [setup, setSetup] = useState<ControlPlaneSetupSnapshot | null>(null)
-  const [platformId, setPlatformId] = useState("")
-  const [strategyId, setStrategyId] = useState("")
-  const [projectId, setProjectId] = useState("")
-  const [projectName, setProjectName] = useState("")
-  const [identityTouched, setIdentityTouched] = useState(false)
-  const [config, setConfig] = useState<Record<string, unknown>>({})
+  const [platId, setPlatId] = useState("")
+  const [stratId, setStratId] = useState("")
+  const [pid, setPid] = useState("")
+  const [pname, setPname] = useState("")
+  const [touched, setTouched] = useState(false)
+  const [cfg, setCfg] = useState<Record<string, unknown>>({})
   const [secrets, setSecrets] = useState<Record<string, string>>({})
-  const [testResult, setTestResult] = useState<PlatformConnectionTest | null>(
-    null,
-  )
-  const [error, setError] = useState("")
+  const [testR, setTestR] = useState<PlatformConnectionTest | null>(null)
+  const [err, setErr] = useState("")
   const [busy, setBusy] = useState<"test" | "create" | null>(null)
 
   useEffect(() => {
     void apiRequest<ControlPlaneSetupSnapshot>("/api/control-plane")
-      .then((snapshot) => {
-        setSetup(snapshot)
-        const first = snapshot.platforms[0] as SetupPlatform | undefined
-        if (first) {
-          const firstStrategy = first.setup.authStrategies[0]
-          setPlatformId(first.id)
-          setStrategyId(firstStrategy?.id ?? "")
-          setConfig({
-            ...first.setup.defaultConfig,
-            ...(firstStrategy?.config ?? {}),
-          })
+      .then((s) => {
+        setSetup(s)
+        const f = s.platforms[0]
+        if (f) {
+          const fs = f.setup.authStrategies[0]
+          setPlatId(f.id)
+          setStratId(fs?.id ?? "")
+          setCfg({ ...f.setup.defaultConfig, ...(fs?.config ?? {}) })
         }
       })
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : String(cause)),
-      )
+      .catch((e) => setErr(String(e instanceof Error ? e.message : e)))
   }, [])
 
-  const platforms = (setup?.platforms ?? []) as SetupPlatform[]
-  const platform = platforms.find((candidate) => candidate.id === platformId)
-  const strategy = platform?.setup.authStrategies.find(
-    (candidate) => candidate.id === strategyId,
-  )
-
-  function selectPlatform(next: SetupPlatform): void {
-    setPlatformId(next.id)
-    const nextStrategy = next.setup.authStrategies[0]
-    setStrategyId(nextStrategy?.id ?? "")
-    setConfig({ ...next.setup.defaultConfig, ...(nextStrategy?.config ?? {}) })
+  const plats = setup?.platforms ?? []
+  const plat = plats.find((c) => c.id === platId)
+  function pickPlat(p: SP) {
+    setPlatId(p.id)
+    const s = p.setup.authStrategies[0]
+    setStratId(s?.id ?? "")
+    setCfg({ ...p.setup.defaultConfig, ...(s?.config ?? {}) })
     setSecrets({})
-    setTestResult(null)
-  }
-
-  function selectStrategy(nextId: string): void {
-    const next = platform?.setup.authStrategies.find(
-      (item) => item.id === nextId,
-    )
-    setStrategyId(nextId)
-    if (next) setConfig((current) => ({ ...current, ...next.config }))
-    setSecrets({})
-    setTestResult(null)
+    setTestR(null)
   }
 
   const payload = useMemo(() => {
-    const safeName = projectName.trim() || "待连接比赛"
-    const safeId = projectId.trim() || `contest-${Date.now()}`
-    const project: ProjectConfig = {
+    const c: ProjectConfig = {
       version: 1,
-      project: { id: safeId, name: safeName },
-      platform: { plugin: platformId, config },
+      project: {
+        id: pid.trim() || `c-${Date.now()}`,
+        name: pname.trim() || "新比赛",
+      },
+      platform: { plugin: platId, config: cfg },
       sandbox: {
         image: "ctf-agent-solver:latest",
         privileged: false,
         networkMode: "bridge",
       },
     }
-    return { config: project, secrets }
-  }, [config, platformId, projectId, projectName, secrets])
+    return { config: c, secrets }
+  }, [cfg, platId, pid, pname, secrets])
 
-  async function testConnection(): Promise<void> {
+  async function testConn() {
     setBusy("test")
-    setError("")
+    setErr("")
     try {
-      const result = await apiMutation<PlatformConnectionTest>(
+      const r = await apiMutation<PlatformConnectionTest>(
         "/api/projects/test",
         "POST",
         payload,
       )
-      setTestResult(result)
-      if (!identityTouched) {
-        setProjectName(result.overview.name)
-        setProjectId(slugify(result.overview.name) || result.overview.id)
+      setTestR(r)
+      if (!touched) {
+        setPname(r.overview.name)
+        setPid(slg(r.overview.name) || r.overview.id)
       }
-    } catch (cause) {
-      setTestResult(null)
-      setError(cause instanceof Error ? cause.message : String(cause))
+    } catch (e) {
+      setTestR(null)
+      setErr(String(e instanceof Error ? e.message : e))
     } finally {
       setBusy(null)
     }
   }
 
-  async function createProject(): Promise<void> {
+  async function submit() {
     setBusy("create")
-    setError("")
+    setErr("")
     try {
-      const result = await apiMutation<{
-        project: { projectId: string | null }
-      }>("/api/projects", "POST", payload)
-      await refreshProjects()
-      navigate(
-        `/projects/${encodeURIComponent(result.project.projectId ?? payload.config.project.id)}`,
+      const r = await apiMutation<{ project: { projectId: string | null } }>(
+        "/api/projects",
+        "POST",
+        payload,
       )
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      await refreshProjects()
+      nav(
+        `/projects/${encodeURIComponent(
+          r.project.projectId ?? payload.config.project.id,
+        )}`,
+      )
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e))
     } finally {
       setBusy(null)
     }
   }
 
-  if (!setup) return <Spinner label="正在读取平台插件" />
+  if (!setup) return <Spinner label="加载平台插件" />
 
   return (
-    <div className="page page-narrow">
-      <PageHeader
-        eyebrow="NEW WORKSPACE"
-        title="连接比赛平台"
-        description="先验证连接；成功后自动从比赛名称生成项目 ID 与显示名称，你仍可以覆盖。"
-      />
-      {error ? <ErrorNotice message={error} /> : null}
-      <div className="setup-layout">
-        <Card className="form-card">
-          <section className="form-section">
-            <div className="section-number">01</div>
-            <div className="section-content">
-              <h2>平台类型</h2>
-              <div className="choice-grid">
-                {platforms.map((candidate) => (
-                  <button
-                    type="button"
-                    key={candidate.id}
-                    className={
-                      candidate.id === platformId
-                        ? "choice-card is-selected"
-                        : "choice-card"
-                    }
-                    onClick={() => selectPlatform(candidate)}
-                  >
-                    <strong>{candidate.setup.label}</strong>
-                    <span>{candidate.setup.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-          <section className="form-section">
-            <div className="section-number">02</div>
-            <div className="section-content">
-              <h2>连接信息</h2>
-              <div className="form-grid">
-                {platform?.setup.fields.map((field) => (
-                  <div key={field.key} className="field">
-                    <span>
-                      {field.label}
-                      {field.required ? " *" : ""}
-                    </span>
-                    <Input
-                      type={field.type === "integer" ? "number" : field.type}
-                      required={field.required}
-                      min={field.minimum}
-                      max={field.maximum}
-                      placeholder={field.placeholder}
-                      value={String(config[field.key] ?? "")}
-                      onChange={(event) =>
-                        setConfig((current) => ({
-                          ...current,
-                          [field.key]:
-                            field.type === "integer"
-                              ? Number(event.target.value)
-                              : event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-              {platform && platform.setup.authStrategies.length > 1 ? (
-                <fieldset className="segmented-control">
-                  <legend className="sr-only">认证方式</legend>
-                  {platform.setup.authStrategies.map((candidate) => (
-                    <button
-                      type="button"
-                      key={candidate.id}
-                      className={candidate.id === strategyId ? "is-active" : ""}
-                      onClick={() => selectStrategy(candidate.id)}
-                    >
-                      {candidate.label}
-                    </button>
-                  ))}
-                </fieldset>
-              ) : null}
-              <div className="form-grid">
-                {strategy?.secrets.map((field) => (
-                  <div key={field.name} className="field">
-                    <span>
-                      {field.label}
-                      {field.required ? " *" : ""}
-                    </span>
-                    <input
-                      type={
-                        field.type === "password" ||
-                        field.type === "token" ||
-                        field.type === "cookie"
-                          ? "password"
-                          : "text"
-                      }
-                      autoComplete="off"
-                      value={secrets[field.name] ?? ""}
-                      onChange={(event) =>
-                        setSecrets((current) => ({
-                          ...current,
-                          [field.name]: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void testConnection()}
-                disabled={busy !== null}
-              >
-                <Icon
-                  icon={
-                    busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"
-                  }
-                  className={busy === "test" ? "animate-spin" : ""}
-                  width="17"
-                />
-                验证连接
-              </Button>
-              {testResult ? (
-                <div className="connection-result">
-                  <Icon icon="lucide:circle-check" width="18" />
-                  <span>
-                    <strong>{testResult.overview.name}</strong> ·{" "}
-                    {testResult.overview.challenges} 题 ·{" "}
-                    {testResult.overview.announcements} 条公告
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          </section>
-          <section className="form-section">
-            <div className="section-number">03</div>
-            <div className="section-content">
-              <h2>项目身份</h2>
-              <div className="form-grid form-grid-two">
-                <div className="field">
-                  <span>项目 ID</span>
-                  <Input
-                    value={projectId}
-                    placeholder="自动生成"
-                    onChange={(event) => {
-                      setIdentityTouched(true)
-                      setProjectId(event.target.value)
-                    }}
-                  />
-                  <small>用于路由与持久化命名空间，创建后不应修改。</small>
-                </div>
-                <div className="field">
-                  <span>显示名称</span>
-                  <Input
-                    value={projectName}
-                    placeholder="自动读取比赛名称"
-                    onChange={(event) => {
-                      setIdentityTouched(true)
-                      setProjectName(event.target.value)
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-          <div className="form-actions">
-            <Button variant="ghost" asChild>
-              <Link to="/">取消</Link>
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void createProject()}
-              disabled={
-                !testResult ||
-                !projectId.trim() ||
-                !projectName.trim() ||
-                busy !== null
-              }
-            >
-              {busy === "create" ? (
-                <Icon
-                  icon="lucide:loader-circle"
-                  className="animate-spin"
-                  width="17"
-                />
-              ) : (
-                <Icon icon="lucide:arrow-right" width="17" />
-              )}
-              创建并进入项目
-            </Button>
+    <div className="page-container">
+      <header className="mb-8">
+        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          New Workspace
+        </p>
+        <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+          连接比赛平台
+        </h1>
+        <p className="hero-desc mt-3 max-w-xl text-sm text-muted-foreground">
+          验证成功后自动从平台读取比赛信息并生成配置。
+        </p>
+      </header>
+
+      {err ? <ErrorNotice message={err} className="mb-6" /> : null}
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-border bg-muted px-6 py-4">
+          <div className="flex items-center gap-3">
+            <StepBadge n={1} active={true} />
+            <h2 className="font-semibold">平台类型</h2>
           </div>
-        </Card>
-      </div>
+          <p className="mt-1 pl-10 text-sm text-muted-foreground">
+            选择要接入的比赛平台插件。
+          </p>
+        </div>
+        <div className="p-6">
+          <Combobox
+            value={platId}
+            onChange={(id) => {
+              const next = plats.find((item) => item.id === id)
+              if (next) pickPlat(next)
+            }}
+            options={plats.map((item) => ({
+              value: item.id,
+              label: item.setup.label,
+              description: item.setup.description,
+            }))}
+            placeholder="选择平台插件"
+            searchPlaceholder="搜索平台插件…"
+            emptyText="没有可用的平台插件"
+          />
+          {plat ? (
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {plat.setup.description}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="border-t border-border bg-muted px-6 py-4">
+          <div className="flex items-center gap-3">
+            <StepBadge n={2} active={Boolean(platId)} />
+            <h2 className="font-semibold">连接信息</h2>
+          </div>
+          <p className="mt-1 pl-10 text-sm text-muted-foreground">
+            填写站点、认证和比赛信息，并验证连接。
+          </p>
+        </div>
+        <section className="space-y-5 p-6">
+          {plat ? (
+            <PlatformSetupForm
+              platform={plat}
+              strategyId={stratId}
+              config={cfg}
+              secrets={secrets}
+              onStrategyChange={(id, defaults) => {
+                setStratId(id)
+                setCfg((current) => ({ ...current, ...defaults }))
+                setSecrets({})
+                setTestR(null)
+              }}
+              onConfigChange={(next) => {
+                setCfg(next)
+                setTestR(null)
+              }}
+              onSecretsChange={(next) => {
+                setSecrets(next)
+                setTestR(null)
+              }}
+            />
+          ) : null}
+
+          <Button
+            variant="secondary"
+            onClick={() => void testConn()}
+            disabled={busy !== null}
+          >
+            <Icon
+              icon={
+                busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"
+              }
+              className={busy === "test" ? "animate-spin" : ""}
+              width="14"
+            />
+            验证连接
+          </Button>
+
+          {testR ? (
+            <div className="flex items-center gap-3 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm text-green">
+              <Icon icon="lucide:circle-check" width="17" />
+              <span>
+                <strong>{testR.overview.name}</strong> ·{" "}
+                {testR.overview.challenges} 题 · {testR.overview.announcements}{" "}
+                公告
+              </span>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="border-t border-border bg-muted px-6 py-4">
+          <div className="flex items-center gap-3">
+            <StepBadge n={3} active={testR !== null} />
+            <h2 className="font-semibold">比赛标识</h2>
+          </div>
+          <p className="mt-1 pl-10 text-sm text-muted-foreground">
+            确认比赛 ID 与显示名称。
+          </p>
+        </div>
+        <section className="p-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="project-id"
+                className="mb-1.5 block text-xs font-medium text-muted-foreground"
+              >
+                比赛 ID
+              </label>
+              <Input
+                id="project-id"
+                value={pid}
+                placeholder="自动生成"
+                onChange={(e) => {
+                  setTouched(true)
+                  setPid(e.target.value)
+                }}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                用于路由与持久化，不可修改。
+              </p>
+            </div>
+            <div>
+              <label
+                htmlFor="project-name"
+                className="mb-1.5 block text-xs font-medium text-muted-foreground"
+              >
+                显示名称
+              </label>
+              <Input
+                id="project-name"
+                value={pname}
+                placeholder="自动读取"
+                onChange={(e) => {
+                  setTouched(true)
+                  setPname(e.target.value)
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        <div className="flex justify-end gap-3 border-t border-border bg-muted px-6 py-4">
+          <Button variant="ghost" asChild>
+            <Link to="/">取消</Link>
+          </Button>
+          <Button
+            onClick={() => void submit()}
+            disabled={!testR || !pid.trim() || !pname.trim() || busy !== null}
+          >
+            {busy === "create" ? (
+              <Icon
+                icon="lucide:loader-circle"
+                className="animate-spin"
+                width="14"
+              />
+            ) : null}
+            创建比赛
+          </Button>
+        </div>
+      </Card>
     </div>
+  )
+}
+
+function StepBadge({ n, active }: { n: number; active: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex size-7 items-center justify-center rounded-full text-xs font-bold",
+        active
+          ? "bg-primary/10 text-primary"
+          : "bg-muted/70 text-muted-foreground",
+      )}
+    >
+      {n}
+    </span>
   )
 }

@@ -5,96 +5,140 @@ import { useApp } from "../app/AppProvider.tsx"
 import { Button, ErrorNotice, Input } from "../components/index.ts"
 import { apiMutation } from "../lib/api.ts"
 
-export function LoginPage(): React.ReactElement {
-  const { auth, refreshAuth } = useApp()
-  const navigate = useNavigate()
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
+export function LoginPage() {
+  const { auth, refreshAuth, refreshProjects } = useApp()
+  const nav = useNavigate()
+  const [u, setU] = useState("")
+  const [p, setP] = useState("")
+  const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
 
   if (auth?.authenticated) return <Navigate to="/" replace />
 
-  async function submit(event: FormEvent): Promise<void> {
-    event.preventDefault()
+  async function submit(e: FormEvent) {
+    e.preventDefault()
     setBusy(true)
-    setError("")
+    setErr("")
     try {
-      await apiMutation("/api/auth/login", "POST", { username, password })
+      await apiMutation("/api/auth/login", "POST", { username: u, password: p })
       await refreshAuth()
-      navigate("/", { replace: true })
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      await refreshProjects()
+      nav("/", { replace: true })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <main className="login-page">
-      <section className="login-visual">
-        <div className="login-brand">
-          <span>CTF</span>
-          <strong>AGENT</strong>
+    <div className="flex min-h-screen">
+      {/* Brand panel */}
+      <div className="relative hidden w-[44%] flex-col justify-between overflow-hidden border-r border-border bg-background p-14 lg:flex">
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
+            backgroundSize: "44px 44px",
+            maskImage:
+              "linear-gradient(to bottom right, black, transparent 70%)",
+          }}
+        />
+        <div className="relative z-10 flex items-center gap-3 font-mono text-sm font-bold tracking-wide">
+          <span className="text-primary">CTF</span>
+          <span className="text-foreground/50">AGENT</span>
         </div>
-        <div className="login-signal" aria-hidden="true">
-          <span>01</span>
-          <span>14</span>
-          <span>∞</span>
-        </div>
-        <div>
-          <p className="eyebrow">AUTONOMOUS OPERATIONS</p>
-          <h1>
-            让 Agent 进入赛场，
-            <br />
-            让证据留在系统。
+        <div className="relative z-10">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
+            Operations Console
+          </p>
+          <h1 className="mt-4 max-w-md text-4xl font-bold leading-tight tracking-tight lg:text-5xl">
+            进入控制中心
           </h1>
-          <p>多项目调度、隔离 Sandbox、可追溯对话与协作黑板。</p>
+          <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
+            管理多场比赛调度、追踪 Agent 解题进度、审查黑板书证。
+          </p>
         </div>
-      </section>
-      <section className="login-form-wrap">
-        <form className="login-form" onSubmit={(event) => void submit(event)}>
-          <div className="login-form-heading">
-            <span className="login-lock">
-              <Icon icon="lucide:fingerprint" width="22" />
+        <div
+          className="relative z-10 flex items-center gap-10 font-mono text-[80px] font-extralight leading-none tracking-tighter text-foreground/[0.03] lg:text-[96px]"
+          aria-hidden
+        >
+          01<span className="text-primary/20">14</span>∞
+        </div>
+      </div>
+
+      {/* Login form */}
+      <div className="flex flex-1 items-center justify-center p-8">
+        <form
+          className="w-full max-w-sm space-y-6"
+          onSubmit={(e) => void submit(e)}
+        >
+          <div className="flex items-center gap-4">
+            <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-card text-primary shadow-sm">
+              <Icon icon="lucide:fingerprint" width="20" />
             </span>
             <div>
-              <p className="eyebrow">RESTRICTED CONSOLE</p>
-              <h2>登录控制台</h2>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Console
+              </p>
+              <h2 className="text-xl font-bold tracking-tight">登录</h2>
             </div>
           </div>
-          {error ? <ErrorNotice message={error} /> : null}
-          <div className="field">
-            <span>用户名</span>
-            <Input
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-            />
+
+          {err ? <ErrorNotice message={err} /> : null}
+
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="username"
+                className="mb-1.5 block text-xs font-medium text-muted-foreground"
+              >
+                用户名
+              </label>
+              <Input
+                id="username"
+                autoComplete="username"
+                value={u}
+                onChange={(e) => setU(e.target.value)}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-xs font-medium text-muted-foreground"
+              >
+                密码
+              </label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={p}
+                onChange={(e) => setP(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="field">
-            <span>密码</span>
-            <Input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={busy || !username || !password}>
+
+          <Button type="submit" className="w-full" disabled={busy || !u || !p}>
             {busy ? (
               <Icon
                 icon="lucide:loader-circle"
                 className="animate-spin"
-                width="17"
+                width="15"
               />
             ) : (
-              <Icon icon="lucide:log-in" width="17" />
+              <Icon icon="lucide:log-in" width="15" />
             )}
-            进入工作区
+            进入
           </Button>
+
+          <p className="text-center text-xs text-muted-foreground lg:hidden">
+            <span className="font-semibold text-primary">CTF</span> Agent ·
+            Operations Console
+          </p>
         </form>
-      </section>
-    </main>
+      </div>
+    </div>
   )
 }
