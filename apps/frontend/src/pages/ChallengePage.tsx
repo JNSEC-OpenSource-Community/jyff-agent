@@ -255,7 +255,7 @@ export function ChallengePage() {
             <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
               {c.title}
             </h1>
-            <p className="mt-1 text-xs text-muted-foreground">{c.progress}</p>
+            <p className="mt-1! text-xs text-muted-foreground">{c.progress}</p>
           </div>
           <div className="flex items-center justify-between px-4 py-2.5">
             <Badge tone={toneForStatus(c.status)} className="text-[10px]">
@@ -299,7 +299,7 @@ export function ChallengePage() {
                 <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
                   {c.title}
                 </h1>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1! text-xs text-muted-foreground">
                   {c.progress}
                 </p>
               </div>

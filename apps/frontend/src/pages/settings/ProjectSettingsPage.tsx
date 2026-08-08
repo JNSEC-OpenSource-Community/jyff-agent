@@ -118,10 +118,10 @@ export function ProjectSettingsPage() {
         <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
           {pcfg.project.id}
         </p>
-        <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
           比赛配置
         </h1>
-        <p className="hero-desc mt-3 max-w-2xl text-sm text-muted-foreground">
+        <p className="hero-desc mt-3! max-w-2xl text-sm text-muted-foreground">
           The hardest part in today's CTF.
         </p>
       </header>

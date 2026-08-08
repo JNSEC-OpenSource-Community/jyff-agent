@@ -39,7 +39,7 @@ export function MarkdownContent({
           h3: ({ children }) => (
             <h3 className="mt-4 mb-2 text-base font-semibold">{children}</h3>
           ),
-          p: ({ children }) => <p className="my-2">{children}</p>,
+          p: ({ children }) => <p className="my-2!">{children}</p>,
           a: ({ href, children }) => (
             <a
               href={href}

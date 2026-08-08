@@ -165,7 +165,7 @@ function StatCard({
           >
             {value}
           </p>
-          <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <p className="mt-0.5! text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             {label}
           </p>
         </div>
@@ -307,10 +307,10 @@ export function ProjectPage() {
           <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
             {snapshot.overview.id} · Live
           </p>
-          <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+          <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
             {snapshot.overview.name}
           </h1>
-          <p className="hero-desc mt-3 text-sm text-muted-foreground">
+          <p className="hero-desc mt-3! text-sm text-muted-foreground">
             {snapshot.overview.challenges} 题 ·{" "}
             {relativeTime(snapshot.generatedAt)}
           </p>
@@ -408,8 +408,8 @@ export function ProjectPage() {
                     </span>
                     <Badge className="text-[9px]">{candidate.kind}</Badge>
                   </div>
-                  <p className="mt-1 text-sm font-medium">{candidate.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                  <p className="mt-1! text-sm font-medium">{candidate.title}</p>
+                  <p className="mt-0.5! text-xs text-muted-foreground line-clamp-2">
                     {candidate.content}
                   </p>
                   <time
@@ -531,10 +531,10 @@ export function ProjectPage() {
                     className="text-muted-foreground"
                   />
                 </div>
-                <p className="mt-3 text-sm font-medium text-muted-foreground">
+                <p className="mt-3! text-sm font-medium text-muted-foreground">
                   队列为空
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1! text-xs text-muted-foreground">
                   启动调度或手动派发题目
                 </p>
               </div>

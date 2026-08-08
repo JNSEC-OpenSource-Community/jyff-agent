@@ -177,10 +177,10 @@ export function GlobalSettingsPage() {
         <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
           Global Config
         </p>
-        <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
           全局配置
         </h1>
-        <p className="hero-desc mt-3 max-w-2xl text-sm text-muted-foreground">
+        <p className="hero-desc mt-3! max-w-2xl text-sm text-muted-foreground">
           充值 648 以升级你的军火库。
         </p>
       </header>
@@ -307,7 +307,7 @@ export function GlobalSettingsPage() {
             <Card className="p-5">
               <div className="mb-4">
                 <h3 className="text-sm font-semibold">添加供应商</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1! text-xs text-muted-foreground">
                   订阅账号使用官方登录；按量计费或兼容端点使用 API Key。
                 </p>
               </div>
@@ -459,7 +459,7 @@ export function GlobalSettingsPage() {
               <div className="flex items-center justify-between gap-6 px-6 py-5">
                 <div>
                   <p className="text-sm font-medium">WebUI 登录</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="mt-1! text-xs text-muted-foreground">
                     通过 SameSite=Strict、HttpOnly 会话 Cookie 保护控制台。
                   </p>
                 </div>

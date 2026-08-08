@@ -56,7 +56,7 @@ export function LoginPage() {
           <h1 className="mt-4 max-w-md text-4xl font-bold leading-tight tracking-tight lg:text-5xl">
             进入 JYFF Agent
           </h1>
-          <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-4! max-w-sm text-sm leading-relaxed text-muted-foreground">
             Burning money and win the game.
           </p>
         </div>

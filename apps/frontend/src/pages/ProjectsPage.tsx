@@ -85,10 +85,10 @@ export function ProjectsPage() {
           <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
             Workspaces
           </p>
-          <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+          <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
             比赛列表
           </h1>
-          <p className="hero-desc mt-3 max-w-xl text-sm text-muted-foreground">
+          <p className="hero-desc mt-3! max-w-xl text-sm text-muted-foreground">
             CTFs to be slopped or already slopped.
           </p>
         </div>
@@ -395,10 +395,10 @@ export function NewProjectPage() {
         <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
           New Workspace
         </p>
-        <h1 className="hero-title mt-3 text-3xl font-bold tracking-tight">
+        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
           连接比赛平台
         </h1>
-        <p className="hero-desc mt-3 max-w-xl text-sm text-muted-foreground">
+        <p className="hero-desc mt-3! max-w-xl text-sm text-muted-foreground">
           Show your token power.
         </p>
       </header>
@@ -412,7 +412,7 @@ export function NewProjectPage() {
               <StepBadge n={1} active={true} />
               <h2 className="font-semibold">平台类型</h2>
             </div>
-            <p className="mt-1 pl-10 text-sm text-muted-foreground">
+            <p className="mt-1! pl-10 text-sm text-muted-foreground">
               选择要接入的比赛平台插件。
             </p>
           </div>
@@ -446,7 +446,7 @@ export function NewProjectPage() {
               <StepBadge n={2} active={Boolean(platId)} />
               <h2 className="font-semibold">连接信息</h2>
             </div>
-            <p className="mt-1 pl-10 text-sm text-muted-foreground">
+            <p className="mt-1! pl-10 text-sm text-muted-foreground">
               填写站点、认证和比赛信息，并验证连接。
             </p>
           </div>
@@ -508,7 +508,7 @@ export function NewProjectPage() {
               <StepBadge n={3} active={testR !== null} />
               <h2 className="font-semibold">比赛标识</h2>
             </div>
-            <p className="mt-1 pl-10 text-sm text-muted-foreground">
+            <p className="mt-1! pl-10 text-sm text-muted-foreground">
               输入比赛名称，浏览器会实时生成对应的拼音 ID。
             </p>
           </div>
