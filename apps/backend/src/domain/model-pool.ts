@@ -36,6 +36,7 @@ import type {
   ModelConfigurationUpdate,
   ModelConfigurationView,
   ModelPoolEntryView,
+  WebAccessModelAuth,
 } from "../types.ts"
 
 const LEGACY_MODEL_API_KEY_SECRET = "CTF_MODEL_API_KEY"
@@ -85,6 +86,11 @@ export interface AgentModelConfiguration extends DashboardModelConfiguration {
     target?: "solver" | "tldr",
     bindings?: AgentModelBindings,
   ): AgentOptions
+  /**
+   * 把模型池适配成 web-access 需要的 ModelAuthResolver 形状
+   * （find / getApiKeyAndHeaders / getAvailable），供搜索 + auto-summary 使用。
+   */
+  resolveModelAuth(): WebAccessModelAuth
 }
 
 /** Public model parameters and role assignments are persisted separately from credentials. */
@@ -447,6 +453,48 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     }
     return registry
   }
+
+  /**
+   * 把模型池适配成 web-access 的 ModelAuthResolver。模型池的 Models registry
+   * 返回完整 pi-ai Model 对象（含 provider/id/contextWindow），web-access
+   * 内部按 { provider, id } 消费；这里在边界上做一次 cast 是安全的。
+   */
+  resolveModelAuth(): WebAccessModelAuth {
+    const models = this.createModelsRegistry()
+    return {
+      find(provider, modelId) {
+        return models.getModel(provider, modelId)
+      },
+      getAvailable() {
+        return models.getModels()
+      },
+      async getApiKeyAndHeaders(model) {
+        try {
+          const auth = await models.getAuth(model as Model<Api>)
+          const apiKey = auth?.auth.apiKey
+          if (!apiKey) return { ok: false }
+          const headers = auth.auth.headers
+          return {
+            ok: true,
+            apiKey,
+            ...(headers ? { headers: dropNullHeaders(headers) } : {}),
+          }
+        } catch {
+          return { ok: false }
+        }
+      },
+    }
+  }
+}
+
+function dropNullHeaders(
+  headers: Record<string, string | null>,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [name, value] of Object.entries(headers)) {
+    if (value !== null) out[name] = value
+  }
+  return out
 }
 
 async function readStoredConfiguration(path: string): Promise<{

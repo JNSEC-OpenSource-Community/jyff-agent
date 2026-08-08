@@ -24,6 +24,7 @@ import type {
   DashboardScheduler,
   ModelConfigurationUpdate,
   ModelConfigurationView,
+  WebAccessModelAuth,
 } from "../src/types.ts"
 
 const now = "2026-07-29T12:00:00.000Z"
@@ -543,6 +544,14 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     const id = this.value.subagentModels[role]
     const model = this.value.models.find((candidate) => candidate.id === id)
     return model ? `${model.provider}/${model.modelId}` : undefined
+  }
+
+  resolveModelAuth(): WebAccessModelAuth {
+    return {
+      find: () => undefined,
+      getAvailable: () => [],
+      getApiKeyAndHeaders: async () => ({ ok: false }),
+    }
   }
 
   async update(

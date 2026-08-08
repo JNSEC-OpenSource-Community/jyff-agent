@@ -345,6 +345,57 @@ describe("Project", () => {
     }
   })
 
+  it("webAccessConfig 启用时注入 web 工具，禁用时不注入", async () => {
+    const root = await fixture()
+
+    const enabled = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      webAccessConfig: (workspace, signal) => ({
+        providers: ["brave"],
+        workflow: "none",
+        resolveSecret: (provider) =>
+          provider === "brave" ? "test-brave-key" : undefined,
+        workspaceHostPath: workspace,
+        sessionSignal: signal,
+      }),
+    })
+    try {
+      const solver = await enabled.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const names = solver.state.tools.map((tool) => tool.name)
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "web_search",
+          "source_check",
+          "fetch_content",
+          "get_search_content",
+        ]),
+      )
+    } finally {
+      await enabled.close()
+    }
+
+    const disabled = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      webAccessConfig: () => null,
+    })
+    try {
+      const solver = await disabled.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const names = solver.state.tools.map((tool) => tool.name)
+      expect(names).not.toContain("web_search")
+      expect(names).not.toContain("fetch_content")
+    } finally {
+      await disabled.close()
+    }
+  })
+
   it("只向后续 Solver 注入非空黑板", async () => {
     const root = await fixture()
     const project = await Project.open({

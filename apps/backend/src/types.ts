@@ -361,6 +361,27 @@ export interface DashboardModelConfiguration {
   ): Promise<ModelConfigurationView>
   removeCustomProvider(providerId: string): Promise<ModelConfigurationView>
   discoverCustomProviderModels(providerId: string): Promise<string[]>
+  /**
+   * 把模型池适配成 web-access 的 ModelAuthResolver（find / getApiKeyAndHeaders /
+   * getAvailable），供搜索 + auto-summary 使用。
+   */
+  resolveModelAuth(): WebAccessModelAuth
+}
+
+/** 与 @ctf-agent/web-access 的 ModelAuthResolver 结构一致（避免后端→包反向依赖）。 */
+export interface WebAccessModelAuth {
+  find(
+    provider: string,
+    modelId: string,
+  ): { provider: string; id: string } | undefined
+  getApiKeyAndHeaders(model: {
+    provider: string
+    id: string
+  }): Promise<
+    | { ok: true; apiKey: string; headers?: Record<string, string> }
+    | { ok: false }
+  >
+  getAvailable(): readonly { provider: string; id: string }[]
 }
 
 export type ModelAuthProviderId =

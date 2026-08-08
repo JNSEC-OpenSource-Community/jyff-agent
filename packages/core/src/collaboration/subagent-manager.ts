@@ -75,6 +75,8 @@ export interface SubagentManagerOptions {
   agent: AgentOptions
   roles: ReadonlyMap<string, SubagentRole>
   skills?: readonly AgentSkill[]
+  /** 可选注入 web-access 工具，SubAgent 通过 role.tools 白名单决定是否启用。 */
+  webAccessTools?: AgentTool[]
   maxConcurrent?: number
   onRecord?: (
     record: SubagentRecord,
@@ -431,6 +433,7 @@ export class CtfSubagentManager {
           agent: this.options.agent,
           role: managed.role,
           skills: this.options.skills,
+          webAccessTools: this.options.webAccessTools,
         })
         this.subscribe(managed, managed.agent)
       }

@@ -123,6 +123,9 @@ export function systemRoutes(services: Services): App {
       modelConfiguration: services.modelConfiguration?.snapshot() ?? null,
       modelAuthentication:
         (await services.modelAuthentication?.snapshot()) ?? null,
+      webAccess: services.webAccessConfiguration
+        ? await services.webAccessConfiguration.snapshot()
+        : null,
     })
   })
 
