@@ -55,6 +55,16 @@ describe("announcement classification", () => {
         announcement({ content: "team alpha solved by user beta" }),
       ),
     ).toMatchObject({ ignored: true, reason: "structured_solve_action" })
+    expect(
+      classifyAnnouncement(
+        announcement({ content: "Team alpha 拿下 Cookie Jar 一血" }),
+      ),
+    ).toMatchObject({ ignored: true, reason: "structured_solve_action" })
+    expect(
+      classifyAnnouncement(
+        announcement({ content: "Second Blood claimed by Team beta" }),
+      ),
+    ).toMatchObject({ ignored: true, reason: "structured_solve_action" })
   })
 
   it("does not drop a real hint merely because it mentions the blood mechanic", () => {
@@ -107,6 +117,11 @@ describe("announcement classification", () => {
         announcement({ title: "Welcome", content: "Contest starts now" }),
       ),
     ).toMatchObject({ eligible: false, reason: "no_critical_keyword" })
+    expect(
+      filterAnnouncementKeywords(
+        announcement({ title: "新题目上线", content: "Cookie Jar 已开放" }),
+      ),
+    ).toMatchObject({ eligible: false, reason: "new_challenge" })
   })
 })
 

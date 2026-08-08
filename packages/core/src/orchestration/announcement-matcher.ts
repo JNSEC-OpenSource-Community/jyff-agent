@@ -27,6 +27,8 @@ export interface AnnouncementKeywordFilter {
 const BLOOD_TITLE =
   /(?:一血|二血|三血|首杀|\bFirst\s+Blood\b|\bSecond\s+Blood\b|\bThird\s+Blood\b)/iu
 const SOLVE_ACTION = /(?:\bsolved\s+by\b|成功解出|解出了)/iu
+const BLOOD_BROADCAST =
+  /(?:(?:获得|取得|拿下|斩获|夺得).{0,20}(?:一血|二血|三血|首杀)|(?:first|second|third)\s+blood.{0,20}(?:goes\s+to|claimed\s+by|by\s+team))/iu
 const NEW_CHALLENGE =
   /(?:\bnew\s+challenge\b|\bchallenge\b.{0,40}\b(?:released|added|available)\b|新(?:增|的)?题|题目.{0,20}(?:上线|发布|开放|上新))/iu
 const CRITICAL_KEYWORDS: ReadonlyArray<{
@@ -73,7 +75,10 @@ export function classifyAnnouncement(
   if (BLOOD_TITLE.test(announcement.title)) {
     return { kind: "solve_broadcast", ignored: true, reason: "blood_title" }
   }
-  if (SOLVE_ACTION.test(announcement.content)) {
+  if (
+    SOLVE_ACTION.test(announcement.content) ||
+    BLOOD_BROADCAST.test(announcement.content)
+  ) {
     return {
       kind: "solve_broadcast",
       ignored: true,
