@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { discoverProjectSkillsWithDiagnostics } from "@ctf-agent/agents"
 import {
   ContestScheduler,
@@ -68,12 +69,18 @@ const extensions = await PlatformExtensionStore.open({
   root: options.root,
   registry: platformRegistry,
 })
-const skillRoot = process.cwd()
-const fatherSkills = await discoverProjectSkillsWithDiagnostics(skillRoot, [
-  "packages/agents/skills/extension-authoring",
-])
+const applicationRoot = fileURLToPath(new URL("../../../", import.meta.url))
+const fatherSkills = await discoverProjectSkillsWithDiagnostics(
+  applicationRoot,
+  ["packages/agents/skills/extension-authoring"],
+)
 if (fatherSkills.diagnostics.length > 0) {
   console.warn("extension-authoring skill 加载警告", fatherSkills.diagnostics)
+}
+if (!fatherSkills.skills.some(({ name }) => name === "extension-authoring")) {
+  throw new Error(
+    "内置 extension-authoring skill 加载失败，拒绝启动 Clanker Father",
+  )
 }
 const father = await FatherSessionManager.open({
   root: options.root,

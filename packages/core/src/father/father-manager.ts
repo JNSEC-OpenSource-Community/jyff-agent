@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { CtfFatherAgent } from "@ctf-agent/agents"
+import {
+  type AgentSkill,
+  CtfFatherAgent,
+  materializeSkills,
+} from "@ctf-agent/agents"
 import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
 import type {
   AgentHarnessEvent,
   AgentOptions,
-  Skill,
 } from "@earendil-works/pi-agent-core"
 import type {
   AgentStreamEvent,
@@ -59,7 +62,7 @@ export interface FatherSessionManagerOptions {
   root: string
   image: string
   createAgentOptions(): AgentOptions
-  skills?: readonly Skill[]
+  skills?: readonly AgentSkill[]
   skillRevision?: string
   workspaceMount?: (sessionId: string) => DockerWorkspaceMount
   sandboxFactory?: typeof DockerSandbox.create
@@ -257,6 +260,7 @@ export class FatherSessionManager {
       throw new Error("已完成或归档的 Father Session 只读")
     }
     const workspace = this.workspace(id)
+    const skills = await materializeSkills(this.options.skills ?? [], workspace)
     const sandbox = await (this.options.sandboxFactory ?? DockerSandbox.create)(
       {
         projectId: "father",
@@ -283,7 +287,7 @@ export class FatherSessionManager {
         sessionDirectory: this.sessionDirectory(id),
         sandbox,
         agent: this.options.createAgentOptions(),
-        skills: this.options.skills,
+        skills,
         onIdentifyPlugin: async (input) => {
           record.pluginId = pluginId(input.pluginId)
           record.pluginName = requiredText(input.displayName, "插件名称", 120)

@@ -1,4 +1,11 @@
-import { access, mkdtemp, rm } from "node:fs/promises"
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
@@ -64,5 +71,86 @@ describe("FatherSessionManager", () => {
     await manager.send(session.id, "开始工作")
     expect(prompt).toHaveBeenCalledWith("开始工作")
     expect(fakeAgent.steer).not.toHaveBeenCalled()
+  })
+
+  it("启动 Father 前将内置 skill 复制到 sandbox workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "father-skill-"))
+    roots.push(root)
+    const skillDirectory = join(root, "extension-authoring")
+    const skillPath = join(skillDirectory, "SKILL.md")
+    await mkdir(join(skillDirectory, "references"), { recursive: true })
+    await writeFile(
+      skillPath,
+      [
+        "---",
+        "name: extension-authoring",
+        "description: Build platform extensions",
+        "---",
+        "# Extension authoring",
+      ].join("\n"),
+    )
+    await writeFile(
+      join(skillDirectory, "references", "platform-contract.md"),
+      "# Platform contract",
+    )
+    const fakeAgent = {
+      state: { isStreaming: false },
+      prompt: vi.fn(async () => undefined),
+      steer: vi.fn(),
+      close: vi.fn(async () => undefined),
+      subscribe: vi.fn(),
+    }
+    const agentFactory = vi.fn(async () => fakeAgent)
+    const manager = await FatherSessionManager.open({
+      root,
+      image: "unused",
+      createAgentOptions: () =>
+        ({
+          initialState: { model: { provider: "test", id: "model" } },
+        }) as AgentOptions,
+      skills: [
+        {
+          name: "extension-authoring",
+          description: "Build platform extensions",
+          content: "# Extension authoring",
+          filePath: skillPath,
+          baseDir: skillDirectory,
+        },
+      ],
+      sandboxFactory: vi.fn(async () => ({ close: vi.fn() })) as never,
+      agentFactory: agentFactory as never,
+    })
+
+    const session = await manager.create({ createdBy: "nick" })
+    await manager.send(session.id, "创建插件")
+
+    expect(agentFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skills: [
+          expect.objectContaining({
+            name: "extension-authoring",
+            filePath: "/workspace/.skills/skill-1/SKILL.md",
+          }),
+        ],
+      }),
+    )
+    expect(
+      await readFile(
+        join(manager.workspace(session.id), ".skills", "skill-1", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain("# Extension authoring")
+    expect(
+      await readFile(
+        join(
+          manager.workspace(session.id),
+          ".skills",
+          "skill-1",
+          "references",
+          "platform-contract.md",
+        ),
+        "utf8",
+      ),
+    ).toBe("# Platform contract")
   })
 })
