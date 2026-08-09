@@ -78,7 +78,7 @@ describe("模型配置与模型鉴权路由", () => {
     })
   })
 
-  it("创建和删除自定义兼容供应商", async () => {
+  it("创建、编辑和删除自定义兼容供应商", async () => {
     const modelConfiguration = new FakeModelConfiguration()
     const { app } = createWebUiApp({
       project: new FakeDashboardProject(),
@@ -111,6 +111,30 @@ describe("模型配置与模型鉴权路由", () => {
       },
     })
     expect(JSON.stringify(createdBody)).not.toContain("provider-secret")
+
+    const updated = await jsonRequest(
+      app,
+      "/api/model-config/providers/custom-internal-gateway",
+      "PUT",
+      {
+        name: "Internal Responses Gateway",
+        api: "openai-responses",
+        baseUrl: "https://responses.example.test/v1/",
+      },
+    )
+    expect(updated.status).toBe(200)
+    expect(await jsonOf(updated)).toMatchObject({
+      configuration: {
+        customProviders: [
+          {
+            id: "custom-internal-gateway",
+            name: "Internal Responses Gateway",
+            baseUrl: "https://responses.example.test/v1",
+            apiKeyConfigured: true,
+          },
+        ],
+      },
+    })
 
     const removed = await jsonRequest(
       app,

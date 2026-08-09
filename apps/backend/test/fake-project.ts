@@ -551,6 +551,26 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     return this.snapshot()
   }
 
+  async updateCustomProvider(
+    providerId: string,
+    provider: import("../src/types.ts").CustomModelProviderEdit,
+  ): Promise<ModelConfigurationView> {
+    const index = this.value.customProviders.findIndex(
+      (candidate) => candidate.id === providerId,
+    )
+    if (index < 0) throw new Error(`自定义供应商不存在: ${providerId}`)
+    this.value.customProviders[index] = {
+      id: providerId,
+      name: provider.name,
+      api: provider.api,
+      baseUrl: provider.baseUrl,
+      apiKeyConfigured:
+        Boolean(provider.apiKey) ||
+        this.value.customProviders[index]?.apiKeyConfigured === true,
+    }
+    return this.snapshot()
+  }
+
   async removeCustomProvider(
     providerId: string,
   ): Promise<ModelConfigurationView> {

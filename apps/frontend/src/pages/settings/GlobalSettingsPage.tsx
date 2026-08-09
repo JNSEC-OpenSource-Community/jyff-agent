@@ -17,8 +17,10 @@ import {
 } from "../../components/index.ts"
 import { apiMutation, apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
+import { cn } from "../../lib/utils.ts"
 import type {
   CustomModelProviderApi,
+  CustomModelProviderView,
   ModelAuthenticationView,
   ModelConfigurationView,
 } from "../../types.ts"
@@ -31,6 +33,8 @@ interface Cfg {
   modelAuthentication: ModelAuthenticationView | null
 }
 
+type ProviderSetupMode = "subscription" | "api-key" | "custom"
+
 export function GlobalSettingsPage() {
   const { refreshAuth } = useApp()
   const [g, setG] = useState<Cfg | null>(null)
@@ -40,7 +44,12 @@ export function GlobalSettingsPage() {
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [setupMode, setSetupMode] = useState<ProviderSetupMode | null>(null)
   const [providerChoice, setProviderChoice] = useState("")
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(
+    null,
+  )
+  const [editingCustomId, setEditingCustomId] = useState<string | null>(null)
   const [customName, setCustomName] = useState("")
   const [customApi, setCustomApi] =
     useState<CustomModelProviderApi>("openai-completions")
@@ -108,6 +117,43 @@ export function GlobalSettingsPage() {
       setCustomName("")
       setCustomBaseUrl("")
       setCustomKey("")
+      setSetupMode(null)
+      await load()
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const editCustomProvider = (provider: CustomModelProviderView) => {
+    setSetupMode(null)
+    setProviderChoice("")
+    setEditingProviderId(null)
+    setEditingCustomId(provider.id)
+    setCustomName(provider.name)
+    setCustomApi(provider.api)
+    setCustomBaseUrl(provider.baseUrl)
+    setCustomKey("")
+  }
+
+  const updateCustomProvider = async () => {
+    if (!editingCustomId) return
+    setBusy(true)
+    setErr("")
+    try {
+      await apiMutation(
+        `/api/model-config/providers/${encodeURIComponent(editingCustomId)}`,
+        "PUT",
+        {
+          name: customName,
+          api: customApi,
+          baseUrl: customBaseUrl,
+          ...(customKey.trim() ? { apiKey: customKey } : {}),
+        },
+      )
+      setEditingCustomId(null)
+      setCustomKey("")
       await load()
     } catch (e) {
       setErr(errorMessage(e))
@@ -138,6 +184,7 @@ export function GlobalSettingsPage() {
   const configuredProviders = auth?.providers.filter((p) => p.configured) ?? []
   const subscriptionOptions =
     auth?.providers.flatMap((provider) => {
+      if (provider.configured) return []
       const method = provider.methods.find((candidate) =>
         candidate.id.startsWith("oauth_"),
       )
@@ -153,6 +200,7 @@ export function GlobalSettingsPage() {
     }) ?? []
   const keyOptions =
     auth?.providers.flatMap((provider) => {
+      if (provider.configured) return []
       const method = provider.methods.find(
         (candidate) => candidate.id === "api_key",
       )
@@ -203,7 +251,9 @@ export function GlobalSettingsPage() {
               </p>
             </div>
             <Badge className="text-[10px]">
-              {configuredProviders.length} 已连接
+              {configuredProviders.length +
+                (g.modelConfiguration?.customProviders.length ?? 0)}{" "}
+              已连接
             </Badge>
           </div>
 
@@ -216,47 +266,120 @@ export function GlobalSettingsPage() {
                 个
               </span>
             </div>
-            <div className="space-y-3">
+            <ul className="overflow-hidden rounded-xl border border-border bg-card/40">
               {configuredProviders.map((p) => (
-                <ProviderCredentialCard
+                <li
                   key={p.id}
-                  provider={p}
-                  onRefresh={load}
-                />
+                  className="border-b border-border last:border-b-0"
+                >
+                  <div className="flex min-h-16 items-center gap-3 px-4 py-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
+                      <Icon icon="lucide:key-round" width="16" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{p.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {p.credentialType === "oauth" ? "OAuth" : "API Key"} ·{" "}
+                        {p.description}
+                      </p>
+                    </div>
+                    <Badge
+                      tone="positive"
+                      className="hidden text-[10px] sm:inline-flex"
+                    >
+                      已连接
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={editingProviderId === p.id}
+                      onClick={() => {
+                        setSetupMode(null)
+                        setProviderChoice("")
+                        setEditingCustomId(null)
+                        setEditingProviderId((current) =>
+                          current === p.id ? null : p.id,
+                        )
+                      }}
+                    >
+                      <Icon icon="lucide:pencil" width="13" /> 编辑
+                    </Button>
+                  </div>
+                  {editingProviderId === p.id ? (
+                    <div className="border-t border-border bg-background/35 p-3 sm:p-4">
+                      <ProviderCredentialCard
+                        provider={p}
+                        editingConfigured
+                        onCancel={() => setEditingProviderId(null)}
+                        onRefresh={async () => {
+                          setEditingProviderId(null)
+                          await load()
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </li>
               ))}
               {g.modelConfiguration?.customProviders.map((p) => (
-                <Card key={p.id} className="flex items-center gap-3 p-4">
-                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-primary">
-                    <Icon icon="lucide:waypoints" width="16" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{p.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {p.api} · {p.baseUrl}
-                    </p>
+                <li
+                  key={p.id}
+                  className="border-b border-border last:border-b-0"
+                >
+                  <div className="flex min-h-16 items-center gap-3 px-4 py-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
+                      <Icon icon="lucide:waypoints" width="16" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{p.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {p.api} · {p.baseUrl}
+                      </p>
+                    </div>
+                    <Badge
+                      tone="positive"
+                      className="hidden text-[10px] sm:inline-flex"
+                    >
+                      已连接
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={editingCustomId === p.id}
+                      onClick={() => editCustomProvider(p)}
+                    >
+                      <Icon icon="lucide:pencil" width="13" /> 编辑
+                    </Button>
                   </div>
-                  <Badge tone="positive" className="text-[10px]">
-                    已连接
-                  </Badge>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => void removeCustomProvider(p.id)}
-                    aria-label={`删除 ${p.name}`}
-                  >
-                    <Icon icon="lucide:trash-2" width="14" />
-                  </Button>
-                </Card>
+                  {editingCustomId === p.id ? (
+                    <div className="border-t border-border bg-background/35 p-4">
+                      <CustomProviderForm
+                        name={customName}
+                        api={customApi}
+                        baseUrl={customBaseUrl}
+                        apiKey={customKey}
+                        apiKeyPlaceholder="留空则保留当前 API Key"
+                        submitLabel="保存修改"
+                        busy={busy}
+                        onNameChange={setCustomName}
+                        onApiChange={setCustomApi}
+                        onBaseUrlChange={setCustomBaseUrl}
+                        onApiKeyChange={setCustomKey}
+                        onCancel={() => setEditingCustomId(null)}
+                        onDelete={() => void removeCustomProvider(p.id)}
+                        onSubmit={() => void updateCustomProvider()}
+                      />
+                    </div>
+                  ) : null}
+                </li>
               ))}
               {configuredProviders.length +
                 (g.modelConfiguration?.customProviders.length ?? 0) ===
               0 ? (
-                <div className="border-y border-border px-1 py-8 text-sm text-muted-foreground">
+                <li className="px-4 py-8 text-sm text-muted-foreground">
                   尚未添加供应商。
-                </div>
+                </li>
               ) : null}
-            </div>
+            </ul>
           </section>
 
           {auth ? (
@@ -311,109 +434,97 @@ export function GlobalSettingsPage() {
                   订阅账号使用官方登录；按量计费或兼容端点使用 API Key。
                 </p>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <ProviderPicker
+              <div className="grid gap-3 sm:grid-cols-3">
+                <ProviderSetupOption
                   icon="lucide:badge-check"
                   label="Subscription 登录"
                   description="Codex、Claude 等订阅账号"
-                  value={
-                    subscriptionOptions.some(
-                      (option) => option.value === providerChoice,
-                    )
-                      ? providerChoice
-                      : ""
-                  }
-                  options={subscriptionOptions}
-                  onChange={setProviderChoice}
+                  selected={setupMode === "subscription"}
+                  onClick={() => {
+                    setSetupMode("subscription")
+                    setProviderChoice("")
+                  }}
                 />
-                <ProviderPicker
+                <ProviderSetupOption
                   icon="lucide:key-round"
-                  label="API Key"
-                  description="官方 API 与兼容供应商"
-                  value={
-                    keyOptions.some((option) => option.value === providerChoice)
-                      ? providerChoice
-                      : ""
-                  }
-                  options={keyOptions}
-                  onChange={setProviderChoice}
+                  label="配置 API Key"
+                  description="连接官方 API 供应商"
+                  selected={setupMode === "api-key"}
+                  onClick={() => {
+                    setSetupMode("api-key")
+                    setProviderChoice("")
+                  }}
+                />
+                <ProviderSetupOption
+                  icon="lucide:waypoints"
+                  label="添加自定义 Provider"
+                  description="连接兼容协议与中转端点"
+                  selected={setupMode === "custom"}
+                  onClick={() => {
+                    setSetupMode("custom")
+                    setProviderChoice("")
+                    setCustomName("")
+                    setCustomApi("openai-completions")
+                    setCustomBaseUrl("")
+                    setCustomKey("")
+                  }}
                 />
               </div>
-              <div className="mt-5 border-t border-border pt-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Icon
-                    icon="lucide:waypoints"
-                    width="15"
-                    className="text-primary"
-                  />
-                  <h4 className="text-sm font-medium">自定义兼容 Provider</h4>
+              {setupMode ? (
+                <div className="mt-5 border-t border-border pt-5">
+                  {setupMode === "custom" ? (
+                    <CustomProviderForm
+                      name={customName}
+                      api={customApi}
+                      baseUrl={customBaseUrl}
+                      apiKey={customKey}
+                      apiKeyPlaceholder="API Key"
+                      submitLabel="添加自定义供应商"
+                      busy={busy}
+                      requireApiKey
+                      onNameChange={setCustomName}
+                      onApiChange={setCustomApi}
+                      onBaseUrlChange={setCustomBaseUrl}
+                      onApiKeyChange={setCustomKey}
+                      onCancel={() => setSetupMode(null)}
+                      onSubmit={() => void addCustomProvider()}
+                    />
+                  ) : (
+                    <ProviderPicker
+                      label={
+                        setupMode === "subscription"
+                          ? "选择订阅供应商"
+                          : "选择 API 供应商"
+                      }
+                      value={providerChoice}
+                      options={
+                        setupMode === "subscription"
+                          ? subscriptionOptions
+                          : keyOptions
+                      }
+                      onChange={setProviderChoice}
+                    />
+                  )}
+                  {chosenProvider &&
+                  !chosenProvider.configured &&
+                  setupMode !== "custom" ? (
+                    <div className="mt-4">
+                      <ProviderCredentialCard
+                        key={providerChoice}
+                        provider={chosenProvider}
+                        initialMethod={chosenMethodId}
+                        onCancel={() => setProviderChoice("")}
+                        onRefresh={async () => {
+                          setProviderChoice("")
+                          setSetupMode(null)
+                          await load()
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <Input
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="供应商名称"
-                  />
-                  <Combobox
-                    value={customApi}
-                    onChange={(value) =>
-                      setCustomApi(value as CustomModelProviderApi)
-                    }
-                    options={[
-                      {
-                        value: "openai-completions",
-                        label: "OpenAI Completions",
-                      },
-                      { value: "openai-responses", label: "OpenAI Responses" },
-                      {
-                        value: "anthropic-messages",
-                        label: "Anthropic Messages",
-                      },
-                    ]}
-                    compactOptions
-                  />
-                  <Input
-                    type="url"
-                    value={customBaseUrl}
-                    onChange={(e) => setCustomBaseUrl(e.target.value)}
-                    placeholder="Base URL"
-                  />
-                  <Input
-                    type="password"
-                    value={customKey}
-                    onChange={(e) => setCustomKey(e.target.value)}
-                    placeholder="API Key"
-                  />
-                </div>
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    size="sm"
-                    disabled={
-                      busy ||
-                      !customName.trim() ||
-                      !customBaseUrl.trim() ||
-                      !customKey.trim()
-                    }
-                    onClick={() => void addCustomProvider()}
-                  >
-                    <Icon icon="lucide:plus" width="13" /> 添加自定义供应商
-                  </Button>
-                </div>
-              </div>
+              ) : null}
             </Card>
-          ) : null}
-
-          {chosenProvider && !chosenProvider.configured ? (
-            <ProviderCredentialCard
-              key={providerChoice}
-              provider={chosenProvider}
-              initialMethod={chosenMethodId}
-              onCancel={() => setProviderChoice("")}
-              onRefresh={async () => {
-                setProviderChoice("")
-                await load()
-              }}
-            />
           ) : null}
         </TabsContent>
 
@@ -421,9 +532,7 @@ export function GlobalSettingsPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">模型池</h2>
-              <p className="text-sm text-muted-foreground">
-                管理可用模型。
-              </p>
+              <p className="text-sm text-muted-foreground">管理可用模型。</p>
             </div>
             <Badge className="text-[10px]">
               {g.modelConfiguration?.models.length ?? 0} 个
@@ -521,31 +630,19 @@ export function GlobalSettingsPage() {
 }
 
 function ProviderPicker({
-  icon,
   label,
-  description,
   value,
   options,
   onChange,
 }: {
-  icon: string
   label: string
-  description: string
   value: string
   options: Array<{ value: string; label: string; description?: string }>
   onChange(value: string): void
 }) {
   return (
-    <div className="rounded-lg border border-border bg-background/30 p-4">
-      <div className="mb-3 flex items-start gap-3">
-        <span className="flex size-8 items-center justify-center rounded-md bg-muted text-primary">
-          <Icon icon={icon} width="15" />
-        </span>
-        <div>
-          <p className="text-sm font-medium">{label}</p>
-          <p className="text-xs text-muted-foreground">{description}</p>
-        </div>
-      </div>
+    <div className="max-w-xl">
+      <p className="mb-2! text-xs font-medium text-muted-foreground">{label}</p>
       <Combobox
         value={value}
         onChange={onChange}
@@ -555,6 +652,153 @@ function ProviderPicker({
         emptyText="没有可用供应商"
         compactOptions
       />
+    </div>
+  )
+}
+
+function ProviderSetupOption({
+  icon,
+  label,
+  description,
+  selected,
+  onClick,
+}: {
+  icon: string
+  label: string
+  description: string
+  selected: boolean
+  onClick(): void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      className={cn(
+        "group flex min-h-32 flex-col items-start rounded-xl border p-4 text-left transition-all duration-200 active:translate-y-px",
+        selected
+          ? "border-primary/60 bg-primary/8 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_22%,transparent)]"
+          : "border-border bg-background/30 hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-muted/35",
+      )}
+      onClick={onClick}
+    >
+      <span
+        className={cn(
+          "mb-5 flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors",
+          selected && "bg-primary/15 text-primary",
+        )}
+      >
+        <Icon icon={icon} width="17" />
+      </span>
+      <span className="text-sm font-semibold">{label}</span>
+      <span className="mt-1! text-xs leading-5 text-muted-foreground">
+        {description}
+      </span>
+    </button>
+  )
+}
+
+function CustomProviderForm({
+  name,
+  api,
+  baseUrl,
+  apiKey,
+  apiKeyPlaceholder,
+  submitLabel,
+  busy,
+  requireApiKey = false,
+  onNameChange,
+  onApiChange,
+  onBaseUrlChange,
+  onApiKeyChange,
+  onCancel,
+  onDelete,
+  onSubmit,
+}: {
+  name: string
+  api: CustomModelProviderApi
+  baseUrl: string
+  apiKey: string
+  apiKeyPlaceholder: string
+  submitLabel: string
+  busy: boolean
+  requireApiKey?: boolean
+  onNameChange(value: string): void
+  onApiChange(value: CustomModelProviderApi): void
+  onBaseUrlChange(value: string): void
+  onApiKeyChange(value: string): void
+  onCancel(): void
+  onDelete?(): void
+  onSubmit(): void
+}) {
+  return (
+    <div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Input
+          aria-label="供应商名称"
+          value={name}
+          onChange={(event) => onNameChange(event.target.value)}
+          placeholder="供应商名称"
+        />
+        <Combobox
+          value={api}
+          onChange={(value) => onApiChange(value as CustomModelProviderApi)}
+          options={[
+            { value: "openai-completions", label: "OpenAI Completions" },
+            { value: "openai-responses", label: "OpenAI Responses" },
+            { value: "anthropic-messages", label: "Anthropic Messages" },
+          ]}
+          compactOptions
+        />
+        <Input
+          aria-label="Base URL"
+          type="url"
+          value={baseUrl}
+          onChange={(event) => onBaseUrlChange(event.target.value)}
+          placeholder="Base URL"
+        />
+        <Input
+          aria-label="API Key"
+          type="password"
+          value={apiKey}
+          onChange={(event) => onApiKeyChange(event.target.value)}
+          placeholder={apiKeyPlaceholder}
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap justify-between gap-2">
+        <div>
+          {onDelete ? (
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={busy}
+              onClick={onDelete}
+            >
+              <Icon icon="lucide:trash-2" width="13" /> 删除供应商
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
+            取消
+          </Button>
+          <Button
+            size="sm"
+            disabled={
+              busy ||
+              !name.trim() ||
+              !baseUrl.trim() ||
+              (requireApiKey && !apiKey.trim())
+            }
+            onClick={onSubmit}
+          >
+            <Icon
+              icon={requireApiKey ? "lucide:plus" : "lucide:save"}
+              width="13"
+            />
+            {submitLabel}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

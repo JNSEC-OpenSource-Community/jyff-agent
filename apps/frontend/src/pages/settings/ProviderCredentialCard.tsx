@@ -3,7 +3,6 @@ import { useEffect, useId, useState } from "react"
 import {
   Badge,
   Button,
-  Card,
   ErrorNotice,
   Input,
   Select,
@@ -25,11 +24,13 @@ export function ProviderCredentialCard({
   onRefresh,
   initialMethod,
   onCancel,
+  editingConfigured = false,
 }: {
   provider: ModelAuthProviderView
   onRefresh(): Promise<void>
   initialMethod?: string
   onCancel?(): void
+  editingConfigured?: boolean
 }) {
   const methodId = useId()
   const secretId = useId()
@@ -60,7 +61,7 @@ export function ProviderCredentialCard({
   }, [onRefresh, session])
 
   return (
-    <Card className="flex flex-col p-5">
+    <div className="rounded-xl border border-border bg-muted/20 p-5">
       <div className="flex items-center gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
           <Icon icon="lucide:key-round" width="16" />
@@ -81,7 +82,7 @@ export function ProviderCredentialCard({
 
       {error ? <ErrorNotice message={error} className="mt-3" /> : null}
 
-      {provider.configured ? (
+      {provider.configured && !editingConfigured ? (
         <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
           <span>
             {provider.credentialType === "oauth" ? "OAuth" : "API Key"} 已保存
@@ -155,6 +156,27 @@ export function ProviderCredentialCard({
             </div>
           ) : null}
           <div className="flex justify-end gap-2">
+            {provider.configured ? (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={async () => {
+                  setError("")
+                  try {
+                    await apiMutation(
+                      `/api/model-auth/providers/${encodeURIComponent(provider.id)}/logout`,
+                      "POST",
+                    )
+                    setSession(null)
+                    await onRefresh()
+                  } catch (e) {
+                    setError(errorMessage(e))
+                  }
+                }}
+              >
+                断开
+              </Button>
+            ) : null}
             {onCancel ? (
               <Button size="sm" variant="ghost" onClick={onCancel}>
                 取消
@@ -291,6 +313,6 @@ export function ProviderCredentialCard({
           ) : null}
         </div>
       ) : null}
-    </Card>
+    </div>
   )
 }

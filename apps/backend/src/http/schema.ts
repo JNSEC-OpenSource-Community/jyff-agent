@@ -96,6 +96,10 @@ export const customModelProviderSchema = z.object({
   apiKey: z.string().trim().min(1).max(8_192),
 })
 
+export const customModelProviderEditSchema = customModelProviderSchema.extend({
+  apiKey: z.string().trim().min(1).max(8_192).optional(),
+})
+
 const optionalBinding = (label: string) =>
   z
     .string({ message: `${label} 必须是字符串` })

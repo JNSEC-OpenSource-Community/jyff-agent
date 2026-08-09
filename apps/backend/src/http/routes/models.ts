@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import type { App, AppContext, AppEnv } from "../context.ts"
 import { errorText, HttpError } from "../errors.ts"
 import {
+  customModelProviderEditSchema,
   customModelProviderSchema,
   modelConfigurationUpdateSchema,
   modelImportSchema,
@@ -63,6 +64,21 @@ export function modelsRoutes(services: Services): App {
     return c.json({
       configuration: await modelProviderAction(() =>
         modelConfiguration.addCustomProvider(body),
+      ),
+    })
+  })
+
+  app.put("/model-config/providers/:providerId", async (c) => {
+    const modelConfiguration = services.requireModelConfiguration()
+    const body = await parseJsonBody(c, customModelProviderEditSchema, {
+      code: "invalid_model_provider",
+    })
+    return c.json({
+      configuration: await modelProviderAction(() =>
+        modelConfiguration.updateCustomProvider(
+          c.req.param("providerId"),
+          body,
+        ),
       ),
     })
   })

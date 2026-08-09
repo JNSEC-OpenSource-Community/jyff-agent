@@ -95,6 +95,43 @@ describe("file model configuration", () => {
     )
   })
 
+  it("编辑自定义供应商时保留 id 与未替换的 API Key", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-provider-edit-"))
+    roots.push(root)
+    const storagePath = join(root, "model-config.json")
+    const secretsPath = join(root, "secrets.json")
+    const configuration = await createFileModelConfiguration({
+      storagePath,
+      secretStore: await FileSecretStore.open(secretsPath),
+    })
+    await configuration.addCustomProvider({
+      name: "Internal Gateway",
+      api: "openai-completions",
+      baseUrl: "https://models.example.test/v1",
+      apiKey: "original-secret",
+    })
+
+    const edited = await configuration.updateCustomProvider(
+      "custom-internal-gateway",
+      {
+        name: "Internal Responses",
+        api: "openai-responses",
+        baseUrl: "https://responses.example.test/v1/",
+      },
+    )
+
+    expect(edited.customProviders).toEqual([
+      expect.objectContaining({
+        id: "custom-internal-gateway",
+        name: "Internal Responses",
+        api: "openai-responses",
+        baseUrl: "https://responses.example.test/v1",
+        apiKeyConfigured: true,
+      }),
+    ])
+    expect(await readFile(secretsPath, "utf8")).toContain("original-secret")
+  })
+
   it("把旧模型配置中的明文 Key 迁移到 Secret Store", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-migration-"))
     roots.push(root)

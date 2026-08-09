@@ -109,6 +109,8 @@ WebUI 映射到宿主机 `0.0.0.0:3000`，可从外部网络访问；WSL2 端口
 
 OAuth 和原生 Provider API Key 由 Pi 的 `CredentialStore` 写入具名卷中的 `.ctf-agent/auth.json`，刷新 token 时会原子更新；WebUI 状态接口只返回 Provider、凭据类型和模型清单，不返回凭据原文。
 
+Provider 设置页以列表管理已连接供应商，可就地更新原生 Provider 凭据或自定义 Provider 的名称、API 类型、Base URL 与可选的新 API Key。新增供应商时先选择 Subscription 登录、API Key 或自定义 Provider，再展开对应表单；编辑自定义 Provider 不会改变其稳定 ID，留空 API Key 时保留已有密钥。
+
 `.ctf-agent/model-config.json` 使用 v3 全局模型池结构，只保存非敏感模型与自定义 Provider 元数据，不保存 Project 的最终角色绑定。自定义 Provider 统一保存 API 类型与 Base URL，其 API Key 按 Provider 写入全局 Secret Store；模型池条目只引用已连接 Provider，不再重复保存端点或凭据。每个 Project 的 `runtime-config.json` 分别选择 Solver、TLDR 和 SubAgent role 模型并保存最大 Solver 并发量；未覆盖的 SubAgent 角色仍使用 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此角色绑定不受 Solver 当前模型限制。v2 模型池、旧版单模型配置、全局绑定与 `scheduler-config.json` 只作为自动迁移时的回退值。
 
 WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：

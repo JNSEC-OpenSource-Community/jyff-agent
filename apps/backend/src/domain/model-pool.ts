@@ -29,6 +29,7 @@ import {
 import type {
   AgentModelBindings,
   CustomModelProviderApi,
+  CustomModelProviderEdit,
   CustomModelProviderUpdate,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
@@ -178,6 +179,34 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       providers: [...this.values.providers, provider],
     }
     await this.options.secretStore.set({ [providerSecret(id)]: input.apiKey })
+    await persistConfiguration(this.options.storagePath, next)
+    this.values = next
+    return this.snapshot()
+  }
+
+  async updateCustomProvider(
+    providerId: string,
+    input: CustomModelProviderEdit,
+  ): Promise<ModelConfigurationView> {
+    const providerIndex = this.values.providers.findIndex(
+      (provider) => provider.id === providerId,
+    )
+    if (providerIndex < 0) {
+      throw new Error(`自定义供应商不存在: ${providerId}`)
+    }
+    const providers = [...this.values.providers]
+    providers[providerIndex] = {
+      id: providerId,
+      name: input.name.trim(),
+      api: input.api,
+      baseUrl: input.baseUrl.replace(/\/+$/, ""),
+    }
+    const next = { ...this.values, providers }
+    if (input.apiKey !== undefined) {
+      await this.options.secretStore.set({
+        [providerSecret(providerId)]: input.apiKey,
+      })
+    }
     await persistConfiguration(this.options.storagePath, next)
     this.values = next
     return this.snapshot()

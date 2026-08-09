@@ -30,7 +30,7 @@ export async function apiRequest<T>(
 
 export function apiMutation<T>(
   url: string,
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   body: unknown = {},
 ): Promise<T> {
   return apiRequest<T>(url, {

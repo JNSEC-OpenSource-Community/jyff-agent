@@ -279,6 +279,13 @@ export interface CustomModelProviderUpdate {
   apiKey: string
 }
 
+export interface CustomModelProviderEdit {
+  name: string
+  api: CustomModelProviderApi
+  baseUrl: string
+  apiKey?: string
+}
+
 export interface ModelConfigurationView {
   models: ModelPoolEntryView[]
   customProviders: CustomModelProviderView[]
@@ -332,6 +339,10 @@ export interface DashboardModelConfiguration {
   ): Promise<ModelConfigurationView>
   addCustomProvider(
     provider: CustomModelProviderUpdate,
+  ): Promise<ModelConfigurationView>
+  updateCustomProvider(
+    providerId: string,
+    provider: CustomModelProviderEdit,
   ): Promise<ModelConfigurationView>
   removeCustomProvider(providerId: string): Promise<ModelConfigurationView>
 }
