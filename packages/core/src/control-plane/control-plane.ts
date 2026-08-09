@@ -274,8 +274,10 @@ export class ControlPlane {
     const runtime = this.resolveRuntime(projectId)
     const scheduler = runtime?.scheduler?.snapshot()
     if (!runtime || !scheduler) return false
-    return scheduler.active.length > 0 ||
+    return (
+      scheduler.active.length > 0 ||
       (!runtime.record.archived && scheduler.autoEnabled)
+    )
   }
 
   async start(): Promise<ControlPlaneSnapshot> {
