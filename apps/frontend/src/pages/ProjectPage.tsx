@@ -276,6 +276,35 @@ export function ProjectPage() {
     }
   }
 
+  async function reviewAnnouncements(
+    candidates: DashboardSnapshot["announcementCandidates"],
+    status: "approved" | "rejected",
+  ) {
+    setBusy(true)
+    setError("")
+    try {
+      await Promise.all(
+        candidates.map((candidate) =>
+          apiMutation(
+            projectApi(projectId, "/api/announcements/review"),
+            "POST",
+            {
+              challengeId: candidate.challengeId,
+              announcementKey: candidate.key,
+              status,
+            },
+          ),
+        ),
+      )
+      await load()
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e))
+      await load().catch(() => undefined)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (!snapshot) {
     if (error) {
       return (
@@ -391,9 +420,32 @@ export function ProjectPage() {
               </p>
               <h2 className="mt-0.5 font-semibold">待审核公告</h2>
             </div>
-            <Badge tone="warning" className="text-[10px]">
-              {pendingAnnouncements.length}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge tone="warning" className="text-[10px]">
+                {pendingAnnouncements.length}
+              </Badge>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void reviewAnnouncements(pendingAnnouncements, "rejected")
+                }
+              >
+                <Icon icon="lucide:x" width="13" />
+                全部拒绝
+              </Button>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void reviewAnnouncements(pendingAnnouncements, "approved")
+                }
+              >
+                <Icon icon="lucide:check-check" width="13" />
+                全部批准
+              </Button>
+            </div>
           </div>
           <div className="divide-y divide-border/60">
             {pendingAnnouncements.map((candidate) => (
@@ -424,26 +476,9 @@ export function ProjectPage() {
                     size="sm"
                     variant="primary"
                     disabled={busy}
-                    onClick={async () => {
-                      setBusy(true)
-                      setError("")
-                      try {
-                        await apiMutation(
-                          projectApi(projectId, "/api/announcements/review"),
-                          "POST",
-                          {
-                            challengeId: candidate.challengeId,
-                            announcementKey: candidate.key,
-                            status: "approved",
-                          },
-                        )
-                        await load()
-                      } catch (e) {
-                        setError(String(e instanceof Error ? e.message : e))
-                      } finally {
-                        setBusy(false)
-                      }
-                    }}
+                    onClick={() =>
+                      void reviewAnnouncements([candidate], "approved")
+                    }
                   >
                     <Icon icon="lucide:check" width="14" />
                     批准
@@ -452,26 +487,9 @@ export function ProjectPage() {
                     size="sm"
                     variant="secondary"
                     disabled={busy}
-                    onClick={async () => {
-                      setBusy(true)
-                      setError("")
-                      try {
-                        await apiMutation(
-                          projectApi(projectId, "/api/announcements/review"),
-                          "POST",
-                          {
-                            challengeId: candidate.challengeId,
-                            announcementKey: candidate.key,
-                            status: "rejected",
-                          },
-                        )
-                        await load()
-                      } catch (e) {
-                        setError(String(e instanceof Error ? e.message : e))
-                      } finally {
-                        setBusy(false)
-                      }
-                    }}
+                    onClick={() =>
+                      void reviewAnnouncements([candidate], "rejected")
+                    }
                   >
                     <Icon icon="lucide:x" width="14" />
                     拒绝
@@ -511,7 +529,7 @@ export function ProjectPage() {
                   items={queue.map((i) => i.challengeId)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex max-h-[32rem] flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1">
                     {queue.map((e) => (
                       <QueueItem
                         key={e.challengeId}
