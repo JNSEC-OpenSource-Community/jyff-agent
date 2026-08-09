@@ -44,6 +44,54 @@ describe("题目路由", () => {
     expect(encoded.status).toBe(200)
   })
 
+  it("列出并下载题目 workspace 文件", async () => {
+    const { app, project } = appWithProject()
+    project.workspaceFilesValue = {
+      files: [
+        {
+          path: "artifacts/exploit.py",
+          size: 12,
+          modifiedAt: "2026-08-09T00:00:00.000Z",
+        },
+      ],
+      truncated: false,
+    }
+    project.workspaceFileValues.set(
+      "artifacts/exploit.py",
+      new TextEncoder().encode("print('pwn')"),
+    )
+
+    const listed = await app.request("/api/challenges/pwn-1/files")
+    expect(listed.status).toBe(200)
+    expect(await jsonOf(listed)).toMatchObject({
+      files: [{ path: "artifacts/exploit.py", size: 12 }],
+      truncated: false,
+    })
+
+    const downloaded = await app.request(
+      "/api/challenges/pwn-1/files/download?path=artifacts%2Fexploit.py",
+    )
+    expect(downloaded.status).toBe(200)
+    expect(downloaded.headers.get("content-disposition")).toContain(
+      'filename="exploit.py"',
+    )
+    expect(await downloaded.text()).toBe("print('pwn')")
+    expect(
+      (
+        await app.request(
+          "/api/challenges/pwn-1/files/download?path=missing.txt",
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      (
+        await app.request(
+          "/api/challenges/pwn-1/files/download?path=..%2Fsecret.txt",
+        )
+      ).status,
+    ).toBe(400)
+  })
+
   it.each([
     {
       label: "模型未配置时拒绝刷新",

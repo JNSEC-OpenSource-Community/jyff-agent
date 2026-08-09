@@ -12,6 +12,7 @@ import type {
   RunRecord,
   SubagentRecord,
   TldrRecord,
+  WorkspaceArtifactListing,
 } from "@ctf-agent/core"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type {
@@ -362,6 +363,28 @@ export class FakeDashboardProject implements DashboardProject {
   }
   async challengeWriteup(_challengeId: string) {
     return structuredClone(this.writeupValue)
+  }
+  workspaceFilesValue: WorkspaceArtifactListing = {
+    files: [],
+    truncated: false,
+  }
+  workspaceFileValues = new Map<string, Uint8Array>()
+  async challengeWorkspaceFiles(_challengeId: string) {
+    return structuredClone(this.workspaceFilesValue)
+  }
+  async challengeWorkspaceFile(_challengeId: string, artifactPath: string) {
+    if (artifactPath.split(/[\\/]/).includes("..")) {
+      throw new Error("Workspace artifact path escapes the challenge workspace")
+    }
+    const content = this.workspaceFileValues.get(artifactPath)
+    if (!content) {
+      const error = new Error(
+        `Workspace artifact does not exist: ${artifactPath}`,
+      )
+      Object.assign(error, { code: "ENOENT" })
+      throw error
+    }
+    return content
   }
   schedulerAttemptCount(challengeId: string): number {
     return this.runValues.filter(

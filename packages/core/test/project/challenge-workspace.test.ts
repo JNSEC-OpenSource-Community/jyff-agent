@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   assertWorkspaceArtifactContained,
   challengeWorkspacePath,
+  listWorkspaceArtifacts,
+  readWorkspaceArtifact,
   resolveWorkspaceArtifact,
 } from "../../src/project/challenge-workspace.ts"
 
@@ -66,5 +68,46 @@ describe("challenge workspace", () => {
     await expect(
       assertWorkspaceArtifactContained(workspace, link),
     ).rejects.toThrow("symlink escapes")
+  })
+
+  it("递归列出普通文件并在上限处截断", async () => {
+    const root = await mkdtemp(join(tmpdir(), "challenge-workspace-list-"))
+    roots.push(root)
+    const workspace = join(root, "workspace")
+    await mkdir(join(workspace, "nested"), { recursive: true })
+    await writeFile(join(workspace, "a.txt"), "a")
+    await writeFile(join(workspace, "nested", "b.bin"), "binary")
+
+    const listing = await listWorkspaceArtifacts(workspace)
+    expect(listing).toMatchObject({
+      truncated: false,
+      files: [
+        { path: "a.txt", size: 1 },
+        { path: "nested/b.bin", size: 6 },
+      ],
+    })
+    expect(await listWorkspaceArtifacts(workspace, 1)).toMatchObject({
+      truncated: true,
+      files: [{ path: "a.txt" }],
+    })
+  })
+
+  it("读取文件时拒绝通过父目录 symlink 逃逸", async () => {
+    const root = await mkdtemp(join(tmpdir(), "challenge-workspace-read-"))
+    roots.push(root)
+    const workspace = join(root, "workspace")
+    const outside = join(root, "outside")
+    await mkdir(workspace)
+    await mkdir(outside)
+    await writeFile(join(outside, "secret.txt"), "secret")
+    await symlink(
+      outside,
+      join(workspace, "escape"),
+      process.platform === "win32" ? "junction" : "dir",
+    )
+
+    await expect(
+      readWorkspaceArtifact(workspace, "escape/secret.txt"),
+    ).rejects.toThrow("escapes")
   })
 })

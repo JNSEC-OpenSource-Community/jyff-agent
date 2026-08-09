@@ -18,6 +18,7 @@ import type {
   RunSessionExportMetadata,
   SubagentRecord,
   TldrRecord,
+  WorkspaceArtifactListing,
 } from "@ctf-agent/core"
 import type { AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core"
 
@@ -159,6 +160,13 @@ export interface DashboardProject {
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   challengeWriteup(challengeId: string): Promise<ChallengeWriteup>
+  challengeWorkspaceFiles(
+    challengeId: string,
+  ): Promise<WorkspaceArtifactListing>
+  challengeWorkspaceFile(
+    challengeId: string,
+    artifactPath: string,
+  ): Promise<Uint8Array>
   tldr(challengeId: string): TldrRecord | undefined
   refreshTldr(challengeId: string, agent: AgentOptions): Promise<TldrRecord>
   schedulerAttemptCount(challengeId: string): number

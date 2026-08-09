@@ -82,6 +82,9 @@ import {
 import {
   challengeWorkspaceKey,
   challengeWorkspacePath,
+  listWorkspaceArtifacts,
+  readWorkspaceArtifact,
+  type WorkspaceArtifactListing,
 } from "./challenge-workspace.ts"
 import {
   findProjectRoot,
@@ -437,6 +440,24 @@ export class Project {
       validation,
       content: await readFile(validation.path, "utf8"),
     }
+  }
+
+  challengeWorkspaceFiles(
+    challengeId: string,
+  ): Promise<WorkspaceArtifactListing> {
+    return listWorkspaceArtifacts(
+      challengeWorkspacePath(this.agentDirectory, challengeId),
+    )
+  }
+
+  challengeWorkspaceFile(
+    challengeId: string,
+    artifactPath: string,
+  ): Promise<Uint8Array> {
+    return readWorkspaceArtifact(
+      challengeWorkspacePath(this.agentDirectory, challengeId),
+      artifactPath,
+    )
   }
 
   async refresh(): Promise<ContestOverview> {

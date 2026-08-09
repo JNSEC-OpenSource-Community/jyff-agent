@@ -44,6 +44,7 @@ docs/               当前架构与扩展协议
 - 多 Project 代码不得依赖“当前选中 Project”的隐式全局状态：HTTP API、SSE、Scheduler、RunStore、workspace 和平台 Secret 都必须按显式 Project ID 隔离。平台 Secret 写入全局 `secrets.json` 时必须使用 Project 命名空间；旧未命名空间键只允许作为兼容读取回退。
 - Project 的创建时间与归档状态由 `project-registry.json` 持久化；归档只影响列表分组，不停止调度器或 Agent，也不得退回浏览器本地状态。
 - WebUI 使用 React Router 页面路由、Iconify 图标和基于 Radix/CVA 的 shadcn 风格组件。业务页面不使用裸 `<svg>`，不要重新引入巨型设置/详情弹窗；Solver 与 SubAgent 对话复用同一结构化 Pi session 组件。
+- 题目 workspace 文件 API 只列出普通文件、不跟随 symlink，下载必须同时通过相对路径与真实路径 containment 校验；列表保持 2,000 项上限。桌面侧栏折叠状态属于浏览器本地偏好，不写入 Project 配置。
 - 多进行 git commit，commit message 遵循 gitmoji + conventional 混合规范，如 `✨ feat(solver): add a new feature`, `🐛 fix(core): fix something`
 
 ## 单元测试最佳实践

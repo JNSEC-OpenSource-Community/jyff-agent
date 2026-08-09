@@ -31,6 +31,7 @@ import { AgentSidebar } from "./challenge/AgentSidebar.tsx"
 import { AttemptHistory } from "./challenge/AttemptHistory.tsx"
 import { ConversationPanel } from "./challenge/ConversationPanel.tsx"
 import { IntelligencePanel } from "./challenge/IntelligencePanel.tsx"
+import { WorkspaceFilesPanel } from "./challenge/WorkspaceFilesPanel.tsx"
 
 export function ChallengePage() {
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
@@ -107,6 +108,7 @@ export function ChallengePage() {
                 <TabsTrigger value="conversation">对话</TabsTrigger>
                 <TabsTrigger value="intelligence">情报</TabsTrigger>
                 <TabsTrigger value="attempts">Attempts</TabsTrigger>
+                <TabsTrigger value="files">文件</TabsTrigger>
                 <TabsTrigger value="writeup">Writeup</TabsTrigger>
               </TabsList>
               {selectedRun ? (
@@ -155,7 +157,7 @@ export function ChallengePage() {
                   <span className="flex-1" />
                 )}
               </div>
-              <TabsList className="grid h-9 w-full grid-cols-4 gap-0 rounded-none border-x-0 border-b-0 bg-transparent p-0 px-2">
+              <TabsList className="grid h-9 w-full grid-cols-5 gap-0 rounded-none border-x-0 border-b-0 bg-transparent p-0 px-2">
                 <TabsTrigger value="conversation" className="px-1 text-xs">
                   对话
                 </TabsTrigger>
@@ -164,6 +166,9 @@ export function ChallengePage() {
                 </TabsTrigger>
                 <TabsTrigger value="attempts" className="px-1 text-xs">
                   Attempts
+                </TabsTrigger>
+                <TabsTrigger value="files" className="px-1 text-xs">
+                  文件
                 </TabsTrigger>
                 <TabsTrigger value="writeup" className="px-1 text-xs">
                   Writeup
@@ -221,6 +226,13 @@ export function ChallengePage() {
                 projectId={projectId}
                 runs={details.runs}
                 onChanged={reload}
+              />
+            </TabsContent>
+
+            <TabsContent value="files" className="flex-1 overflow-y-auto p-5">
+              <WorkspaceFilesPanel
+                projectId={projectId}
+                challengeId={challengeId}
               />
             </TabsContent>
 

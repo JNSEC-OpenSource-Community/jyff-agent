@@ -18,6 +18,7 @@
 - 可选 WebUI 登录、全局 Provider/模型池配置，以及按 Project 隔离的平台凭据；
 - React 路由式 WebUI、HTTP API 与按 Project 订阅的 SSE 实时更新。
 - shadcn/ui 源码组件、Tailwind CSS v4 与 Iconify 构成的可维护前端组件层。
+- 题目工作区文件浏览与下载，可直接获取附件、脚本和分析产物。
 
 ## 使用 Docker Compose 启动
 
@@ -194,6 +195,8 @@ WebUI 可执行入口还支持：
 WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”。该操作复用原 Run ID、attempt 编号、workspace 和 Pi JSONL session，不新增 attempt；提示词留空时使用 `INCOMPLETE_CONTINUATION_PROMPT`，也可以提供最长 32,000 字符的自定义继续提示词。
 
 WebUI 使用浏览器路由：`/` 管理全部 Project，`/projects/new` 创建 Project，`/settings` 管理全局凭据、模型池与登录策略，`/projects/:id` 管理一场比赛，`/projects/:id/settings` 管理该比赛的连接与运行配置，`/projects/:id/challenges/:challengeId` 是以对话为核心的题目工作区。Solver 与 SubAgent 复用结构化 Pi session 对话布局；移动端通过底部 Drawer 查看题目状态和 Agents；黑板、Attempts 和 Writeup 分页显示，工具与推理块按需展开。用户可见时间统一转换为本地可读格式。
+
+题目页的“文件”Tab 递归列出题目 workspace 中的普通文件并提供下载；列表最多返回 2,000 项且不跟随 symlink，下载路径同时经过相对路径与真实路径 containment 校验。桌面侧栏折叠偏好保存在浏览器本地，切换页面或刷新后保持不变。
 
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 

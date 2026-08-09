@@ -1,3 +1,4 @@
+import { basename } from "node:path"
 import { Hono } from "hono"
 import { buildChallengeDetails } from "../../domain/view.ts"
 import type { App, AppContext, AppEnv } from "../context.ts"
@@ -146,6 +147,51 @@ export function challengeRoutes(services: Services): App {
     )
     c.header("Cache-Control", "no-store")
     return c.body(Buffer.from(writeup.content, "utf8"))
+  })
+
+  app.get("/challenges/:challengeId/files", async (c) => {
+    const project = services.requireProject(projectIdOf(c))
+    const listing = await project.challengeWorkspaceFiles(
+      c.req.param("challengeId"),
+    )
+    c.header("Cache-Control", "no-store")
+    return c.json(listing)
+  })
+
+  app.get("/challenges/:challengeId/files/download", async (c) => {
+    const artifactPath = c.req.query("path")
+    if (!artifactPath) {
+      throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
+    }
+    const project = services.requireProject(projectIdOf(c))
+    let content: Uint8Array
+    try {
+      content = await project.challengeWorkspaceFile(
+        c.req.param("challengeId"),
+        artifactPath,
+      )
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === "ENOENT") {
+        throw new HttpError(404, "workspace_file_not_found", "文件不存在")
+      }
+      if (
+        error instanceof Error &&
+        (error.message.includes("Workspace artifact") || code === "EISDIR")
+      ) {
+        throw new HttpError(400, "invalid_workspace_path", error.message)
+      }
+      throw error
+    }
+    const name = basename(artifactPath)
+    c.header("Content-Type", "application/octet-stream")
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${filenameSafe(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    )
+    c.header("Content-Length", String(content.byteLength))
+    c.header("Cache-Control", "no-store")
+    return c.body(Buffer.from(content))
   })
 
   // 公告审核：与题目绑定，全局与项目级均可用。
