@@ -38,6 +38,7 @@ export function ConversationPanel({
   streamUrl,
   sendUrl,
   exportUrl,
+  onSelectSubagent,
   onChanged,
 }: {
   target: ConversationTarget
@@ -48,6 +49,7 @@ export function ConversationPanel({
   streamUrl: string
   sendUrl: string
   exportUrl?: string
+  onSelectSubagent?(id: string): void
   onChanged(): Promise<void>
 }): React.ReactElement {
   const {
@@ -68,6 +70,7 @@ export function ConversationPanel({
   const atBottomRef = useRef(true)
   const prevLenRef = useRef(0)
   const [newBelow, setNewBelow] = useState(0)
+  const [awayFromBottom, setAwayFromBottom] = useState(false)
   const messages = conversation?.messages ?? []
   const contentVersion = useMemo(
     () =>
@@ -94,10 +97,12 @@ export function ConversationPanel({
     if (prevLenRef.current === 0 && currentLen > 0) {
       requestAnimationFrame(() => {
         element.scrollTop = element.scrollHeight
+        setAwayFromBottom(false)
       })
     } else if (atBottomRef.current) {
       requestAnimationFrame(() => {
         element.scrollTop = element.scrollHeight
+        setAwayFromBottom(false)
       })
     } else if (currentLen > prevLenRef.current) {
       setNewBelow((count) => count + currentLen - prevLenRef.current)
@@ -110,6 +115,7 @@ export function ConversationPanel({
     if (!element) return
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" })
     atBottomRef.current = true
+    setAwayFromBottom(false)
     setNewBelow(0)
   }, [])
 
@@ -119,6 +125,7 @@ export function ConversationPanel({
     const atBottom =
       element.scrollHeight - element.scrollTop - element.clientHeight < 48
     atBottomRef.current = atBottom
+    setAwayFromBottom(!atBottom)
     if (atBottom) setNewBelow(0)
   }, [])
 
@@ -232,6 +239,7 @@ export function ConversationPanel({
                     streaming={streaming}
                     latest={index === messages.length - 1}
                     toolActivities={activity.tools}
+                    onSelectSubagent={onSelectSubagent}
                   />
                 </article>
               )
@@ -240,16 +248,23 @@ export function ConversationPanel({
         </div>
       </div>
 
-      {newBelow > 0 ? (
-        <div className="relative z-10 flex h-0 shrink-0 justify-center">
+      {awayFromBottom ? (
+        <div className="relative z-20 flex h-0 shrink-0 justify-end pr-5 max-lg:pr-3">
           <button
             type="button"
             onClick={scrollToBottom}
-            className="-translate-y-12 rounded-lg border border-border bg-popover px-3 py-1.5 text-xs font-medium text-foreground shadow-lg transition-colors hover:border-primary/40 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="-translate-y-3 rounded-full border border-border/90 bg-popover/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-[0_8px_24px_rgba(15,23,42,0.16)] backdrop-blur transition-all hover:-translate-y-3.5 hover:border-primary/40 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            aria-label={
+              newBelow > 0 ? `回到底部，${newBelow} 条新内容` : "回到底部"
+            }
           >
             <span className="flex items-center gap-1.5">
-              <Icon icon="lucide:arrow-down" width="13" aria-hidden="true" />
-              {newBelow} 条新内容
+              <Icon
+                icon="lucide:arrow-down-to-line"
+                width="13"
+                aria-hidden="true"
+              />
+              {newBelow > 0 ? `${newBelow} 条新内容` : "回到底部"}
             </span>
           </button>
         </div>

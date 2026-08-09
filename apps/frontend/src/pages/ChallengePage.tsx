@@ -200,6 +200,7 @@ export function ChallengePage() {
                   streamUrl={streamUrl}
                   sendUrl={sendUrl}
                   exportUrl={exportUrl}
+                  onSelectSubagent={selectSubagent}
                   onChanged={reload}
                 />
               ) : (

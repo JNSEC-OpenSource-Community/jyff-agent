@@ -112,8 +112,17 @@ function toolDetail(name: string, args: unknown): string | null {
         return flag ? `🚩 ${flag.slice(0, 24)}…` : null
       }
       case "Agent": {
-        const role = String(a.role ?? a.subagent ?? "")
-        return role || null
+        const role = String(a.subagent_type ?? a.role ?? a.subagent ?? "")
+        const description = String(a.description ?? "")
+        return [role, description].filter(Boolean).join(" · ") || null
+      }
+      case "get_subagent_result": {
+        const id = String(a.agent_id ?? "")
+        return a.wait === true ? `${shortId(id)} · 等待完成` : shortId(id)
+      }
+      case "steer_subagent":
+      case "cancel_subagent": {
+        return shortId(String(a.agent_id ?? "")) || null
       }
       default:
         return null
@@ -121,6 +130,51 @@ function toolDetail(name: string, args: unknown): string | null {
   } catch {
     return null
   }
+}
+
+const SUBAGENT_TOOL_NAMES = new Set([
+  "Agent",
+  "get_subagent_result",
+  "steer_subagent",
+  "cancel_subagent",
+  "list_subagents",
+])
+
+function shortId(id: string): string {
+  if (!id) return ""
+  return id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-3)}` : id
+}
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined
+  }
+  return value as Record<string, unknown>
+}
+
+function parsedToolOutput(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "string") {
+    try {
+      return recordOf(JSON.parse(value))
+    } catch {
+      return undefined
+    }
+  }
+  const record = recordOf(value)
+  return recordOf(record?.details) ?? record
+}
+
+function subagentIdFromTool(
+  toolName: string,
+  args: unknown,
+  output: unknown,
+): string | undefined {
+  if (!SUBAGENT_TOOL_NAMES.has(toolName)) return undefined
+  const input = recordOf(args)
+  const result = parsedToolOutput(output)
+  const candidate =
+    input?.agent_id ?? input?.resume ?? result?.id ?? result?.agent_id
+  return typeof candidate === "string" && candidate ? candidate : undefined
 }
 
 function ToolBlock({
@@ -131,6 +185,8 @@ function ToolBlock({
   activity,
   autoOpen = false,
   ansi = false,
+  subagent,
+  subagentTool = false,
 }: {
   label: string
   detail: string
@@ -139,6 +195,11 @@ function ToolBlock({
   activity?: AgentToolActivity
   autoOpen?: boolean
   ansi?: boolean
+  subagent?: {
+    id: string
+    onSelect(id: string): void
+  }
+  subagentTool?: boolean
 }): React.ReactElement {
   const elapsed = useElapsed(activity)
   const running = activity?.status === "running"
@@ -167,53 +228,79 @@ function ToolBlock({
             : "border-border/80 bg-muted/55",
       )}
     >
-      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
-        <span
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-md border",
-            failed
-              ? "border-danger/25 bg-danger/10 text-danger"
-              : running
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border bg-background/60",
-          )}
-        >
-          <Icon
-            icon={failed ? "lucide:circle-x" : "lucide:terminal-square"}
-            width="14"
-            aria-hidden="true"
-          />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-left">
-          {label}
-          {extra ? (
-            <span className="ml-1.5 font-normal text-muted-foreground/70">
-              {extra}
-            </span>
-          ) : null}
-        </span>
-        {statusLabel ? (
+      <div className="flex min-w-0 items-stretch">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
           <span
             className={cn(
-              "shrink-0 font-mono text-[10px] tabular-nums",
+              "flex size-6 shrink-0 items-center justify-center rounded-md border",
               failed
-                ? "text-danger"
+                ? "border-danger/25 bg-danger/10 text-danger"
                 : running
-                  ? "text-primary"
-                  : "text-muted-foreground",
+                  ? "border-primary/30 bg-primary/10 text-primary"
+                  : "border-border bg-background/60",
             )}
-            aria-live={running ? "polite" : undefined}
           >
-            {statusLabel}
+            <Icon
+              icon={
+                failed
+                  ? "lucide:circle-x"
+                  : subagentTool
+                    ? "lucide:waypoints"
+                    : "lucide:terminal-square"
+              }
+              width="14"
+              aria-hidden="true"
+            />
           </span>
+          <span className="min-w-0 flex-1 truncate text-left">
+            {label}
+            {extra ? (
+              <span className="ml-1.5 font-normal text-muted-foreground/70">
+                {extra}
+              </span>
+            ) : null}
+          </span>
+          {statusLabel ? (
+            <span
+              className={cn(
+                "shrink-0 font-mono text-[10px] tabular-nums",
+                failed
+                  ? "text-danger"
+                  : running
+                    ? "text-primary"
+                    : "text-muted-foreground",
+              )}
+              aria-live={running ? "polite" : undefined}
+            >
+              {statusLabel}
+            </span>
+          ) : null}
+          <Icon
+            icon="lucide:chevron-down"
+            className="shrink-0 transition-transform group-data-[state=open]/tool:rotate-180"
+            width="15"
+            aria-hidden="true"
+          />
+        </CollapsibleTrigger>
+        {subagent ? (
+          <button
+            type="button"
+            onClick={() => subagent.onSelect(subagent.id)}
+            className="group/link flex shrink-0 items-center gap-1.5 border-l border-border/80 px-3 text-xs font-medium text-primary outline-none transition-colors hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            aria-label={`打开 SubAgent ${subagent.id} 对话`}
+          >
+            <span className="hidden font-mono text-[10px] sm:inline">
+              {shortId(subagent.id)}
+            </span>
+            <Icon
+              icon="lucide:arrow-up-right"
+              width="13"
+              className="transition-transform group-hover/link:-translate-y-0.5 group-hover/link:translate-x-0.5"
+              aria-hidden="true"
+            />
+          </button>
         ) : null}
-        <Icon
-          icon="lucide:chevron-down"
-          className="shrink-0 transition-transform group-data-[state=open]/tool:rotate-180"
-          width="15"
-          aria-hidden="true"
-        />
-      </CollapsibleTrigger>
+      </div>
       <CollapsibleContent className="border-t border-border/80">
         <pre className="max-w-full overflow-x-auto px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">
           {ansi ? <AnsiText text={renderedDetail} /> : renderedDetail}
@@ -284,17 +371,25 @@ export function MessageBody({
   streaming = false,
   latest = false,
   toolActivities = {},
+  onSelectSubagent,
 }: {
   message: AgentMessage
   streaming?: boolean
   latest?: boolean
   toolActivities?: Record<string, AgentToolActivity>
+  onSelectSubagent?(id: string): void
 }): React.ReactElement {
   if (message.role === "user") {
     const raw = textContent(message.content)
     const xml = classifyXml(raw)
     if (xml.isXml) {
-      return <XmlContent tag={xml.tag} content={xml.content} />
+      return (
+        <XmlContent
+          tag={xml.tag}
+          content={xml.content}
+          onSelectSubagent={onSelectSubagent}
+        />
+      )
     }
     return <MarkdownContent>{raw}</MarkdownContent>
   }
@@ -310,6 +405,7 @@ export function MessageBody({
                   key={`text-${index}`}
                   tag={xml.tag}
                   content={xml.content}
+                  onSelectSubagent={onSelectSubagent}
                 />
               )
             }
@@ -329,17 +425,30 @@ export function MessageBody({
                 latest={latest}
               />
             )
-          if (part.type === "toolCall")
+          if (part.type === "toolCall") {
+            const activity = toolActivities[part.id]
+            const subagentId = subagentIdFromTool(
+              part.name,
+              part.arguments,
+              activity?.result,
+            )
             return (
               <ToolBlock
                 key={part.id}
                 label={toolLabel(part.name)}
                 detail={JSON.stringify(part.arguments, null, 2)}
                 extra={toolDetail(part.name, part.arguments)}
-                activity={toolActivities[part.id]}
+                activity={activity}
                 ansi={part.name === "bash"}
+                subagent={
+                  subagentId && onSelectSubagent
+                    ? { id: subagentId, onSelect: onSelectSubagent }
+                    : undefined
+                }
+                subagentTool={SUBAGENT_TOOL_NAMES.has(part.name)}
               />
             )
+          }
           return null
         })}
         {message.errorMessage ? (
@@ -352,6 +461,7 @@ export function MessageBody({
   }
   if (message.role === "toolResult") {
     const detail = textContent(message.content)
+    const subagentId = subagentIdFromTool(message.toolName, undefined, detail)
     return (
       <ToolBlock
         label={`${toolLabel(message.toolName)} · 返回`}
@@ -359,6 +469,12 @@ export function MessageBody({
         error={message.isError}
         autoOpen={shouldAutoExpandToolResult(detail)}
         ansi={message.toolName === "bash"}
+        subagent={
+          subagentId && onSelectSubagent
+            ? { id: subagentId, onSelect: onSelectSubagent }
+            : undefined
+        }
+        subagentTool={SUBAGENT_TOOL_NAMES.has(message.toolName)}
       />
     )
   }
@@ -434,9 +550,11 @@ export function MessageMeta({
 function XmlContent({
   tag,
   content,
+  onSelectSubagent,
 }: {
   tag: string | null
   content: string
+  onSelectSubagent?(id: string): void
 }): React.ReactElement {
   const parsed = parseXmlContent(content)
 
@@ -470,6 +588,13 @@ function XmlContent({
           icon="lucide:bell"
           iconColor="text-warning"
           title="SubAgent Notification"
+        />
+      )
+    case "subagent_notification":
+      return (
+        <SubagentNotificationCard
+          parsed={parsed}
+          onSelectSubagent={onSelectSubagent}
         />
       )
     default:
@@ -639,7 +764,7 @@ function AnnouncementsCard({
   )
 }
 
-/** JSON 编码的 XML 块（blackboard、subagents、task-notification） */
+/** JSON 编码的 XML 块（blackboard、subagents、旧 task-notification） */
 function JsonCard({
   parsed,
   icon,
@@ -680,6 +805,63 @@ function JsonCard({
       </CollapsibleContent>
     </Collapsible>
   )
+}
+
+function SubagentNotificationCard({
+  parsed,
+  onSelectSubagent,
+}: {
+  parsed: ReturnType<typeof parseXmlContent>
+  onSelectSubagent?(id: string): void
+}): React.ReactElement {
+  const raw = parsed.children
+  const {
+    id = "",
+    role = "SubAgent",
+    status = "",
+    output = "",
+  } = Object.fromEntries(
+    Object.entries(raw).map(([key, value]) => [key, decodeXmlText(value)]),
+  )
+  return (
+    <div className="overflow-hidden rounded-lg border border-primary/25 bg-primary/[0.035]">
+      <div className="flex items-center gap-2 border-b border-primary/15 px-3 py-2">
+        <span className="flex size-6 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+          <Icon icon="lucide:radio-tower" width="13" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold text-foreground">
+            SubAgent 已回报
+          </span>
+          <span className="block truncate font-mono text-[10px] text-muted-foreground">
+            {role} · {shortId(id)} {status ? `· ${status}` : ""}
+          </span>
+        </span>
+        {id && onSelectSubagent ? (
+          <button
+            type="button"
+            onClick={() => onSelectSubagent(id)}
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-primary outline-none transition-colors hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            打开对话
+            <Icon icon="lucide:arrow-up-right" width="12" aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      <p className="px-3 py-2.5 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+        {output || "SubAgent 未返回文本结果。"}
+      </p>
+    </div>
+  )
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&")
 }
 
 /** 通用 XML 卡片：带缩进美化的代码块 */

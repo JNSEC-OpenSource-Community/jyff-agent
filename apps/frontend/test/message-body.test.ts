@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { MessageBody } from "../src/pages/challenge/MessageBody.tsx"
 
 describe("MessageBody", () => {
@@ -68,6 +68,74 @@ describe("MessageBody", () => {
     )
     expect(screen.getByText("关键假设").tagName).toBe("STRONG")
   })
+
+  it("将 SubAgent 工具结果呈现为可跳转的 worker 通道", () => {
+    const select = vi.fn()
+    render(
+      createElement(MessageBody, {
+        message: {
+          role: "toolResult",
+          toolCallId: "tool-subagent",
+          toolName: "Agent",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                id: "worker-123456789",
+                status: "running",
+              }),
+            },
+          ],
+          isError: false,
+          timestamp: 1,
+        },
+        onSelectSubagent: select,
+      }),
+    )
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "打开 SubAgent worker-123456789 对话",
+      }),
+    )
+    expect(select).toHaveBeenCalledWith("worker-123456789")
+  })
+
+  it("把 wait 调用和结构化完成通知显示为 SubAgent 语义", () => {
+    const select = vi.fn()
+    const { unmount } = render(
+      createElement(MessageBody, {
+        message: assistantToolCall("get_subagent_result", {
+          agent_id: "worker-wait",
+          wait: true,
+        }),
+        onSelectSubagent: select,
+      }),
+    )
+    expect(screen.getByText(/等待完成/)).toBeTruthy()
+    expect(
+      screen.getByRole("button", {
+        name: "打开 SubAgent worker-wait 对话",
+      }),
+    ).toBeTruthy()
+
+    unmount()
+    render(
+      createElement(MessageBody, {
+        message: {
+          role: "user",
+          content:
+            "<subagent_notification>\n  <id>worker-done</id>\n  <role>explorer</role>\n  <status>completed</status>\n  <output>offset &lt; 0x40</output>\n</subagent_notification>",
+          timestamp: 1,
+        },
+        onSelectSubagent: select,
+      }),
+    )
+    expect(screen.getByText("SubAgent 已回报")).toBeTruthy()
+    expect(screen.getByText("offset < 0x40")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /打开对话/ }))
+    expect(select).toHaveBeenCalledWith("worker-done")
+  })
 })
 
 function toolResult(text: string): AgentMessage {
@@ -103,6 +171,29 @@ function thinkingMessage(): AgentMessage {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason: "stop",
+    timestamp: 1,
+  }
+}
+
+function assistantToolCall(
+  name: string,
+  args: Record<string, unknown>,
+): AgentMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "tool-subagent", name, arguments: args }],
+    api: "openai-completions",
+    provider: "test",
+    model: "test-model",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
     timestamp: 1,
   }
 }

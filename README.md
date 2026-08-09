@@ -12,12 +12,12 @@
 - 每题独立 Docker sandbox；
 - 题目上下文结构化注入、附件自动下载；
 - Pi 原生 JSONL session 保存、恢复、分支、compaction、结构化对话读取与 HTML 导出；
-- 每个 Run 独立的 SubAgent fleet：专业角色、并发队列、后台通知与 steer/resume/cancel；
+- 每个 Run 独立的 SubAgent fleet：专业角色、并发队列、完成后立即 steer 通知，以及可被父消息中断的结果等待和 steer/resume/cancel；
 - SQLite RunStore、完整工具时间线和跨 attempt 黑板；
 - 多 Project 控制面：每场比赛拥有独立调度器、数据库、workspace 与运行配置；
 - 可选 WebUI 登录、全局 Provider/模型池配置，以及按 Project 隔离的平台凭据；
 - React 路由式 WebUI、HTTP API 与按 Project 订阅的 SSE 实时更新。
-- Solver 与 SubAgent 对话通过独立 SSE 实时显示模型文本、Markdown/代码高亮、ANSI 终端输出、工具状态、耗时与重试/上下文整理阶段；短工具结果自动展开，流式推理在下一条消息出现前保持展开，完成消息仍以 Pi JSONL 为权威。
+- Solver 与 SubAgent 对话通过独立 SSE 实时显示模型文本、Markdown/代码高亮、ANSI 终端输出、工具状态、耗时与重试/上下文整理阶段；短工具结果自动展开，流式推理在下一条消息出现前保持展开，离开底部时可一键返回，SubAgent 工具与通知可跳转到对应 worker，完成消息仍以 Pi JSONL 为权威。
 - shadcn/ui 源码组件、Tailwind CSS v4 与 Iconify 构成的可维护前端组件层。
 - 题目工作区文件浏览与下载，可直接获取附件、脚本和分析产物。
 
