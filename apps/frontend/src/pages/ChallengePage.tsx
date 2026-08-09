@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { MarkdownContent } from "../components/content/MarkdownContent.tsx"
 import {
@@ -29,12 +29,16 @@ import { toneForStatus } from "../lib/challenge.ts"
 import { STATUS_LABELS } from "../lib/labels.ts"
 import { AgentSidebar } from "./challenge/AgentSidebar.tsx"
 import { AttemptHistory } from "./challenge/AttemptHistory.tsx"
-import { ConversationPanel } from "./challenge/ConversationPanel.tsx"
+import {
+  ConversationPanel,
+  type ConversationViewStateStore,
+} from "./challenge/ConversationPanel.tsx"
 import { IntelligencePanel } from "./challenge/IntelligencePanel.tsx"
 import { WorkspaceFilesPanel } from "./challenge/WorkspaceFilesPanel.tsx"
 
 export function ChallengePage() {
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
+  const conversationViewStates = useRef<ConversationViewStateStore>(new Map())
   const { projectId = "", challengeId = "" } = useParams()
   const {
     details,
@@ -188,6 +192,7 @@ export function ChallengePage() {
             >
               {selectedRun ? (
                 <ConversationPanel
+                  key={`${rid}:${selectedSubagent?.id ?? "solver"}`}
                   target={target}
                   attempt={selectedRun.attempt}
                   runStatus={selectedRun.status}
@@ -200,6 +205,8 @@ export function ChallengePage() {
                   streamUrl={streamUrl}
                   sendUrl={sendUrl}
                   exportUrl={exportUrl}
+                  viewKey={`${rid}:${selectedSubagent?.id ?? "solver"}`}
+                  viewStateStore={conversationViewStates.current}
                   onSelectSubagent={selectSubagent}
                   onChanged={reload}
                 />

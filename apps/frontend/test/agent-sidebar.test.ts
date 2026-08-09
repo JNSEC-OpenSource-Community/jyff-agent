@@ -53,15 +53,37 @@ describe("AgentSidebar", () => {
       "minmax(0,1fr)",
     )
   })
+
+  it("区分平台未提供与明确不需要环境", () => {
+    const unknownEnvironment = {
+      ...details,
+      challenge: { ...details.challenge, needsEnv: undefined },
+      environment: null,
+    } as ChallengeDetails
+    const { rerender } = render(sidebar(null, unknownEnvironment))
+
+    expect(screen.getByText("平台未提供")).toBeTruthy()
+
+    rerender(
+      sidebar(null, {
+        ...unknownEnvironment,
+        challenge: { ...unknownEnvironment.challenge, needsEnv: false },
+      }),
+    )
+    expect(screen.getByText("不需要")).toBeTruthy()
+  })
 })
 
 function renderSidebar(selectedSubagentId: string | null) {
   return render(sidebar(selectedSubagentId))
 }
 
-function sidebar(selectedSubagentId: string | null) {
+function sidebar(
+  selectedSubagentId: string | null,
+  challengeDetails: ChallengeDetails = details,
+) {
   return createElement(AgentSidebar, {
-    details,
+    details: challengeDetails,
     selectedRunId: "run-1",
     selectedSubagentId,
     onSelectSubagent: vi.fn(),

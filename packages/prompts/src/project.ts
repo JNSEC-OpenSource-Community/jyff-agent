@@ -20,7 +20,7 @@ export function challengeContextPrompt(
     `  <id>${xml(challenge.id)}</id>`,
     `  <title>${xml(challenge.title)}</title>`,
     `  <category>${xml(challenge.category)}</category>`,
-    `  <needs_environment>${challenge.needsEnv === true}</needs_environment>`,
+    `  <needs_environment>${needsEnvironmentValue(challenge.needsEnv)}</needs_environment>`,
     `  <description>${xml(challenge.description)}</description>`,
     "  <attachments>",
     attachmentXml,
@@ -29,6 +29,10 @@ export function challengeContextPrompt(
   ]
     .filter((line) => line !== "")
     .join("\n")
+}
+
+function needsEnvironmentValue(value: boolean | undefined): string {
+  return value === undefined ? "unknown" : String(value)
 }
 
 function xml(value: string): string {

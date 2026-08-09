@@ -351,10 +351,11 @@ describe("GZCTF platform contract", () => {
     expect(counts.get("/api/game/9/details")).toBe(3)
     expect(counts.get("/api/game/9/notices?count=100&skip=0")).toBe(1)
 
-    await Promise.all([
+    const [firstChallenge] = await Promise.all([
       project.bindChallenge("12"),
       project.bindChallenge("12"),
     ])
+    expect((await firstChallenge?.getInfo())?.needsEnv).toBe(false)
     expect(counts.get("/api/game/9/challenges/12")).toBe(1)
     expect(counts.get("/api/game/9/details")).toBe(3)
 

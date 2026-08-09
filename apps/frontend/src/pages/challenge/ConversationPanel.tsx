@@ -3,6 +3,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -21,6 +22,14 @@ import { cn } from "../../lib/utils.ts"
 import type { DashboardRun } from "../../types.ts"
 import { MessageBody, MessageMeta } from "./MessageBody.tsx"
 
+export interface ConversationViewState {
+  scrollTop: number
+  atBottom: boolean
+  newBelow: number
+}
+
+export type ConversationViewStateStore = Map<string, ConversationViewState>
+
 function targetLabel(target: ConversationTarget): string {
   return target.type === "solver" ? "Solver Agent" : target.subagent.displayName
 }
@@ -38,6 +47,8 @@ export function ConversationPanel({
   streamUrl,
   sendUrl,
   exportUrl,
+  viewKey,
+  viewStateStore,
   onSelectSubagent,
   onChanged,
 }: {
@@ -49,6 +60,8 @@ export function ConversationPanel({
   streamUrl: string
   sendUrl: string
   exportUrl?: string
+  viewKey?: string
+  viewStateStore?: ConversationViewStateStore
   onSelectSubagent?(id: string): void
   onChanged(): Promise<void>
 }): React.ReactElement {
@@ -67,8 +80,13 @@ export function ConversationPanel({
   )
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const localViewStateStore = useRef<ConversationViewStateStore>(new Map())
+  const activeViewStateStore = viewStateStore ?? localViewStateStore.current
+  const activeViewKey = viewKey ?? conversationUrl
   const atBottomRef = useRef(true)
   const prevLenRef = useRef(0)
+  const newBelowRef = useRef(0)
+  const pendingRestoreRef = useRef<ConversationViewState | null>(null)
   const [newBelow, setNewBelow] = useState(0)
   const [awayFromBottom, setAwayFromBottom] = useState(false)
   const messages = conversation?.messages ?? []
@@ -88,15 +106,49 @@ export function ConversationPanel({
   ].includes(runStatus)
   const status = activityLabel(activity, isRunActive)
 
+  useLayoutEffect(() => {
+    const saved = activeViewStateStore.get(activeViewKey) ?? null
+    pendingRestoreRef.current = saved
+    prevLenRef.current = 0
+    atBottomRef.current = saved?.atBottom ?? true
+    newBelowRef.current = saved?.newBelow ?? 0
+    setNewBelow(newBelowRef.current)
+    setAwayFromBottom(saved ? !saved.atBottom : false)
+
+    return () => {
+      const element = scrollRef.current
+      if (!element) return
+      activeViewStateStore.set(activeViewKey, {
+        scrollTop: element.scrollTop,
+        atBottom: atBottomRef.current,
+        newBelow: newBelowRef.current,
+      })
+    }
+  }, [activeViewKey, activeViewStateStore])
+
   useEffect(() => {
     // 文本增量不会改变消息数，但仍需触发底部跟随。
     void contentVersion
     const currentLen = messages.length
     const element = scrollRef.current
     if (!element) return
-    if (prevLenRef.current === 0 && currentLen > 0) {
+    const saved = pendingRestoreRef.current
+    if (saved && currentLen > 0) {
+      pendingRestoreRef.current = null
+      requestAnimationFrame(() => {
+        element.scrollTop = saved.atBottom
+          ? element.scrollHeight
+          : Math.min(
+              saved.scrollTop,
+              Math.max(0, element.scrollHeight - element.clientHeight),
+            )
+        atBottomRef.current = saved.atBottom
+        setAwayFromBottom(!saved.atBottom)
+      })
+    } else if (prevLenRef.current === 0 && currentLen > 0) {
       requestAnimationFrame(() => {
         element.scrollTop = element.scrollHeight
+        atBottomRef.current = true
         setAwayFromBottom(false)
       })
     } else if (atBottomRef.current) {
@@ -105,7 +157,12 @@ export function ConversationPanel({
         setAwayFromBottom(false)
       })
     } else if (currentLen > prevLenRef.current) {
-      setNewBelow((count) => count + currentLen - prevLenRef.current)
+      const added = currentLen - prevLenRef.current
+      setNewBelow((count) => {
+        const next = count + added
+        newBelowRef.current = next
+        return next
+      })
     }
     prevLenRef.current = currentLen
   }, [contentVersion, messages.length])
@@ -116,6 +173,7 @@ export function ConversationPanel({
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" })
     atBottomRef.current = true
     setAwayFromBottom(false)
+    newBelowRef.current = 0
     setNewBelow(0)
   }, [])
 
@@ -126,7 +184,10 @@ export function ConversationPanel({
       element.scrollHeight - element.scrollTop - element.clientHeight < 48
     atBottomRef.current = atBottom
     setAwayFromBottom(!atBottom)
-    if (atBottom) setNewBelow(0)
+    if (atBottom) {
+      newBelowRef.current = 0
+      setNewBelow(0)
+    }
   }, [])
 
   async function onSubmit(event: FormEvent): Promise<void> {
@@ -249,23 +310,21 @@ export function ConversationPanel({
       </div>
 
       {awayFromBottom ? (
-        <div className="relative z-20 flex h-0 shrink-0 justify-end pr-5 max-lg:pr-3">
+        <div className="relative z-20 flex h-0 shrink-0 items-center justify-center">
           <button
             type="button"
             onClick={scrollToBottom}
-            className="-translate-y-3 rounded-full border border-border/90 bg-popover/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-[0_8px_24px_rgba(15,23,42,0.16)] backdrop-blur transition-all hover:-translate-y-3.5 hover:border-primary/40 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            className="animate-in fade-in-0 slide-in-from-bottom-2 relative inline-flex size-9 -translate-y-5 items-center justify-center rounded-full border border-border/80 bg-card/80 text-foreground opacity-80 shadow-md backdrop-blur-sm transition-[transform,opacity,border-color,background-color] duration-200 hover:-translate-y-[1.375rem] hover:border-primary/40 hover:bg-card hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:animate-none motion-reduce:transition-none"
             aria-label={
               newBelow > 0 ? `回到底部，${newBelow} 条新内容` : "回到底部"
             }
           >
-            <span className="flex items-center gap-1.5">
-              <Icon
-                icon="lucide:arrow-down-to-line"
-                width="13"
-                aria-hidden="true"
-              />
-              {newBelow > 0 ? `${newBelow} 条新内容` : "回到底部"}
-            </span>
+            <Icon icon="lucide:arrow-down" width="15" aria-hidden="true" />
+            {newBelow > 0 ? (
+              <span className="absolute -top-1 -right-1 flex min-w-4.5 items-center justify-center rounded-full bg-primary px-1 text-[9px] leading-4.5 font-semibold text-primary-foreground shadow-sm">
+                {newBelow > 99 ? "99+" : newBelow}
+              </span>
+            ) : null}
           </button>
         </div>
       ) : null}

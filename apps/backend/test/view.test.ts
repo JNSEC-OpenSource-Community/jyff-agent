@@ -52,12 +52,14 @@ describe("WebUI dashboard model", () => {
       snapshot.challenges.find((challenge) => challenge.id === "pwn-1"),
     ).toMatchObject({
       status: "running",
-      needsEnv: false,
       progress: "正在执行 终端命令",
       attempts: 1,
       evidence: 1,
       openOpportunities: 1,
     })
+    expect(
+      snapshot.challenges.find((challenge) => challenge.id === "pwn-1"),
+    ).not.toHaveProperty("needsEnv")
     expect(
       snapshot.challenges.find((challenge) => challenge.id === "web-1"),
     ).toMatchObject({ status: "solved", progress: "Flag 已确认" })

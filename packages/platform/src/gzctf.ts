@@ -1299,7 +1299,7 @@ function mapChallengeInfo(
     category: detail.category ?? "unknown",
     score: detail.score ?? 0,
     solved,
-    ...(isContainer(detail.type) ? { needsEnv: true } : {}),
+    needsEnv: isContainer(detail.type),
     description: `${detail.content ?? ""}${hints}`,
     attachments: attachment ? [attachment] : [],
     ...(context?.instanceEntry

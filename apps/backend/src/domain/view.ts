@@ -81,7 +81,9 @@ export async function buildDashboardSnapshot(
       score: challenge.score,
       status,
       platformSolved: challenge.solved === true,
-      needsEnv: challenge.needsEnv === true,
+      ...(challenge.needsEnv === undefined
+        ? {}
+        : { needsEnv: challenge.needsEnv }),
       attempts: challengeRuns.length,
       latestRunId: latest?.id ?? null,
       latestRunStatus: latest?.status ?? null,

@@ -87,10 +87,7 @@ export function AgentSidebar({
                 label="平台"
                 value={c.platformSolved ? "Solved" : "Unsolved"}
               />
-              <Row
-                label="环境"
-                value={environmentLabel(details, c.needsEnv === true)}
-              />
+              <Row label="环境" value={environmentLabel(details, c.needsEnv)} />
               {details.environment?.endpoint ? (
                 <EnvironmentEndpoint
                   key={details.environment.endpoint}
@@ -172,7 +169,7 @@ function tokenLabel(value: number): string {
 
 function environmentLabel(
   details: ChallengeDetails,
-  needsEnvironment: boolean,
+  needsEnvironment: boolean | undefined,
 ): string {
   switch (details.environment?.status) {
     case "starting":
@@ -182,7 +179,11 @@ function environmentLabel(
     case "stopped":
       return "已停止"
     default:
-      return needsEnvironment ? "未启动" : "不需要"
+      return needsEnvironment === true
+        ? "未启动"
+        : needsEnvironment === false
+          ? "不需要"
+          : "平台未提供"
   }
 }
 
