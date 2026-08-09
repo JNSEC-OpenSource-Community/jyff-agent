@@ -136,7 +136,8 @@ export const modelConfigurationUpdateSchema = z
       }
       return
     }
-    if (!ids.has(solverModelId)) issue(`Solver 模型不存在: ${solverModelId}`)
+    if (solverModelId && !ids.has(solverModelId))
+      issue(`Solver 模型不存在: ${solverModelId}`)
     if (tldrModelId && !ids.has(tldrModelId))
       issue(`TLDR 模型不存在: ${tldrModelId}`)
     for (const [role, modelId] of Object.entries(subagentModels)) {

@@ -528,9 +528,12 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
     return storedEntry(entry as unknown as Record<string, unknown>, index)
   })
   const ids = new Set(models.map((entry) => entry.id))
+  // 首次建模型时前端 solverModelId 为空：自动落到第一个模型，避免
+  // "Solver 模型不存在: undefined"。
+  const solverModelId = configuration.solverModelId || models[0]?.id || ""
   validateReferences(
     ids,
-    configuration.solverModelId,
+    solverModelId,
     configuration.tldrModelId,
     configuration.subagentModels,
   )
@@ -540,8 +543,8 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
       version: 3,
       providers: [],
       models,
-      solverModelId: configuration.solverModelId,
-      tldrModelId: configuration.tldrModelId || configuration.solverModelId,
+      solverModelId,
+      tldrModelId: configuration.tldrModelId || solverModelId,
       subagentModels: { ...configuration.subagentModels },
     },
     credentials,
