@@ -195,6 +195,7 @@ export class ContestScheduler {
   }
 
   snapshot(): ContestSchedulerSnapshot {
+    this.syncPersistedQueueMetadata()
     const availability = this.availability()
     return {
       available: availability.available,
@@ -503,10 +504,10 @@ export class ContestScheduler {
     item.manualOverride = moved.manualOverride
     item.version = moved.version
     item.requiresAuto = item.requiresAuto && !moved.manualOverride
+    const persisted = this.project.schedulerQueue()
+    this.syncPersistedQueueMetadata(persisted)
     const order = new Map(
-      this.project
-        .schedulerQueue()
-        .map((record, index) => [record.challengeId, index]),
+      persisted.map((record, index) => [record.challengeId, index]),
     )
     this.queue.sort(
       (left, right) =>
@@ -515,6 +516,27 @@ export class ContestScheduler {
     )
     this.pump()
     return this.snapshot()
+  }
+
+  /**
+   * RunStore 在删除或重排条目时也会更新所有位置受影响行的版本。
+   * 内存队列必须在发布 snapshot 前回灌这些版本，否则 WebUI 会用陈旧版本
+   * 发起下一次正常拖动，并被持久层误判为并发冲突。
+   */
+  private syncPersistedQueueMetadata(
+    records: SchedulerQueueRecord[] = this.project.schedulerQueue(),
+  ): void {
+    const byId = new Map(records.map((record) => [record.challengeId, record]))
+    for (const item of this.queue) {
+      if (item.resumeRun) continue
+      const record = byId.get(item.challenge.id)
+      if (!record) continue
+      item.lane = record.lane
+      item.manualOverride = record.manualOverride
+      item.enqueuedAt = record.enqueuedAt
+      item.version = record.version
+      item.requiresAuto = item.requiresAuto && !record.manualOverride
+    }
   }
 
   async cancel(challengeId: string): Promise<ContestSchedulerSnapshot> {

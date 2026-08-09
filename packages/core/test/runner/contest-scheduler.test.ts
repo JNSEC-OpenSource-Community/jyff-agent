@@ -719,6 +719,55 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("领取和重排队列后发布所有受影响条目的最新版本", async () => {
+    const challenges = [challenge(1), challenge(2), challenge(3), challenge(4)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(
+          requiredChallenge(challenges.find((item) => item.id === summary.id)),
+          500,
+        ),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await waitUntil(
+        () =>
+          typeof scheduler.snapshot().active[0]?.runId === "string" &&
+          scheduler.snapshot().queued.length === 3,
+      )
+
+      const before = scheduler.snapshot().queued
+      expect(before.every((item) => item.version > 1)).toBe(true)
+      const moved = before.at(-1)
+      if (!moved) throw new Error("自主调度未创建等待队列")
+
+      const afterFirstMove = scheduler.reorderQueue(moved.challengeId, {
+        position: 1,
+        expectedVersion: moved.version,
+      }).queued
+      const displaced = afterFirstMove.find(
+        (item) => item.challengeId === before[0]?.challengeId,
+      )
+      if (!displaced) throw new Error("重排后缺少被挤动的题目")
+      expect(displaced.version).toBeGreaterThan(before[0]?.version ?? 0)
+
+      expect(() =>
+        scheduler.reorderQueue(displaced.challengeId, {
+          position: 3,
+          expectedVersion: displaced.version,
+        }),
+      ).not.toThrow()
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("运行时更新并发上限并立即补充 worker", async () => {
     const challenges = [challenge(1), challenge(2), challenge(3)]
     const tracker = new SandboxTracker()
