@@ -270,12 +270,12 @@ export function ChallengePage() {
         <Card className="overflow-hidden p-0">
           <div className="border-b border-border px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-              {c.category} · {c.score} PTS
+              {c.category}
             </p>
             <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
               {c.title}
             </h1>
-            <p className="mt-1! text-xs text-muted-foreground">{c.progress}</p>
+            <p className="mt-1! text-xs text-muted-foreground">{c.score} PTS</p>
           </div>
           <div className="flex items-center justify-between px-4 py-2.5">
             <Badge tone={toneForStatus(c.status)} className="text-[10px]">
