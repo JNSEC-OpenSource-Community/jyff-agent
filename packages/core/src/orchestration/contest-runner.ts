@@ -303,11 +303,14 @@ export class ContestRunner {
           runIds.push(solver.runId)
           this.activeSolvers.set(challenge.id, solver)
 
+          const promptRunId = solver.runId
           const outcome = await runSolverPrompt({
             solver,
             prompt,
             timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
             abortGraceMs: this.options.abortGraceMs ?? 5_000,
+            pauseTimeout: () =>
+              this.project.isWaitingForRemoteEnvironment(promptRunId),
             signal,
           })
 

@@ -250,6 +250,7 @@ export class FakeDashboardProject implements DashboardProject {
   async environments(): Promise<RemoteEnvironment[]> {
     return this.environmentValues
   }
+  async setMaxRemoteEnvironments(_maxConcurrent: number): Promise<void> {}
 
   runs(filter: RunFilter = {}): RunRecord[] {
     return this.runValues.filter((run) => {

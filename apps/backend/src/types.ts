@@ -179,6 +179,7 @@ export interface DashboardProject {
     status: "approved" | "rejected",
   ): Promise<ChallengeAnnouncementRecord>
   environments(): Promise<RemoteEnvironment[]>
+  setMaxRemoteEnvironments(maxConcurrent: number): Promise<void>
   runs(filter?: RunFilter): RunRecord[]
   /** 返回已持久化的原生 Pi session，供 HTML 导出读取。 */
   runSessionPath(runId: string): string
@@ -358,6 +359,7 @@ export interface AgentModelBindings {
 
 export interface ProjectRuntimeConfigurationView extends AgentModelBindings {
   maxConcurrent: number
+  maxRemoteEnvironments: number
 }
 
 export interface DashboardProjectRuntimeConfiguration {

@@ -30,6 +30,8 @@ export async function runSolverPrompt(options: {
   abortGraceMs: number
   signal?: AbortSignal
   ignoreExistingSubmission?: boolean
+  /** 远程环境等外部配额等待不消耗 Solver 的实际工作时限。 */
+  pauseTimeout?: () => boolean
 }): Promise<SolverPromptOutcome> {
   const { solver, prompt, timeoutMs, abortGraceMs, signal } = options
   if (signal?.aborted) throw new ContestRunnerCancelledError()
@@ -42,7 +44,16 @@ export async function runSolverPrompt(options: {
   let onAbort: (() => void) | undefined
   const stop = new Promise<{ kind: "timeout" } | { kind: "cancelled" }>(
     (resolve) => {
-      timeout = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs)
+      let remainingMs = timeoutMs
+      let observedAt = Date.now()
+      const tick = () => {
+        const now = Date.now()
+        if (!options.pauseTimeout?.()) remainingMs -= now - observedAt
+        observedAt = now
+        if (remainingMs <= 0) resolve({ kind: "timeout" })
+        else timeout = setTimeout(tick, Math.min(remainingMs, 250))
+      }
+      timeout = setTimeout(tick, Math.min(remainingMs, 250))
       if (signal) {
         onAbort = () => resolve({ kind: "cancelled" })
         signal.addEventListener("abort", onAbort, { once: true })

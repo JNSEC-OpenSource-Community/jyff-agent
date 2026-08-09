@@ -24,6 +24,34 @@ function solverFixture(stopReasons: string[]) {
 }
 
 describe("runSolverPrompt continuation control", () => {
+  it("远程环境排队期间暂停 Solver 工作时限", async () => {
+    let finish!: (value: { stopReason: string }) => void
+    const waiting = true
+    const solver = solverFixture([])
+    solver.prompt.mockImplementationOnce(
+      async () =>
+        await new Promise<{ stopReason: string }>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const operation = runSolverPrompt({
+      solver: solver as unknown as CtfSolverAgent,
+      prompt: "verify",
+      timeoutMs: 20,
+      abortGraceMs: 10,
+      pauseTimeout: () => waiting,
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    finish({ stopReason: "stop" })
+
+    await expect(operation).resolves.toEqual({
+      kind: "interrupted",
+      stopReason: "stop",
+    })
+    expect(solver.abort).not.toHaveBeenCalled()
+  })
+
   it("将未提交 Flag 的正常结束交给新 Session 续跑", async () => {
     const solver = solverFixture(["length"])
 

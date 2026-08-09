@@ -104,6 +104,7 @@ async function projectRuntimeConfiguration(context: {
       tldrModelId: globalModels.tldrModelId,
       subagentModels: globalModels.subagentModels,
       maxConcurrent: schedulerConfiguration.snapshot(),
+      maxRemoteEnvironments: 1,
     },
     availableModelIds: () =>
       new Set(modelConfiguration.snapshot().models.map((model) => model.id)),
@@ -130,6 +131,9 @@ const controlPlane = await ControlPlane.create({
   createProjectOptions: async (context) => {
     const runtime = await projectRuntimeConfiguration(context)
     return {
+      remoteEnvironments: {
+        maxConcurrent: runtime.snapshot().maxRemoteEnvironments,
+      },
       subagents: {
         modelForRole: (role) =>
           modelConfiguration.modelForSubagent(role, runtime.snapshot()),

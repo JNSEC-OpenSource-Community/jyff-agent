@@ -24,6 +24,38 @@ async function storeFixture(): Promise<{
 }
 
 describe("RunStore", () => {
+  it("持久化远程环境租约并随 Run 删除", async () => {
+    const { path, store } = await storeFixture()
+    store.createRun({
+      id: "run-environment",
+      challengeId: "pwn-1",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    store.saveEnvironmentLease({
+      runId: "run-environment",
+      challengeId: "pwn-1",
+      environmentId: "environment-1",
+      priority: "verification",
+      acquiredAt: "2026-01-01T00:00:00.000Z",
+    })
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.listEnvironmentLeases()).toEqual([
+      {
+        runId: "run-environment",
+        challengeId: "pwn-1",
+        environmentId: "environment-1",
+        priority: "verification",
+        acquiredAt: "2026-01-01T00:00:00.000Z",
+      },
+    ])
+    reopened.deleteEnvironmentLease("run-environment")
+    expect(reopened.listEnvironmentLeases()).toEqual([])
+    reopened.close()
+  })
+
   it("持久化 Run 状态、attempt 和事件，并可在重开后查询", async () => {
     const { path, store } = await storeFixture()
     store.createRun({

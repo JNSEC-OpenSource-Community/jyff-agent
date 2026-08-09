@@ -323,6 +323,7 @@ export interface AgentModelBindings {
 
 export interface ProjectRuntimeConfigurationView extends AgentModelBindings {
   maxConcurrent: number
+  maxRemoteEnvironments: number
 }
 
 export interface DashboardProjectRuntimeConfiguration {

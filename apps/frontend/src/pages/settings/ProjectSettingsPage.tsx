@@ -35,6 +35,7 @@ export function ProjectSettingsPage() {
   const { projectId = "" } = useParams()
   const { refreshProjects } = useApp()
   const maxConcurrentId = useId()
+  const maxRemoteEnvironmentsId = useId()
   const [setup, setSetup] = useState<ControlPlaneSetupSnapshot | null>(null)
   const [rt, setRt] = useState<RT | null>(null)
   const [pcfg, setPcfg] = useState<ProjectConfig | null>(null)
@@ -195,6 +196,35 @@ export function ProjectSettingsPage() {
                   }
                   className="h-8 text-xs"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor={maxRemoteEnvironmentsId}
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  最大远程环境数
+                </Label>
+                <Input
+                  id={maxRemoteEnvironmentsId}
+                  type="number"
+                  min="1"
+                  max="64"
+                  value={runtime.maxRemoteEnvironments}
+                  onChange={(e) =>
+                    setRuntime((c) =>
+                      c
+                        ? {
+                            ...c,
+                            maxRemoteEnvironments: Number(e.target.value),
+                          }
+                        : c,
+                    )
+                  }
+                  className="h-8 text-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  无附件题优先；附件题先本地分析，需要验证时排队申请。
+                </p>
               </div>
             </div>
             {rt.models.subagentRoles?.length ? (

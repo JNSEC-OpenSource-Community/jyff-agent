@@ -185,6 +185,11 @@ export const projectRuntimeConfigurationSchema = z
       .int()
       .min(1)
       .max(64),
+    maxRemoteEnvironments: z
+      .number({ message: "远程环境并发量必须是整数" })
+      .int()
+      .min(1)
+      .max(64),
   })
   .transform((value) => ({
     ...value,

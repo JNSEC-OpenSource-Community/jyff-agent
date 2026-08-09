@@ -60,7 +60,7 @@ Compose 只使用 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 
 ├── model-config.json     # 全局非敏感模型池参数
 ├── scheduler-config.json # 旧版并发量迁移回退
 ├── project-config.json   # 首个/旧版 Project 的平台与 sandbox 配置
-├── runtime-config.json   # 首个/旧版 Project 的模型绑定与并发量
+├── runtime-config.json   # 首个/旧版 Project 的模型绑定、Solver 与远程环境并发量
 ├── runs.sqlite           # 首个/旧版 Project 的权威运行状态
 ├── runs/…、challenges/…  # 首个/旧版 Project 的 session 与 workspace
 └── projects/<project-hash>/
@@ -115,7 +115,9 @@ Provider 设置页以列表管理已连接供应商，可就地更新原生 Prov
 
 模型池编辑器会为已配置密钥的自定义 Provider 请求其 `Base URL + /models`（Anthropic 根地址使用 `/v1/models`）。接口返回 OpenAI 风格的 `data[].id` 或 `models[].id` 时，模型 ID 使用可搜索 Combobox；请求失败、超时、返回为空或格式不兼容时自动保留手工输入框。
 
-`.ctf-agent/model-config.json` 使用 v3 全局模型池结构，只保存非敏感模型与自定义 Provider 元数据，不保存 Project 的最终角色绑定。自定义 Provider 统一保存 API 类型与 Base URL，其 API Key 按 Provider 写入全局 Secret Store；模型池条目只引用已连接 Provider，不再重复保存端点或凭据。每个 Project 的 `runtime-config.json` 分别选择 Solver、TLDR 和 SubAgent role 模型并保存最大 Solver 并发量；未覆盖的 SubAgent 角色仍使用 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此角色绑定不受 Solver 当前模型限制。v2 模型池、旧版单模型配置、全局绑定与 `scheduler-config.json` 只作为自动迁移时的回退值。
+`.ctf-agent/model-config.json` 使用 v3 全局模型池结构，只保存非敏感模型与自定义 Provider 元数据，不保存 Project 的最终角色绑定。自定义 Provider 统一保存 API 类型与 Base URL，其 API Key 按 Provider 写入全局 Secret Store；模型池条目只引用已连接 Provider，不再重复保存端点或凭据。每个 Project 的 `runtime-config.json` 分别选择 Solver、TLDR 和 SubAgent role 模型，并保存最大 Solver 并发量与最大远程环境数；未覆盖的 SubAgent 角色仍使用 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此角色绑定不受 Solver 当前模型限制。v2 模型池、旧版单模型配置、全局绑定与 `scheduler-config.json` 只作为自动迁移时的回退值。
+
+远程环境由每个 Project 的租约协调器统一限流，默认最多同时开启 1 个。无附件且必须依赖远程服务的题目优先；带附件题会先在本地分析，只有 Solver 调用 `ctf_instance_start` 表示已准备好远程验证后才排队申请。等待发生在可取消的工具调用中，不需要模型轮询；无附件请求可以回收一个附件题验证租约，被回收 Solver 会收到旧 endpoint 已失效的通知。accepted 后环境会在 writeup 前立即释放，其他 Run 终态也会清理；SQLite 中的租约用于进程重启后回收本系统遗留实例。
 
 WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：
 

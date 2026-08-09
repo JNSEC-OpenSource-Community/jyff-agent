@@ -135,6 +135,7 @@ function appWithControlPlane() {
     tldrModelId: "",
     subagentModels: {},
     maxConcurrent: 8,
+    maxRemoteEnvironments: 1,
   }
   const app = createWebUiApp({
     controlPlane: plane.controlPlane,
@@ -244,6 +245,7 @@ describe("动态控制面与项目管理", () => {
         tldrModelId: "",
         subagentModels: {},
         maxConcurrent: 3,
+        maxRemoteEnvironments: 2,
       },
     )
     expect(runtimeUpdated.status).toBe(200)
@@ -259,12 +261,27 @@ describe("动态控制面与项目管理", () => {
         tldrModelId: "",
         subagentModels: {},
         maxConcurrent: 0,
+        maxRemoteEnvironments: 1,
       },
     )
     expect(invalid.status).toBe(400)
     expect(await jsonOf(invalid)).toMatchObject({
       error: "invalid_project_runtime_configuration",
     })
+
+    const invalidRemoteEnvironments = await jsonRequest(
+      app,
+      "/api/projects/demo/runtime-config",
+      "POST",
+      {
+        solverModelId: "",
+        tldrModelId: "",
+        subagentModels: {},
+        maxConcurrent: 3,
+        maxRemoteEnvironments: 0,
+      },
+    )
+    expect(invalidRemoteEnvironments.status).toBe(400)
 
     const reset = await jsonRequest(
       app,

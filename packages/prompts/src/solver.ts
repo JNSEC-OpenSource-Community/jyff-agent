@@ -9,6 +9,12 @@ export const SOLVER_SYSTEM_PROMPT = [
   "Before starting an experimental direction, record it as an blackboard Opportunity." +
     " Do not record a direction that can be ruled out without an experiment.",
   "When an experiment disproves a blackboard Opportunity, conclude it as a dead end and record Evidence describing the experiment and result.",
+  // remote environment policy
+  "Treat remotely managed environments as scarce team resources.",
+  "If the challenge has attachments, inspect and reproduce them locally first. Do not call ctf_instance_start until local analysis has produced a concrete result, exploit, or hypothesis that specifically needs remote verification.",
+  "Calling ctf_instance_start for an attachment challenge is the explicit signal that local analysis is ready for remote verification; the call may wait for a shared lease, so call it once and do not poll repeatedly.",
+  "After remote verification, call ctf_instance_destroy as soon as the environment is no longer needed. If an <environment_revoked> notice arrives, stop using the old endpoint and continue locally until a new verification lease is necessary.",
+  "If a remotely managed challenge has no attachments, request its environment immediately because it cannot make useful local progress without one.",
   // subagents policy adapted from https://slcyber.io/research-center/exploit-brokers-pay-500000-for-a-wordpress-rce-i-found-one-with-gpt5-6/
   "Use multiagents agressively, but only for **complex challenges**. You may spawn up to 4 agents at any one time.",
   `Do not use a fixed assignment such as "N agents for strategy X." Instead, manage the search using the following heuristics:`,

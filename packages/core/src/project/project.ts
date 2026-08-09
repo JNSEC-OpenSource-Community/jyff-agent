@@ -100,6 +100,7 @@ import {
   type ProjectConfig,
   parseProjectConfig,
 } from "./config.ts"
+import { RemoteEnvironmentCoordinator } from "./remote-environment-coordinator.ts"
 import { createTldrWorkspaceTools } from "./tldr-workspace-tools.ts"
 
 export interface OpenProjectOptions {
@@ -128,6 +129,10 @@ export interface OpenProjectOptions {
     /** WebUI 的模型池可在创建新 Run 时覆盖 role frontmatter 中的 model。 */
     modelForRole?: (role: string) => string | undefined
   }
+  remoteEnvironments?: {
+    /** 同一 Project 最多同时占用的平台远程环境数量。 */
+    maxConcurrent?: number
+  }
 }
 
 export interface ProjectTelemetryOptions {
@@ -136,7 +141,7 @@ export interface ProjectTelemetryOptions {
 }
 
 export interface ProjectDiagnostic {
-  code: "skill" | "subagent" | "telemetry"
+  code: "skill" | "subagent" | "telemetry" | "environment"
   message: string
   createdAt: string
   path?: string
@@ -209,6 +214,7 @@ export class Project {
     private readonly skills: readonly AgentSkill[],
     private readonly subagentRoles: ReadonlyMap<string, SubagentRole>,
     private readonly runStore: RunStore,
+    private readonly remoteEnvironments: RemoteEnvironmentCoordinator,
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly workspaceNamespace: string | undefined,
     private readonly telemetry: Required<ProjectTelemetryOptions>,
@@ -255,6 +261,12 @@ export class Project {
       // Project.open 只可能发生在新进程/新控制面中；遗留活跃记录不可继续信任。
       runStore.markInterruptedRuns()
       runStore.markInterruptedSubagents()
+      const remoteEnvironments = new RemoteEnvironmentCoordinator(
+        options.remoteEnvironments?.maxConcurrent ?? 1,
+        runStore,
+      )
+      const environmentDiagnostics =
+        await remoteEnvironments.reconcile(platform)
       return new Project(
         root,
         config,
@@ -264,6 +276,7 @@ export class Project {
         discovered.skills,
         discoveredSubagents.roles,
         runStore,
+        remoteEnvironments,
         options.workspaceMount,
         normalizeWorkspaceNamespace(options.workspaceNamespace),
         {
@@ -279,7 +292,14 @@ export class Project {
             ? { modelForRole: options.subagents.modelForRole }
             : {}),
         },
-        projectDiagnostics(discovered, discoveredSubagents),
+        [
+          ...projectDiagnostics(discovered, discoveredSubagents),
+          ...environmentDiagnostics.map((message) => ({
+            code: "environment" as const,
+            message,
+            createdAt: new Date().toISOString(),
+          })),
+        ],
       )
     } catch (error) {
       const failures: unknown[] = [error]
@@ -634,7 +654,14 @@ export class Project {
     return this.platform.listRemoteEnvironments()
   }
   async destroyEnvironment(id: string): Promise<void> {
+    if (await this.remoteEnvironments.destroyEnvironment(id)) return
     await this.platform.destroyRemoteEnvironment(id)
+  }
+  async setMaxRemoteEnvironments(maxConcurrent: number): Promise<void> {
+    await this.remoteEnvironments.setMaxConcurrent(maxConcurrent)
+  }
+  isWaitingForRemoteEnvironment(runId: string): boolean {
+    return this.remoteEnvironments.isWaiting(runId)
   }
   runs(filter: RunFilter = {}): RunRecord[] {
     return this.runStore.listRuns(filter)
@@ -911,6 +938,25 @@ export class Project {
     try {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
+      let solver!: CtfSolverAgent
+      capability = this.remoteEnvironments.manage({
+        runId,
+        challenge,
+        capability,
+        onEvent: (type, data) => {
+          try {
+            this.runStore.appendEvent(runId, type, data)
+          } catch (error) {
+            this.recordDiagnostic("environment", error, runId)
+          }
+        },
+        onRevoked: async (message) => {
+          if (!solver || solver.isClosed) return
+          await solver.steer(
+            `<environment_revoked>${escapeXml(message)}</environment_revoked>`,
+          )
+        },
+      })
 
       const blackboardInject = injectBlackboard(this.runStore, challengeId)
       const blackboardMessages: AgentMessage[] =
@@ -1001,7 +1047,6 @@ export class Project {
       })
       if (resumed) subagentManager.restore(this.runStore.subagents(runId))
 
-      let solver!: CtfSolverAgent
       solver = await CtfSolverAgent.create({
         identity: {
           projectId: this.config.project.id,
@@ -1261,6 +1306,11 @@ export class Project {
     for (const result of solverResults)
       if (result.status === "rejected") errors.push(result.reason)
     try {
+      await this.remoteEnvironments.close()
+    } catch (error) {
+      errors.push(error)
+    }
+    try {
       await this.platform.close()
     } catch (error) {
       errors.push(error)
@@ -1502,6 +1552,13 @@ function runStatus(details: SolverCloseDetails): RunStatus {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
 }
 
 /** 该题无活跃 solver 的错误契约:webui server 层按 code 映射 409(跨包不依赖错误类型)。 */

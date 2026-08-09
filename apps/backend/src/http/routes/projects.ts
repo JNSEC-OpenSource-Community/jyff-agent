@@ -186,6 +186,9 @@ export function scopedProjectRoutes(services: Services): App {
     }
     const scheduler = services.currentScheduler(projectId)
     await scheduler?.setMaxConcurrent(configuration.maxConcurrent)
+    await services
+      .currentProject(projectId)
+      ?.setMaxRemoteEnvironments(configuration.maxRemoteEnvironments)
     const model = modelConfiguration.snapshot(configuration)
     if (!model.configured) scheduler?.pauseAuto()
     else await scheduler?.reconcile()

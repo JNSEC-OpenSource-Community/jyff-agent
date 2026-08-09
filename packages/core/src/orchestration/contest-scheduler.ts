@@ -803,11 +803,14 @@ export class ContestScheduler {
           ? `${compactRecovery}\n\n${nextPrompt}`
           : nextPrompt
         compactRecovery = undefined
+        const promptRunId = solver.runId
         const outcome = await runSolverPrompt({
           solver,
           prompt,
           timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
           abortGraceMs: this.options.abortGraceMs ?? 5_000,
+          pauseTimeout: () =>
+            this.project.isWaitingForRemoteEnvironment(promptRunId),
         })
         if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
           if (this.options.writeup === true) {

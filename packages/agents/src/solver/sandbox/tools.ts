@@ -154,9 +154,12 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
         description: "Start the current challenge instance.",
         parameters: Type.Object({}),
         executionMode: "sequential",
-        async execute() {
+        async execute(_id, _params, signal) {
           return result(
-            (await instance.start()) as unknown as Record<string, unknown>,
+            (await instance.start(signal)) as unknown as Record<
+              string,
+              unknown
+            >,
           )
         },
       },

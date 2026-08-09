@@ -64,7 +64,7 @@ export interface ChallengeCapability {
   ): Promise<{ attachment: Attachment; content: Uint8Array }>
   submitFlag(flag: string): Promise<FlagSubmission>
   instance?: {
-    start(): Promise<RemoteEnvironment>
+    start(signal?: AbortSignal): Promise<RemoteEnvironment>
     status(): Promise<RemoteEnvironment | null>
     destroy(): Promise<void>
   }

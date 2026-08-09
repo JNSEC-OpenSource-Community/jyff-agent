@@ -9,6 +9,7 @@ import type {
 interface StoredProjectRuntimeConfiguration extends AgentModelBindings {
   version: 1
   maxConcurrent: number
+  maxRemoteEnvironments: number
 }
 
 export async function createFileProjectRuntimeConfiguration(options: {
@@ -55,6 +56,10 @@ async function readConfiguration(
     tldrModelId: stringValue(parsed.tldrModelId),
     subagentModels: stringRecord(parsed.subagentModels),
     maxConcurrent: Number(parsed.maxConcurrent),
+    maxRemoteEnvironments:
+      parsed.maxRemoteEnvironments === undefined
+        ? fallback.maxRemoteEnvironments
+        : Number(parsed.maxRemoteEnvironments),
   }
 }
 
@@ -68,6 +73,13 @@ function validateConfiguration(
     configuration.maxConcurrent > 64
   ) {
     throw new Error("maxConcurrent 必须是 1–64 的整数")
+  }
+  if (
+    !Number.isInteger(configuration.maxRemoteEnvironments) ||
+    configuration.maxRemoteEnvironments < 1 ||
+    configuration.maxRemoteEnvironments > 64
+  ) {
+    throw new Error("maxRemoteEnvironments 必须是 1–64 的整数")
   }
   if (modelIds.size === 0) {
     if (
@@ -118,6 +130,7 @@ function publicView(
     tldrModelId: configuration.tldrModelId,
     subagentModels: { ...configuration.subagentModels },
     maxConcurrent: configuration.maxConcurrent,
+    maxRemoteEnvironments: configuration.maxRemoteEnvironments,
   }
 }
 

@@ -2,6 +2,10 @@ import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import type { SubagentRecord } from "../collaboration/subagent-manager.ts"
+import type {
+  RemoteEnvironmentLeaseRecord,
+  RemoteEnvironmentPriority,
+} from "../project/remote-environment-coordinator.ts"
 
 export type RunStatus =
   | "preparing"
@@ -460,6 +464,14 @@ interface BlackboardStatsRow {
   concluded_count: number
 }
 
+interface RemoteEnvironmentLeaseRow {
+  run_id: string
+  challenge_id: string
+  environment_id: string
+  priority: RemoteEnvironmentPriority
+  acquired_at: string
+}
+
 function opportunityFromRow(
   row: OpportunityRow,
   sourceEvidenceIds: number[],
@@ -845,6 +857,17 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS scheduler_queue_order
         ON scheduler_queue(manual_override DESC, lane, position, enqueued_at);
+
+      CREATE TABLE IF NOT EXISTS remote_environment_leases (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+        challenge_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL,
+        priority TEXT NOT NULL CHECK (priority IN ('required', 'verification')),
+        acquired_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS remote_environment_leases_challenge
+        ON remote_environment_leases(challenge_id);
 
       CREATE TABLE IF NOT EXISTS contest_announcements (
         announcement_key TEXT PRIMARY KEY,
@@ -2144,6 +2167,53 @@ export class RunStore {
       this.database.exec("ROLLBACK")
       throw error
     }
+  }
+
+  listEnvironmentLeases(): RemoteEnvironmentLeaseRecord[] {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT * FROM remote_environment_leases
+        ORDER BY acquired_at ASC
+      `)
+      .all() as unknown as RemoteEnvironmentLeaseRow[]
+    return rows.map((row) => ({
+      runId: row.run_id,
+      challengeId: row.challenge_id,
+      environmentId: row.environment_id,
+      priority: row.priority,
+      acquiredAt: row.acquired_at,
+    }))
+  }
+
+  saveEnvironmentLease(record: RemoteEnvironmentLeaseRecord): void {
+    this.assertOpen()
+    this.assertRunBelongsToChallenge(record.runId, record.challengeId)
+    this.database
+      .prepare(`
+        INSERT INTO remote_environment_leases (
+          run_id, challenge_id, environment_id, priority, acquired_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET
+          challenge_id = excluded.challenge_id,
+          environment_id = excluded.environment_id,
+          priority = excluded.priority,
+          acquired_at = excluded.acquired_at
+      `)
+      .run(
+        record.runId,
+        record.challengeId,
+        record.environmentId,
+        record.priority,
+        record.acquiredAt,
+      )
+  }
+
+  deleteEnvironmentLease(runId: string): void {
+    this.assertOpen()
+    this.database
+      .prepare("DELETE FROM remote_environment_leases WHERE run_id = ?")
+      .run(runId)
   }
 
   /** Persist one worker snapshot; lifecycle events remain in run_events for replay. */
