@@ -31,7 +31,13 @@ const OSC_PATTERN = new RegExp(
   `${ESC}\\][^\\u0007]*(?:\\u0007|${ESC}\\\\)?`,
   "g",
 )
-const CSI_PATTERN = new RegExp(`${ESC}\\[[\\d;?]*[ -/]*[@-~]`, "g")
+const CSI_PATTERN = new RegExp(`${ESC}\\[[\\d:;<=>?]*[ -/]*[@-~]`, "g")
+const ESCAPED_ESC_PATTERN = /\\(?:x1b|u001b|033|e)(?=\[|\])/gi
+const BARE_CSI_PATTERN = /\[([\d:;<=>?]*[ -/]*[@-~])/g
+const BARE_TERMINAL_CONTROL_PATTERN =
+  /\[(?:\?\d+[hl]|(?:\d+(?:[;:]\d+)*)?[ABCDEFGHJKSTfm])/g
+const C1_CSI = String.fromCharCode(0x9b)
+const C1_OSC = String.fromCharCode(0x9d)
 function stripControlCharacters(text: string): string {
   return [...text]
     .filter((character) => {
@@ -55,18 +61,19 @@ interface AnsiState {
 
 /** 仅解释终端 SGR 样式，其他 ANSI 控制序列会被安全移除。 */
 export function parseAnsi(text: string): AnsiSegment[] {
+  const normalized = normalizeAnsi(text)
   const segments: AnsiSegment[] = []
   const state: AnsiState = {}
   SGR_PATTERN.lastIndex = 0
   let offset = 0
-  let match = SGR_PATTERN.exec(text)
+  let match = SGR_PATTERN.exec(normalized)
   while (match) {
-    pushSegment(segments, text.slice(offset, match.index), state)
+    pushSegment(segments, normalized.slice(offset, match.index), state)
     applySgr(state, parseCodes(match[1] ?? ""))
     offset = match.index + match[0].length
-    match = SGR_PATTERN.exec(text)
+    match = SGR_PATTERN.exec(normalized)
   }
-  pushSegment(segments, text.slice(offset), state)
+  pushSegment(segments, normalized.slice(offset), state)
   return segments
 }
 
@@ -105,6 +112,20 @@ function pushSegment(
         }
       : style,
   })
+}
+
+/** 兼容 JSON/日志转义、C1 CSI，以及上游过滤 ESC 后残留的终端序列。 */
+function normalizeAnsi(text: string): string {
+  let normalized = text
+    .replaceAll(C1_CSI, `${ESC}[`)
+    .replaceAll(C1_OSC, `${ESC}]`)
+    .replace(ESCAPED_ESC_PATTERN, ESC)
+
+  const bareControls = normalized.match(BARE_TERMINAL_CONTROL_PATTERN)
+  if (!normalized.includes(ESC) && (bareControls?.length ?? 0) >= 2) {
+    normalized = normalized.replace(BARE_CSI_PATTERN, `${ESC}[$1`)
+  }
+  return normalized
 }
 
 function parseCodes(raw: string): number[] {
