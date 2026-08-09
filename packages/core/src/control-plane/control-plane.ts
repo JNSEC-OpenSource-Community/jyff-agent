@@ -269,9 +269,19 @@ export class ControlPlane {
     return this.resolveRuntime(projectId)?.scheduler
   }
 
+  /** 只有活跃 Solver 或未归档的自动调度需要后台访问比赛平台。 */
+  shouldPollProject(projectId?: string): boolean {
+    const runtime = this.resolveRuntime(projectId)
+    const scheduler = runtime?.scheduler?.snapshot()
+    if (!runtime || !scheduler) return false
+    return scheduler.active.length > 0 ||
+      (!runtime.record.archived && scheduler.autoEnabled)
+  }
+
   async start(): Promise<ControlPlaneSnapshot> {
     return await this.enqueueTransition(async () => {
-      for (const projectId of this.runtimes.keys()) {
+      for (const [projectId, runtime] of this.runtimes) {
+        if (runtime.record.archived) continue
         try {
           await this.performConnect(projectId)
         } catch {
@@ -394,7 +404,31 @@ export class ControlPlane {
       if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
       runtime.record = await this.configStore.setArchived(projectId, archived)
       runtime.updatedAt = runtime.record.updatedAt
+      if (archived) {
+        runtime.scheduler?.pauseAuto()
+        if ((runtime.scheduler?.snapshot().active.length ?? 0) === 0) {
+          await this.performDisconnect(projectId)
+        }
+      } else {
+        await this.performConnect(projectId)
+      }
       return this.snapshot(projectId)
+    })
+  }
+
+  /** 归档不打断活跃 Solver；最后一个 Solver 结束后再释放平台连接。 */
+  async disconnectArchivedIdleProjects(): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      for (const [projectId, runtime] of this.runtimes) {
+        if (
+          runtime.record.archived &&
+          runtime.project &&
+          (runtime.scheduler?.snapshot().active.length ?? 0) === 0
+        ) {
+          await this.performDisconnect(projectId)
+        }
+      }
+      return this.snapshot()
     })
   }
 
@@ -476,25 +510,34 @@ export class ControlPlane {
         resolveSecret: this.secretResolver(projectId),
       })
       runtime.project = project
+      let baselineSucceeded = true
       try {
         await project.syncAnnouncements({ steerActive: false })
       } catch (error) {
         // 公告 baseline 降级不阻塞 Solver；后续 poll 可以恢复。
+        baselineSucceeded = false
         runtime.lastError = `公告 baseline 失败: ${errorText(error)}`
       }
       runtime.scheduler = await this.options.createScheduler?.(project, context)
       runtime.announcementPoller = new AnnouncementPoller({
         intervalMs: this.options.announcementPollIntervalMs ?? 30_000,
         poll: async () => {
+          if ((runtime.scheduler?.snapshot().active.length ?? 0) === 0) {
+            return
+          }
           await project.syncAnnouncements()
+          if (runtime.phase === "degraded") {
+            runtime.lastError = null
+            this.setRuntimePhase(runtime, "ready")
+          }
         },
         onError: (error) => {
           runtime.lastError = `公告轮询失败: ${errorText(error)}`
-          runtime.updatedAt = new Date().toISOString()
+          this.setRuntimePhase(runtime, "degraded")
         },
       })
       runtime.announcementPoller.start()
-      this.setRuntimePhase(runtime, "ready")
+      this.setRuntimePhase(runtime, baselineSucceeded ? "ready" : "degraded")
     } catch (error) {
       runtime.lastError = errorText(error)
       this.setRuntimePhase(runtime, "degraded")

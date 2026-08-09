@@ -55,8 +55,18 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const scheduleRefresh = (delayMs: number): void => {
     refreshTimer = setTimeout(async () => {
       try {
-        await services.sync.refresh()
+        const selectedProjectId = options.controlPlane?.snapshot().projectId
+        if (
+          !options.controlPlane ||
+          !selectedProjectId ||
+          options.controlPlane.shouldPollProject?.(selectedProjectId) !== false
+        ) {
+          await services.sync.refresh()
+        }
         for (const projectId of services.sse.scopedProjectIds()) {
+          if (options.controlPlane?.shouldPollProject?.(projectId) === false) {
+            continue
+          }
           try {
             await services.sync.pollProject(projectId)
           } catch {
@@ -77,6 +87,11 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const scheduleReconcile = (delayMs: number): void => {
     if (!options.scheduler && !options.controlPlane) return
     schedulerReconcileTimer = setTimeout(async () => {
+      try {
+        await options.controlPlane?.disconnectArchivedIdleProjects?.()
+      } catch {
+        // 单个归档 Project 清理失败不阻塞其他调度器。
+      }
       const schedulers = options.controlPlane
         ? options.controlPlane
             .projectSnapshots()

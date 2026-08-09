@@ -293,6 +293,7 @@ export interface DashboardControlPlane {
   selectProject(projectId: string): ControlPlaneSnapshot
   currentProject(projectId?: string): DashboardProject | undefined
   currentScheduler(projectId?: string): DashboardScheduler | undefined
+  shouldPollProject?(projectId?: string): boolean
   testConnection(input: {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>
@@ -308,6 +309,7 @@ export interface DashboardControlPlane {
     projectId: string,
     archived: boolean,
   ): Promise<ControlPlaneSnapshot>
+  disconnectArchivedIdleProjects?(): Promise<ControlPlaneSnapshot>
 }
 
 export interface ModelPoolEntryView {

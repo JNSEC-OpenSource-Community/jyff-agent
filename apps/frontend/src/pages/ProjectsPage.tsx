@@ -203,7 +203,7 @@ function ProjectCard({
   onDelete(): void
   onToggleArchived(): void
 }) {
-  const ready = project.phase === "ready"
+  const ready = project.phase === "ready" && !project.lastError
   return (
     <Card className="surface-hover group relative flex flex-col overflow-hidden p-0">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />

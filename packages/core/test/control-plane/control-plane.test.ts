@@ -55,6 +55,7 @@ class CredentialPlatform implements PlatformPlugin {
   }
   connections = 0
   closes = 0
+  failListings = false
   readonly connectedTokens: Array<{ projectId: string; token: string }> = []
 
   async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
@@ -67,8 +68,14 @@ class CredentialPlatform implements PlatformPlugin {
     return {
       refresh: async () => await this.overview(options),
       getOverview: async () => await this.overview(options),
-      listChallenges: async () => [],
-      listAnnouncements: async () => [],
+      listChallenges: async () => {
+        if (this.failListings) throw new Error("平台列表不可用")
+        return []
+      },
+      listAnnouncements: async () => {
+        if (this.failListings) throw new Error("平台列表不可用")
+        return []
+      },
       listRemoteEnvironments: async () => [],
       getRemoteEnvironment: async () => null,
       destroyRemoteEnvironment: async () => undefined,
@@ -180,6 +187,25 @@ describe("ControlPlane", () => {
     expect(plugin.closes).toBe(3)
   })
 
+  it("平台 baseline 同步失败时不把 Project 标记为 ready", async () => {
+    const root = await rootFixture()
+    const plugin = new CredentialPlatform()
+    plugin.failListings = true
+    const control = await ControlPlane.create({ root, platforms: [plugin] })
+
+    expect(
+      await control.applySetup({
+        config: config(),
+        secrets: { TEST_TOKEN: "secret-token" },
+      }),
+    ).toMatchObject({
+      phase: "degraded",
+      lastError: "公告 baseline 失败: 平台列表不可用",
+    })
+    expect(control.currentProject()).toBeDefined()
+    await control.close()
+  })
+
   it("串行处理并发配置变更，最终运行时与最后一次配置一致", async () => {
     const root = await rootFixture()
     const plugin = new CredentialPlatform()
@@ -244,6 +270,47 @@ describe("ControlPlane", () => {
       TEST_TOKEN: { configured: true },
     })
     await control.close()
+  })
+
+  it("归档空闲 Project 后断开平台，重启时不再连接", async () => {
+    const root = await rootFixture()
+    const plugin = new CredentialPlatform()
+    const control = await ControlPlane.create({ root, platforms: [plugin] })
+
+    await control.applySetup({
+      config: config("Archived Project", "archived"),
+      secrets: { TEST_TOKEN: "archived-token" },
+    })
+    const connectionsBeforeArchive = plugin.connections
+
+    expect(await control.archiveProject("archived", true)).toMatchObject({
+      projectId: "archived",
+      phase: "disconnected",
+      projects: [expect.objectContaining({ id: "archived", archived: true })],
+    })
+    expect(control.currentProject("archived")).toBeUndefined()
+
+    expect(await control.archiveProject("archived", false)).toMatchObject({
+      projectId: "archived",
+      phase: "ready",
+      projects: [expect.objectContaining({ id: "archived", archived: false })],
+    })
+    expect(plugin.connections).toBe(connectionsBeforeArchive + 1)
+
+    await control.archiveProject("archived", true)
+    await control.close()
+
+    const restartedPlugin = new CredentialPlatform()
+    const restarted = await ControlPlane.create({
+      root,
+      platforms: [restartedPlugin],
+    })
+    expect(await restarted.start()).toMatchObject({
+      phase: "disconnected",
+      projects: [expect.objectContaining({ id: "archived", archived: true })],
+    })
+    expect(restartedPlugin.connections).toBe(0)
+    await restarted.close()
   })
 
   it("删除 Project 时关闭其运行时、凭据和隔离状态", async () => {
