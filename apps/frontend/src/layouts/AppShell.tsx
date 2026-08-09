@@ -9,6 +9,10 @@ import {
   MobileSheet,
   Tooltip,
 } from "../components/index.ts"
+import {
+  readSidebarCollapsed,
+  writeSidebarCollapsed,
+} from "../lib/preferences.ts"
 import { cn } from "../lib/utils.ts"
 
 const iconBtn =
@@ -52,8 +56,15 @@ function SidebarNavLink({
 
 export function AppShell() {
   const { logout, auth } = useApp()
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(readSidebarCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const toggleSidebar = () => {
+    setCollapsed((current) => {
+      const next = !current
+      writeSidebarCollapsed(next)
+      return next
+    })
+  }
 
   return (
     <div className="flex h-dvh overflow-hidden">
@@ -66,7 +77,7 @@ export function AppShell() {
       >
         <SidebarContent
           collapsed={collapsed}
-          onToggle={() => setCollapsed((v) => !v)}
+          onToggle={toggleSidebar}
           onLogout={() => void logout()}
           authEnabled={auth?.enabled ?? false}
         />
