@@ -52,9 +52,13 @@ apps/
 
 自定义 Provider 更新保留稳定 Provider ID，避免破坏模型池引用；名称、API 类型和 Base URL 可独立修改，只有请求显式携带新 API Key 时才替换 Secret Store 中的现有密钥。
 
+模型池页面通过后端按 Provider ID 探测自定义端点的模型列表。后端从 Secret Store 读取密钥，请求规范化后的 `/models`，只向浏览器返回去重后的模型 ID；密钥与上游错误正文不会回传。发现失败属于可恢复能力降级，前端回退到手工输入模型 ID。
+
 ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有自己的 `Project`、`ContestScheduler`、`AnnouncementPoller` 和状态目录；一个 Project 连接降级、断开或关闭不会替换其他 runtime。WebUI 的 Project 路由使用 `/api/projects/:projectId/...`，SSE 客户端也绑定显式 Project ID，业务代码不得依赖 UI 当前选择项来定位 Run 或 Scheduler。
 
 删除 Project 是显式且不可恢复的控制面操作：ControlPlane 先关闭该 Project 的公告轮询、Scheduler、Solver/SubAgent 与 RunStore，再从注册表移除它，清理隔离状态目录和命名空间平台凭据。旧版首 Project 只删除 `.ctf-agent` 下明确属于 Project 的 `project-config.json`、`runtime-config.json`、RunStore、session 与 challenge workspace，不删除全局登录、模型池、Provider 凭据、调度迁移配置或其他 Project。
+
+重置 Project 的 Solver 状态同样通过控制面串行迁移执行：先完整断开该 Project，再只删除 `runs.sqlite*`、`runs/` 和 `challenges/`，保留 `project-config.json`、`runtime-config.json`、注册表与凭据，最后重新连接。因调度队列、公告审核、黑板和 Run 事件都以 SQLite 为权威来源，重连后的状态与新建 Project 首次连接一致。
 
 ## WebUI 页面与会话读取
 

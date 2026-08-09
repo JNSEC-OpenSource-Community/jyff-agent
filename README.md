@@ -112,6 +112,8 @@ OAuth 和原生 Provider API Key 由 Pi 的 `CredentialStore` 写入具名卷中
 
 Provider 设置页以列表管理已连接供应商，可就地更新原生 Provider 凭据或自定义 Provider 的名称、API 类型、Base URL 与可选的新 API Key。新增供应商时先选择 Subscription 登录、API Key 或自定义 Provider，再展开对应表单；编辑自定义 Provider 不会改变其稳定 ID，留空 API Key 时保留已有密钥。
 
+模型池编辑器会为已配置密钥的自定义 Provider 请求其 `Base URL + /models`（Anthropic 根地址使用 `/v1/models`）。接口返回 OpenAI 风格的 `data[].id` 或 `models[].id` 时，模型 ID 使用可搜索 Combobox；请求失败、超时、返回为空或格式不兼容时自动保留手工输入框。
+
 `.ctf-agent/model-config.json` 使用 v3 全局模型池结构，只保存非敏感模型与自定义 Provider 元数据，不保存 Project 的最终角色绑定。自定义 Provider 统一保存 API 类型与 Base URL，其 API Key 按 Provider 写入全局 Secret Store；模型池条目只引用已连接 Provider，不再重复保存端点或凭据。每个 Project 的 `runtime-config.json` 分别选择 Solver、TLDR 和 SubAgent role 模型并保存最大 Solver 并发量；未覆盖的 SubAgent 角色仍使用 frontmatter 的 `model`。所有可用模型会注册进同一个 Pi `Models` registry，因此角色绑定不受 Solver 当前模型限制。v2 模型池、旧版单模型配置、全局绑定与 `scheduler-config.json` 只作为自动迁移时的回退值。
 
 WebUI 可直接上传 JSON，也可读取容器内的 `/auth.json`。解析器兼容 Pi 的 Provider-keyed `auth.json`、Codex CLI 的 `~/.codex/auth.json`、Claude Code 常见的 `.credentials.json` 字段，以及 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 等导出字段。例如可先把本机文件复制进当前容器，再在模型设置中点击“读取 /auth.json”：
@@ -195,6 +197,8 @@ WebUI 可执行入口还支持：
 WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”。该操作复用原 Run ID、attempt 编号、workspace 和 Pi JSONL session，不新增 attempt；提示词留空时使用 `INCOMPLETE_CONTINUATION_PROMPT`，也可以提供最长 32,000 字符的自定义继续提示词。
 
 WebUI 使用浏览器路由：`/` 管理全部 Project，`/projects/new` 创建 Project，`/settings` 管理全局凭据、模型池与登录策略，`/projects/:id` 管理一场比赛，`/projects/:id/settings` 管理该比赛的连接与运行配置，`/projects/:id/challenges/:challengeId` 是以对话为核心的题目工作区。Solver 与 SubAgent 复用结构化 Pi session 对话布局；移动端通过底部 Drawer 查看题目状态和 Agents；黑板、Attempts 和 Writeup 分页显示，工具与推理块按需展开。用户可见时间统一转换为本地可读格式。
+
+Project 首页的待执行队列限制高度并在溢出时内部滚动，待审核公告支持逐条或全部批准/拒绝。比赛配置中的“重置所有 Solver”会先停止该 Project 的调度器、Solver 与 SubAgent，再清空 SQLite Run 状态、Pi 会话、黑板、公告审核、调度队列和题目 workspace；Project 注册信息、平台连接配置与凭据、模型绑定和并发量保持不变，随后重新连接该 Project。
 
 题目页的“文件”Tab 以可折叠目录树列出题目 workspace 中的普通文件并提供下载，少于 8 个文件的目录默认展开。受支持的代码、纯文本和 Markdown 文件可在响应式弹窗中直接预览；代码按需使用有限语言集高亮，Markdown 复用安全渲染器，预览文件上限为 256 KiB。列表最多返回 2,000 项且不跟随 symlink，预览和下载路径同时经过相对路径与真实路径 containment 校验。桌面侧栏折叠偏好保存在浏览器本地，切换页面或刷新后保持不变。
 
