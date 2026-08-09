@@ -291,7 +291,12 @@ export function ChallengePage() {
             </Badge>
             <Button
               variant={active ? "danger" : "primary"}
-              disabled={busy}
+              disabled={busy || (!active && !details.solverAvailable)}
+              title={
+                !active && !details.solverAvailable
+                  ? "平台故障或 Project 已归档，当前只能查看本地记录"
+                  : undefined
+              }
               onClick={() =>
                 void challengeAction(active ? "cancel" : "dispatch")
               }
@@ -337,7 +342,12 @@ export function ChallengePage() {
                 </Badge>
                 <Button
                   variant={active ? "danger" : "primary"}
-                  disabled={busy}
+                  disabled={busy || (!active && !details.solverAvailable)}
+                  title={
+                    !active && !details.solverAvailable
+                      ? "平台故障或 Project 已归档，当前只能查看本地记录"
+                      : undefined
+                  }
                   onClick={() =>
                     void challengeAction(active ? "cancel" : "dispatch")
                   }

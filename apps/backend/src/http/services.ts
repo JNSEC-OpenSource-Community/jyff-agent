@@ -170,6 +170,24 @@ export class Services {
     return scheduler
   }
 
+  requireSolverScheduler(projectId?: string): DashboardScheduler {
+    if (this.options.controlPlane?.canStartSolver?.(projectId) === false) {
+      throw new HttpError(
+        409,
+        "solver_unavailable",
+        "平台故障或 Project 已归档，当前只能查看本地记录",
+      )
+    }
+    return this.requireScheduler(projectId)
+  }
+
+  canStartSolver(projectId?: string): boolean {
+    return (
+      this.options.controlPlane?.canStartSolver?.(projectId) ??
+      this.currentScheduler(projectId) !== undefined
+    )
+  }
+
   requireRuntime(projectId: string): DashboardProjectRuntimeConfiguration {
     const runtime = this.runtime(projectId)
     if (!runtime) {

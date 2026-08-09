@@ -47,7 +47,7 @@ docker compose -f compose.webui.yaml ps
 4. 在该 Project 的“比赛配置”中分别绑定 Solver、TLDR、各类 SubAgent 模型并设置并发数；
 5. 从 Project 首页拖动调度队列、人工派发单题，或开启自主调度整场比赛。
 
-Project 列表展示平台、创建时间与“解出数 / 总题数”，归档状态保存在服务端注册表，因此会在不同浏览器间同步。没有活跃 Solver 且未开启自动调度时，后台快照与公告轮询不会访问比赛平台，仍可从页面手动刷新。归档会暂停该 Project 的自动调度，但不会打断正在运行的 Solver；最后一个活跃 Solver 结束后平台连接会自动释放，服务重启时也不会连接归档 Project。列表仍提供带二次确认的永久删除操作。删除前系统会停止该 Project 的调度器、Solver 与 SubAgent，然后清理其 Run、Pi 会话、题目 workspace、运行配置和命名空间凭据；其他 Project 与全局模型配置保持不变。
+Project 列表展示平台、创建时间与“解出数 / 总题数”，归档状态保存在服务端注册表，因此会在不同浏览器间同步。没有活跃 Solver 且未开启自动调度时，后台快照与公告轮询不会访问比赛平台，仍可从页面手动刷新。归档会暂停该 Project 的自动调度，但不会打断正在运行的 Solver；最后一个活跃 Solver 结束后平台连接会自动释放，服务重启时也不会连接归档 Project。平台故障或归档时，WebUI 仍以只读本地 runtime 打开 SQLite、历史对话、Writeup 与 workspace，但禁止启动或重试 Solver。列表仍提供带二次确认的永久删除操作。删除前系统会停止该 Project 的调度器、Solver 与 SubAgent，然后清理其 Run、Pi 会话、题目 workspace、运行配置和命名空间凭据；其他 Project 与全局模型配置保持不变。
 
 Compose 只使用 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 `CTF_AGENT_MAX_SESSION_INTERRUPTIONS` 三个可选环境变量（默认分别为 `3000`、`1800000` 和 `3`）；不会从环境注入模型或平台凭据。其余业务配置都从 WebUI 写入具名卷 `ctf-agent-data`：
 

@@ -38,7 +38,7 @@ export function challengeRoutes(services: Services): App {
     const body = await parseJsonBody(c, dispatchSchema, {
       code: "invalid_dispatch",
     })
-    const scheduler = services.requireScheduler(projectIdOf(c))
+    const scheduler = services.requireSolverScheduler(projectIdOf(c))
     await scheduler.dispatch(c.req.param("challengeId"), {
       force: body.force === true,
     })
@@ -291,7 +291,10 @@ export function challengeRoutes(services: Services): App {
     if (!details) {
       throw new HttpError(404, "challenge_not_found", "题目不存在")
     }
-    return c.json(details)
+    return c.json({
+      ...details,
+      solverAvailable: services.canStartSolver(projectIdOf(c)),
+    })
   })
 
   return app

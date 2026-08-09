@@ -57,7 +57,7 @@ export function runRoutes(services: Services): App {
   })
 
   app.post("/runs/:runId/retry", async (c) => {
-    const scheduler = services.requireScheduler(projectIdOf(c))
+    const scheduler = services.requireSolverScheduler(projectIdOf(c))
     const body = await parseJsonBody(c, retryAttemptSchema, {
       code: "invalid_retry_prompt",
       maximumSize: 40_000,

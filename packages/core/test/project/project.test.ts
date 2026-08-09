@@ -109,6 +109,55 @@ async function fixture(): Promise<string> {
 }
 
 describe("Project", () => {
+  it("本地只读模式从 SQLite 合成题目并保留 Run session 路径", async () => {
+    const root = await fixture()
+    const stateDirectory = join(root, "local-state")
+    const workspace = join(stateDirectory, "challenges", "pwn-1", "workspace")
+    const store = await RunStore.open(join(stateDirectory, "runs.sqlite"))
+    store.createRun({
+      id: "run-local",
+      challengeId: "pwn-1",
+      workspace,
+      attempt: 1,
+      source: "manual",
+    })
+    store.close()
+
+    const project = await Project.openLocal({
+      root,
+      stateDirectory,
+      config: {
+        version: 1,
+        project: { id: "local", name: "Local History" },
+        platform: { plugin: "missing", config: {} },
+        sandbox: {
+          image: "unused",
+          privileged: false,
+          networkMode: "none",
+        },
+      },
+      platforms: [],
+    })
+    try {
+      expect(await project.challenges()).toEqual([
+        expect.objectContaining({
+          id: "pwn-1",
+          title: "pwn-1",
+          category: "本地记录",
+        }),
+      ])
+      expect(project.runs()).toEqual([
+        expect.objectContaining({ id: "run-local", challengeId: "pwn-1" }),
+      ])
+      expect(project.runSessionPath("run-local")).toBe(
+        join(stateDirectory, "runs", "run-local", "session.jsonl"),
+      )
+      await expect(project.refresh()).rejects.toThrow("比赛平台当前不可用")
+    } finally {
+      await project.close()
+    }
+  })
+
   it("控制面传入配置时无需磁盘中的 .pi/ctf-config.json", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-project-config-"))
     roots.push(root)

@@ -45,7 +45,7 @@ docs/               当前架构与扩展协议
 - 远程环境必须经过 Project 级租约协调器：无附件远程题使用 required 优先级；带附件题先本地分析，调用 `ctf_instance_start` 后才进入 verification FIFO。required 只可抢占 verification，verification 不互相抢占；accepted 必须在 writeup 前释放，所有终态幂等清理，并只按 SQLite 租约回收本控制面遗留实例。
 - 自定义 Provider 的模型发现由后端使用 Secret Store 中的密钥请求 `/models`，浏览器只能收到模型 ID；发现失败时模型池必须保留手工输入回退，不得回传上游错误正文或凭据。
 - 多 Project 代码不得依赖“当前选中 Project”的隐式全局状态：HTTP API、SSE、Scheduler、RunStore、workspace 和平台 Secret 都必须按显式 Project ID 隔离。平台 Secret 写入全局 `secrets.json` 时必须使用 Project 命名空间；旧未命名空间键只允许作为兼容读取回退。
-- Project 的创建时间与归档状态由 `project-registry.json` 持久化；归档会暂停自动调度，但不打断正在运行的 Agent，最后一个活跃 Solver 结束后断开平台；不得退回浏览器本地状态。
+- Project 的创建时间与归档状态由 `project-registry.json` 持久化；归档会暂停自动调度，但不打断正在运行的 Agent，最后一个活跃 Solver 结束后断开平台并保留只读本地 runtime。平台故障或归档时仍须允许读取 SQLite、历史对话、Writeup 与 workspace，但禁止启动或重试 Solver；不得退回浏览器本地状态。
 - 重置所有 Solver 必须先关闭所属 Project 的 Scheduler、Solver、SubAgent、平台和 SQLite，再清除 `runs.sqlite*`、`runs/` 与 `challenges/` 并重连；不得删除 Project 注册、平台凭据、`project-config.json` 或 `runtime-config.json`。
 - WebUI 使用 React Router 页面路由、Iconify 图标和基于 Radix/CVA 的 shadcn 风格组件。业务页面不使用裸 `<svg>`，不要重新引入巨型设置/详情弹窗；Solver 与 SubAgent 对话复用同一结构化 Pi session 组件。
 - 题目 workspace 文件 API 只列出普通文件、不跟随 symlink，预览与下载必须同时通过相对路径与真实路径 containment 校验；列表保持 2,000 项上限。预览只允许扩展名白名单中的有效 UTF-8 代码/文档，大小上限 256 KiB。桌面侧栏折叠状态属于浏览器本地偏好，不写入 Project 配置。

@@ -31,20 +31,51 @@ export async function buildDashboardSnapshot(
   controlPlane?: DashboardControlPlane,
   projectId?: string,
 ): Promise<DashboardSnapshot> {
-  const [
-    overview,
-    listed,
-    announcements,
-    announcementCandidates,
-    environments,
-  ] = await Promise.all([
-    project.overview(),
-    project.challenges(),
-    project.announcements(),
-    project.announcementCandidates(),
-    project.environments(),
-  ])
   const runs = project.runs()
+  let overview: import("@ctf-agent/core").ContestOverview
+  let listed: import("@ctf-agent/core").ChallengeSummary[]
+  let announcements: import("@ctf-agent/core").Announcement[]
+  let announcementCandidates: ReturnType<
+    DashboardProject["announcementCandidates"]
+  >
+  let environments: import("@ctf-agent/core").RemoteEnvironment[]
+  try {
+    const online = await Promise.all([
+      project.overview(),
+      project.challenges(),
+      project.announcements(),
+      project.announcementCandidates(),
+      project.environments(),
+    ] as const)
+    overview = online[0]
+    listed = online[1]
+    announcements = online[2]
+    announcementCandidates = online[3]
+    environments = online[4]
+    controlPlane?.reportPlatformSuccess?.(projectId)
+  } catch (error) {
+    controlPlane?.reportPlatformFailure?.(projectId, error)
+    const state = controlPlane?.snapshot(projectId)
+    const challengeIds = [...new Set(runs.map((run) => run.challengeId))]
+    overview = {
+      id: state?.projectId ?? "local",
+      name: state?.projectName ?? "本地记录",
+      challenges: challengeIds.length,
+      announcements: 0,
+    }
+    listed = challengeIds.map((challengeId) => ({
+      id: challengeId,
+      title: challengeId,
+      category: "本地记录",
+      score: 0,
+      solved: runs.some(
+        (run) => run.challengeId === challengeId && run.status === "solved",
+      ),
+    }))
+    announcements = []
+    announcementCandidates = project.announcementCandidates()
+    environments = []
+  }
   const schedulerSnapshot = scheduler?.snapshot() ?? null
   const queuedByChallenge = new Map(
     schedulerSnapshot?.queued.map((item) => [item.challengeId, item]) ?? [],
@@ -185,6 +216,7 @@ export async function buildChallengeDetails(
   })
   return {
     generatedAt: new Date().toISOString(),
+    solverAvailable: scheduler !== undefined,
     challenge,
     runs: [...runs].reverse(),
     blackboard: project.blackboard(challengeId),

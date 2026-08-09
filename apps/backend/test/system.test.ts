@@ -65,6 +65,34 @@ describe("系统与快照路由", () => {
     expect(project.refreshCalls).toBe(1)
   })
 
+  it("平台读取失败时从本地 Run 构建快照和题目详情", async () => {
+    const project = new FakeDashboardProject()
+    project.overviewError = new Error("platform offline")
+    testApp = await createTestApp({ project })
+    const { app } = testApp
+
+    const snapshot = await app.request("/api/snapshot")
+    expect(snapshot.status).toBe(200)
+    expect(await jsonOf(snapshot)).toMatchObject({
+      overview: { name: "本地记录" },
+      challenges: [
+        expect.objectContaining({
+          id: "pwn-1",
+          title: "pwn-1",
+          category: "本地记录",
+        }),
+      ],
+    })
+
+    const details = await app.request("/api/challenges/pwn-1")
+    expect(details.status).toBe(200)
+    expect(await jsonOf(details)).toMatchObject({
+      solverAvailable: false,
+      challenge: { id: "pwn-1" },
+      runs: [expect.objectContaining({ id: "run-pwn-1" })],
+    })
+  })
+
   it("项目级路径两种形态（新式与旧式 /api 后缀）等价", async () => {
     testApp = await createTestApp()
     const { app } = testApp

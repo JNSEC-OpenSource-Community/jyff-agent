@@ -186,6 +186,7 @@ export interface ChallengeWriteup {
 
 export interface ChallengeDetails {
   generatedAt: string
+  solverAvailable: boolean
   challenge: DashboardChallenge
   runs: DashboardRun[]
   blackboard: BlackboardSummary
@@ -294,6 +295,9 @@ export interface DashboardControlPlane {
   currentProject(projectId?: string): DashboardProject | undefined
   currentScheduler(projectId?: string): DashboardScheduler | undefined
   shouldPollProject?(projectId?: string): boolean
+  canStartSolver?(projectId?: string): boolean
+  reportPlatformFailure?(projectId: string | undefined, error: unknown): void
+  reportPlatformSuccess?(projectId?: string): void
   testConnection(input: {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>

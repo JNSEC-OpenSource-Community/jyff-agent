@@ -26,7 +26,7 @@ export function schedulerRoutes(services: Services): App {
 
   app.post("/scheduler/auto/start", async (c) => {
     await readJsonBody(c)
-    await services.requireScheduler(projectIdOf(c)).startAuto()
+    await services.requireSolverScheduler(projectIdOf(c)).startAuto()
     return c.json(await refreshFor(c))
   })
 

@@ -124,6 +124,7 @@ export interface ChallengeWriteup {
 
 export interface ChallengeDetails {
   generatedAt: string
+  solverAvailable: boolean
   challenge: DashboardChallenge
   runs: DashboardRun[]
   blackboard: BlackboardSummary

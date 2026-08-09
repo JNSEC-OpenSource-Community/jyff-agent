@@ -120,6 +120,7 @@ interface ManagedProjectRuntime {
   lastError: string | null
   updatedAt: string
   project?: Project
+  localOnly?: boolean
   scheduler?: ContestScheduler
   announcementPoller?: AnnouncementPoller
 }
@@ -280,10 +281,51 @@ export class ControlPlane {
     )
   }
 
+  canStartSolver(projectId?: string): boolean {
+    const runtime = this.resolveRuntime(projectId)
+    return Boolean(
+      runtime &&
+        !runtime.record.archived &&
+        !runtime.localOnly &&
+        runtime.phase === "ready" &&
+        runtime.scheduler,
+    )
+  }
+
+  reportPlatformFailure(projectId: string | undefined, error: unknown): void {
+    const runtime = this.resolveRuntime(projectId)
+    if (!runtime || runtime.localOnly) return
+    runtime.scheduler?.pauseAuto()
+    runtime.lastError = `平台同步失败: ${errorText(error)}`
+    this.setRuntimePhase(runtime, "degraded")
+  }
+
+  reportPlatformSuccess(projectId?: string): void {
+    const runtime = this.resolveRuntime(projectId)
+    if (
+      !runtime ||
+      runtime.localOnly ||
+      runtime.record.archived ||
+      runtime.phase !== "degraded"
+    ) {
+      return
+    }
+    runtime.lastError = null
+    this.setRuntimePhase(runtime, "ready")
+  }
+
   async start(): Promise<ControlPlaneSnapshot> {
     return await this.enqueueTransition(async () => {
       for (const [projectId, runtime] of this.runtimes) {
-        if (runtime.record.archived) continue
+        if (runtime.record.archived) {
+          try {
+            await this.performOpenLocal(projectId)
+          } catch (error) {
+            runtime.lastError = `本地记录打开失败: ${errorText(error)}`
+            this.setRuntimePhase(runtime, "degraded")
+          }
+          continue
+        }
         try {
           await this.performConnect(projectId)
         } catch {
@@ -299,6 +341,11 @@ export class ControlPlane {
       const id = this.resolveProjectId(projectId)
       if (!id) return this.snapshot()
       this.selectedProjectId = id
+      const runtime = this.runtimes.get(id)
+      if (runtime?.record.archived) {
+        await this.performOpenLocal(id)
+        return this.snapshot(id)
+      }
       await this.performConnect(id)
       return this.snapshot(id)
     })
@@ -339,7 +386,8 @@ export class ControlPlane {
         updatedAt: record.updatedAt,
       })
       this.selectedProjectId = config.project.id
-      await this.performConnect(config.project.id)
+      if (record.archived) await this.performOpenLocal(config.project.id)
+      else await this.performConnect(config.project.id)
       return this.snapshot(config.project.id)
     })
   }
@@ -392,7 +440,8 @@ export class ControlPlane {
       if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
       await this.performDisconnect(projectId)
       await this.configStore.resetProjectData(projectId)
-      await this.performConnect(projectId)
+      if (runtime.record.archived) await this.performOpenLocal(projectId)
+      else await this.performConnect(projectId)
       return this.snapshot(projectId)
     })
   }
@@ -410,6 +459,7 @@ export class ControlPlane {
         runtime.scheduler?.pauseAuto()
         if ((runtime.scheduler?.snapshot().active.length ?? 0) === 0) {
           await this.performDisconnect(projectId)
+          await this.performOpenLocal(projectId)
         }
       } else {
         await this.performConnect(projectId)
@@ -425,9 +475,11 @@ export class ControlPlane {
         if (
           runtime.record.archived &&
           runtime.project &&
+          !runtime.localOnly &&
           (runtime.scheduler?.snapshot().active.length ?? 0) === 0
         ) {
           await this.performDisconnect(projectId)
+          await this.performOpenLocal(projectId)
         }
       }
       return this.snapshot()
@@ -462,6 +514,7 @@ export class ControlPlane {
     runtime.announcementPoller = undefined
     runtime.scheduler = undefined
     runtime.project = undefined
+    runtime.localOnly = undefined
     if (scheduler) {
       try {
         await scheduler.shutdown()
@@ -490,7 +543,8 @@ export class ControlPlane {
   private async performConnect(projectId: string): Promise<void> {
     const runtime = this.runtimes.get(projectId)
     if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
-    if (runtime.project) return
+    if (runtime.project && !runtime.localOnly) return
+    if (runtime.localOnly) await this.performDisconnect(projectId)
     runtime.lastError = null
     this.setRuntimePhase(runtime, "connecting")
     try {
@@ -512,6 +566,7 @@ export class ControlPlane {
         resolveSecret: this.secretResolver(projectId),
       })
       runtime.project = project
+      runtime.localOnly = false
       let baselineSucceeded = true
       try {
         await project.syncAnnouncements({ steerActive: false })
@@ -534,6 +589,7 @@ export class ControlPlane {
           }
         },
         onError: (error) => {
+          runtime.scheduler?.pauseAuto()
           runtime.lastError = `公告轮询失败: ${errorText(error)}`
           this.setRuntimePhase(runtime, "degraded")
         },
@@ -542,9 +598,40 @@ export class ControlPlane {
       this.setRuntimePhase(runtime, baselineSucceeded ? "ready" : "degraded")
     } catch (error) {
       runtime.lastError = errorText(error)
+      try {
+        if (runtime.project) await this.performDisconnect(projectId)
+        await this.performOpenLocal(projectId)
+      } catch (localError) {
+        runtime.lastError = `${runtime.lastError}\n本地记录打开失败: ${errorText(localError)}`
+      }
       this.setRuntimePhase(runtime, "degraded")
       throw error
     }
+  }
+
+  private async performOpenLocal(projectId: string): Promise<void> {
+    const runtime = this.runtimes.get(projectId)
+    if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+    if (runtime.project) return
+    const context = {
+      projectId,
+      stateDirectory: runtime.record.stateDirectory,
+    }
+    const projectOptions = await this.options.createProjectOptions?.(context)
+    runtime.project = await Project.openLocal({
+      ...this.options.project,
+      ...projectOptions,
+      root: this.root,
+      stateDirectory: runtime.record.stateDirectory,
+      workspaceNamespace: runtime.record.legacy
+        ? undefined
+        : `projects/${projectStorageKey(projectId)}`,
+      config: runtime.record.config,
+      platforms: this.platforms(),
+      resolveSecret: this.secretResolver(projectId),
+    })
+    runtime.localOnly = true
+    this.setRuntimePhase(runtime, "disconnected")
   }
 
   private validateConfig(config: ProjectConfig): ProjectConfig {

@@ -147,6 +147,10 @@ describe("ControlPlane", () => {
         configured: true,
         lastError: "缺少 TEST_TOKEN",
       })
+      expect(control.currentProject()).toBeDefined()
+      expect(control.currentScheduler()).toBeUndefined()
+      expect(control.canStartSolver()).toBe(false)
+      await control.close()
     } finally {
       if (previous === undefined) delete process.env.TEST_TOKEN
       else process.env.TEST_TOKEN = previous
@@ -288,7 +292,9 @@ describe("ControlPlane", () => {
       phase: "disconnected",
       projects: [expect.objectContaining({ id: "archived", archived: true })],
     })
-    expect(control.currentProject("archived")).toBeUndefined()
+    expect(control.currentProject("archived")).toBeDefined()
+    expect(control.currentScheduler("archived")).toBeUndefined()
+    expect(control.canStartSolver("archived")).toBe(false)
 
     expect(await control.archiveProject("archived", false)).toMatchObject({
       projectId: "archived",
@@ -310,6 +316,8 @@ describe("ControlPlane", () => {
       projects: [expect.objectContaining({ id: "archived", archived: true })],
     })
     expect(restartedPlugin.connections).toBe(0)
+    expect(restarted.currentProject("archived")).toBeDefined()
+    expect(restarted.currentScheduler("archived")).toBeUndefined()
     await restarted.close()
   })
 

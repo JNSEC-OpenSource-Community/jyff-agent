@@ -17,7 +17,7 @@ apps/
 └── frontend/  React 客户端（shadcn/ui 组件与 Tailwind CSS v4）
 ```
 
-后台平台轮询只服务于活跃 Solver 或已开启的自动调度；空闲 Project 仍可由 WebUI 显式刷新。归档 Project 不参与进程启动时的平台连接。归档操作会暂停自动调度，但保留已经活跃的 Solver；最后一个活跃 Solver 结束后，控制面关闭该 Project 的调度器、平台连接与本地运行时。取消归档时重新建立运行时。
+后台平台轮询只服务于活跃 Solver 或已开启的自动调度；空闲 Project 仍可由 WebUI 显式刷新。归档 Project 不参与进程启动时的平台连接。归档操作会暂停自动调度，但保留已经活跃的 Solver；最后一个活跃 Solver 结束后，控制面关闭在线 runtime 并打开不含 Scheduler 的只读本地 runtime。平台连接失败时也回退到该 runtime，使 SQLite、历史对话、Writeup 与 workspace 保持可读；启动或重试 Solver 必须要求在线且未归档。取消归档时重新建立在线 runtime。
 
 主要依赖方向是 `apps/backend → core → agents/platform/sandbox`；`apps/backend`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 可以依赖 `platform` 与 `sandbox`，但不能依赖 `core`、Project 或 SQLite。跨包公开 API 从各包的 `src/index.ts` 导出。
 

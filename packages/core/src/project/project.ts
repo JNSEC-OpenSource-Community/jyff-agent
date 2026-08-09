@@ -222,6 +222,7 @@ export class Project {
       maxConcurrent: number
       modelForRole?: (role: string) => string | undefined
     },
+    private readonly localOnly: boolean,
     diagnostics: readonly ProjectDiagnostic[],
   ) {
     this.root = root
@@ -247,6 +248,33 @@ export class Project {
       config: platformConfig,
       resolveSecret: options.resolveSecret ?? (() => undefined),
     })
+    return await Project.initialize(options, root, config, platform, false)
+  }
+
+  /** 只打开本地 SQLite、session 与 workspace，不访问比赛平台。 */
+  static async openLocal(options: OpenProjectOptions): Promise<Project> {
+    const root = options.config
+      ? resolve(options.root ?? process.cwd())
+      : await findProjectRoot(options.root)
+    const config = options.config
+      ? parseProjectConfig(options.config)
+      : await loadProjectConfig(root)
+    return await Project.initialize(
+      options,
+      root,
+      config,
+      unavailablePlatform(),
+      true,
+    )
+  }
+
+  private static async initialize(
+    options: OpenProjectOptions,
+    root: string,
+    config: ProjectConfig,
+    platform: PlatformProject,
+    localOnly: boolean,
+  ): Promise<Project> {
     let runStore: RunStore | undefined
     try {
       const [discovered, discoveredSubagents] = await Promise.all([
@@ -265,8 +293,9 @@ export class Project {
         options.remoteEnvironments?.maxConcurrent ?? 1,
         runStore,
       )
-      const environmentDiagnostics =
-        await remoteEnvironments.reconcile(platform)
+      const environmentDiagnostics = localOnly
+        ? []
+        : await remoteEnvironments.reconcile(platform)
       return new Project(
         root,
         config,
@@ -292,6 +321,7 @@ export class Project {
             ? { modelForRole: options.subagents.modelForRole }
             : {}),
         },
+        localOnly,
         [
           ...projectDiagnostics(discovered, discoveredSubagents),
           ...environmentDiagnostics.map((message) => ({
@@ -511,15 +541,26 @@ export class Project {
   }
 
   async refresh(): Promise<ContestOverview> {
+    if (this.localOnly) throw new Error("比赛平台当前不可用")
     return this.platform.refresh()
   }
   async overview(): Promise<ContestOverview> {
+    if (this.localOnly) {
+      return {
+        id: this.config.project.id,
+        name: this.config.project.name,
+        challenges: this.localChallenges().length,
+        announcements: 0,
+      }
+    }
     return this.platform.getOverview()
   }
   async challenges(): Promise<ChallengeSummary[]> {
+    if (this.localOnly) return this.localChallenges()
     return this.platform.listChallenges()
   }
   async announcements(): Promise<Announcement[]> {
+    if (this.localOnly) return []
     return this.platform.listAnnouncements()
   }
   async syncAnnouncements(options: { steerActive?: boolean } = {}): Promise<{
@@ -651,6 +692,7 @@ export class Project {
     return this.skills
   }
   async environments(): Promise<RemoteEnvironment[]> {
+    if (this.localOnly) return []
     return this.platform.listRemoteEnvironments()
   }
   async destroyEnvironment(id: string): Promise<void> {
@@ -665,6 +707,23 @@ export class Project {
   }
   runs(filter: RunFilter = {}): RunRecord[] {
     return this.runStore.listRuns(filter)
+  }
+
+  private localChallenges(): ChallengeSummary[] {
+    const challengeIds = new Set([
+      ...this.runStore.listRuns().map((run) => run.challengeId),
+      ...this.runStore.getBlackboardStats().map((stats) => stats.challengeId),
+      ...this.runStore.schedulerQueue().map((item) => item.challengeId),
+    ])
+    return [...challengeIds].map((challengeId) => ({
+      id: challengeId,
+      title: challengeId,
+      category: "本地记录",
+      score: 0,
+      solved: this.runStore
+        .listRuns({ challengeId })
+        .some((run) => run.status === "solved"),
+    }))
   }
   runEvents(runId: string): RunEvent[] {
     return this.runStore.events(runId)
@@ -1793,6 +1852,23 @@ function projectDiagnostics(
       createdAt,
     })),
   ]
+}
+
+function unavailablePlatform(): PlatformProject {
+  const unavailable = async (): Promise<never> => {
+    throw new Error("比赛平台当前不可用")
+  }
+  return {
+    refresh: unavailable,
+    getOverview: unavailable,
+    listChallenges: unavailable,
+    listAnnouncements: unavailable,
+    listRemoteEnvironments: unavailable,
+    getRemoteEnvironment: unavailable,
+    destroyRemoteEnvironment: unavailable,
+    bindChallenge: unavailable,
+    close: async () => undefined,
+  }
 }
 
 function normalizeWorkspaceNamespace(
