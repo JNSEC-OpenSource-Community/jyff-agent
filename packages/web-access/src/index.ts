@@ -65,6 +65,7 @@ export const RESOLVED_SEARCH_PROVIDERS: readonly ResolvedSearchProvider[] = [
   "exa",
   "serpdive",
   "kagi",
+  "nekozuki",
   "ollama",
   "anysearch",
   "xai",

@@ -438,6 +438,7 @@ export interface WebAccessConfigurationView {
   workflow: "none" | "auto-summary"
   summaryModel?: { provider: string; id: string }
   ssrf: { allowRanges: string[]; trustEnvProxy: boolean }
+  providerConfig?: Record<string, Record<string, string>>
 }
 
 export interface WebAccessConfigurationUpdate {
@@ -446,6 +447,7 @@ export interface WebAccessConfigurationUpdate {
   workflow?: "none" | "auto-summary"
   summaryModel?: { provider: string; id: string } | null
   ssrf?: { allowRanges?: string[]; trustEnvProxy?: boolean }
+  providerConfig?: Record<string, Record<string, string>>
 }
 
 export type ModelAuthLoginStatus =

@@ -22,6 +22,7 @@ const WEB_ACCESS_PROVIDERS = [
   "exa",
   "serpdive",
   "kagi",
+  "nekozuki",
   "ollama",
   "anysearch",
   "xai",
@@ -38,6 +39,7 @@ interface StoredWebAccessConfiguration {
   workflow: WebAccessWorkflow
   summaryModel?: { provider: string; id: string }
   ssrf: { allowRanges: string[]; trustEnvProxy: boolean }
+  providerConfig?: Record<string, Record<string, string>>
   timeouts?: { fetchMs?: number; searchMs?: number; cloneMs?: number }
 }
 
@@ -55,6 +57,7 @@ export interface WebAccessConfigurationView {
   workflow: WebAccessWorkflow
   summaryModel?: { provider: string; id: string }
   ssrf: { allowRanges: string[]; trustEnvProxy: boolean }
+  providerConfig?: Record<string, Record<string, string>>
 }
 
 export interface WebAccessConfiguration {
@@ -66,6 +69,7 @@ export interface WebAccessConfiguration {
     summaryModel?: { provider: string; id: string }
     ssrf?: Partial<StoredWebAccessConfiguration["ssrf"]>
     timeouts?: StoredWebAccessConfiguration["timeouts"]
+    providerConfig?: Record<string, Record<string, string>>
   }): Promise<WebAccessConfigurationView>
   /** 写/删某 provider 的密钥（空值删除）。密钥只进 SecretStore，snapshot 不返回值。 */
   setProviderKey(provider: string, apiKey: string | undefined): Promise<void>
@@ -77,6 +81,7 @@ export interface WebAccessConfiguration {
     summaryModel?: { provider: string; id: string }
     ssrf: StoredWebAccessConfiguration["ssrf"]
     timeouts: { fetchMs: number; searchMs: number; cloneMs: number }
+    providerConfig?: Record<string, Record<string, string>>
   }>
 }
 
@@ -216,6 +221,7 @@ export async function createFileWebAccessConfiguration(options: {
       workflow: value.workflow,
       ...(value.summaryModel ? { summaryModel: value.summaryModel } : {}),
       ssrf: value.ssrf,
+      ...(value.providerConfig ? { providerConfig: value.providerConfig } : {}),
     }
   }
 
@@ -257,6 +263,9 @@ export async function createFileWebAccessConfiguration(options: {
                     : input.ssrf.trustEnvProxy === true,
               },
         ...(input.timeouts ? { timeouts: input.timeouts } : {}),
+        ...(input.providerConfig
+          ? { providerConfig: input.providerConfig }
+          : {}),
       }
       configuration = next
       await persist(next)
@@ -291,6 +300,9 @@ export async function createFileWebAccessConfiguration(options: {
           searchMs: configuration.timeouts?.searchMs ?? 30_000,
           cloneMs: configuration.timeouts?.cloneMs ?? 30_000,
         },
+        ...(configuration.providerConfig
+          ? { providerConfig: configuration.providerConfig }
+          : {}),
       }
     },
   }

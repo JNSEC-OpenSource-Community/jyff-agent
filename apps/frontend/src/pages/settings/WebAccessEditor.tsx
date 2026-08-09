@@ -42,6 +42,7 @@ const WEB_ACCESS_PROVIDERS = [
   "exa",
   "serpdive",
   "kagi",
+  "nekozuki",
   "ollama",
   "anysearch",
   "xai",
@@ -65,6 +66,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   exa: "Exa",
   serpdive: "SERPdive",
   kagi: "Kagi",
+  nekozuki: "Nekozuki",
   ollama: "Ollama",
   anysearch: "AnySearch",
   xai: "xAI",
@@ -101,6 +103,9 @@ export function WebAccessEditor({
     config.ssrf.allowRanges.join("\n"),
   )
   const [trustEnvProxy, setTrustEnvProxy] = useState(config.ssrf.trustEnvProxy)
+  const [providerConfig, setProviderConfig] = useState<
+    Record<string, Record<string, string>>
+  >(config.providerConfig ?? {})
   const [keys, setKeys] = useState<Record<string, string>>({})
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
@@ -148,6 +153,7 @@ export function WebAccessEditor({
             .filter(Boolean),
           trustEnvProxy,
         },
+        providerConfig,
       }
       await apiMutation("/api/global-config/web-access", "POST", payload)
       // 只保存已填写的密钥（失焦保存已独立处理；这里提交非空项）。
@@ -244,10 +250,12 @@ export function WebAccessEditor({
                           <p className="truncate text-[11px] text-muted-foreground">
                             {provider === "searxng"
                               ? "自托管聚合搜索（需配置 baseUrl）"
-                              : provider === "brightdata" ||
-                                  provider === "brightdata-unlocker"
-                                ? "付费代理（需配置 zone）"
-                                : "搜索 / 抓取 provider"}
+                              : provider === "nekozuki"
+                                ? "本地 CTF 知识库 RAG（需配置 baseUrl）"
+                                : provider === "brightdata" ||
+                                    provider === "brightdata-unlocker"
+                                  ? "付费代理（需配置 zone）"
+                                  : "搜索 / 抓取 provider"}
                           </p>
                         </div>
                         <Badge
@@ -259,34 +267,52 @@ export function WebAccessEditor({
                       </div>
 
                       <div className="mt-4 flex items-center justify-between gap-3">
-                        <Input
-                          type="password"
-                          value={keys[provider] ?? ""}
-                          onChange={(e) =>
-                            setKeys((k) => ({
-                              ...k,
-                              [provider]: e.target.value,
-                            }))
-                          }
-                          onBlur={() => {
-                            const value = keys[provider] ?? ""
-                            if (!value.trim()) return
-                            void saveKey(provider, value.trim())
-                              .then(() => {
-                                setKeys((k) => {
-                                  const next = { ...k }
-                                  delete next[provider]
-                                  return next
+                        {provider === "nekozuki" ? (
+                          <Input
+                            type="text"
+                            value={providerConfig.nekozuki?.baseUrl ?? ""}
+                            onChange={(e) =>
+                              setProviderConfig((pc) => ({
+                                ...pc,
+                                nekozuki: {
+                                  ...pc.nekozuki,
+                                  baseUrl: e.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="http://localhost:8000"
+                            className="h-8 flex-1 text-xs font-mono"
+                          />
+                        ) : (
+                          <Input
+                            type="password"
+                            value={keys[provider] ?? ""}
+                            onChange={(e) =>
+                              setKeys((k) => ({
+                                ...k,
+                                [provider]: e.target.value,
+                              }))
+                            }
+                            onBlur={() => {
+                              const value = keys[provider] ?? ""
+                              if (!value.trim()) return
+                              void saveKey(provider, value.trim())
+                                .then(() => {
+                                  setKeys((k) => {
+                                    const next = { ...k }
+                                    delete next[provider]
+                                    return next
+                                  })
+                                  onSaved()
                                 })
-                                onSaved()
-                              })
-                              .catch((e) => setErr(errorMessage(e)))
-                          }}
-                          placeholder={
-                            hasKey ? "已配置（留空不改）" : "API Key"
-                          }
-                          className="h-8 flex-1 text-xs"
-                        />
+                                .catch((e) => setErr(errorMessage(e)))
+                            }}
+                            placeholder={
+                              hasKey ? "已配置（留空不改）" : "API Key"
+                            }
+                            className="h-8 flex-1 text-xs"
+                          />
+                        )}
                         {hasKey ? (
                           <Button
                             size="sm"

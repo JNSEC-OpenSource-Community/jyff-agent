@@ -111,6 +111,9 @@ const controlPlane = await ControlPlane.create({
         workspaceHostPath: workspace,
         ssrf: snapshot.ssrf,
         timeouts: snapshot.timeouts,
+        ...(snapshot.providerConfig
+          ? { providerConfig: snapshot.providerConfig }
+          : {}),
         sessionSignal: signal,
       }
     },

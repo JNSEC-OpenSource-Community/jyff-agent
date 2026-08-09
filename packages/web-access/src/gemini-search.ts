@@ -14,6 +14,7 @@ import {
 } from "./gemini-api.ts"
 import { isJinaSearchAvailable, searchWithJina } from "./jina-search.ts"
 import { isKagiAvailable, searchWithKagi } from "./kagi.ts"
+import { isNekozukiAvailable, searchWithNekozuki } from "./nekozuki.ts"
 import { isOllamaAvailable, searchWithOllama } from "./ollama.ts"
 import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.ts"
 import { isParallelAvailable, searchWithParallel } from "./parallel.ts"
@@ -54,6 +55,7 @@ export const RESOLVED_SEARCH_PROVIDERS = [
   "exa",
   "serpdive",
   "kagi",
+  "nekozuki",
   "ollama",
   "anysearch",
   "xai",
@@ -142,6 +144,7 @@ const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = [
   "jina",
   "serpdive",
   "kagi",
+  "nekozuki",
   "ollama",
   "perplexity",
   "gemini",
@@ -355,6 +358,8 @@ async function searchWithResolvedProvider(
     return { ...(await searchWithSerpdive(query, options)), provider }
   if (provider === "kagi")
     return { ...(await searchWithKagi(query, options)), provider }
+  if (provider === "nekozuki")
+    return { ...(await searchWithNekozuki(query, options)), provider }
   if (provider === "ollama")
     return { ...(await searchWithOllama(query, options)), provider }
   if (provider === "anysearch")
@@ -400,6 +405,7 @@ async function isResolvedProviderAvailable(
   if (provider === "jina") return isJinaSearchAvailable()
   if (provider === "serpdive") return isSerpdiveAvailable()
   if (provider === "kagi") return isKagiAvailable()
+  if (provider === "nekozuki") return isNekozukiAvailable()
   if (provider === "ollama") return isOllamaAvailable()
   if (provider === "anysearch") return isAnySearchAvailable()
   if (provider === "xai") return isXaiSearchAvailable(options.modelAuth)
@@ -420,6 +426,7 @@ function providerLabel(provider: ResolvedSearchProvider): string {
   if (provider === "serpdive") return "SERPdive"
   if (provider === "searxng") return "SearXNG"
   if (provider === "kagi") return "Kagi"
+  if (provider === "nekozuki") return "Nekozuki"
   if (provider === "ollama") return "Ollama"
   if (provider === "xai") return "xAI"
   if (provider === "brightdata") return "Bright Data"
@@ -717,6 +724,16 @@ export async function search(
     } catch (err) {
       if (isAbortError(err)) throw err
       fallbackErrors.push(`Kagi: ${errorMessage(err)}`)
+    }
+  }
+
+  if (isNekozukiAvailable() && isProviderEnabled("nekozuki")) {
+    try {
+      const result = await searchWithNekozuki(query, options)
+      return { ...result, provider: "nekozuki" }
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      fallbackErrors.push(`Nekozuki: ${errorMessage(err)}`)
     }
   }
 

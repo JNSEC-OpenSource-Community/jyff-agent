@@ -33,6 +33,9 @@ export function webAccessRoutes(services: Services): App {
             ? {}
             : { summaryModel: body.summaryModel ?? undefined }),
           ...(body.ssrf === undefined ? {} : { ssrf: body.ssrf }),
+          ...(body.providerConfig === undefined
+            ? {}
+            : { providerConfig: body.providerConfig }),
         }),
       )
     } catch (error) {

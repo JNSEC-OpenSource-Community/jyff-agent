@@ -368,6 +368,9 @@ export const webAccessConfigurationSchema = z
         trustEnvProxy: z.boolean().optional(),
       })
       .optional(),
+    providerConfig: z
+      .record(z.string(), z.record(z.string(), z.string()))
+      .optional(),
   })
   .strict()
 
