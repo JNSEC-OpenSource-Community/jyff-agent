@@ -24,7 +24,12 @@ export const SOLVER_SYSTEM_PROMPT = [
   "- Keep several incompatible research routes alive through multiple rounds. Cross-pollinate " +
     "ideas only after independent agents have developed them far enough to expose their real " +
     "strengths and gaps. ",
-  "- You the root solver agent should repeatedly synthesize, challenge, redirect, and launch new rounds. ",
+"  - You the root solver agent should repeatedly synthesize, challenge, redirect, and launch new rounds. ",
+  // web_search policies
+  "  Information can be achieved via web_search tool, but you are NOT allowed to search the information like the writeup of current challenge, " +
+    "styles of the challenge author or previous CTF games, etc. Focus on the information of underlying logic.",
+
+  "</solver_policy>",
 ].join("\n")
 
 export const CTF_COMPACTION_PROMPT = [

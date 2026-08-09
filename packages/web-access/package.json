@@ -1,0 +1,30 @@
+{
+  "name": "@ctf-agent/web-access",
+  "version": "0.19.0-pinned",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.82.1",
+    "@mozilla/readability": "^0.6.0",
+    "linkedom": "^0.16.0",
+    "p-limit": "^6.1.0",
+    "promise.try": "^2.0.1",
+    "turndown": "^7.2.0",
+    "typebox": "^1.1.38",
+    "unpdf": "^1.6.2"
+  },
+  "devDependencies": {
+    "@types/turndown": "^5.0.6"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "^0.82.1"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-agent-core": {
+      "optional": true
+    }
+  }
+}

@@ -349,6 +349,38 @@ export const modelPromptSchema = z.object({
   value: z.string().trim().min(1).max(16_384),
 })
 
+/** web-access 插件全局配置。 */
+export const webAccessConfigurationSchema = z
+  .object({
+    enabled: z.boolean({ message: "enabled 必须是布尔值" }).optional(),
+    providers: z.array(z.string().trim().min(1).max(64)).max(64).optional(),
+    workflow: z.enum(["none", "auto-summary"]).optional(),
+    summaryModel: z
+      .object({
+        provider: z.string().trim().min(1).max(128),
+        id: z.string().trim().min(1).max(256),
+      })
+      .nullable()
+      .optional(),
+    ssrf: z
+      .object({
+        allowRanges: z.array(z.string().trim().min(1).max(256)).optional(),
+        trustEnvProxy: z.boolean().optional(),
+      })
+      .optional(),
+    providerConfig: z
+      .record(z.string(), z.record(z.string(), z.string()))
+      .optional(),
+  })
+  .strict()
+
+/** web-access 某 provider 的密钥写入。 */
+export const webAccessKeySchema = z
+  .object({
+    apiKey: z.string().trim().max(16_384).nullable().optional(),
+  })
+  .strict()
+
 /** auth.json 导入。 */
 export const modelImportSchema = z.object({
   json: z.string().trim().min(1).max(250_000),

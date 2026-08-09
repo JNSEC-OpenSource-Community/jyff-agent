@@ -23,14 +23,17 @@ import type {
   CustomModelProviderView,
   ModelAuthenticationView,
   ModelConfigurationView,
+  WebAccessConfigurationView,
 } from "../../types.ts"
 import { ModelPoolEditor } from "./ModelPoolEditor.tsx"
 import { ProviderCredentialCard } from "./ProviderCredentialCard.tsx"
+import { WebAccessEditor } from "./WebAccessEditor.tsx"
 
 interface Cfg {
   authentication: { enabled: boolean; username: string | null }
   modelConfiguration: ModelConfigurationView | null
   modelAuthentication: ModelAuthenticationView | null
+  webAccess: WebAccessConfigurationView | null
 }
 
 type ProviderSetupMode = "subscription" | "api-key" | "custom"
@@ -239,6 +242,7 @@ export function GlobalSettingsPage() {
         <TabsList className="mb-6">
           <TabsTrigger value="providers">Provider</TabsTrigger>
           <TabsTrigger value="models">模型池</TabsTrigger>
+          <TabsTrigger value="plugins">插件</TabsTrigger>
           <TabsTrigger value="security">登录</TabsTrigger>
         </TabsList>
 
@@ -548,6 +552,18 @@ export function GlobalSettingsPage() {
             />
           ) : (
             <ErrorNotice message="模型配置不可用" />
+          )}
+        </TabsContent>
+
+        <TabsContent value="plugins" className="space-y-5">
+          {g.webAccess ? (
+            <WebAccessEditor
+              config={g.webAccess}
+              modelConfiguration={g.modelConfiguration}
+              onSaved={load}
+            />
+          ) : (
+            <ErrorNotice message="当前控制面不支持 web-access 插件" />
           )}
         </TabsContent>
 

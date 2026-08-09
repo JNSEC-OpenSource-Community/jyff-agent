@@ -8,6 +8,7 @@ import type { Sandbox } from "@ctf-agent/sandbox"
 import type {
   AgentMessage,
   AgentOptions,
+  AgentTool,
   Skill,
 } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
@@ -32,6 +33,8 @@ export interface CreateCtfSubagentOptions {
   agent: AgentOptions
   role: SubagentRole
   skills?: readonly AgentSkill[]
+  /** 可选注入 web-access 工具；role.tools 白名单未包含时不会启用。 */
+  webAccessTools?: readonly AgentTool[]
   compaction?: boolean
 }
 
@@ -70,10 +73,13 @@ export class CtfSubagent extends BaseAgent {
     if (!fallbackModel) throw new Error("SubAgent 缺少可用模型")
     const models = modelsFromAgentOptions(options.agent, fallbackModel)
     const model = resolveRoleModel(models, fallbackModel, options.role.model)
-    const allTools = createSubagentTools({
-      sandbox: options.sandbox,
-      cwd: options.containerCwd,
-    })
+    const allTools = [
+      ...(options.webAccessTools ?? []),
+      ...createSubagentTools({
+        sandbox: options.sandbox,
+        cwd: options.containerCwd,
+      }),
+    ]
     const enabledTools = options.role.tools
       ? new Set(options.role.tools)
       : undefined
