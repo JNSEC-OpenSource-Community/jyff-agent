@@ -33,6 +33,9 @@ describe("MessageBody", () => {
     )
     const trigger = screen.getByRole("button", { name: /正在推理/ })
     expect(trigger.getAttribute("aria-expanded")).toBe("true")
+    expect(
+      trigger.querySelectorAll(".agent-thinking-wave > span"),
+    ).toHaveLength(3)
 
     rerender(
       createElement(MessageBody, { message, streaming: false, latest: true }),

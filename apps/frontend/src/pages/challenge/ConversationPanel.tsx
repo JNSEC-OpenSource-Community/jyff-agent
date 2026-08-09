@@ -160,7 +160,7 @@ export function ConversationPanel({
               <span
                 className={cn(
                   "size-1.5 shrink-0 rounded-full",
-                  status.active ? "bg-primary animate-pulse-glow" : "bg-quiet",
+                  status.active ? "bg-primary" : "bg-quiet",
                 )}
               />
               <span className="truncate">{status.text}</span>
@@ -221,9 +221,6 @@ export function ConversationPanel({
                     item.role === "user"
                       ? "ml-auto max-w-[88%] overflow-hidden rounded-xl border border-border/80 bg-muted/70 px-4 py-3"
                       : "w-full pl-5 before:absolute before:top-1 before:bottom-1 before:left-0 before:w-px before:bg-border",
-                    streaming &&
-                      item.role === "assistant" &&
-                      "before:bg-primary/70 before:shadow-[0_0_12px_rgba(94,106,210,0.45)]",
                   )}
                 >
                   <MessageMeta
@@ -236,15 +233,6 @@ export function ConversationPanel({
                     latest={index === messages.length - 1}
                     toolActivities={activity.tools}
                   />
-                  {streaming && item.role === "assistant" ? (
-                    <>
-                      <span
-                        className="agent-stream-cursor mt-2"
-                        aria-hidden="true"
-                      />
-                      <span className="sr-only">Agent 正在继续输出</span>
-                    </>
-                  ) : null}
                 </article>
               )
             })}
@@ -271,7 +259,7 @@ export function ConversationPanel({
         className="shrink-0 border-t border-border/80 bg-card/80 p-3 backdrop-blur-sm max-lg:p-2"
         onSubmit={(event) => void onSubmit(event)}
       >
-        <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-xl border border-border bg-background/70 p-1.5 shadow-[0_8px_24px_-18px_rgba(94,106,210,0.65)] transition-colors focus-within:border-primary/45">
+        <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-xl border border-border bg-background/70 p-1.5 transition-colors focus-within:border-primary/45">
           <Textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}

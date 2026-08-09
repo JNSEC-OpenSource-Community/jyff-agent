@@ -163,7 +163,7 @@ function ToolBlock({
         failed
           ? "border-danger/30 bg-danger/5"
           : running
-            ? "agent-tool-running border-primary/35 bg-primary/[0.045]"
+            ? "border-primary/35 bg-primary/[0.045]"
             : "border-border/80 bg-muted/55",
       )}
     >
@@ -251,7 +251,11 @@ function ThinkingBlock({
         </span>
         <span>{streaming ? "正在推理" : "推理记录"}</span>
         {streaming ? (
-          <span className="agent-stream-cursor ml-0.5" aria-hidden="true" />
+          <span className="agent-thinking-wave" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
         ) : null}
         <Icon
           icon="lucide:chevron-down"

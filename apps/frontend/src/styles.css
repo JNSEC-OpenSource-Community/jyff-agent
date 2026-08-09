@@ -312,69 +312,43 @@ p {
   }
 }
 
-@keyframes pulse-glow {
+@keyframes agent-thinking-dot-wave {
   0%,
+  60%,
   100% {
-    opacity: 0.5;
+    opacity: 0.35;
+    transform: translateY(0);
   }
-  50% {
+  30% {
     opacity: 1;
-  }
-}
-
-@keyframes agent-tool-scan {
-  from {
-    transform: translateY(-100%);
-  }
-  to {
-    transform: translateY(420%);
-  }
-}
-
-@keyframes agent-cursor-breathe {
-  0%,
-  100% {
-    opacity: 0.28;
-  }
-  50% {
-    opacity: 1;
+    transform: translateY(-0.16rem);
   }
 }
 
 .animate-ping-soft {
   animation: ping-soft 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+.agent-thinking-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  margin-left: 0.1rem;
 }
 
-/* Agent 工作日志只在当前活动点使用动效，避免多张卡片同时闪烁。 */
-.agent-tool-running::before {
-  content: "";
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  width: 1px;
-  height: 28%;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    color-mix(in srgb, var(--accent) 90%, white),
-    transparent
-  );
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
-  animation: agent-tool-scan 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  pointer-events: none;
-}
-
-.agent-stream-cursor {
-  display: inline-block;
-  width: 0.42rem;
-  height: 0.9rem;
-  border-radius: 1px;
-  vertical-align: -0.08rem;
+.agent-thinking-wave > span {
+  width: 0.22rem;
+  height: 0.22rem;
+  border-radius: 999px;
   background: var(--accent);
-  animation: agent-cursor-breathe 1.15s ease-in-out infinite;
+  animation: agent-thinking-dot-wave 1.2s ease-in-out infinite;
+}
+
+.agent-thinking-wave > span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.agent-thinking-wave > span:nth-child(3) {
+  animation-delay: 0.28s;
 }
 
 /* ── 响应式导航 ── */
