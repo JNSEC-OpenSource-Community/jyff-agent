@@ -309,6 +309,42 @@ describe("Project", () => {
     await project.close()
   })
 
+  it("将 Solver 的 Pi 生命周期旁路投影到隔离的实时订阅", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+      })
+      const received: string[] = []
+      const unrelated: string[] = []
+      const unsubscribe = project.subscribeAgentStream(
+        { runId: solver.runId },
+        (event) => received.push(event.type),
+      )
+      project.subscribeAgentStream({ runId: "another-run" }, (event) =>
+        unrelated.push(event.type),
+      )
+
+      await expect(solver.prompt("continue")).resolves.toMatchObject({
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "本测试不调用模型",
+      })
+      unsubscribe()
+
+      expect(received).toContain("agent_started")
+      expect(received).toContain("agent_finished")
+      expect(unrelated).toEqual([])
+    } finally {
+      await project.close()
+    }
+  })
+
   it("只向后续 Solver 注入非空黑板", async () => {
     const root = await fixture()
     const project = await Project.open({

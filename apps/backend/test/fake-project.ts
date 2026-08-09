@@ -1,4 +1,6 @@
 import type {
+  AgentStreamListener,
+  AgentStreamTarget,
   Announcement,
   BlackboardStats,
   BlackboardSummary,
@@ -27,6 +29,10 @@ import type {
 const now = "2026-07-29T12:00:00.000Z"
 
 export class FakeDashboardProject implements DashboardProject {
+  agentStreamSubscriptions: Array<{
+    target: AgentStreamTarget
+    listener: AgentStreamListener
+  }> = []
   refreshCalls = 0
   overviewCalls = 0
   runEventsCalls = 0
@@ -259,6 +265,19 @@ export class FakeDashboardProject implements DashboardProject {
 
   runSessionPath(runId: string): string {
     return `/sessions/${runId}/session.jsonl`
+  }
+
+  subscribeAgentStream(
+    target: AgentStreamTarget,
+    listener: AgentStreamListener,
+  ): () => void {
+    const subscription = { target, listener }
+    this.agentStreamSubscriptions.push(subscription)
+    return () => {
+      this.agentStreamSubscriptions = this.agentStreamSubscriptions.filter(
+        (candidate) => candidate !== subscription,
+      )
+    }
   }
 
   async runSessionExportMetadata() {

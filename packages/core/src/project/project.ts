@@ -75,6 +75,12 @@ import {
   RunStore,
   type SchedulerQueueRecord,
 } from "../persistence/run-store.ts"
+import type {
+  AgentStreamEvent,
+  AgentStreamListener,
+  AgentStreamPayload,
+  AgentStreamTarget,
+} from "./agent-stream.ts"
 import {
   ChallengeAttachmentError,
   downloadChallengeAttachments,
@@ -181,6 +187,12 @@ export class Project {
   private readonly subagentManagers = new Map<string, CtfSubagentManager>()
   private readonly runChallengeContexts = new Map<string, string>()
   private readonly diagnosticLog: ProjectDiagnostic[]
+  private readonly agentStreamListeners = new Set<{
+    target: AgentStreamTarget
+    listener: AgentStreamListener
+  }>()
+  private readonly agentStreamSequences = new Map<string, number>()
+  private readonly activeStreamMessages = new Map<string, string>()
   private closed = false
   private constructor(
     root: string,
@@ -288,6 +300,16 @@ export class Project {
 
   runSessionPath(runId: string): string {
     return join(this.agentDirectory, "runs", runId, "session.jsonl")
+  }
+
+  /** 订阅某个 Solver 或 SubAgent 的瞬时 Pi 事件；持久化对话仍以 JSONL 为准。 */
+  subscribeAgentStream(
+    target: AgentStreamTarget,
+    listener: AgentStreamListener,
+  ): () => void {
+    const subscription = { target: { ...target }, listener }
+    this.agentStreamListeners.add(subscription)
+    return () => this.agentStreamListeners.delete(subscription)
   }
   async runSessionExportMetadata(
     runId: string,
@@ -945,6 +967,9 @@ export class Project {
         roles: this.configuredSubagentRoles(),
         skills,
         maxConcurrent: this.subagentRuntime.maxConcurrent,
+        onAgentEvent: (subagent, event) => {
+          this.publishAgentEvent(runId, subagent.id, event)
+        },
         onRecord: (subagent, event) => {
           try {
             this.runStore.upsertSubagent(subagent)
@@ -1045,6 +1070,7 @@ export class Project {
       // pi 在 message_end 中提供完整的 thinking block。按 turn 持久化一条，避免
       // reasoning token 逐片写入 SQLite，导致事件表/WAL 和 Dashboard 查询爆炸。
       solver.subscribe((event) => {
+        this.publishAgentEvent(runId, undefined, event)
         if (event.type === "message_end" && solver.thinkingLevel !== "off") {
           try {
             const thinking = extractThinkingText(event.message)
@@ -1217,6 +1243,9 @@ export class Project {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
+    this.agentStreamListeners.clear()
+    this.agentStreamSequences.clear()
+    this.activeStreamMessages.clear()
     const errors: unknown[] = []
     const solverResults = await Promise.allSettled(
       [...this.solvers].map((solver) => solver.close("manual")),
@@ -1235,6 +1264,126 @@ export class Project {
     }
     if (errors.length > 0)
       throw new AggregateError(errors, "Project 关闭时发生错误")
+  }
+
+  private publishAgentEvent(
+    runId: string,
+    subagentId: string | undefined,
+    event: AgentHarnessEvent,
+  ): void {
+    const key = `${runId}\u0000${subagentId ?? "solver"}`
+    const messageId = (): string => {
+      const current = this.activeStreamMessages.get(key)
+      if (current) return current
+      const next = `${key}:${(this.agentStreamSequences.get(key) ?? 0) + 1}`
+      this.activeStreamMessages.set(key, next)
+      return next
+    }
+    let payload: AgentStreamPayload | undefined
+
+    if (event.type === "agent_start") payload = { type: "agent_started" }
+    else if (event.type === "agent_end") payload = { type: "agent_finished" }
+    else if (event.type === "message_start") {
+      payload = {
+        type: "message_started",
+        messageId: messageId(),
+        message: event.message,
+      }
+    } else if (event.type === "message_update") {
+      const update = event.assistantMessageEvent
+      if (update.type === "text_delta") {
+        payload = {
+          type: "text_delta",
+          messageId: messageId(),
+          contentIndex: update.contentIndex,
+          delta: update.delta,
+        }
+      } else if (update.type === "thinking_delta") {
+        payload = {
+          type: "thinking_delta",
+          messageId: messageId(),
+          contentIndex: update.contentIndex,
+          delta: update.delta,
+        }
+      } else if (update.type === "toolcall_end") {
+        payload = {
+          type: "message_updated",
+          messageId: messageId(),
+          message: event.message,
+        }
+      }
+    } else if (event.type === "message_end") {
+      payload = {
+        type: "message_completed",
+        messageId: messageId(),
+        message: event.message,
+      }
+      this.activeStreamMessages.delete(key)
+    } else if (event.type === "tool_execution_start") {
+      payload = {
+        type: "tool_started",
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        args: tracedToolArgs(event.toolName, event.args, this.telemetry),
+      }
+    } else if (event.type === "tool_execution_update") {
+      payload = {
+        type: "tool_updated",
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        partialResult: tracedValue(
+          event.partialResult,
+          this.telemetry.maxTextLength,
+        ),
+      }
+    } else if (event.type === "tool_execution_end") {
+      payload = {
+        type: "tool_completed",
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        result: tracedValue(event.result, this.telemetry.maxTextLength),
+        isError: event.isError,
+      }
+    } else if (event.type === "queue_update") {
+      payload = {
+        type: "queue_updated",
+        queued:
+          event.steer.length + event.followUp.length + event.nextTurn.length,
+      }
+    } else if (event.type === "session_before_compact") {
+      payload = { type: "status_changed", status: "compacting" }
+    } else if (event.type === "session_compact") {
+      payload = { type: "status_changed", status: "active" }
+    } else if (event.type === "retry_scheduled") {
+      payload = {
+        type: "status_changed",
+        status: "retrying",
+        detail: `${Math.ceil(event.delayMs / 1_000)} 秒后重试 ${event.attempt}/${event.maxAttempts}`,
+      }
+    }
+    if (!payload) return
+
+    const seq = (this.agentStreamSequences.get(key) ?? 0) + 1
+    this.agentStreamSequences.set(key, seq)
+    const envelope = {
+      ...payload,
+      runId,
+      ...(subagentId ? { subagentId } : {}),
+      seq,
+      createdAt: new Date().toISOString(),
+    } as AgentStreamEvent
+    for (const subscription of this.agentStreamListeners) {
+      if (
+        subscription.target.runId !== runId ||
+        subscription.target.subagentId !== subagentId
+      )
+        continue
+      try {
+        subscription.listener(envelope)
+      } catch {
+        // WebUI 订阅是旁路投影，不得影响 Solver。
+      }
+    }
   }
 
   private async persistRecord(

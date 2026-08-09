@@ -2,9 +2,48 @@ import { describe, expect, it } from "vitest"
 import { createWebUiApp } from "../src/server.ts"
 import type { DashboardConversation } from "../src/types.ts"
 import { FakeDashboardProject } from "./fake-project.ts"
-import { jsonOf, jsonRequest } from "./helpers.ts"
+import { jsonOf, jsonRequest, readSseUntil } from "./helpers.ts"
 
 describe("Run 与 SubAgent 会话路由", () => {
+  it("按 Run 隔离转发实时 Agent 事件", async () => {
+    const project = new FakeDashboardProject()
+    const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
+    const response = await app.request("/api/runs/run-pwn-1/events")
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    expect(await readSseUntil(response, "event: ready")).toContain(
+      "event: ready",
+    )
+    expect(project.agentStreamSubscriptions).toHaveLength(1)
+
+    project.agentStreamSubscriptions[0]?.listener({
+      type: "tool_started",
+      runId: "run-pwn-1",
+      seq: 7,
+      createdAt: "2026-08-09T10:00:00.000Z",
+      toolCallId: "tool-7",
+      toolName: "bash",
+      args: { command: "file chall" },
+    })
+    const streamed = await readSseUntil(response, '"toolCallId":"tool-7"')
+    expect(streamed).toContain("event: agent_event")
+    expect(streamed).toContain('"toolName":"bash"')
+    await response.body?.cancel()
+  })
+
+  it("拒绝订阅不存在的 Run 或 SubAgent", async () => {
+    const project = new FakeDashboardProject()
+    const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
+
+    expect((await app.request("/api/runs/missing/events")).status).toBe(404)
+    expect(
+      (await app.request("/api/runs/run-pwn-1/subagents/missing/events"))
+        .status,
+    ).toBe(404)
+    expect(project.agentStreamSubscriptions).toHaveLength(0)
+  })
+
   it("提供 SubAgent steer/cancel 控制 API", async () => {
     const project = new FakeDashboardProject()
     const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })

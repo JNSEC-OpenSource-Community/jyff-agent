@@ -80,6 +80,8 @@ export interface SubagentManagerOptions {
     record: SubagentRecord,
     event: SubagentLifecycleEvent,
   ) => Promise<void> | void
+  /** 将 Pi 的细粒度运行事件转发给控制面，不参与 Agent 生命周期结算。 */
+  onAgentEvent?: (record: SubagentRecord, event: AgentHarnessEvent) => void
 }
 
 interface ManagedSubagent {
@@ -467,6 +469,11 @@ export class CtfSubagentManager {
 
   private subscribe(managed: ManagedSubagent, agent: CtfSubagent): void {
     agent.subscribe((event) => {
+      try {
+        this.options.onAgentEvent?.(snapshot(managed.record), event)
+      } catch {
+        // 实时 UI 是旁路能力，不能因订阅者异常打断 SubAgent。
+      }
       this.captureProgress(managed, event)
     })
   }

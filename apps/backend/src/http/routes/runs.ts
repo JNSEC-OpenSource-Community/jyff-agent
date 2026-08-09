@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { streamSSE } from "hono/streaming"
 import type { App, AppContext, AppEnv } from "../context.ts"
 import { errorText, HttpError, hasCode } from "../errors.ts"
 import {
@@ -108,6 +109,14 @@ export function runRoutes(services: Services): App {
     return c.json(readConversation(subagent.sessionPath, services.exporters))
   })
 
+  app.get("/runs/:runId/subagents/:subagentId/events", (c) => {
+    const project = services.requireProject(projectIdOf(c))
+    const runId = c.req.param("runId")
+    const subagentId = c.req.param("subagentId")
+    requireRunAndSubagent(project, runId, subagentId)
+    return agentEventStream(c, project, { runId, subagentId })
+  })
+
   app.get("/runs/:runId/export", async (c) => {
     const project = services.requireProject(projectIdOf(c))
     const runId = c.req.param("runId")
@@ -135,7 +144,91 @@ export function runRoutes(services: Services): App {
     )
   })
 
+  app.get("/runs/:runId/events", (c) => {
+    const project = services.requireProject(projectIdOf(c))
+    const runId = c.req.param("runId")
+    if (!project.runs().some((candidate) => candidate.id === runId)) {
+      throw new HttpError(404, "run_not_found", `Run 不存在: ${runId}`)
+    }
+    return agentEventStream(c, project, { runId })
+  })
+
   return app
+}
+
+function agentEventStream(
+  c: AppContext,
+  project: import("../../types.ts").DashboardProject,
+  target: import("@ctf-agent/core").AgentStreamTarget,
+): Response {
+  c.header("Content-Type", "text/event-stream; charset=utf-8")
+  c.header("Cache-Control", "no-cache, no-transform")
+  c.header("Connection", "keep-alive")
+  c.header("X-Accel-Buffering", "no")
+  return streamSSE(c, async (stream) => {
+    type QueueItem =
+      | import("@ctf-agent/core").AgentStreamEvent
+      | { heartbeat: true }
+    const queue = new AsyncEventQueue<QueueItem>()
+    const heartbeat = setInterval(() => queue.push({ heartbeat: true }), 15_000)
+    const unsubscribe = project.subscribeAgentStream(target, (event) => {
+      queue.push(event)
+    })
+    stream.onAbort(() => {
+      unsubscribe()
+      queue.close()
+    })
+    try {
+      await stream.write(": connected\n\n")
+      await stream.writeSSE({
+        event: "ready",
+        data: JSON.stringify({ connectedAt: new Date().toISOString() }),
+      })
+      for (;;) {
+        const event = await queue.next()
+        if (!event) break
+        if ("heartbeat" in event) {
+          await stream.write(": heartbeat\n\n")
+          continue
+        }
+        await stream.writeSSE({
+          event: "agent_event",
+          data: JSON.stringify(event),
+          id: String(event.seq),
+        })
+      }
+    } finally {
+      clearInterval(heartbeat)
+      unsubscribe()
+      queue.close()
+    }
+  })
+}
+
+class AsyncEventQueue<T> {
+  private readonly items: T[] = []
+  private readonly waiters: Array<(item: T | undefined) => void> = []
+  private closed = false
+
+  push(item: T): void {
+    if (this.closed) return
+    const waiter = this.waiters.shift()
+    if (waiter) waiter(item)
+    else this.items.push(item)
+  }
+
+  next(): Promise<T | undefined> {
+    const item = this.items.shift()
+    if (item) return Promise.resolve(item)
+    if (this.closed) return Promise.resolve(undefined)
+    return new Promise((resolve) => this.waiters.push(resolve))
+  }
+
+  close(): void {
+    if (this.closed) return
+    this.closed = true
+    for (const waiter of this.waiters.splice(0)) waiter(undefined)
+  }
 }
 
 function scopedSnapshot(
