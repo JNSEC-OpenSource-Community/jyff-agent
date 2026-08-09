@@ -310,7 +310,7 @@ export function ConversationPanel({
       </div>
 
       {awayFromBottom ? (
-        <div className="relative z-20 flex h-0 shrink-0 items-center justify-center">
+        <div className="relative z-20 flex mb-3! h-0 shrink-0 items-center justify-center">
           <button
             type="button"
             onClick={scrollToBottom}
