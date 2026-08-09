@@ -51,11 +51,14 @@ export function WorkspaceFilesPanel({
   if (loading && !listing) return <Spinner label="加载 workspace 文件" />
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-3 flex items-center justify-end gap-3">
+    <div className="w-full">
+      <div className="mb-3 flex items-center justify-between gap-3">
         {listing ? (
-          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            {listing.files.length} 个文件
+          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <Icon icon="lucide:files" width="14" />
+            <span className="font-mono tabular-nums">
+              {listing.files.length} 个文件
+            </span>
           </span>
         ) : null}
         <Button
@@ -143,12 +146,13 @@ function WorkspaceDirectoryNode({
   projectId: string
   challengeId: string
 }) {
-  const [open, setOpen] = useState(false)
+  const fileCount = countDirectoryFiles(directory)
+  const [open, setOpen] = useState(() => fileCount < 8)
   return (
     <li>
       <button
         type="button"
-        className="flex h-11 w-full items-center gap-2 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+        className="grid min-h-12 w-full grid-cols-[14px_20px_minmax(0,1fr)_2rem] items-center gap-2 px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_2rem]"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -162,14 +166,15 @@ function WorkspaceDirectoryNode({
         <Icon
           icon={open ? "lucide:folder-open" : "lucide:folder"}
           width="16"
-          className="text-primary/80"
+          className="justify-self-center text-primary/80"
         />
-        <span className="min-w-0 flex-1 truncate font-mono">
+        <span className="min-w-0 truncate font-mono font-medium">
           {directory.name}
         </span>
-        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">
-          {countDirectoryFiles(directory)}
+        <span className="text-right font-mono text-[11px] tabular-nums text-muted-foreground/70">
+          {fileCount}
         </span>
+        <span className="hidden sm:block" />
       </button>
       {open ? (
         <ul className="ml-5 border-l border-border/70 pl-2">
@@ -207,20 +212,19 @@ function WorkspaceFileRow({
 }) {
   const name = file.path.split("/").pop() ?? file.path
   return (
-    <li className="flex min-h-11 items-center gap-2 px-3 py-1.5 hover:bg-muted/25">
-      <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
+    <li className="grid min-h-12 grid-cols-[14px_20px_minmax(0,1fr)_2rem] items-center gap-2 px-3 py-1.5 hover:bg-muted/25 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_2rem]">
+      <span />
+      <span className="flex size-5 items-center justify-center text-muted-foreground">
         <Icon icon={fileIcon(name)} width="15" />
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-xs font-medium text-foreground">
-          {name}
-        </p>
-      </div>
+      <p className="min-w-0 truncate font-mono text-xs font-medium text-foreground">
+        {name}
+      </p>
       <div className="hidden shrink-0 text-right text-[11px] text-muted-foreground sm:block">
         <p className="font-mono tabular-nums">{formatFileSize(file.size)}</p>
         <p>{absoluteTime(file.modifiedAt)}</p>
       </div>
-      <Button size="icon" variant="ghost" asChild>
+      <Button size="icon" variant="ghost" className="size-8" asChild>
         <a href={downloadUrl} download={name} aria-label={`下载 ${file.path}`}>
           <Icon icon="lucide:download" width="15" />
         </a>

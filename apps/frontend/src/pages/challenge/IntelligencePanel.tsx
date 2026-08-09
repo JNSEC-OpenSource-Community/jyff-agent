@@ -19,20 +19,12 @@ export function IntelligencePanel({
 }) {
   return (
     <div className="space-y-6">
-      <section>
-        <div className="mb-3 flex items-center gap-2.5">
-          <span className="flex size-7 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
-            <Icon icon="lucide:file-text" width="15" />
-          </span>
-          <h3 className="text-sm font-semibold">TLDR 摘要</h3>
-        </div>
-        <TldrPanel
-          projectId={projectId}
-          challengeId={challengeId}
-          tldr={tldr}
-          onChanged={onChanged}
-        />
-      </section>
+      <TldrPanel
+        projectId={projectId}
+        challengeId={challengeId}
+        tldr={tldr}
+        onChanged={onChanged}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {(

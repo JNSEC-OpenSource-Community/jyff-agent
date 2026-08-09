@@ -2,12 +2,7 @@ import type { TldrRecord } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
 import { useState } from "react"
 import { MarkdownContent } from "../../components/content/MarkdownContent.tsx"
-import {
-  Button,
-  EmptyState,
-  ErrorNotice,
-  Spinner,
-} from "../../components/index.ts"
+import { Button, ErrorNotice } from "../../components/index.ts"
 import { apiMutation, projectApi } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import { absoluteTime } from "../../lib/time.ts"
@@ -46,90 +41,75 @@ export function TldrPanel({
     }
   }
 
-  if (error) return <ErrorNotice message={error} />
-
-  if (!tldr) {
-    return (
-      <EmptyState
-        icon="lucide:file-text"
-        title="尚未生成 TLDR"
-        description="Generate tl;dr for your lazy ass by a background agent."
-        action={
-          <Button size="sm" onClick={() => void refresh()} disabled={busy}>
-            <Icon
-              icon={busy ? "lucide:loader-circle" : "lucide:sparkles"}
-              className={busy ? "animate-spin" : ""}
-              width="14"
-            />{" "}
-            生成 TLDR
-          </Button>
-        }
-      />
-    )
-  }
-
-  if (tldr.error) {
-    return (
-      <div className="flex flex-col gap-2">
-        <ErrorNotice message={`TLDR 生成失败：${tldr.error}`} />
-        <div>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void refresh()}
-            disabled={busy}
-          >
-            <Icon
-              icon={busy ? "lucide:loader-circle" : "lucide:rotate-ccw"}
-              className={busy ? "animate-spin" : ""}
-              width="14"
-            />{" "}
-            重试
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <Icon icon="lucide:bot" width="13" />
-          {tldr.model}
+    <section
+      className={cn(
+        "overflow-hidden rounded-xl border border-border bg-card transition-opacity",
+        busy && "opacity-70",
+      )}
+    >
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Icon icon="lucide:file-text" width="14" />
         </span>
-        <span>{absoluteTime(tldr.updatedAt)}</span>
-        <span>{tldr.inputTokens} input tokens</span>
-        {tldr.cacheReadTokens + tldr.cacheWriteTokens > 0 ? (
-          <span>
-            缓存 {tldr.cacheReadTokens} 读 / {tldr.cacheWriteTokens} 写
-          </span>
-        ) : null}
-      </div>
-      <div
-        className={cn(
-          "rounded-xl border border-border bg-muted/30 p-4",
-          busy && "opacity-60",
-        )}
-      >
-        <MarkdownContent>{tldr.content}</MarkdownContent>
-      </div>
-      <div className="flex items-center gap-2">
+        <h3 className="flex-1 text-sm font-medium">TLDR 摘要</h3>
         <Button
           size="sm"
-          variant="secondary"
+          variant="ghost"
           onClick={() => void refresh()}
           disabled={busy}
         >
           <Icon
-            icon={busy ? "lucide:loader-circle" : "lucide:rotate-ccw"}
+            icon={
+              busy
+                ? "lucide:loader-circle"
+                : tldr
+                  ? "lucide:rotate-ccw"
+                  : "lucide:sparkles"
+            }
             className={busy ? "animate-spin" : ""}
             width="14"
-          />{" "}
-          重新生成
+          />
+          {tldr ? "重新生成" : "生成"}
         </Button>
-        {busy ? <Spinner label="生成中" /> : null}
       </div>
-    </div>
+
+      {error ? (
+        <div className="px-4 pt-4">
+          <ErrorNotice message={error} />
+        </div>
+      ) : null}
+
+      {!tldr ? (
+        <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+          尚未生成摘要
+        </p>
+      ) : tldr.error ? (
+        <div className="p-4">
+          <ErrorNotice message={`TLDR 生成失败：${tldr.error}`} />
+        </div>
+      ) : (
+        <>
+          <div className="p-4">
+            <MarkdownContent>{tldr.content}</MarkdownContent>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Icon icon="lucide:bot" width="12" />
+              {tldr.model}
+            </span>
+            <span>{absoluteTime(tldr.updatedAt)}</span>
+            <span className="font-mono tabular-nums">
+              {tldr.inputTokens} input tokens
+            </span>
+            {tldr.cacheReadTokens + tldr.cacheWriteTokens > 0 ? (
+              <span className="font-mono tabular-nums">
+                缓存 {tldr.cacheReadTokens} 读 / {tldr.cacheWriteTokens} 写
+              </span>
+            ) : null}
+          </div>
+        </>
+      )}
+    </section>
   )
 }
