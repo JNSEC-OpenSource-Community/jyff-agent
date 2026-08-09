@@ -28,7 +28,7 @@ export function fatherRoutes(services: Services): App {
     return c.json(
       await services.requireFather().create({
         ...body,
-        createdBy: c.get("auth").username ?? "local",
+        createdBy: services.authentication?.snapshot().username ?? "local",
       }),
       201,
     )
