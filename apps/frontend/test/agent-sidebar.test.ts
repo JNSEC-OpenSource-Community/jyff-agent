@@ -1,0 +1,111 @@
+// @vitest-environment jsdom
+
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { createElement } from "react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { AgentSidebar } from "../src/pages/challenge/AgentSidebar.tsx"
+import type { ChallengeDetails } from "../src/types.ts"
+
+const endpoint =
+  "https://instance.example.test/very/long/environment/path/that/must/not/overflow/the/sidebar"
+
+afterEach(cleanup)
+
+describe("AgentSidebar", () => {
+  it("根据选中 Agent 切换实时缓存指标", () => {
+    const { rerender } = renderSidebar("worker-1")
+
+    expect(screen.getAllByText("Explorer Worker")).toHaveLength(2)
+    expect(screen.getByText("75%")).toBeTruthy()
+    expect(screen.getByText("100 tokens")).toBeTruthy()
+    expect(screen.getByText("300 tokens")).toBeTruthy()
+    expect(screen.getByText("20 tokens")).toBeTruthy()
+
+    rerender(sidebar(null))
+    expect(screen.getAllByText("Solver")).toHaveLength(2)
+    expect(screen.getByText("50%")).toBeTruthy()
+    expect(screen.getAllByText("200 tokens")).toHaveLength(2)
+  })
+
+  it("截断展示并复制完整环境 URL", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    renderSidebar(null)
+
+    expect(screen.getByText("运行中")).toBeTruthy()
+    const url = screen.getByTitle(endpoint)
+    expect(url.className).toContain("truncate")
+    expect(url.className).toContain("min-w-0")
+    fireEvent.click(screen.getByRole("button", { name: "复制环境 URL" }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(endpoint))
+    expect(screen.getByRole("button", { name: "环境 URL 已复制" })).toBeTruthy()
+    expect(url.parentElement?.parentElement?.className).toContain(
+      "minmax(0,1fr)",
+    )
+  })
+})
+
+function renderSidebar(selectedSubagentId: string | null) {
+  return render(sidebar(selectedSubagentId))
+}
+
+function sidebar(selectedSubagentId: string | null) {
+  return createElement(AgentSidebar, {
+    details,
+    selectedRunId: "run-1",
+    selectedSubagentId,
+    onSelectSubagent: vi.fn(),
+  })
+}
+
+const details = {
+  challenge: {
+    id: "pwn-1",
+    attempts: 1,
+    sessionInterruptions: 0,
+    platformSolved: false,
+    needsEnv: true,
+  },
+  environment: {
+    id: "env-1",
+    challengeId: "pwn-1",
+    status: "running",
+    endpoint,
+  },
+  runs: [
+    {
+      id: "run-1",
+      attempt: 1,
+      status: "running",
+      cache: {
+        inputTokens: 200,
+        cacheReadTokens: 200,
+        cacheWriteTokens: 50,
+        cacheRate: 0.5,
+      },
+      subagents: [
+        {
+          id: "worker-1",
+          displayName: "Explorer Worker",
+          role: "explorer",
+          status: "running",
+          turns: 2,
+          totalTokens: 500,
+          inputTokens: 100,
+          cacheReadTokens: 300,
+          cacheWriteTokens: 20,
+        },
+      ],
+    },
+  ],
+} as unknown as ChallengeDetails

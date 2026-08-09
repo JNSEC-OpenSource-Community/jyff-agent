@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react"
+import { useMemo, useState } from "react"
 import {
   Badge,
   Card,
@@ -10,7 +11,12 @@ import { toneForStatus } from "../../lib/challenge.ts"
 import { toolLabel } from "../../lib/conversation.ts"
 import { STATUS_LABELS } from "../../lib/labels.ts"
 import { cn } from "../../lib/utils.ts"
-import type { ChallengeDetails, DashboardSubagent } from "../../types.ts"
+import type {
+  AgentCacheStats,
+  ChallengeDetails,
+  DashboardRun,
+  DashboardSubagent,
+} from "../../types.ts"
 
 export function AgentSidebar({
   details,
@@ -26,6 +32,14 @@ export function AgentSidebar({
   const c = details.challenge
   const run =
     details.runs.find((r) => r.id === selectedRunId) ?? details.runs[0]
+  const selectedSubagent = run?.subagents.find(
+    (subagent) => subagent.id === selectedSubagentId,
+  )
+  const selectedAgentName = selectedSubagent?.displayName ?? "Solver"
+  const cache = useMemo(
+    () => selectedAgentCache(run, selectedSubagent),
+    [run, selectedSubagent],
+  )
 
   return (
     <aside className="flex min-w-0 flex-1 flex-col gap-4">
@@ -47,19 +61,27 @@ export function AgentSidebar({
               <Row label="ID" value={c.id} mono />
               <Row label="尝试" value={c.attempts} />
               <Row label="中断" value={c.sessionInterruptions} />
+              <Row label="当前 Agent" value={selectedAgentName} />
               <Row
                 label="实时缓存率"
                 value={
-                  run?.cache.cacheRate === null || !run
+                  cache.cacheRate === null
                     ? "—"
-                    : `${Math.round(run.cache.cacheRate * 100)}%`
+                    : `${Math.round(cache.cacheRate * 100)}%`
                 }
               />
               {run ? (
-                <Row
-                  label="缓存命中"
-                  value={`${run.cache.cacheReadTokens.toLocaleString()} tokens`}
-                />
+                <>
+                  <Row label="输入" value={tokenLabel(cache.inputTokens)} />
+                  <Row
+                    label="缓存读取"
+                    value={tokenLabel(cache.cacheReadTokens)}
+                  />
+                  <Row
+                    label="缓存写入"
+                    value={tokenLabel(cache.cacheWriteTokens)}
+                  />
+                </>
               ) : null}
               <Row
                 label="平台"
@@ -67,10 +89,14 @@ export function AgentSidebar({
               />
               <Row
                 label="环境"
-                value={
-                  details.environment?.status ?? (c.needsEnv ? "未启动" : "-")
-                }
+                value={environmentLabel(details, c.needsEnv === true)}
               />
+              {details.environment?.endpoint ? (
+                <EnvironmentEndpoint
+                  key={details.environment.endpoint}
+                  endpoint={details.environment.endpoint}
+                />
+              ) : null}
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -114,6 +140,140 @@ export function AgentSidebar({
   )
 }
 
+function selectedAgentCache(
+  run: DashboardRun | undefined,
+  subagent: DashboardSubagent | undefined,
+): AgentCacheStats {
+  if (!subagent) {
+    return (
+      run?.cache ?? {
+        inputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheRate: null,
+      }
+    )
+  }
+  const inputTokens = Math.max(0, subagent.inputTokens ?? 0)
+  const cacheReadTokens = Math.max(0, subagent.cacheReadTokens ?? 0)
+  const cacheWriteTokens = Math.max(0, subagent.cacheWriteTokens ?? 0)
+  const eligibleTokens = inputTokens + cacheReadTokens
+  return {
+    inputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    cacheRate: eligibleTokens > 0 ? cacheReadTokens / eligibleTokens : null,
+  }
+}
+
+function tokenLabel(value: number): string {
+  return `${value.toLocaleString()} tokens`
+}
+
+function environmentLabel(
+  details: ChallengeDetails,
+  needsEnvironment: boolean,
+): string {
+  switch (details.environment?.status) {
+    case "starting":
+      return "启动中"
+    case "running":
+      return "运行中"
+    case "stopped":
+      return "已停止"
+    default:
+      return needsEnvironment ? "未启动" : "不需要"
+  }
+}
+
+function EnvironmentEndpoint({ endpoint }: { endpoint: string }) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  )
+  const copy = async () => {
+    try {
+      await copyText(endpoint)
+      setCopyStatus("copied")
+    } catch {
+      setCopyStatus("failed")
+    }
+  }
+
+  return (
+    <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
+      <span className="text-muted-foreground">环境 URL</span>
+      <div className="flex min-w-0 items-center justify-end gap-1">
+        <code
+          className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-foreground"
+          title={endpoint}
+        >
+          {endpoint}
+        </code>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+            copyStatus === "copied" && "text-success",
+            copyStatus === "failed" && "text-danger",
+          )}
+          aria-label={
+            copyStatus === "copied"
+              ? "环境 URL 已复制"
+              : copyStatus === "failed"
+                ? "复制环境 URL 失败，点击重试"
+                : "复制环境 URL"
+          }
+          title={
+            copyStatus === "copied"
+              ? "已复制"
+              : copyStatus === "failed"
+                ? "复制失败"
+                : "复制"
+          }
+        >
+          <Icon
+            icon={
+              copyStatus === "copied"
+                ? "lucide:check"
+                : copyStatus === "failed"
+                  ? "lucide:triangle-alert"
+                  : "lucide:copy"
+            }
+            width="13"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+async function copyText(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // 非安全上下文或权限被拒绝时回退到选择复制。
+    }
+  }
+  const textarea = document.createElement("textarea")
+  textarea.value = value
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  document.body.append(textarea)
+  let copied = false
+  try {
+    textarea.select()
+    copied = document.execCommand("copy")
+  } finally {
+    textarea.remove()
+  }
+  if (!copied) throw new Error("Clipboard unavailable")
+}
+
 function Row({
   label,
   value,
@@ -124,9 +284,15 @@ function Row({
   mono?: boolean
 }) {
   return (
-    <div className="flex justify-between gap-2">
-      <span className="text-muted-foreground">{label}</span>
-      <strong className={cn("text-right text-xs", mono && "font-mono")}>
+    <div className="flex min-w-0 justify-between gap-2">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <strong
+        className={cn(
+          "min-w-0 truncate text-right text-xs",
+          mono && "font-mono",
+        )}
+        title={String(value)}
+      >
         {value}
       </strong>
     </div>

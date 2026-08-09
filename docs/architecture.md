@@ -131,7 +131,7 @@ ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；bas
 
 题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，同一进程内同题的重叠刷新合并为一次生成，进程重启后以 SQLite 与该 JSONL 作为恢复依据。`CtfTldrAgent` 仅提供宿主机侧受 containment 校验的 `read/list`，不会创建 Docker sandbox；工具只列出普通文件、不暴露 TLDR 自身 session，并拒绝路径或 symlink 逃逸、非 UTF-8 文本和超过 64 KiB 的单文件。题目、黑板、公告和已有 TLDR 作为不可信数据注入。WebUI 详情可查看状态并触发 `/api/challenges/:id/tldr/refresh` 更新。
 
-WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`cacheWrite` 单独显示。Solver Run 从持久化 `agent_usage` 聚合；SubAgent 在 worker snapshot 中累计 input/cache read/cache write 并通过兼容迁移列持久化；TLDR 保存最近一次成功生成的 usage。没有可用 usage 或分母为 0 时显示无数据，不显示误导性的 0%。
+WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`cacheWrite` 单独显示。Solver Run 从持久化 `agent_usage` 聚合；SubAgent 在 worker snapshot 中累计 input/cache read/cache write 并通过兼容迁移列持久化；题目页右侧状态栏按当前选中的 Solver 或 SubAgent 切换这些指标。TLDR 保存最近一次成功生成的 usage。没有可用 usage 或分母为 0 时显示无数据，不显示误导性的 0%。远程环境同时显示本地化状态和完整 endpoint；endpoint 在受限宽度内截断展示，但复制操作始终使用未截断原值。
 
 Solver 与 SubAgent 的聊天界面使用按 `Project ID + Run ID + SubAgent ID` 隔离的瞬时 SSE。Core 将 Pi 的 `message_*`、`tool_execution_*`、队列、compact 和 retry 事件归一化后旁路广播；浏览器把增量投影到当前对话，并在重新加载或断线恢复时用 Pi JSONL 结构化会话校准。Assistant 文本与推理复用安全的 GFM 渲染和 highlight.js 语言白名单，终端类工具额外安全解析 ANSI SGR 样式；短工具结果自动展开，流式推理在下一条时间线消息出现前保持展开。用户离开对话底部后显示悬浮返回按钮并累计新内容；`Agent`、`get_subagent_result`、`steer_subagent`、`cancel_subagent` 等工具调用及 `<subagent_notification>` 可直接跳转到对应 worker 对话。高频 token 不写入 SQLite，订阅者异常也不得影响 Agent 生命周期。Project 级 snapshot SSE 继续负责题目、调度器和侧栏等低频权威状态。
 

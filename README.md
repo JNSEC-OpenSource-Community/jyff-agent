@@ -205,6 +205,8 @@ Project 首页的待执行队列限制高度并在溢出时内部滚动，待审
 
 题目页的“文件”Tab 以可折叠目录树列出题目 workspace 中的普通文件并提供下载，少于 8 个文件的目录默认展开。受支持的代码、纯文本和 Markdown 文件可在响应式弹窗中直接预览；代码按需使用有限语言集高亮，Markdown 复用安全渲染器，预览文件上限为 256 KiB。列表最多返回 2,000 项且不跟随 symlink，预览和下载路径同时经过相对路径与真实路径 containment 校验。桌面侧栏折叠偏好保存在浏览器本地，切换页面或刷新后保持不变。
 
+题目页右侧状态栏跟随当前选中的 Solver/SubAgent 显示输入、缓存读写和实时缓存率。远程环境除状态外还显示可复制的完整 URL；长地址在侧栏内截断，不会撑破布局。
+
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 
 ## 安全说明
