@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react"
 import {
   type FormEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -53,6 +54,9 @@ export function ConversationPanel({
   onChanged,
   header,
   readOnly = false,
+  notice,
+  emptyDescription,
+  composerPlaceholder,
 }: {
   target: ConversationTarget
   attempt: number
@@ -68,6 +72,9 @@ export function ConversationPanel({
   onChanged(): Promise<void>
   header?: { label: string; subLabel: string; icon: string }
   readOnly?: boolean
+  notice?: ReactNode
+  emptyDescription?: string
+  composerPlaceholder?: string
 }): React.ReactElement {
   const {
     conversation,
@@ -276,7 +283,9 @@ export function ConversationPanel({
               <EmptyState
                 icon="lucide:message-circle-dashed"
                 title="尚无 Agent 对话"
-                description="这个 Attempt 还没有生成可查看的回复。"
+                description={
+                  emptyDescription ?? "这个 Attempt 还没有生成可查看的回复。"
+                }
               />
             )
           ) : null}
@@ -336,6 +345,7 @@ export function ConversationPanel({
         </div>
       ) : null}
 
+      {notice}
       {!readOnly ? (
         <form
           className="shrink-0 border-t border-border/80 bg-card/80 p-3 backdrop-blur-sm max-lg:p-2"
@@ -346,9 +356,10 @@ export function ConversationPanel({
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               placeholder={
-                isRunActive
+                composerPlaceholder ??
+                (isRunActive
                   ? "给 Agent 补充方向或要求…"
-                  : "发送消息以继续这个 Attempt…"
+                  : "发送消息以继续这个 Attempt…")
               }
               rows={1}
               name="agent-message"

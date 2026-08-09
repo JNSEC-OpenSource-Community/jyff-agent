@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url"
 import {
   type PlatformPlugin,
   type PlatformPluginRegistry,
+  type PlatformSetupDescriptor,
   type PlatformValidationProfile,
   type PlatformValidationReport,
   validatePlatformPlugin,
@@ -39,6 +40,15 @@ export interface PlatformExtensionView {
   validation?: PlatformValidationReport
 }
 
+export interface PlatformCandidateView {
+  pluginId: string
+  name: string
+  version: string
+  contentHash: string
+  schemaFingerprint: string
+  setup: PlatformSetupDescriptor
+}
+
 export class PlatformExtensionStore {
   private readonly reports = new Map<string, PlatformValidationReport>()
 
@@ -58,6 +68,24 @@ export class PlatformExtensionStore {
     await mkdir(store.root, { recursive: true })
     await store.loadInstalled()
     return store
+  }
+
+  async describeCandidate(
+    candidateDirectory: string,
+  ): Promise<PlatformCandidateView> {
+    const candidate = await inspectCandidate(candidateDirectory)
+    const plugin = await loadPlugin(candidate.directory, candidate.manifest)
+    if (!plugin.setup) throw new Error("候选插件没有声明 setup 配置表单")
+    return {
+      pluginId: plugin.id,
+      name: candidate.manifest.name,
+      version: candidate.manifest.version,
+      contentHash: candidate.contentHash,
+      schemaFingerprint: createHash("sha256")
+        .update(JSON.stringify(plugin.setup))
+        .digest("hex"),
+      setup: plugin.setup,
+    }
   }
 
   async validate(input: {

@@ -34,6 +34,7 @@ const configuration: ModelConfigurationView = {
   ],
   solverModelId: "solver",
   tldrModelId: "solver",
+  fatherModelId: "solver",
   subagentModels: {},
   supportedThinkingLevels: ["off", "medium"],
   configured: true,

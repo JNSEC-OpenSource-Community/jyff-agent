@@ -4,6 +4,7 @@ import {
   ContestScheduler,
   ControlPlane,
   FatherSessionManager,
+  FatherValidationConfigStore,
   FileSecretStore,
   PlatformExtensionStore,
 } from "@ctf-agent/core"
@@ -77,7 +78,7 @@ if (fatherSkills.diagnostics.length > 0) {
 const father = await FatherSessionManager.open({
   root: options.root,
   image: "ctf-agent-solver:latest",
-  createAgentOptions: () => modelConfiguration.createAgentOptions("solver"),
+  createAgentOptions: () => modelConfiguration.createAgentOptions("father"),
   skills: fatherSkills.skills,
   skillRevision: "builtin-v1",
   ...(options.workspaceVolume
@@ -90,6 +91,10 @@ const father = await FatherSessionManager.open({
       }
     : {}),
 })
+const fatherValidationConfigs = new FatherValidationConfigStore(
+  options.root,
+  secretStore,
+)
 async function projectRuntimeConfiguration(context: {
   projectId: string
   stateDirectory: string
@@ -175,6 +180,7 @@ const webui = await startWebUi({
   modelConfiguration,
   authentication,
   father,
+  fatherValidationConfigs,
   extensions,
   projectRuntimeConfiguration: (projectId) =>
     projectRuntimeConfigurations.get(projectId),

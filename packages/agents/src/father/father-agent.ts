@@ -4,8 +4,10 @@ import type { Sandbox } from "@ctf-agent/sandbox"
 import type {
   AgentMessage,
   AgentOptions,
+  AgentTool,
   Skill,
 } from "@earendil-works/pi-agent-core"
+import { Type } from "typebox"
 import {
   BaseAgent,
   modelsFromAgentOptions,
@@ -20,6 +22,12 @@ export interface CreateCtfFatherAgentOptions {
   sandbox: Sandbox
   agent: AgentOptions
   skills?: readonly Skill[]
+  onIdentifyPlugin?(input: {
+    pluginId: string
+    displayName: string
+    task: "create" | "repair"
+  }): Promise<void>
+  onRequestValidation?(): Promise<void>
 }
 
 /** 全局平台适配 Agent；所有执行工具都绑定到独立 Docker workspace。 */
@@ -53,7 +61,10 @@ export class CtfFatherAgent extends BaseAgent {
       model,
       systemPrompt: FATHER_SYSTEM_PROMPT,
       thinkingLevel: options.agent.initialState?.thinkingLevel,
-      tools: createSandboxTools({ sandbox: options.sandbox }),
+      tools: [
+        ...createSandboxTools({ sandbox: options.sandbox }),
+        ...fatherTools(options),
+      ],
       skills: options.skills,
       compaction: true,
     })
@@ -71,4 +82,51 @@ export class CtfFatherAgent extends BaseAgent {
     await this.waitForIdle()
     await this.sandbox.close()
   }
+}
+
+function fatherTools(options: CreateCtfFatherAgentOptions): AgentTool[] {
+  return [
+    {
+      name: "father_identify_plugin",
+      label: "Identify Platform Plugin",
+      description:
+        "Set the plugin identity once the target platform and task are understood.",
+      parameters: Type.Object({
+        pluginId: Type.String({ minLength: 3, maxLength: 64 }),
+        displayName: Type.String({ minLength: 1, maxLength: 120 }),
+        task: Type.Union([Type.Literal("create"), Type.Literal("repair")]),
+      }),
+      executionMode: "sequential",
+      async execute(_id, params) {
+        const input = params as {
+          pluginId: string
+          displayName: string
+          task: "create" | "repair"
+        }
+        await options.onIdentifyPlugin?.(input)
+        return {
+          content: [
+            { type: "text", text: JSON.stringify({ updated: true, ...input }) },
+          ],
+          details: input,
+        }
+      },
+    },
+    {
+      name: "father_request_validation",
+      label: "Request Plugin Validation",
+      description:
+        "Ask the user to provide or confirm the platform test configuration for the current candidate.",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      async execute() {
+        await options.onRequestValidation?.()
+        const details = { requested: true, waitingForUser: true }
+        return {
+          content: [{ type: "text", text: JSON.stringify(details) }],
+          details,
+        }
+      },
+    },
+  ]
 }

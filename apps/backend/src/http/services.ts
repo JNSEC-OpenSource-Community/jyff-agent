@@ -9,6 +9,7 @@ import type {
   DashboardControlPlane,
   DashboardConversation,
   DashboardFather,
+  DashboardFatherValidationConfigs,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardPlatformExtensions,
@@ -31,6 +32,7 @@ export interface ServicesOptions {
   modelAuthentication?: DashboardModelAuthentication
   authentication?: DashboardWebUiAuthentication
   father?: DashboardFather
+  fatherValidationConfigs?: DashboardFatherValidationConfigs
   extensions?: DashboardPlatformExtensions
   projectRuntimeConfiguration?: (
     projectId: string,
@@ -115,6 +117,16 @@ export class Services {
       throw new HttpError(503, "extensions_unavailable", "平台扩展服务尚未启用")
     }
     return this.options.extensions
+  }
+
+  requireFatherValidationConfigs(): DashboardFatherValidationConfigs {
+    if (!this.options.fatherValidationConfigs)
+      throw new HttpError(
+        503,
+        "father_validation_config_unavailable",
+        "Father 测试配置服务尚未启用",
+      )
+    return this.options.fatherValidationConfigs
   }
 
   currentProject(projectId?: string): DashboardProject | undefined {

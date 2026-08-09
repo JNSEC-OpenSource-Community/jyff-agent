@@ -12,6 +12,7 @@ import type {
   ControlPlaneSetupSnapshot,
   ControlPlaneSnapshot,
   FatherSessionRecord,
+  PlatformCandidateView,
   PlatformConnectionTest,
   PlatformExtensionView,
   PlatformValidationProfile,
@@ -44,8 +45,6 @@ export interface DashboardFather {
   sessionPath(id: string): string
   workspace(id: string): string
   create(input: {
-    title: string
-    pluginId: string
     createdBy: string
     parentSessionId?: string
   }): Promise<FatherSessionRecord>
@@ -53,10 +52,16 @@ export interface DashboardFather {
   stop(id: string): Promise<FatherSessionRecord>
   complete(id: string): Promise<FatherSessionRecord>
   subscribe(id: string, listener: AgentStreamListener): () => void
+  setGateStatus(
+    id: string,
+    gate: FatherSessionRecord["gate"],
+  ): Promise<FatherSessionRecord>
+  notifyValidation(id: string, report: PlatformValidationReport): Promise<void>
   close(): Promise<void>
 }
 
 export interface DashboardPlatformExtensions {
+  describeCandidate(candidateDirectory: string): Promise<PlatformCandidateView>
   list(): Promise<PlatformExtensionView[]>
   validate(input: {
     sessionId: string
@@ -67,6 +72,27 @@ export interface DashboardPlatformExtensions {
     sessionId: string
     candidateDirectory: string
   }): Promise<PlatformExtensionView>
+}
+
+export interface DashboardFatherValidationConfigs {
+  read(
+    sessionId: string,
+    schemaFingerprint: string,
+  ): Promise<
+    | {
+        config: unknown
+        configuredSecrets: Record<string, { configured: boolean }>
+        secrets: Record<string, string | undefined>
+      }
+    | undefined
+  >
+  save(input: {
+    sessionId: string
+    schemaFingerprint: string
+    config: unknown
+    secrets: Record<string, string | undefined>
+    secretNames: string[]
+  }): Promise<void>
 }
 
 export type DashboardChallengeStatus =
@@ -342,6 +368,7 @@ export interface ModelConfigurationView {
   customProviders: CustomModelProviderView[]
   solverModelId: string
   tldrModelId: string
+  fatherModelId?: string
   subagentModels: Record<string, string>
   /** WebUI 根据当前 Project 动态补充，未连接平台时可以为空。 */
   subagentRoles?: Array<{ name: string; displayName: string }>
@@ -373,6 +400,7 @@ export interface ModelConfigurationUpdate {
   models: ModelPoolEntryUpdate[]
   solverModelId: string
   tldrModelId: string
+  fatherModelId?: string
   subagentModels: Record<string, string>
 }
 

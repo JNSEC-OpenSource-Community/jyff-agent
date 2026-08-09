@@ -58,6 +58,9 @@ export function ModelPoolEditor({
   const [models, setModels] = useState<EM[]>(configuration.models.map(ed))
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const [fatherModelId, setFatherModelId] = useState(
+    configuration.fatherModelId ?? configuration.solverModelId,
+  )
   const [customModelIds, setCustomModelIds] = useState<
     Record<string, string[] | null>
   >({})
@@ -132,6 +135,7 @@ export function ModelPoolEditor({
         ),
         solverModelId: configuration.solverModelId,
         tldrModelId: configuration.tldrModelId,
+        fatherModelId,
         subagentModels: configuration.subagentModels,
       }
       const r = await apiMutation<{ configuration: ModelConfigurationView }>(
@@ -151,6 +155,24 @@ export function ModelPoolEditor({
   return (
     <div className="space-y-4">
       {err ? <ErrorNotice message={err} /> : null}
+      <Card className="flex flex-wrap items-center justify-between gap-4 p-4">
+        <div>
+          <p className="text-sm font-medium">Clanker Father 模型</p>
+          <p className="text-xs text-muted-foreground">
+            全局插件工坊使用，不跟随 Project。
+          </p>
+        </div>
+        <Combobox
+          className="w-72"
+          value={fatherModelId}
+          onChange={setFatherModelId}
+          options={models.map((model) => ({
+            value: model.id,
+            label: model.id,
+          }))}
+          placeholder="选择 Father 模型"
+        />
+      </Card>
       {models.map((m, i) => {
         const prov = authentication.providers.find((p) => p.id === m.provider)
         const customProvider = configuration.customProviders.find(

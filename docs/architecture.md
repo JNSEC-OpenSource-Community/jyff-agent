@@ -146,4 +146,6 @@ Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn �
 
 Clanker Father 是全局、独立于 Project/Solver 生命周期的多 Session Agent。Father Session 延迟创建 Docker sandbox，并且一个进程同时只保持一个活跃 Father sandbox；切换 Session 时关闭前一个容器，但保留 workspace 与 Pi JSONL。
 
+Session 创建不接受插件字段，先生成随机名称。Father 使用 `father_identify_plugin` 写入正式插件身份，使用 `father_request_validation` 驱动持久化 Gate 状态。验证配置以候选 setup schema fingerprint 为版本键；验证完成后控制面把 `<plugin_validation_result>` 结构化消息送回原 Session。Father 模型属于全局模型池绑定，创建 Session 时把实际模型记录进 Session 元数据。
+
 平台扩展通过 `PlatformPluginRegistry` 动态进入 ControlPlane。候选插件不会因生成或校验成功而自动生效：`PlatformExtensionStore` 只接受绑定内容哈希的非失败 Validation Report，并在显式批准后复制为不可变 revision、记录作者 Session，再更新 active pointer。ControlPlane 每次解析平台时读取 registry，因此不重启即可让新 Project 使用已批准插件。

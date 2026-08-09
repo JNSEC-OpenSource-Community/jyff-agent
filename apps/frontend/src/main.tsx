@@ -27,6 +27,7 @@ function AuthenticatedRoutes(): React.ReactElement {
           <Route path="projects/new" element={<NewProjectPage />} />
           <Route path="settings" element={<GlobalSettingsPage />} />
           <Route path="father" element={<FatherPage />} />
+          <Route path="father/sessions/:sessionId" element={<FatherPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route
             path="projects/:projectId/settings"

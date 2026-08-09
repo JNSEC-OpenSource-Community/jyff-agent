@@ -306,6 +306,7 @@ export interface ModelConfigurationView {
   customProviders: CustomModelProviderView[]
   solverModelId: string
   tldrModelId: string
+  fatherModelId?: string
   subagentModels: Record<string, string>
   /** WebUI 根据当前 Project 动态补充，未连接平台时可以为空。 */
   subagentRoles?: Array<{ name: string; displayName: string }>
@@ -337,6 +338,7 @@ export interface ModelConfigurationUpdate {
   models: ModelPoolEntryUpdate[]
   solverModelId: string
   tldrModelId: string
+  fatherModelId?: string
   subagentModels: Record<string, string>
 }
 

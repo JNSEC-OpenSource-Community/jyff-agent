@@ -4,6 +4,7 @@ import type {
   DashboardControlPlane,
   DashboardConversation,
   DashboardFather,
+  DashboardFatherValidationConfigs,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
   DashboardPlatformExtensions,
@@ -43,6 +44,7 @@ export interface WebUiOptions {
   modelAuthentication?: DashboardModelAuthentication
   authentication?: DashboardWebUiAuthentication
   father?: DashboardFather
+  fatherValidationConfigs?: DashboardFatherValidationConfigs
   extensions?: DashboardPlatformExtensions
   secureCookies?: boolean
   projectRuntimeConfiguration?: (

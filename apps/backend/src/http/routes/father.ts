@@ -34,6 +34,30 @@ export function fatherRoutes(services: Services): App {
     )
   })
 
+  app.get("/father/sessions/:sessionId/gate", async (c) => {
+    const id = c.req.param("sessionId")
+    const father = services.requireFather()
+    const session = requireSession(services, id)
+    if (!session.gate)
+      throw new HttpError(
+        409,
+        "validation_not_requested",
+        "Father 尚未请求验证",
+      )
+    const candidate = await services
+      .requireExtensions()
+      .describeCandidate(join(father.workspace(id), "output"))
+    const saved = await services
+      .requireFatherValidationConfigs()
+      .read(id, candidate.schemaFingerprint)
+    return c.json({
+      candidate,
+      saved: saved
+        ? { config: saved.config, configuredSecrets: saved.configuredSecrets }
+        : null,
+    })
+  })
+
   app.get("/father/sessions/:sessionId", (c) =>
     c.json(requireSession(services, c.req.param("sessionId"))),
   )
@@ -123,25 +147,59 @@ export function fatherRoutes(services: Services): App {
       code: "invalid_validation_profile",
       maximumSize: 80_000,
     })
-    return c.json(
-      await services.requireExtensions().validate({
-        sessionId: id,
-        candidateDirectory: join(father.workspace(id), "output"),
-        profile: body.profile,
-      }),
+    const candidateDirectory = join(father.workspace(id), "output")
+    const candidate = await services
+      .requireExtensions()
+      .describeCandidate(candidateDirectory)
+    const secretNames = candidate.setup.authStrategies.flatMap((strategy) =>
+      strategy.secrets.map((secret) => secret.name),
     )
+    const configs = services.requireFatherValidationConfigs()
+    await configs.save({
+      sessionId: id,
+      schemaFingerprint: candidate.schemaFingerprint,
+      config: body.config,
+      secrets: body.secrets ?? {},
+      secretNames,
+    })
+    const saved = await configs.read(id, candidate.schemaFingerprint)
+    const requestedAt =
+      father.get(id)?.gate?.requestedAt ?? new Date().toISOString()
+    await father.setGateStatus(id, { status: "validating", requestedAt })
+    const report = await services.requireExtensions().validate({
+      sessionId: id,
+      candidateDirectory,
+      profile: {
+        id: `father-${id}`,
+        project: {
+          id: `father-${candidate.pluginId}`,
+          name: `${candidate.name} validation`,
+        },
+        config: body.config,
+        secrets: saved?.secrets,
+        expected: body.expected,
+        mutations: body.mutations,
+      },
+    })
+    await father.notifyValidation(id, report)
+    return c.json(report)
   })
 
   app.post("/father/sessions/:sessionId/activate", async (c) => {
     const id = c.req.param("sessionId")
     const father = services.requireFather()
     requireSession(services, id)
-    return c.json(
-      await services.requireExtensions().activate({
-        sessionId: id,
-        candidateDirectory: join(father.workspace(id), "output"),
-      }),
-    )
+    const extension = await services.requireExtensions().activate({
+      sessionId: id,
+      candidateDirectory: join(father.workspace(id), "output"),
+    })
+    const current = father.get(id)
+    await father.setGateStatus(id, {
+      status: "installed",
+      requestedAt: current?.gate?.requestedAt ?? new Date().toISOString(),
+      report: current?.gate?.report,
+    })
+    return c.json(extension)
   })
 
   app.get("/extensions", async (c) =>

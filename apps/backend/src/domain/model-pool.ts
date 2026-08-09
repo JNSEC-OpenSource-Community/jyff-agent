@@ -70,6 +70,7 @@ interface StoredModelConfiguration {
   models: StoredModelEntry[]
   solverModelId: string
   tldrModelId: string
+  fatherModelId: string
   subagentModels: Record<string, string>
 }
 
@@ -82,7 +83,7 @@ export interface FileModelConfigurationOptions {
 
 export interface AgentModelConfiguration extends DashboardModelConfiguration {
   createAgentOptions(
-    target?: "solver" | "tldr",
+    target?: "solver" | "tldr" | "father",
     bindings?: AgentModelBindings,
   ): AgentOptions
 }
@@ -132,6 +133,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       })),
       solverModelId: selectedBindings.solverModelId,
       tldrModelId: selectedBindings.tldrModelId,
+      fatherModelId: this.values.fatherModelId,
       subagentModels: { ...selectedBindings.subagentModels },
       supportedThinkingLevels: solver?.supportedThinkingLevels ?? [],
       configured: solver?.configured === true,
@@ -291,17 +293,21 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   }
 
   createAgentOptions(
-    target: "solver" | "tldr" = "solver",
+    target: "solver" | "tldr" | "father" = "solver",
     bindings?: AgentModelBindings,
   ): AgentOptions {
     const selectedBindings = bindings ?? this.values
     const id =
-      target === "tldr"
-        ? selectedBindings.tldrModelId || selectedBindings.solverModelId
-        : selectedBindings.solverModelId
+      target === "father"
+        ? this.values.fatherModelId || this.values.solverModelId
+        : target === "tldr"
+          ? selectedBindings.tldrModelId || selectedBindings.solverModelId
+          : selectedBindings.solverModelId
     const selected = this.values.models.find((entry) => entry.id === id)
     if (!selected) {
-      throw new Error(`未选择 ${target === "tldr" ? "TLDR" : "Solver"} 模型`)
+      throw new Error(
+        `未选择 ${target === "tldr" ? "TLDR" : target === "father" ? "Clanker Father" : "Solver"} 模型`,
+      )
     }
     const unavailableReason = this.entryUnavailableReason(selected)
     if (unavailableReason) throw new Error(unavailableReason)
@@ -507,6 +513,7 @@ async function readStoredConfiguration(path: string): Promise<{
       models,
       solverModelId: models[0]?.id ?? "",
       tldrModelId: models[0]?.id ?? "",
+      fatherModelId: models[0]?.id ?? "",
       subagentModels: {},
     },
     ...(typeof parsed.apiKey === "string"
@@ -526,8 +533,15 @@ function parseVersionThree(
   const ids = new Set(models.map((entry) => entry.id))
   const solverModelId = stringValue(parsed.solverModelId) ?? ""
   const tldrModelId = stringValue(parsed.tldrModelId) ?? solverModelId
+  const fatherModelId = stringValue(parsed.fatherModelId) ?? solverModelId
   const subagentModels = stringRecord(parsed.subagentModels)
-  validateReferences(ids, solverModelId, tldrModelId, subagentModels)
+  validateReferences(
+    ids,
+    solverModelId,
+    tldrModelId,
+    fatherModelId,
+    subagentModels,
+  )
   const providers = parseStoredProviders(parsed.providers)
   validateProviderGroups(models)
   return {
@@ -536,6 +550,7 @@ function parseVersionThree(
     models,
     solverModelId,
     tldrModelId,
+    fatherModelId,
     subagentModels,
   }
 }
@@ -562,14 +577,22 @@ function migrateVersionTwo(
   const ids = new Set(models.map((entry) => entry.id))
   const solverModelId = stringValue(parsed.solverModelId) ?? ""
   const tldrModelId = stringValue(parsed.tldrModelId) ?? solverModelId
+  const fatherModelId = stringValue(parsed.fatherModelId) ?? solverModelId
   const subagentModels = stringRecord(parsed.subagentModels)
-  validateReferences(ids, solverModelId, tldrModelId, subagentModels)
+  validateReferences(
+    ids,
+    solverModelId,
+    tldrModelId,
+    fatherModelId,
+    subagentModels,
+  )
   return {
     version: 3,
     providers: [...providers.values()],
     models,
     solverModelId,
     tldrModelId,
+    fatherModelId,
     subagentModels,
   }
 }
@@ -590,6 +613,7 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
     ids,
     solverModelId,
     configuration.tldrModelId,
+    configuration.fatherModelId ?? solverModelId,
     configuration.subagentModels,
   )
   validateProviderGroups(models)
@@ -600,6 +624,7 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
       models,
       solverModelId,
       tldrModelId: configuration.tldrModelId || solverModelId,
+      fatherModelId: configuration.fatherModelId || solverModelId,
       subagentModels: { ...configuration.subagentModels },
     },
     credentials,
@@ -635,12 +660,14 @@ function validateReferences(
   ids: ReadonlySet<string>,
   solverModelId: string,
   tldrModelId: string,
+  fatherModelId: string,
   subagentModels: Readonly<Record<string, string>>,
 ): void {
   if (ids.size === 0) {
     if (
       solverModelId ||
       tldrModelId ||
+      fatherModelId ||
       Object.keys(subagentModels).length > 0
     ) {
       throw new Error("空模型池不能包含 Agent 模型绑定")
@@ -652,6 +679,9 @@ function validateReferences(
   }
   if (tldrModelId && !ids.has(tldrModelId)) {
     throw new Error(`TLDR 模型不存在: ${tldrModelId}`)
+  }
+  if (fatherModelId && !ids.has(fatherModelId)) {
+    throw new Error(`Father 模型不存在: ${fatherModelId}`)
   }
   for (const [role, id] of Object.entries(subagentModels)) {
     if (!role.trim() || !ids.has(id)) {
@@ -693,6 +723,7 @@ function emptyConfiguration(): StoredModelConfiguration {
     models: [],
     solverModelId: "",
     tldrModelId: "",
+    fatherModelId: "",
     subagentModels: {},
   }
 }

@@ -116,12 +116,19 @@ export const modelConfigurationUpdateSchema = z
       .max(64, { message: "Models 必须是最多包含 64 项的数组" }),
     solverModelId: optionalBinding("Solver Model"),
     tldrModelId: optionalBinding("TLDR Model"),
+    fatherModelId: optionalBinding("Father Model").optional(),
     subagentModels: z
       .record(z.string(), z.string(), { message: "SubAgent Models 必须是对象" })
       .optional(),
   })
   .superRefine((value, ctx) => {
-    const { models, solverModelId, tldrModelId, subagentModels = {} } = value
+    const {
+      models,
+      solverModelId,
+      tldrModelId,
+      fatherModelId,
+      subagentModels = {},
+    } = value
     const ids = new Set(models.map((model) => model.id))
     const issue = (message: string) => ctx.addIssue({ code: "custom", message })
 
@@ -130,6 +137,7 @@ export const modelConfigurationUpdateSchema = z
       if (
         solverModelId ||
         tldrModelId ||
+        fatherModelId ||
         Object.keys(subagentModels).length > 0
       ) {
         issue("空模型池不能包含 Agent 模型绑定")
@@ -140,6 +148,8 @@ export const modelConfigurationUpdateSchema = z
       issue(`Solver 模型不存在: ${solverModelId}`)
     if (tldrModelId && !ids.has(tldrModelId))
       issue(`TLDR 模型不存在: ${tldrModelId}`)
+    if (fatherModelId && !ids.has(fatherModelId))
+      issue(`Father 模型不存在: ${fatherModelId}`)
     for (const [role, modelId] of Object.entries(subagentModels)) {
       if (!ids.has(modelId)) issue(`SubAgent ${role} 的模型不存在: ${modelId}`)
     }
@@ -159,6 +169,7 @@ export interface ModelConfigurationUpdateOutput {
   models: ModelPoolEntryOutput[]
   solverModelId: string
   tldrModelId: string
+  fatherModelId?: string
   subagentModels: Record<string, string>
 }
 
@@ -215,15 +226,7 @@ export const queueMoveSchema = z.object({
 /** 人工派发/取消。 */
 export const dispatchSchema = z.object({ force: z.boolean().optional() })
 
-const fatherPluginId = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .regex(/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/)
-
 export const fatherSessionCreateSchema = z.object({
-  title: z.string().trim().min(1).max(160),
-  pluginId: fatherPluginId,
   parentSessionId: z.string().trim().min(1).max(128).optional(),
 })
 
@@ -232,30 +235,23 @@ export const fatherMessageSchema = z.object({
 })
 
 export const fatherValidationSchema = z.object({
-  profile: z.object({
-    id: z.string().trim().min(1).max(128),
-    project: z.object({
-      id: z.string().trim().min(1).max(128),
-      name: z.string().trim().min(1).max(160),
-    }),
-    config: z.unknown(),
-    secrets: z.record(z.string(), z.string().max(8_192).optional()).optional(),
-    expected: z
-      .object({
-        contestId: z.string().max(256).optional(),
-        contestName: z.string().max(256).optional(),
-        challengeId: z.string().max(256).optional(),
-        attachmentChallengeId: z.string().max(256).optional(),
-        environmentChallengeId: z.string().max(256).optional(),
-      })
-      .optional(),
-    mutations: z
-      .object({
-        invalidFlag: z.string().max(2_048).optional(),
-        testEnvironmentLifecycle: z.boolean().optional(),
-      })
-      .optional(),
-  }),
+  config: z.unknown(),
+  secrets: z.record(z.string(), z.string().max(8_192).optional()).optional(),
+  expected: z
+    .object({
+      contestId: z.string().max(256).optional(),
+      contestName: z.string().max(256).optional(),
+      challengeId: z.string().max(256).optional(),
+      attachmentChallengeId: z.string().max(256).optional(),
+      environmentChallengeId: z.string().max(256).optional(),
+    })
+    .optional(),
+  mutations: z
+    .object({
+      invalidFlag: z.string().max(2_048).optional(),
+      testEnvironmentLifecycle: z.boolean().optional(),
+    })
+    .optional(),
 })
 
 /** 向活跃 Solver 发送人工消息。 */

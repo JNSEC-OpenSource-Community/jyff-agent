@@ -25,7 +25,20 @@ export type FatherSessionStatus =
 export interface FatherSessionRecord {
   id: string
   title: string
-  pluginId: string
+  pluginId?: string
+  pluginName?: string
+  task?: "create" | "repair"
+  gate?: {
+    status:
+      | "requested"
+      | "configuring"
+      | "validating"
+      | "failed"
+      | "ready"
+      | "installed"
+    requestedAt: string
+    report?: import("@ctf-agent/platform").PlatformValidationReport
+  }
   status: FatherSessionStatus
   parentSessionId?: string
   modelId: string
@@ -38,8 +51,6 @@ export interface FatherSessionRecord {
 }
 
 export interface CreateFatherSessionInput {
-  title: string
-  pluginId: string
   createdBy: string
   parentSessionId?: string
 }
@@ -124,8 +135,7 @@ export class FatherSessionManager {
     if (!model) throw new Error("Clanker Father 缺少可用模型")
     const record: FatherSessionRecord = {
       id,
-      title: requiredText(input.title, "Session 名称", 160),
-      pluginId: pluginId(input.pluginId),
+      title: randomSessionName(),
       status: "draft",
       ...(input.parentSessionId
         ? { parentSessionId: input.parentSessionId }
@@ -240,6 +250,22 @@ export class FatherSessionManager {
         sandbox,
         agent: this.options.createAgentOptions(),
         skills: this.options.skills,
+        onIdentifyPlugin: async (input) => {
+          record.pluginId = pluginId(input.pluginId)
+          record.pluginName = requiredText(input.displayName, "插件名称", 120)
+          record.task = input.task
+          record.title = `${record.pluginName} · ${input.task === "repair" ? "修复插件" : "新平台适配"}`
+          record.updatedAt = new Date().toISOString()
+          await this.persist()
+        },
+        onRequestValidation: async () => {
+          record.gate = {
+            status: "requested",
+            requestedAt: new Date().toISOString(),
+          }
+          record.updatedAt = record.gate.requestedAt
+          await this.persist()
+        },
       })
       agent.subscribe((event) => this.publish(id, event))
       record.status = "running"
@@ -256,6 +282,35 @@ export class FatherSessionManager {
       await this.persist()
       throw error
     }
+  }
+
+  async setGateStatus(
+    id: string,
+    gate: FatherSessionRecord["gate"],
+  ): Promise<FatherSessionRecord> {
+    const record = this.requireRecord(id)
+    record.gate = gate
+    record.updatedAt = new Date().toISOString()
+    await this.persist()
+    return { ...record }
+  }
+
+  async notifyValidation(
+    id: string,
+    report: import("@ctf-agent/platform").PlatformValidationReport,
+  ): Promise<void> {
+    const record = this.requireRecord(id)
+    record.gate = {
+      status: report.status === "failed" ? "failed" : "ready",
+      requestedAt: record.gate?.requestedAt ?? new Date().toISOString(),
+      report,
+    }
+    record.updatedAt = new Date().toISOString()
+    await this.persist()
+    const active = await this.ensureActive(id)
+    active.agent.steer(
+      `<plugin_validation_result>${escapeXml(JSON.stringify(report))}</plugin_validation_result>`,
+    )
   }
 
   private publish(sessionId: string, event: AgentHarnessEvent): void {
@@ -402,7 +457,6 @@ function parseRecord(value: unknown): FatherSessionRecord | undefined {
   if (
     typeof record.id !== "string" ||
     typeof record.title !== "string" ||
-    typeof record.pluginId !== "string" ||
     typeof record.status !== "string" ||
     typeof record.modelId !== "string" ||
     typeof record.skillRevision !== "string" ||
@@ -413,6 +467,29 @@ function parseRecord(value: unknown): FatherSessionRecord | undefined {
     return undefined
   }
   return record as FatherSessionRecord
+}
+
+const SESSION_ADJECTIVES = [
+  "amber",
+  "quiet",
+  "silver",
+  "brisk",
+  "hidden",
+  "lucky",
+]
+const SESSION_NOUNS = ["otter", "badger", "raven", "fox", "moth", "yak"]
+function randomSessionName(): string {
+  const index = Math.floor(
+    Math.random() * SESSION_ADJECTIVES.length * SESSION_NOUNS.length,
+  )
+  return `${SESSION_ADJECTIVES[index % SESSION_ADJECTIVES.length]}-${SESSION_NOUNS[Math.floor(index / SESSION_ADJECTIVES.length)]}`
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
 }
 
 function requiredText(value: string, label: string, maximum: number): string {
