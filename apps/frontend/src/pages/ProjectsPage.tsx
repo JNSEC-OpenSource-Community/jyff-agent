@@ -244,7 +244,7 @@ function ProjectCard({
               ready ? "bg-green animate-pulse" : "bg-amber",
             )}
           />
-          {ready ? "运行正常" : "需要关注"}
+          {ready ? "运行正常" : isArchived ? "已归档" : "平台故障"}
         </span>
         <div className="flex items-center gap-1">
           <button
