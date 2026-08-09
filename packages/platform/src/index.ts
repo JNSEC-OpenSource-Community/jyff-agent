@@ -162,3 +162,5 @@ export function isRetryablePlatformError(error: unknown): boolean {
 
 export * from "./ctfd.ts"
 export * from "./gzctf.ts"
+export * from "./registry.ts"
+export * from "./validation.ts"

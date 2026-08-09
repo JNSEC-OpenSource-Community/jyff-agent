@@ -8,8 +8,10 @@ import {
 import type {
   DashboardControlPlane,
   DashboardConversation,
+  DashboardFather,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
+  DashboardPlatformExtensions,
   DashboardProject,
   DashboardProjectRuntimeConfiguration,
   DashboardScheduler,
@@ -28,6 +30,8 @@ export interface ServicesOptions {
   modelConfiguration?: DashboardModelConfiguration
   modelAuthentication?: DashboardModelAuthentication
   authentication?: DashboardWebUiAuthentication
+  father?: DashboardFather
+  extensions?: DashboardPlatformExtensions
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
@@ -89,6 +93,28 @@ export class Services {
 
   get authentication(): DashboardWebUiAuthentication | undefined {
     return this.options.authentication
+  }
+
+  get father(): DashboardFather | undefined {
+    return this.options.father
+  }
+
+  get extensions(): DashboardPlatformExtensions | undefined {
+    return this.options.extensions
+  }
+
+  requireFather(): DashboardFather {
+    if (!this.options.father) {
+      throw new HttpError(503, "father_unavailable", "Clanker Father 尚未启用")
+    }
+    return this.options.father
+  }
+
+  requireExtensions(): DashboardPlatformExtensions {
+    if (!this.options.extensions) {
+      throw new HttpError(503, "extensions_unavailable", "平台扩展服务尚未启用")
+    }
+    return this.options.extensions
   }
 
   currentProject(projectId?: string): DashboardProject | undefined {

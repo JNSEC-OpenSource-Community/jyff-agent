@@ -1,10 +1,17 @@
 import { join, resolve } from "node:path"
+import { discoverProjectSkillsWithDiagnostics } from "@ctf-agent/agents"
 import {
   ContestScheduler,
   ControlPlane,
+  FatherSessionManager,
   FileSecretStore,
+  PlatformExtensionStore,
 } from "@ctf-agent/core"
-import { ctfdPlatform, gzctfPlatform } from "@ctf-agent/platform"
+import {
+  ctfdPlatform,
+  gzctfPlatform,
+  PlatformPluginRegistry,
+} from "@ctf-agent/platform"
 import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
@@ -52,6 +59,37 @@ const projectRuntimeConfigurations = new Map<
   string,
   Awaited<ReturnType<typeof createFileProjectRuntimeConfiguration>>
 >()
+const platformRegistry = new PlatformPluginRegistry([
+  ctfdPlatform,
+  gzctfPlatform,
+])
+const extensions = await PlatformExtensionStore.open({
+  root: options.root,
+  registry: platformRegistry,
+})
+const skillRoot = process.cwd()
+const fatherSkills = await discoverProjectSkillsWithDiagnostics(skillRoot, [
+  "packages/agents/skills/extension-authoring",
+])
+if (fatherSkills.diagnostics.length > 0) {
+  console.warn("extension-authoring skill 加载警告", fatherSkills.diagnostics)
+}
+const father = await FatherSessionManager.open({
+  root: options.root,
+  image: "ctf-agent-solver:latest",
+  createAgentOptions: () => modelConfiguration.createAgentOptions("solver"),
+  skills: fatherSkills.skills,
+  skillRevision: "builtin-v1",
+  ...(options.workspaceVolume
+    ? {
+        workspaceMount: (sessionId: string) => ({
+          type: "volume" as const,
+          source: options.workspaceVolume as string,
+          subpath: `father/sessions/${sessionId}/workspace`,
+        }),
+      }
+    : {}),
+})
 async function projectRuntimeConfiguration(context: {
   projectId: string
   stateDirectory: string
@@ -75,7 +113,7 @@ async function projectRuntimeConfiguration(context: {
 }
 const controlPlane = await ControlPlane.create({
   root: options.root,
-  platforms: [ctfdPlatform, gzctfPlatform],
+  platforms: platformRegistry,
   secretStore,
   project: {
     telemetry: { level: "full", maxTextLength: 8_000 },
@@ -132,6 +170,8 @@ const webui = await startWebUi({
   modelAuthentication,
   modelConfiguration,
   authentication,
+  father,
+  extensions,
   projectRuntimeConfiguration: (projectId) =>
     projectRuntimeConfigurations.get(projectId),
   onProjectDeleted: (projectId) => {
@@ -170,6 +210,7 @@ async function shutdown(signal: string): Promise<void> {
   console.log(`收到 ${signal}，正在关闭 WebUI…`)
   try {
     await webui.close()
+    await father.close()
     await controlPlane.close()
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))

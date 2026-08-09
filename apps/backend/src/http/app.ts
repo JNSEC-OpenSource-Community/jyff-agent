@@ -3,8 +3,10 @@ import { type Context, Hono } from "hono"
 import type {
   DashboardControlPlane,
   DashboardConversation,
+  DashboardFather,
   DashboardModelAuthentication,
   DashboardModelConfiguration,
+  DashboardPlatformExtensions,
   DashboardProject,
   DashboardProjectRuntimeConfiguration,
   DashboardScheduler,
@@ -15,6 +17,7 @@ import type { App, AppEnv, ProjectScope } from "./context.ts"
 import { errorHandler } from "./errors.ts"
 import { authenticationGate } from "./middleware/auth.ts"
 import { challengeRoutes } from "./routes/challenges.ts"
+import { fatherRoutes } from "./routes/father.ts"
 import { modelsRoutes, scopedModelsRoutes } from "./routes/models.ts"
 import { projectsRoutes, scopedProjectRoutes } from "./routes/projects.ts"
 import { runRoutes } from "./routes/runs.ts"
@@ -39,6 +42,8 @@ export interface WebUiOptions {
   modelConfiguration?: DashboardModelConfiguration
   modelAuthentication?: DashboardModelAuthentication
   authentication?: DashboardWebUiAuthentication
+  father?: DashboardFather
+  extensions?: DashboardPlatformExtensions
   secureCookies?: boolean
   projectRuntimeConfiguration?: (
     projectId: string,
@@ -97,6 +102,7 @@ export function buildRouter(services: Services, options: WebUiOptions): App {
   api.route("/", projectsRoutes(services))
   api.route("/", schedulerRoutes(services))
   api.route("/", challengeRoutes(services))
+  api.route("/", fatherRoutes(services))
   api.route("/", runRoutes(services))
   api.route("/", modelsRoutes(services))
   app.route("/api", api)

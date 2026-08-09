@@ -28,6 +28,9 @@ importers:
 
   apps/backend:
     dependencies:
+      '@ctf-agent/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@ctf-agent/core':
         specifier: workspace:*
         version: link:../../packages/core

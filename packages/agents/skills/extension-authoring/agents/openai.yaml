@@ -1,0 +1,4 @@
+interface:
+  display_name: "Extension Authoring"
+  short_description: "Build and validate CTF platform adapters"
+  default_prompt: "Use $extension-authoring to investigate the provided CTF platform and build a PlatformPlugin candidate that passes the control plane validation gate."

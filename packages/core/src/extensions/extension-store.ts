@@ -1,0 +1,363 @@
+import { createHash } from "node:crypto"
+import {
+  cp,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  writeFile,
+} from "node:fs/promises"
+import { dirname, join, relative, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
+import {
+  type PlatformPlugin,
+  type PlatformPluginRegistry,
+  type PlatformValidationProfile,
+  type PlatformValidationReport,
+  validatePlatformPlugin,
+} from "@ctf-agent/platform"
+
+const MAX_EXTENSION_FILES = 200
+const MAX_EXTENSION_BYTES = 2 * 1024 * 1024
+const RESERVED_IDS = new Set(["ctfd", "gzctf"])
+
+export interface PlatformExtensionManifest {
+  schemaVersion: 1
+  id: string
+  name: string
+  version: string
+  entry: string
+}
+
+export interface PlatformExtensionView {
+  id: string
+  name: string
+  version: string
+  activeRevision: string | null
+  authorSessionId?: string
+  validation?: PlatformValidationReport
+}
+
+export class PlatformExtensionStore {
+  private readonly reports = new Map<string, PlatformValidationReport>()
+
+  private constructor(
+    private readonly root: string,
+    private readonly registry: PlatformPluginRegistry,
+  ) {}
+
+  static async open(options: {
+    root: string
+    registry: PlatformPluginRegistry
+  }): Promise<PlatformExtensionStore> {
+    const store = new PlatformExtensionStore(
+      join(resolve(options.root), ".ctf-agent", "extensions"),
+      options.registry,
+    )
+    await mkdir(store.root, { recursive: true })
+    await store.loadInstalled()
+    return store
+  }
+
+  async validate(input: {
+    sessionId: string
+    candidateDirectory: string
+    profile: PlatformValidationProfile
+  }): Promise<PlatformValidationReport> {
+    const candidate = await inspectCandidate(input.candidateDirectory)
+    const plugin = await loadPlugin(candidate.directory, candidate.manifest)
+    const report = await validatePlatformPlugin({
+      plugin,
+      revision: candidate.contentHash.slice(0, 16),
+      contentHash: candidate.contentHash,
+      authorSessionId: input.sessionId,
+      profile: input.profile,
+    })
+    this.reports.set(input.sessionId, report)
+    const reportPath = join(
+      dirname(input.candidateDirectory),
+      "validation-report.json",
+    )
+    await atomicWrite(reportPath, JSON.stringify(report, null, 2))
+    return report
+  }
+
+  async activate(input: {
+    sessionId: string
+    candidateDirectory: string
+  }): Promise<PlatformExtensionView> {
+    const report = this.reports.get(input.sessionId)
+    if (!report || report.status === "failed") {
+      throw new Error("候选插件尚未通过 Validation Gate")
+    }
+    const candidate = await inspectCandidate(input.candidateDirectory)
+    if (candidate.contentHash !== report.contentHash) {
+      throw new Error("候选插件在验证后发生变化，必须重新验证")
+    }
+    if (candidate.manifest.id !== report.pluginId) {
+      throw new Error("候选 manifest 与验证报告插件 ID 不一致")
+    }
+    const revision = report.revision
+    const target = this.revisionDirectory(candidate.manifest.id, revision)
+    try {
+      await lstat(target)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      await mkdir(dirname(target), { recursive: true })
+      await cp(candidate.directory, target, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      })
+      await atomicWrite(
+        join(target, "validation-report.json"),
+        JSON.stringify(report, null, 2),
+      )
+      await atomicWrite(
+        join(target, "author.json"),
+        JSON.stringify({ sessionId: input.sessionId }, null, 2),
+      )
+    }
+    const plugin = await loadPlugin(target, candidate.manifest)
+    this.registry.registerExtension({
+      plugin,
+      revision,
+      authorSessionId: input.sessionId,
+    })
+    await atomicWrite(
+      join(this.extensionDirectory(candidate.manifest.id), "active.json"),
+      JSON.stringify({ revision }, null, 2),
+    )
+    return {
+      id: candidate.manifest.id,
+      name: candidate.manifest.name,
+      version: candidate.manifest.version,
+      activeRevision: revision,
+      authorSessionId: input.sessionId,
+      validation: report,
+    }
+  }
+
+  async list(): Promise<PlatformExtensionView[]> {
+    const views: PlatformExtensionView[] = []
+    for (const registration of this.registry.list()) {
+      if (registration.source !== "extension") continue
+      const id = registration.plugin.id
+      const revision = registration.revision ?? null
+      if (!revision) continue
+      const directory = this.revisionDirectory(id, revision)
+      const manifest = parseManifest(
+        JSON.parse(await readFile(join(directory, "extension.json"), "utf8")),
+      )
+      let validation: PlatformValidationReport | undefined
+      try {
+        validation = JSON.parse(
+          await readFile(join(directory, "validation-report.json"), "utf8"),
+        ) as PlatformValidationReport
+      } catch {
+        validation = undefined
+      }
+      views.push({
+        id,
+        name: manifest.name,
+        version: manifest.version,
+        activeRevision: revision,
+        ...(registration.authorSessionId
+          ? { authorSessionId: registration.authorSessionId }
+          : {}),
+        ...(validation ? { validation } : {}),
+      })
+    }
+    return views.sort((left, right) => left.id.localeCompare(right.id))
+  }
+
+  private async loadInstalled(): Promise<void> {
+    const entries = await readdir(this.root, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      try {
+        const extensionDirectory = this.extensionDirectory(entry.name)
+        const active = JSON.parse(
+          await readFile(join(extensionDirectory, "active.json"), "utf8"),
+        ) as { revision?: unknown }
+        if (typeof active.revision !== "string") continue
+        const revisionDirectory = this.revisionDirectory(
+          entry.name,
+          active.revision,
+        )
+        const manifest = parseManifest(
+          JSON.parse(
+            await readFile(join(revisionDirectory, "extension.json"), "utf8"),
+          ),
+        )
+        const author = JSON.parse(
+          await readFile(join(revisionDirectory, "author.json"), "utf8"),
+        ) as { sessionId?: unknown }
+        if (typeof author.sessionId !== "string") continue
+        const plugin = await loadPlugin(revisionDirectory, manifest)
+        this.registry.registerExtension({
+          plugin,
+          revision: active.revision,
+          authorSessionId: author.sessionId,
+        })
+      } catch (error) {
+        console.error(
+          `[extensions] 无法加载 ${entry.name}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+  }
+
+  private extensionDirectory(id: string): string {
+    return join(this.root, id)
+  }
+
+  private revisionDirectory(id: string, revision: string): string {
+    return join(this.extensionDirectory(id), "revisions", revision)
+  }
+}
+
+async function inspectCandidate(directory: string): Promise<{
+  directory: string
+  manifest: PlatformExtensionManifest
+  contentHash: string
+}> {
+  const root = resolve(directory)
+  const files: Array<{ path: string; content: Buffer }> = []
+  await walk(root, "", files)
+  if (files.length === 0) throw new Error("候选插件目录为空")
+  if (files.length > MAX_EXTENSION_FILES) throw new Error("候选插件文件过多")
+  const total = files.reduce((sum, file) => sum + file.content.byteLength, 0)
+  if (total > MAX_EXTENSION_BYTES) throw new Error("候选插件超过 2 MiB")
+  const manifestFile = files.find(({ path }) => path === "extension.json")
+  if (!manifestFile) throw new Error("候选插件缺少 extension.json")
+  const manifest = parseManifest(
+    JSON.parse(manifestFile.content.toString("utf8")),
+  )
+  if (!files.some(({ path }) => path === manifest.entry)) {
+    throw new Error(`候选入口不存在: ${manifest.entry}`)
+  }
+  const hash = createHash("sha256")
+  for (const file of files.sort((left, right) =>
+    left.path.localeCompare(right.path),
+  )) {
+    hash.update(file.path)
+    hash.update("\0")
+    hash.update(file.content)
+    hash.update("\0")
+  }
+  return { directory: root, manifest, contentHash: hash.digest("hex") }
+}
+
+async function walk(
+  root: string,
+  suffix: string,
+  files: Array<{ path: string; content: Buffer }>,
+): Promise<void> {
+  const directory = suffix ? join(root, suffix) : root
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const relativePath = suffix
+      ? `${suffix.replaceAll("\\", "/")}/${entry.name}`
+      : entry.name
+    const target = join(root, relativePath)
+    const stat = await lstat(target)
+    if (stat.isSymbolicLink())
+      throw new Error(`候选插件禁止 symlink: ${relativePath}`)
+    if (stat.isDirectory()) {
+      await walk(root, relativePath, files)
+    } else if (stat.isFile()) {
+      files.push({
+        path: relativePath.replaceAll("\\", "/"),
+        content: await readFile(target),
+      })
+    } else {
+      throw new Error(`候选插件包含不支持的文件: ${relativePath}`)
+    }
+  }
+}
+
+function parseManifest(value: unknown): PlatformExtensionManifest {
+  if (!value || typeof value !== "object")
+    throw new Error("extension.json 无效")
+  const manifest = value as Record<string, unknown>
+  const keys = Object.keys(manifest)
+  const allowed = new Set(["schemaVersion", "id", "name", "version", "entry"])
+  if (keys.some((key) => !allowed.has(key)))
+    throw new Error("extension.json 包含未知字段")
+  if (manifest.schemaVersion !== 1) throw new Error("不支持的 extension schema")
+  if (
+    typeof manifest.id !== "string" ||
+    !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(manifest.id)
+  ) {
+    throw new Error("extension ID 无效")
+  }
+  if (RESERVED_IDS.has(manifest.id)) throw new Error("不能覆盖内置插件 ID")
+  if (typeof manifest.name !== "string" || !manifest.name.trim())
+    throw new Error("extension name 无效")
+  if (
+    typeof manifest.version !== "string" ||
+    !/^\d+\.\d+\.\d+$/.test(manifest.version)
+  ) {
+    throw new Error("extension version 必须使用 semver")
+  }
+  if (typeof manifest.entry !== "string")
+    throw new Error("extension entry 无效")
+  const normalizedEntry = manifest.entry.replaceAll("\\", "/")
+  if (
+    normalizedEntry.startsWith("/") ||
+    normalizedEntry
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === "..") ||
+    !/\.(?:js|mjs|ts)$/.test(normalizedEntry)
+  ) {
+    throw new Error("extension entry 必须是目录内的 JS/TS 文件")
+  }
+  return {
+    schemaVersion: 1,
+    id: manifest.id,
+    name: manifest.name.trim(),
+    version: manifest.version,
+    entry: normalizedEntry,
+  }
+}
+
+async function loadPlugin(
+  directory: string,
+  manifest: PlatformExtensionManifest,
+): Promise<PlatformPlugin> {
+  const entry = resolve(directory, manifest.entry)
+  const suffix = relative(resolve(directory), entry)
+  if (
+    suffix === ".." ||
+    suffix.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
+  ) {
+    throw new Error("extension entry 逃逸候选目录")
+  }
+  const module = (await import(
+    `${pathToFileURL(entry).href}?revision=${Date.now()}-${Math.random()}`
+  )) as { default?: unknown; platformPlugin?: unknown }
+  const plugin = module.platformPlugin ?? module.default
+  if (!isPlatformPlugin(plugin))
+    throw new Error("入口未导出有效 PlatformPlugin")
+  if (plugin.id !== manifest.id)
+    throw new Error("manifest ID 与插件导出 ID 不一致")
+  return plugin
+}
+
+function isPlatformPlugin(value: unknown): value is PlatformPlugin {
+  if (!value || typeof value !== "object") return false
+  const plugin = value as Partial<PlatformPlugin>
+  return (
+    typeof plugin.id === "string" &&
+    typeof plugin.config?.parse === "function" &&
+    typeof plugin.connect === "function"
+  )
+}
+
+async function atomicWrite(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`
+  await writeFile(temporary, content)
+  await rename(temporary, path)
+}

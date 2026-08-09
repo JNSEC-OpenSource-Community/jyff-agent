@@ -11,7 +11,11 @@ import type {
   ControlPlaneProjectSnapshot,
   ControlPlaneSetupSnapshot,
   ControlPlaneSnapshot,
+  FatherSessionRecord,
   PlatformConnectionTest,
+  PlatformExtensionView,
+  PlatformValidationProfile,
+  PlatformValidationReport,
   ProjectConfig,
   RemoteEnvironment,
   RunEvent,
@@ -32,6 +36,37 @@ export interface DashboardConversationMessage {
 
 export interface DashboardConversation {
   messages: DashboardConversationMessage[]
+}
+
+export interface DashboardFather {
+  list(): FatherSessionRecord[]
+  get(id: string): FatherSessionRecord | undefined
+  sessionPath(id: string): string
+  workspace(id: string): string
+  create(input: {
+    title: string
+    pluginId: string
+    createdBy: string
+    parentSessionId?: string
+  }): Promise<FatherSessionRecord>
+  send(id: string, message: string): Promise<FatherSessionRecord>
+  stop(id: string): Promise<FatherSessionRecord>
+  complete(id: string): Promise<FatherSessionRecord>
+  subscribe(id: string, listener: AgentStreamListener): () => void
+  close(): Promise<void>
+}
+
+export interface DashboardPlatformExtensions {
+  list(): Promise<PlatformExtensionView[]>
+  validate(input: {
+    sessionId: string
+    candidateDirectory: string
+    profile: PlatformValidationProfile
+  }): Promise<PlatformValidationReport>
+  activate(input: {
+    sessionId: string
+    candidateDirectory: string
+  }): Promise<PlatformExtensionView>
 }
 
 export type DashboardChallengeStatus =

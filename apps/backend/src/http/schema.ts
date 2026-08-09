@@ -210,6 +210,49 @@ export const queueMoveSchema = z.object({
 /** 人工派发/取消。 */
 export const dispatchSchema = z.object({ force: z.boolean().optional() })
 
+const fatherPluginId = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/)
+
+export const fatherSessionCreateSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  pluginId: fatherPluginId,
+  parentSessionId: z.string().trim().min(1).max(128).optional(),
+})
+
+export const fatherMessageSchema = z.object({
+  message: z.string().trim().min(1).max(32_000),
+})
+
+export const fatherValidationSchema = z.object({
+  profile: z.object({
+    id: z.string().trim().min(1).max(128),
+    project: z.object({
+      id: z.string().trim().min(1).max(128),
+      name: z.string().trim().min(1).max(160),
+    }),
+    config: z.unknown(),
+    secrets: z.record(z.string(), z.string().max(8_192).optional()).optional(),
+    expected: z
+      .object({
+        contestId: z.string().max(256).optional(),
+        contestName: z.string().max(256).optional(),
+        challengeId: z.string().max(256).optional(),
+        attachmentChallengeId: z.string().max(256).optional(),
+        environmentChallengeId: z.string().max(256).optional(),
+      })
+      .optional(),
+    mutations: z
+      .object({
+        invalidFlag: z.string().max(2_048).optional(),
+        testEnvironmentLifecycle: z.boolean().optional(),
+      })
+      .optional(),
+  }),
+})
+
 /** 向活跃 Solver 发送人工消息。 */
 export const challengeMessageSchema = z.object({
   text: z

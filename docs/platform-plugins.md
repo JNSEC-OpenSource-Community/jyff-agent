@@ -108,3 +108,12 @@ All plugin configs reject unknown keys, plaintext credentials, unsupported URL s
 timeouts/IDs. Network, authentication, permission, rate-limit, HTTP, and response-protocol failures
 are surfaced as typed adapter errors. Expected business results such as a wrong flag are returned as
 `FlagSubmission` values rather than thrown as process errors.
+# Clanker Father 扩展与 Validation Gate
+
+WebUI 的全局 **Clanker Father** 用于编写新的平台适配插件。每个 Session 保存独立 Pi JSONL、作者、模型、skill revision 与 Docker workspace；完成后的 Session 只读保留，便于追溯插件问题。
+
+Father 只能在其 workspace 中产出候选目录 `output/`，不能修改控制面源码。候选必须包含严格的 `extension.json`，不得覆盖 `ctfd`、`gzctf`，不得包含 symlink，且受文件数与总体积限制。
+
+安装前用户必须提供测试站配置并运行 Validation Gate。Gate 直接调用生产使用的 `PlatformPlugin` 契约，包括连接、概览、稳定题目列表、公告、题目详情，以及用户明确启用的错误 flag 和环境生命周期测试。报告绑定候选内容哈希、测试配置指纹和 Father Session；候选发生任何变化后旧报告立即失效。通过只读或完整验证也不会自动安装，仍需用户点击“批准并安装此 Revision”。已安装 revision 以不可变目录保存，并在进程启动时重新注册。
+
+测试密钥只用于当次验证，不写入报告；报告只保存密钥字段名。Father Docker 使用 bridge 网络且不挂载 Docker socket 或宿主源码，宿主内网隔离由部署时的 Docker 网络策略负责。

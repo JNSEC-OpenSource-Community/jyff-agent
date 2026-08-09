@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto"
 import { join, resolve } from "node:path"
-import type {
-  PlatformPlugin,
-  PlatformProject,
-  PlatformSetupDescriptor,
+import {
+  type PlatformPlugin,
+  PlatformPluginRegistry,
+  type PlatformProject,
+  type PlatformSetupDescriptor,
 } from "@ctf-agent/platform"
 import { AnnouncementPoller } from "../orchestration/announcement-poller.ts"
 import type { ContestScheduler } from "../orchestration/contest-scheduler.ts"
@@ -71,7 +72,7 @@ export interface ApplyControlPlaneSetup {
 
 export interface ControlPlaneOptions {
   root: string
-  platforms: readonly PlatformPlugin[]
+  platforms: readonly PlatformPlugin[] | PlatformPluginRegistry
   secretStore?: SecretStore
   project?: Omit<
     OpenProjectOptions,
@@ -126,7 +127,9 @@ interface ManagedProjectRuntime {
 /** Owns the global Project registry and one isolated runtime per configured Project. */
 export class ControlPlane {
   readonly root: string
-  private readonly platforms: readonly PlatformPlugin[]
+  private readonly platformSource:
+    | readonly PlatformPlugin[]
+    | PlatformPluginRegistry
   private readonly configStore: ProjectConfigStore
   private readonly secretStore: SecretStore
   private readonly options: ControlPlaneOptions
@@ -139,7 +142,7 @@ export class ControlPlane {
   private constructor(options: ControlPlaneOptions, secretStore: SecretStore) {
     this.options = options
     this.root = resolve(options.root)
-    this.platforms = options.platforms
+    this.platformSource = options.platforms
     this.configStore = new ProjectConfigStore(this.root)
     this.secretStore = secretStore
   }
@@ -221,7 +224,7 @@ export class ControlPlane {
   }
 
   setupSnapshot(projectId?: string): ControlPlaneSetupSnapshot {
-    const platforms = this.platforms.flatMap((plugin) =>
+    const platforms = this.platforms().flatMap((plugin) =>
       plugin.setup ? [{ id: plugin.id, setup: plugin.setup }] : [],
     )
     const names = new Set(
@@ -348,7 +351,7 @@ export class ControlPlane {
       if (!deleted) throw new Error(`Project 不存在: ${projectId}`)
 
       const secretNames = new Set(
-        this.platforms.flatMap(
+        this.platforms().flatMap(
           (plugin) =>
             plugin.setup?.authStrategies.flatMap((strategy) =>
               strategy.secrets.map((secret) => secret.name),
@@ -469,7 +472,7 @@ export class ControlPlane {
           ? undefined
           : `projects/${projectStorageKey(projectId)}`,
         config: runtime.record.config,
-        platforms: this.platforms,
+        platforms: this.platforms(),
         resolveSecret: this.secretResolver(projectId),
       })
       runtime.project = project
@@ -511,9 +514,15 @@ export class ControlPlane {
   }
 
   private plugin(id: string): PlatformPlugin {
-    const plugin = this.platforms.find((candidate) => candidate.id === id)
+    const plugin = this.platforms().find((candidate) => candidate.id === id)
     if (!plugin) throw new Error(`未注册平台插件: ${id}`)
     return plugin
+  }
+
+  private platforms(): PlatformPlugin[] {
+    return this.platformSource instanceof PlatformPluginRegistry
+      ? this.platformSource.plugins()
+      : [...this.platformSource]
   }
 
   private secretResolver(

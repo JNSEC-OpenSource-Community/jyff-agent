@@ -137,6 +137,8 @@ GZCTF 的玩家接口使用身份 Cookie，不是管理员 API Token。目标站
 
 ## 架构与包边界
 
+全局侧栏的 **Clanker Father** 提供平台适配插件工坊：Father Session 在独立 Docker workspace 中研究文档、源码或授权测试站并产出候选插件；用户使用真实测试配置运行 `PlatformPlugin` Validation Gate，再显式批准内容哈希绑定的 revision。Session、验证报告和作者关系会持久化，已批准插件无需重启即可用于新 Project。详见 [平台插件文档](docs/platform-plugins.md)。
+
 ```text
 packages/
 ├── agents/    BaseAgent、Pi session/skills、CtfSolverAgent/SubAgent、单题工具

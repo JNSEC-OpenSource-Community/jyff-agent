@@ -1,6 +1,7 @@
 export * from "@ctf-agent/platform"
 export * from "@ctf-agent/sandbox"
 export * from "./base-agent/index.ts"
+export * from "./father/father-agent.ts"
 export * from "./solver/agent/solver-agent.ts"
 export * from "./solver/sandbox/tools.ts"
 export * from "./subagent/registry.ts"

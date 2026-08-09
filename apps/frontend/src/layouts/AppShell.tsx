@@ -156,6 +156,11 @@ function SidebarContent({
             <Icon icon="lucide:settings-2" width={18} />
           </NavLink>
         </Tooltip>
+        <Tooltip label="Clanker Father">
+          <NavLink to="/father" className={iconLink}>
+            <Icon icon="emojione-monotone:old-man" width={18} />
+          </NavLink>
+        </Tooltip>
 
         {/* Project-specific nav (when in a project) */}
         {projectId ? (
@@ -254,6 +259,9 @@ function SidebarContent({
         </SidebarNavLink>
         <SidebarNavLink to="/settings" icon="lucide:settings-2">
           全局配置
+        </SidebarNavLink>
+        <SidebarNavLink to="/father" icon="emojione-monotone:old-man">
+          Clanker Father
         </SidebarNavLink>
       </nav>
 

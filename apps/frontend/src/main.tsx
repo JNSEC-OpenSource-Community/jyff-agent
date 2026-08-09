@@ -5,6 +5,7 @@ import { AppProvider, useApp } from "./app/AppProvider.tsx"
 import { Spinner, Toaster, TooltipProvider } from "./components/index.ts"
 import { AppShell } from "./layouts/AppShell.tsx"
 import { ChallengePage } from "./pages/ChallengePage.tsx"
+import { FatherPage } from "./pages/FatherPage.tsx"
 import { LoginPage } from "./pages/LoginPage.tsx"
 import { ProjectPage } from "./pages/ProjectPage.tsx"
 import { NewProjectPage, ProjectsPage } from "./pages/ProjectsPage.tsx"
@@ -25,6 +26,7 @@ function AuthenticatedRoutes(): React.ReactElement {
           <Route index element={<ProjectsPage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
           <Route path="settings" element={<GlobalSettingsPage />} />
+          <Route path="father" element={<FatherPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route
             path="projects/:projectId/settings"

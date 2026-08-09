@@ -10,6 +10,7 @@
     "start": "node --experimental-transform-types src/main.ts"
   },
   "dependencies": {
+    "@ctf-agent/agents": "workspace:*",
     "@ctf-agent/core": "workspace:*",
     "@ctf-agent/platform": "workspace:*",
     "@ctf-agent/prompts": "workspace:*",

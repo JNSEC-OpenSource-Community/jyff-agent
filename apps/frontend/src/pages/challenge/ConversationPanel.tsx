@@ -51,6 +51,8 @@ export function ConversationPanel({
   viewStateStore,
   onSelectSubagent,
   onChanged,
+  header,
+  readOnly = false,
 }: {
   target: ConversationTarget
   attempt: number
@@ -64,6 +66,8 @@ export function ConversationPanel({
   viewStateStore?: ConversationViewStateStore
   onSelectSubagent?(id: string): void
   onChanged(): Promise<void>
+  header?: { label: string; subLabel: string; icon: string }
+  readOnly?: boolean
 }): React.ReactElement {
   const {
     conversation,
@@ -204,7 +208,10 @@ export function ConversationPanel({
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/70 text-primary">
             <Icon
-              icon={target.type === "solver" ? "lucide:bot" : "lucide:git-fork"}
+              icon={
+                header?.icon ??
+                (target.type === "solver" ? "lucide:bot" : "lucide:git-fork")
+              }
               width="16"
               aria-hidden="true"
             />
@@ -215,10 +222,10 @@ export function ConversationPanel({
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
               <strong className="truncate text-sm font-semibold tracking-tight">
-                {targetLabel(target)}
+                {header?.label ?? targetLabel(target)}
               </strong>
               <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                {targetSubLabel(target, attempt)}
+                {header?.subLabel ?? targetSubLabel(target, attempt)}
               </span>
             </div>
             <div
@@ -329,47 +336,49 @@ export function ConversationPanel({
         </div>
       ) : null}
 
-      <form
-        className="shrink-0 border-t border-border/80 bg-card/80 p-3 backdrop-blur-sm max-lg:p-2"
-        onSubmit={(event) => void onSubmit(event)}
-      >
-        <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-xl border border-border bg-background/70 p-1.5 transition-colors focus-within:border-primary/45">
-          <Textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder={
-              isRunActive
-                ? "给 Agent 补充方向或要求…"
-                : "发送消息以继续这个 Attempt…"
-            }
-            rows={1}
-            name="agent-message"
-            autoComplete="off"
-            aria-label="发送给 Agent 的消息"
-            className="min-h-10 max-h-40 flex-1 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault()
-                event.currentTarget.form?.requestSubmit()
+      {!readOnly ? (
+        <form
+          className="shrink-0 border-t border-border/80 bg-card/80 p-3 backdrop-blur-sm max-lg:p-2"
+          onSubmit={(event) => void onSubmit(event)}
+        >
+          <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-xl border border-border bg-background/70 p-1.5 transition-colors focus-within:border-primary/45">
+            <Textarea
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={
+                isRunActive
+                  ? "给 Agent 补充方向或要求…"
+                  : "发送消息以继续这个 Attempt…"
               }
-            }}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            className="size-8 shrink-0 rounded-lg"
-            disabled={sending || !message.trim()}
-            aria-label={sending ? "正在发送消息" : "发送消息"}
-          >
-            <Icon
-              icon={sending ? "lucide:loader-circle" : "lucide:arrow-up"}
-              className={sending ? "animate-spin" : ""}
-              width="16"
-              aria-hidden="true"
+              rows={1}
+              name="agent-message"
+              autoComplete="off"
+              aria-label="发送给 Agent 的消息"
+              className="min-h-10 max-h-40 flex-1 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  event.currentTarget.form?.requestSubmit()
+                }
+              }}
             />
-          </Button>
-        </div>
-      </form>
+            <Button
+              type="submit"
+              size="icon"
+              className="size-8 shrink-0 rounded-lg"
+              disabled={sending || !message.trim()}
+              aria-label={sending ? "正在发送消息" : "发送消息"}
+            >
+              <Icon
+                icon={sending ? "lucide:loader-circle" : "lucide:arrow-up"}
+                className={sending ? "animate-spin" : ""}
+                width="16"
+                aria-hidden="true"
+              />
+            </Button>
+          </div>
+        </form>
+      ) : null}
     </section>
   )
 }

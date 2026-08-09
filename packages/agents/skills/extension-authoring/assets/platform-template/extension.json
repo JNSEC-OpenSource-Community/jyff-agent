@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "example-platform",
+  "name": "Example Platform",
+  "version": "0.1.0",
+  "entry": "index.ts"
+}
