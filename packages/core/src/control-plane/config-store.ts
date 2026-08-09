@@ -202,6 +202,38 @@ export class ProjectConfigStore {
     return cloneRecord(record)
   }
 
+  /** 保留 Project 配置与运行配置，仅清除 Solver 产生的持久化状态。 */
+  async resetProjectData(projectId: string): Promise<StoredProjectConfig> {
+    const record = (await this.list()).find(
+      (candidate) => candidate.config.project.id === projectId,
+    )
+    if (!record) throw new Error(`Project 不存在: ${projectId}`)
+
+    if (!record.legacy) {
+      const expectedDirectory = resolve(
+        this.stateDirectory,
+        "projects",
+        projectStorageKey(projectId),
+      )
+      if (record.stateDirectory !== expectedDirectory) {
+        throw new Error(`Project 状态目录与 ID 不匹配: ${projectId}`)
+      }
+    }
+
+    const solverArtifacts = [
+      join(record.stateDirectory, "runs.sqlite"),
+      join(record.stateDirectory, "runs.sqlite-shm"),
+      join(record.stateDirectory, "runs.sqlite-wal"),
+      join(record.stateDirectory, "runs.sqlite-journal"),
+      join(record.stateDirectory, "runs"),
+      join(record.stateDirectory, "challenges"),
+    ]
+    await Promise.all(
+      solverArtifacts.map((path) => rm(path, { recursive: true, force: true })),
+    )
+    return cloneRecord(record)
+  }
+
   async setArchived(
     projectId: string,
     archived: boolean,

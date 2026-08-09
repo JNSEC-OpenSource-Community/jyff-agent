@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileSecretStore, modelsFromAgentOptions } from "@ctf-agent/core"
 import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
 import {
   createFileModelConfiguration,
@@ -36,12 +36,47 @@ function modelEntry(
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   )
 })
 
 describe("file model configuration", () => {
+  it("从自定义供应商的 /models 获取去重模型 ID", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-discovery-"))
+    roots.push(root)
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "model-b" }, { id: "model-a" }, { id: "model-a" }],
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    )
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+      fetch: fetchMock,
+    })
+    await configuration.addCustomProvider({
+      name: "Gateway",
+      api: "openai-completions",
+      baseUrl: "https://models.example.test/v1/",
+      apiKey: "provider-secret",
+    })
+
+    await expect(
+      configuration.discoverCustomProviderModels("custom-gateway"),
+    ).resolves.toEqual(["model-a", "model-b"])
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe("https://models.example.test/v1/models")
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer provider-secret",
+    )
+  })
+
   it("只把 API Key 写入 Secret Store", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-config-"))
     roots.push(root)

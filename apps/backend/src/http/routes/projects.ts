@@ -128,6 +128,24 @@ export function scopedProjectRoutes(services: Services): App {
     }
   })
 
+  app.post("/reset-solvers", async (c) => {
+    const projectId = projectIdOf(c)
+    await readJsonBody(c)
+    try {
+      await services.resetProject(projectId)
+    } catch (error) {
+      const message = errorText(error)
+      if (message.includes("Project 不存在")) {
+        throw new HttpError(404, "project_not_found", message)
+      }
+      throw error
+    }
+    return c.json({
+      controlPlane: services.requireControlPlane().snapshot(projectId),
+      snapshot: await services.sync.refreshProject(projectId),
+    })
+  })
+
   app.get("/control-plane", (c) => {
     const controlPlane = services.requireControlPlane()
     return c.json(controlPlane.setupSnapshot(projectIdOf(c)))

@@ -290,6 +290,39 @@ describe("ControlPlane", () => {
     await control.close()
   })
 
+  it("重置 Project 时清空 Solver 数据并重新连接", async () => {
+    const root = await rootFixture()
+    const plugin = new CredentialPlatform()
+    const control = await ControlPlane.create({
+      root,
+      platforms: [plugin],
+    })
+    await control.applySetup({
+      config: config("Reset Project", "reset"),
+      secrets: { TEST_TOKEN: "reset-token" },
+    })
+    const stateDirectory = control.currentProject("reset")?.agentDirectory
+    if (!stateDirectory) throw new Error("缺少 Project 状态目录")
+    await mkdir(join(stateDirectory, "runs", "run-1"), { recursive: true })
+    await writeFile(join(stateDirectory, "runs", "run-1", "session.jsonl"), "x")
+    await writeFile(join(stateDirectory, "runtime-config.json"), "runtime")
+    const connectionsBeforeReset = plugin.connections
+
+    const result = await control.resetProject("reset")
+
+    expect(result).toMatchObject({ projectId: "reset", phase: "ready" })
+    expect(plugin.connections).toBe(connectionsBeforeReset + 1)
+    expect(control.currentProject("reset")).toBeDefined()
+    await expect(accessPath(join(stateDirectory, "runs"))).resolves.toBe(false)
+    expect(
+      await readFile(join(stateDirectory, "runtime-config.json"), "utf8"),
+    ).toBe("runtime")
+    await expect(control.resetProject("missing")).rejects.toThrow(
+      "Project 不存在",
+    )
+    await control.close()
+  })
+
   it("旧版未命名空间的 Secret 仍可只读回退", async () => {
     const root = await rootFixture()
     await writeConfig(root, config())

@@ -11,6 +11,7 @@ function createControlPlane(projectName = "Demo CTF") {
   let archived = false
   let appliedConfig: unknown
   const deletedProjects: string[] = []
+  const resetProjects: string[] = []
   const state = () => ({
     phase,
     configured: phase === "ready",
@@ -100,8 +101,17 @@ function createControlPlane(projectName = "Demo CTF") {
       phase = "unconfigured"
       return state()
     },
+    resetProject: async (projectId) => {
+      resetProjects.push(projectId)
+      return state()
+    },
   }
-  return { controlPlane, appliedConfig: () => appliedConfig, deletedProjects }
+  return {
+    controlPlane,
+    appliedConfig: () => appliedConfig,
+    deletedProjects,
+    resetProjects,
+  }
 }
 
 const DEMO_CONFIG = {
@@ -254,6 +264,19 @@ describe("动态控制面与项目管理", () => {
     expect(invalid.status).toBe(400)
     expect(await jsonOf(invalid)).toMatchObject({
       error: "invalid_project_runtime_configuration",
+    })
+
+    const reset = await jsonRequest(
+      app,
+      "/api/projects/demo/reset-solvers",
+      "POST",
+      {},
+    )
+    expect(reset.status).toBe(200)
+    expect(plane.resetProjects).toEqual(["demo"])
+    expect(await jsonOf(reset)).toMatchObject({
+      controlPlane: { projectId: "demo", phase: "ready" },
+      snapshot: { overview: { name: "Test CTF" } },
     })
 
     const deleted = await jsonRequest(app, "/api/projects/demo", "DELETE", {})

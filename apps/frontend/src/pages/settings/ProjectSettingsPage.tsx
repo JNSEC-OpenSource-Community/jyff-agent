@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Combobox,
+  ConfirmDialog,
   ErrorNotice,
   Input,
   Label,
@@ -41,7 +42,10 @@ export function ProjectSettingsPage() {
     useState<ProjectRuntimeConfigurationView | null>(null)
   const [secrets, setSecrets] = useState<Record<string, string>>({})
   const [err, setErr] = useState("")
-  const [busy, setBusy] = useState<"platform" | "runtime" | null>(null)
+  const [busy, setBusy] = useState<"platform" | "runtime" | "reset" | null>(
+    null,
+  )
+  const [resetOpen, setResetOpen] = useState(false)
 
   useEffect(() => {
     void Promise.all([
@@ -108,6 +112,20 @@ export function ProjectSettingsPage() {
     }
   }
 
+  async function resetSolvers() {
+    setBusy("reset")
+    setErr("")
+    try {
+      await apiMutation(projectApi(projectId, "/api/reset-solvers"), "POST", {})
+      setResetOpen(false)
+      await refreshProjects()
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   if (!setup || !rt || !pcfg || !runtime)
     return <Spinner label="加载比赛配置" />
   const models = rt.models.models
@@ -137,9 +155,7 @@ export function ProjectSettingsPage() {
         <TabsContent value="runtime" className="space-y-5">
           <div>
             <h2 className="text-lg font-semibold">Agent 模型绑定</h2>
-            <p className="text-sm text-muted-foreground">
-              请选择你的英雄。
-            </p>
+            <p className="text-sm text-muted-foreground">请选择你的英雄。</p>
           </div>
           <Card className="space-y-6 p-6">
             <div className="grid gap-5 sm:grid-cols-2">
@@ -217,6 +233,26 @@ export function ProjectSettingsPage() {
                 size="sm"
               >
                 <Icon icon="lucide:save" width="13" /> 保存
+              </Button>
+            </div>
+          </Card>
+          <Card className="border-danger/30 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold">重置所有 Solver</h3>
+                <p className="mt-1! max-w-2xl text-xs text-muted-foreground">
+                  停止当前任务并清空 Run、对话、黑板、公告审核、调度队列和题目
+                  workspace；比赛连接与本页配置会保留。
+                </p>
+              </div>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={busy !== null}
+                onClick={() => setResetOpen(true)}
+              >
+                <Icon icon="lucide:rotate-ccw" width="13" />
+                重置所有 Solver
               </Button>
             </div>
           </Card>
@@ -307,6 +343,16 @@ export function ProjectSettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      <ConfirmDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        title="重置所有 Solver？"
+        description="此操作不可撤销。所有 Solver 与 SubAgent 会停止，运行历史、Pi 对话、黑板、公告审核状态、调度队列和题目 workspace 都会被永久清空；比赛连接、凭据和模型配置不受影响。"
+        confirmLabel="确认重置"
+        busy={busy === "reset"}
+        busyLabel="正在重置…"
+        onConfirm={() => void resetSolvers()}
+      />
     </div>
   )
 }

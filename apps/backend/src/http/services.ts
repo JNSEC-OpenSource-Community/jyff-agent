@@ -162,6 +162,10 @@ export class Services {
     await this.options.onProjectDeleted?.(projectId)
   }
 
+  async resetProject(projectId: string): Promise<void> {
+    await this.requireControlPlane().resetProject(projectId)
+  }
+
   requireModelConfiguration(): DashboardModelConfiguration {
     const configuration = this.options.modelConfiguration
     if (!configuration) {

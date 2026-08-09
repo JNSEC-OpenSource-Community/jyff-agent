@@ -234,6 +234,7 @@ export interface DashboardControlPlane {
   }): Promise<ControlPlaneSnapshot>
   connect(projectId?: string): Promise<ControlPlaneSnapshot>
   deleteProject(projectId: string): Promise<ControlPlaneSnapshot>
+  resetProject(projectId: string): Promise<ControlPlaneSnapshot>
   archiveProject(
     projectId: string,
     archived: boolean,
@@ -353,6 +354,7 @@ export interface DashboardModelConfiguration {
     provider: CustomModelProviderEdit,
   ): Promise<ModelConfigurationView>
   removeCustomProvider(providerId: string): Promise<ModelConfigurationView>
+  discoverCustomProviderModels(providerId: string): Promise<string[]>
 }
 
 export type ModelAuthProviderId =

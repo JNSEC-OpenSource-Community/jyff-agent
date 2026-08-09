@@ -602,4 +602,13 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     )
     return this.snapshot()
   }
+
+  async discoverCustomProviderModels(providerId: string): Promise<string[]> {
+    if (
+      !this.value.customProviders.some((provider) => provider.id === providerId)
+    ) {
+      throw new Error(`自定义供应商不存在: ${providerId}`)
+    }
+    return ["custom-model-a", "custom-model-b"]
+  }
 }

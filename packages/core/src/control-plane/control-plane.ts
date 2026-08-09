@@ -371,6 +371,17 @@ export class ControlPlane {
     })
   }
 
+  async resetProject(projectId: string): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      const runtime = this.runtimes.get(projectId)
+      if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+      await this.performDisconnect(projectId)
+      await this.configStore.resetProjectData(projectId)
+      await this.performConnect(projectId)
+      return this.snapshot(projectId)
+    })
+  }
+
   async archiveProject(
     projectId: string,
     archived: boolean,

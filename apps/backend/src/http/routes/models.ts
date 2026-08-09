@@ -93,6 +93,17 @@ export function modelsRoutes(services: Services): App {
     })
   })
 
+  app.get("/model-config/providers/:providerId/models", async (c) => {
+    const modelConfiguration = services.requireModelConfiguration()
+    return c.json({
+      models: await modelProviderAction(() =>
+        modelConfiguration.discoverCustomProviderModels(
+          c.req.param("providerId"),
+        ),
+      ),
+    })
+  })
+
   app.get("/model-auth", async (c) => {
     return c.json(await services.requireModelAuthentication().snapshot())
   })

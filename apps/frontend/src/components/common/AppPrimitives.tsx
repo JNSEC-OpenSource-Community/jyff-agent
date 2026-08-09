@@ -45,6 +45,7 @@ function ConfirmDialog({
   description,
   confirmLabel,
   busy = false,
+  busyLabel = "正在删除…",
   onConfirm,
 }: {
   open: boolean
@@ -53,6 +54,7 @@ function ConfirmDialog({
   description: string
   confirmLabel: string
   busy?: boolean
+  busyLabel?: string
   onConfirm(): void
 }): React.ReactElement {
   return (
@@ -71,7 +73,7 @@ function ConfirmDialog({
               onConfirm()
             }}
           >
-            {busy ? "正在删除…" : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

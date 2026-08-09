@@ -77,6 +77,7 @@ export interface FileModelConfigurationOptions {
   storagePath: string
   secretStore: SecretStore
   authentication?: DashboardModelAuthentication
+  fetch?: typeof globalThis.fetch
 }
 
 export interface AgentModelConfiguration extends DashboardModelConfiguration {
@@ -233,6 +234,60 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     await persistConfiguration(this.options.storagePath, next)
     this.values = next
     return this.snapshot()
+  }
+
+  async discoverCustomProviderModels(providerId: string): Promise<string[]> {
+    const provider = this.values.providers.find(
+      (candidate) => candidate.id === providerId,
+    )
+    if (!provider) throw new Error(`自定义供应商不存在: ${providerId}`)
+    const apiKey = this.options.secretStore.get(providerSecret(providerId))
+    if (!apiKey) throw new Error("该供应商尚未配置 API Key")
+
+    const endpoint = providerModelsEndpoint(provider)
+    const headers = new Headers({ Accept: "application/json" })
+    if (provider.api === "anthropic-messages") {
+      headers.set("x-api-key", apiKey)
+      headers.set("anthropic-version", "2023-06-01")
+    } else {
+      headers.set("Authorization", `Bearer ${apiKey}`)
+    }
+    const response = await (this.options.fetch ?? globalThis.fetch)(endpoint, {
+      method: "GET",
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) {
+      throw new Error(`模型列表请求失败: HTTP ${response.status}`)
+    }
+    const text = await response.text()
+    if (text.length > 1_000_000) throw new Error("模型列表响应过大")
+    let payload: unknown
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      throw new Error("模型列表响应不是有效 JSON")
+    }
+    const records = modelRecords(payload)
+    const ids = records
+      .map((record) =>
+        typeof record === "string"
+          ? record
+          : typeof record === "object" && record !== null
+            ? (record as { id?: unknown }).id
+            : undefined,
+      )
+      .filter(
+        (id): id is string =>
+          typeof id === "string" &&
+          id.length > 0 &&
+          id.length <= 256 &&
+          !hasControlCharacters(id),
+      )
+    return [...new Set(ids)]
+      .sort((left, right) => left.localeCompare(right))
+      .slice(0, 1_000)
   }
 
   createAgentOptions(
@@ -640,6 +695,30 @@ function emptyConfiguration(): StoredModelConfiguration {
     tldrModelId: "",
     subagentModels: {},
   }
+}
+
+function providerModelsEndpoint(provider: StoredCustomProvider): string {
+  const base = provider.baseUrl.replace(/\/+$/, "")
+  if (/\/models$/i.test(base)) return base
+  if (provider.api === "anthropic-messages" && !/\/v1$/i.test(base)) {
+    return `${base}/v1/models`
+  }
+  return `${base}/models`
+}
+
+function modelRecords(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload
+  if (typeof payload !== "object" || payload === null) return []
+  const candidate = payload as { data?: unknown; models?: unknown }
+  if (Array.isArray(candidate.data)) return candidate.data
+  return Array.isArray(candidate.models) ? candidate.models : []
+}
+
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return code <= 0x1f || code === 0x7f
+  })
 }
 
 function providerSecret(provider: string): string {

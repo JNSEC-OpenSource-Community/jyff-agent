@@ -1,5 +1,12 @@
 import { Icon } from "@iconify/react"
-import { cloneElement, type ReactNode, useId, useMemo, useState } from "react"
+import {
+  cloneElement,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react"
 import {
   Button,
   Card,
@@ -13,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/index.ts"
-import { apiMutation } from "../../lib/api.ts"
+import { apiMutation, apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import type {
   ModelAuthenticationView,
@@ -51,6 +58,37 @@ export function ModelPoolEditor({
   const [models, setModels] = useState<EM[]>(configuration.models.map(ed))
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const [customModelIds, setCustomModelIds] = useState<
+    Record<string, string[] | null>
+  >({})
+
+  useEffect(() => {
+    let cancelled = false
+    for (const provider of configuration.customProviders) {
+      void apiRequest<{ models: string[] }>(
+        `/api/model-config/providers/${encodeURIComponent(provider.id)}/models`,
+      )
+        .then((result) => {
+          if (!cancelled) {
+            setCustomModelIds((current) => ({
+              ...current,
+              [provider.id]: result.models.length > 0 ? result.models : null,
+            }))
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCustomModelIds((current) => ({
+              ...current,
+              [provider.id]: null,
+            }))
+          }
+        })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [configuration.customProviders])
 
   const providerOptions = useMemo(
     () => [
@@ -118,6 +156,9 @@ export function ModelPoolEditor({
         const customProvider = configuration.customProviders.find(
           (p) => p.id === m.provider,
         )
+        const discoveredModels = customProvider
+          ? customModelIds[customProvider.id]
+          : undefined
         return (
           <Card key={m.uiKey} className="overflow-hidden p-0">
             <div className="flex items-center gap-3 border-b border-border bg-muted px-4 py-2.5">
@@ -125,7 +166,7 @@ export function ModelPoolEditor({
                 {String(i + 1).padStart(2, "0")}
               </span>
               <Input
-                aria-label="模型 ID"
+                aria-label="模型配置 ID"
                 value={m.id}
                 onChange={(e) => up(i, { id: e.target.value })}
                 className="h-7 flex-1 border-0 bg-transparent text-sm font-medium shadow-none focus-visible:ring-0"
@@ -167,7 +208,19 @@ export function ModelPoolEditor({
                 />
               </Field>
               <Field label="模型 ID">
-                {customProvider ? (
+                {customProvider && discoveredModels?.length ? (
+                  <Combobox
+                    value={m.modelId}
+                    onChange={(modelId) => up(i, { modelId })}
+                    options={discoveredModels.map((modelId) => ({
+                      value: modelId,
+                      label: modelId,
+                    }))}
+                    placeholder="选择模型"
+                    searchPlaceholder="搜索…"
+                    emptyText="无匹配"
+                  />
+                ) : customProvider ? (
                   <Input
                     value={m.modelId}
                     onChange={(e) => up(i, { modelId: e.target.value })}

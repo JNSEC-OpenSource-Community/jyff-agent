@@ -112,6 +112,14 @@ describe("模型配置与模型鉴权路由", () => {
     })
     expect(JSON.stringify(createdBody)).not.toContain("provider-secret")
 
+    const discovered = await app.request(
+      "/api/model-config/providers/custom-internal-gateway/models",
+    )
+    expect(discovered.status).toBe(200)
+    expect(await jsonOf(discovered)).toEqual({
+      models: ["custom-model-a", "custom-model-b"],
+    })
+
     const updated = await jsonRequest(
       app,
       "/api/model-config/providers/custom-internal-gateway",

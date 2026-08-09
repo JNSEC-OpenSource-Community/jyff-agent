@@ -107,6 +107,44 @@ describe("ProjectConfigStore", () => {
     await expect(store.deleteProject("missing")).resolves.toBeUndefined()
   })
 
+  it("重置 Solver 数据时保留 Project 和运行配置", async () => {
+    const root = await fixture()
+    const store = new ProjectConfigStore(root)
+    await store.saveProject(config("first"))
+    const second = await store.saveProject(config("second"))
+    await mkdir(join(second.stateDirectory, "runs", "run-1"), {
+      recursive: true,
+    })
+    await mkdir(join(second.stateDirectory, "challenges", "web"), {
+      recursive: true,
+    })
+    await writeFile(join(second.stateDirectory, "runs.sqlite"), "state")
+    await writeFile(
+      join(second.stateDirectory, "runtime-config.json"),
+      "runtime",
+    )
+
+    await store.resetProjectData("second")
+
+    expect((await store.loadProject("second"))?.config.project.id).toBe(
+      "second",
+    )
+    expect(
+      await readFile(
+        join(second.stateDirectory, "runtime-config.json"),
+        "utf8",
+      ),
+    ).toBe("runtime")
+    for (const artifact of ["runs.sqlite", "runs", "challenges"]) {
+      await expect(
+        access(join(second.stateDirectory, artifact)),
+      ).rejects.toMatchObject({ code: "ENOENT" })
+    }
+    await expect(store.resetProjectData("missing")).rejects.toThrow(
+      "Project 不存在",
+    )
+  })
+
   it("在服务端注册表持久化归档状态并兼容旧字段缺失", async () => {
     const root = await fixture()
     const store = new ProjectConfigStore(root)
