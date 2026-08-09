@@ -546,9 +546,6 @@ export function NewProjectPage() {
           </section>
 
           <div className="flex justify-end gap-3 border-t border-border bg-muted px-6 py-4">
-            <Button variant="ghost" asChild>
-              <Link to="/">取消</Link>
-            </Button>
             <Button
               onClick={() => void submit()}
               disabled={!testR || !pid.trim() || !pname.trim() || busy !== null}
