@@ -85,6 +85,7 @@ body,
 
 html {
   overflow: hidden;
+  color-scheme: dark;
   scroll-behavior: smooth;
   scrollbar-width: none;
 }
@@ -158,6 +159,7 @@ button {
   color: inherit;
   cursor: pointer;
   font: inherit;
+  touch-action: manipulation;
 }
 input,
 select,
@@ -320,11 +322,59 @@ p {
   }
 }
 
+@keyframes agent-tool-scan {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(420%);
+  }
+}
+
+@keyframes agent-cursor-breathe {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .animate-ping-soft {
   animation: ping-soft 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Agent 工作日志只在当前活动点使用动效，避免多张卡片同时闪烁。 */
+.agent-tool-running::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: 1px;
+  height: 28%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--accent) 90%, white),
+    transparent
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: agent-tool-scan 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  pointer-events: none;
+}
+
+.agent-stream-cursor {
+  display: inline-block;
+  width: 0.42rem;
+  height: 0.9rem;
+  border-radius: 1px;
+  vertical-align: -0.08rem;
+  background: var(--accent);
+  animation: agent-cursor-breathe 1.15s ease-in-out infinite;
 }
 
 /* ── 响应式导航 ── */

@@ -1,5 +1,13 @@
+import type { AgentStreamEvent } from "@ctf-agent/core"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { apiMutation, apiRequest } from "../lib/api.ts"
+import {
+  type AgentActivity,
+  applyAgentStreamEvent,
+  INITIAL_AGENT_ACTIVITY,
+  mergeCanonicalConversation,
+  reduceAgentActivity,
+} from "../lib/conversation-stream.ts"
 import { errorMessage } from "../lib/format.ts"
 import type { DashboardConversation } from "../types.ts"
 
@@ -8,6 +16,8 @@ export interface ConversationSource {
   conversationUrl: string
   /** 发送消息接口（POST）。 */
   sendUrl: string
+  /** 当前 Run 或 SubAgent 的实时 Pi 事件接口。 */
+  streamUrl: string
   /** 是否有可读取的持久化对话。 */
   hasConversation: boolean
 }
@@ -25,6 +35,7 @@ export function useConversation(
   error: string
   message: string
   sending: boolean
+  activity: AgentActivity
   setMessage(message: string): void
   send(text: string): Promise<void>
 } {
@@ -34,12 +45,16 @@ export function useConversation(
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
+  const [activity, setActivity] = useState<AgentActivity>(
+    INITIAL_AGENT_ACTIVITY,
+  )
 
   const { conversationUrl, hasConversation } = target
 
   const load = useCallback(async (): Promise<void> => {
     setError("")
-    setConversation(await apiRequest<DashboardConversation>(conversationUrl))
+    const canonical = await apiRequest<DashboardConversation>(conversationUrl)
+    setConversation((current) => mergeCanonicalConversation(canonical, current))
   }, [conversationUrl])
 
   useEffect(() => {
@@ -51,6 +66,47 @@ export function useConversation(
       .catch((cause) => setError(errorMessage(cause)))
       .finally(() => setLoading(false))
   }, [hasConversation, load])
+
+  useEffect(() => {
+    setActivity(INITIAL_AGENT_ACTIVITY)
+    const source = new EventSource(target.streamUrl)
+    const pending: AgentStreamEvent[] = []
+    let frame: number | undefined
+    const flush = (): void => {
+      frame = undefined
+      const events = pending.splice(0)
+      if (events.length === 0) return
+      setConversation((current) =>
+        events.reduce(applyAgentStreamEvent, current),
+      )
+      setActivity((current) => events.reduce(reduceAgentActivity, current))
+    }
+    const queue = (event: Event): void => {
+      try {
+        const parsed = JSON.parse(
+          (event as MessageEvent<string>).data,
+        ) as AgentStreamEvent
+        pending.push(parsed)
+        frame ??= requestAnimationFrame(flush)
+      } catch {
+        // 丢弃无法解析的增量帧，JSONL 会在下一次加载时校准。
+      }
+    }
+    source.addEventListener("ready", () => {
+      setActivity((current) => ({ ...current, connection: "connected" }))
+      if (hasConversation) {
+        void load().catch((cause) => setError(errorMessage(cause)))
+      }
+    })
+    source.addEventListener("agent_event", queue)
+    source.onerror = () => {
+      setActivity((current) => ({ ...current, connection: "reconnecting" }))
+    }
+    return () => {
+      source.close()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    }
+  }, [hasConversation, load, target.streamUrl])
 
   const send = useCallback(
     async (text: string): Promise<void> => {
@@ -79,9 +135,10 @@ export function useConversation(
       error,
       message,
       sending,
+      activity,
       setMessage,
       send,
     }),
-    [conversation, error, loading, message, send, sending],
+    [activity, conversation, error, loading, message, send, sending],
   )
 }

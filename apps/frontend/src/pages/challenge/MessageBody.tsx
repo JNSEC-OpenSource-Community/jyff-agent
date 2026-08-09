@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { Icon } from "@iconify/react"
+import { useEffect, useState } from "react"
 import { MarkdownContent } from "../../components/content/MarkdownContent.tsx"
 import {
   Badge,
@@ -8,6 +9,7 @@ import {
   CollapsibleTrigger,
 } from "../../components/index.ts"
 import { roleLabel, textContent, toolLabel } from "../../lib/conversation.ts"
+import type { AgentToolActivity } from "../../lib/conversation-stream.ts"
 import { absoluteTime } from "../../lib/time.ts"
 import { cn } from "../../lib/utils.ts"
 
@@ -120,21 +122,52 @@ function ToolBlock({
   detail,
   error,
   extra,
+  activity,
 }: {
   label: string
   detail: string
   error?: boolean
   extra?: string | null
+  activity?: AgentToolActivity
 }): React.ReactElement {
+  const elapsed = useElapsed(activity)
+  const running = activity?.status === "running"
+  const failed = error || activity?.status === "failed"
+  const statusLabel = running
+    ? `运行中 · ${elapsed}`
+    : failed
+      ? "执行失败"
+      : activity?.status === "succeeded"
+        ? `完成 · ${elapsed}`
+        : null
   return (
     <Collapsible
       className={cn(
-        "overflow-hidden rounded-lg border transition-colors",
-        error ? "border-danger/30 bg-danger/5" : "border-border bg-muted",
+        "group/tool relative overflow-hidden rounded-lg border transition-colors",
+        failed
+          ? "border-danger/30 bg-danger/5"
+          : running
+            ? "agent-tool-running border-primary/35 bg-primary/[0.045]"
+            : "border-border/80 bg-muted/70",
       )}
     >
-      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
-        <Icon icon={error ? "lucide:circle-x" : "lucide:terminal"} width="16" />
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded-md border",
+            failed
+              ? "border-danger/25 bg-danger/10 text-danger"
+              : running
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border bg-background/60",
+          )}
+        >
+          <Icon
+            icon={failed ? "lucide:circle-x" : "lucide:terminal-square"}
+            width="14"
+            aria-hidden="true"
+          />
+        </span>
         <span className="min-w-0 flex-1 truncate text-left">
           {label}
           {extra ? (
@@ -143,11 +176,35 @@ function ToolBlock({
             </span>
           ) : null}
         </span>
-        <Icon icon="lucide:chevron-down" className="shrink-0" width="15" />
+        {statusLabel ? (
+          <span
+            className={cn(
+              "shrink-0 font-mono text-[10px] tabular-nums",
+              failed
+                ? "text-danger"
+                : running
+                  ? "text-primary"
+                  : "text-muted-foreground",
+            )}
+            aria-live={running ? "polite" : undefined}
+          >
+            {statusLabel}
+          </span>
+        ) : null}
+        <Icon
+          icon="lucide:chevron-down"
+          className="shrink-0 transition-transform group-data-[state=open]/tool:rotate-180"
+          width="15"
+          aria-hidden="true"
+        />
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t border-border">
         <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
-          {detail || "（无输出）"}
+          {activity?.partialResult
+            ? `${detail}\n\n${stringifyToolOutput(activity.partialResult)}`
+            : activity?.result
+              ? `${detail}\n\n${stringifyToolOutput(activity.result)}`
+              : detail || "（等待输出）"}
         </pre>
       </CollapsibleContent>
     </Collapsible>
@@ -157,18 +214,25 @@ function ToolBlock({
 function ThinkingBlock({
   redacted,
   content,
+  streaming = false,
 }: {
   redacted: boolean
   content: string
+  streaming?: boolean
 }): React.ReactElement {
   return (
     <Collapsible className="overflow-hidden rounded-lg bg-muted">
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
-        <Icon icon="lucide:brain" width="15" /> 推理记录
+        <Icon icon="lucide:brain" width="15" aria-hidden="true" />
+        {streaming ? "正在推理" : "推理记录"}
+        {streaming ? (
+          <span className="agent-stream-cursor ml-0.5" aria-hidden="true" />
+        ) : null}
         <Icon
           icon="lucide:chevron-down"
           className="ml-auto shrink-0"
           width="14"
+          aria-hidden="true"
         />
       </CollapsibleTrigger>
       <CollapsibleContent className="px-3 pb-2 text-sm whitespace-pre-wrap text-muted-foreground">
@@ -180,8 +244,12 @@ function ThinkingBlock({
 
 export function MessageBody({
   message,
+  streaming = false,
+  toolActivities = {},
 }: {
   message: AgentMessage
+  streaming?: boolean
+  toolActivities?: Record<string, AgentToolActivity>
 }): React.ReactElement {
   if (message.role === "user") {
     const raw = textContent(message.content)
@@ -218,6 +286,7 @@ export function MessageBody({
                 key={`thinking-${index}`}
                 redacted={part.redacted === true}
                 content={part.thinking}
+                streaming={streaming}
               />
             )
           if (part.type === "toolCall")
@@ -227,6 +296,7 @@ export function MessageBody({
                 label={toolLabel(part.name)}
                 detail={JSON.stringify(part.arguments, null, 2)}
                 extra={toolDetail(part.name, part.arguments)}
+                activity={toolActivities[part.id]}
               />
             )
           return null
@@ -266,6 +336,34 @@ export function MessageBody({
       {textContent(custom.content) || String(custom.summary ?? "系统消息")}
     </MarkdownContent>
   )
+}
+
+function stringifyToolOutput(value: unknown): string {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function useElapsed(activity?: AgentToolActivity): string {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (activity?.status !== "running") return
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [activity?.status])
+  if (!activity) return ""
+  const end =
+    activity.status === "running" ? now : Date.parse(activity.updatedAt)
+  const seconds = Math.max(
+    0,
+    Math.floor((end - Date.parse(activity.startedAt)) / 1_000),
+  )
+  return seconds < 60
+    ? `${seconds}s`
+    : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
 export function MessageMeta({
@@ -353,7 +451,12 @@ function ChallengeContextCard({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2">
-        <Icon icon="lucide:target" width="14" className="text-primary" />
+        <Icon
+          icon="lucide:target"
+          width="14"
+          className="text-primary"
+          aria-hidden="true"
+        />
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Challenge Context
         </span>
@@ -367,7 +470,7 @@ function ChallengeContextCard({
         ) : null}
         {score ? (
           <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
-            <Icon icon="lucide:star" width="11" />
+            <Icon icon="lucide:star" width="11" aria-hidden="true" />
             {score} pts
           </span>
         ) : null}
@@ -380,7 +483,7 @@ function ChallengeContextCard({
         ) : null}
         {files ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Icon icon="lucide:paperclip" width="12" />
+            <Icon icon="lucide:paperclip" width="12" aria-hidden="true" />
             {files}
           </div>
         ) : null}
@@ -435,6 +538,7 @@ function AnnouncementsCard({
             icon="lucide:megaphone"
             width="14"
             className="text-muted-foreground"
+            aria-hidden="true"
           />
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             Announcements
@@ -450,7 +554,12 @@ function AnnouncementsCard({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2">
-        <Icon icon="lucide:megaphone" width="14" className="text-info" />
+        <Icon
+          icon="lucide:megaphone"
+          width="14"
+          className="text-info"
+          aria-hidden="true"
+        />
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Announcements
         </span>
@@ -508,9 +617,14 @@ function JsonCard({
   return (
     <Collapsible className="overflow-hidden rounded-lg border border-border bg-card">
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
-        <Icon icon={icon} width="15" className={iconColor} />
+        <Icon icon={icon} width="15" className={iconColor} aria-hidden="true" />
         <span className="min-w-0 flex-1 text-left">{title}</span>
-        <Icon icon="lucide:chevron-down" className="shrink-0" width="14" />
+        <Icon
+          icon="lucide:chevron-down"
+          className="shrink-0"
+          width="14"
+          aria-hidden="true"
+        />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <pre className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
@@ -556,6 +670,7 @@ function GenericXmlCard({
           icon="lucide:file-code-2"
           width="13"
           className="text-muted-foreground"
+          aria-hidden="true"
         />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {tag ?? "XML"}

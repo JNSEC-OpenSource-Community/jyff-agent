@@ -83,6 +83,12 @@ export function ChallengePage() {
         projectId,
         `/api/challenges/${encodeURIComponent(challengeId)}/message`,
       )
+  const streamUrl = selectedSubagent
+    ? projectApi(
+        projectId,
+        `/api/runs/${encodeURIComponent(rid)}/subagents/${encodeURIComponent(selectedSubagent.id)}/events`,
+      )
+    : projectApi(projectId, `/api/runs/${encodeURIComponent(rid)}/events`)
   const exportUrl = selectedSubagent
     ? projectApi(
         projectId,
@@ -184,12 +190,14 @@ export function ChallengePage() {
                 <ConversationPanel
                   target={target}
                   attempt={selectedRun.attempt}
+                  runStatus={selectedRun.status}
                   hasConversation={
                     selectedSubagent
                       ? selectedSubagent.hasConversation
                       : selectedRun.hasConversation
                   }
                   conversationUrl={convoUrl}
+                  streamUrl={streamUrl}
                   sendUrl={sendUrl}
                   exportUrl={exportUrl}
                   onChanged={reload}

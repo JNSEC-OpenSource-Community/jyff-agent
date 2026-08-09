@@ -1,4 +1,6 @@
 import type {
+  AgentStreamListener,
+  AgentStreamTarget,
   Announcement,
   BlackboardStats,
   BlackboardSummary,
@@ -149,6 +151,10 @@ export interface DashboardProject {
   runSessionExportMetadata(
     runId: string,
   ): Promise<RunSessionExportMetadata | undefined>
+  subscribeAgentStream(
+    target: AgentStreamTarget,
+    listener: AgentStreamListener,
+  ): () => void
   runEvents(runId: string): RunEvent[]
   latestRunEvent(runId: string): RunEvent | undefined
   subagents(runId: string): SubagentRecord[]
