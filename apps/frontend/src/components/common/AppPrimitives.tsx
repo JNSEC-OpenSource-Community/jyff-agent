@@ -60,9 +60,17 @@ function ConfirmDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
-        <AlertDialogHeader>
+        <AlertDialogHeader className="grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 gap-y-0">
+          <span
+            className="row-span-2 flex size-10 items-center justify-center rounded-lg bg-danger/10 text-danger ring-1 ring-inset ring-danger/15"
+            aria-hidden="true"
+          >
+            <Icon icon="lucide:triangle-alert" width="18" />
+          </span>
           <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          <AlertDialogDescription className="mt-1">
+            {description}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
@@ -106,7 +114,7 @@ function EmptyState({
         data-slot="empty-icon"
         className="mb-4 flex size-12 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground shadow-sm"
       >
-        <Icon icon={icon} width="24" />
+        <Icon icon={icon} width="24" aria-hidden="true" />
       </div>
       <h3 className="text-sm font-semibold">{title}</h3>
       <p className="mt-2! max-w-sm text-sm leading-6 text-muted-foreground">
@@ -165,7 +173,12 @@ function ErrorNotice({
       )}
       role="alert"
     >
-      <Icon icon="lucide:circle-alert" width="18" className="mt-0.5 shrink-0" />
+      <Icon
+        icon="lucide:circle-alert"
+        width="18"
+        className="mt-0.5 shrink-0"
+        aria-hidden="true"
+      />
       <span>{message}</span>
     </div>
   )

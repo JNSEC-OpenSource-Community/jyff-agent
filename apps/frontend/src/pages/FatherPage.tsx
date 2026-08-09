@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react"
 import { useCallback, useEffect, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import {
   Badge,
@@ -54,6 +54,11 @@ interface GateView {
     configuredSecrets: Record<string, { configured: boolean }>
   } | null
 }
+
+const sessionDateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
 
 export function FatherPage(): React.ReactElement {
   const { sessionId } = useParams()
@@ -109,7 +114,11 @@ function FatherSessions(): React.ReactElement {
       <header className="mb-8 flex items-end justify-between gap-4">
         <div>
           <div className="mb-3 flex items-center gap-2 text-primary">
-            <Icon icon="emojione-monotone:old-man" width="22" />
+            <Icon
+              icon="emojione-monotone:old-man"
+              width="22"
+              aria-hidden="true"
+            />
             <span className="text-xs font-semibold uppercase tracking-[0.16em]">
               Platform workshop
             </span>
@@ -124,6 +133,7 @@ function FatherSessions(): React.ReactElement {
             icon={creating ? "lucide:loader-circle" : "lucide:plus"}
             className={creating ? "animate-spin" : ""}
             width="15"
+            aria-hidden="true"
           />
           新建会话
         </Button>
@@ -132,46 +142,64 @@ function FatherSessions(): React.ReactElement {
       {sessions.length ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {sessions.map((session) => (
-            <div
+            <article
               key={session.id}
-              className="group relative rounded-xl border border-border bg-card/55 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-card"
+              className="group grid min-h-28 grid-cols-[minmax(0,1fr)_2.75rem] overflow-hidden rounded-xl bg-card/70 shadow-[0_1px_0_rgba(255,255,255,0.025)_inset] ring-1 ring-inset ring-white/[0.055] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-card hover:shadow-[0_12px_32px_-22px_rgba(0,0,0,0.9),0_0_0_1px_rgba(94,106,210,0.28)_inset] focus-within:shadow-[0_0_0_2px_rgba(94,106,210,0.5)] motion-reduce:transform-none motion-reduce:transition-none"
             >
-              <button
-                type="button"
-                onClick={() => navigate(`/father/sessions/${session.id}`)}
-                className="w-full p-4 pr-12 text-left"
+              <Link
+                to={`/father/sessions/${session.id}`}
+                className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] gap-3 p-4 pr-3 outline-none"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-sm font-semibold">
-                      {session.title}
-                    </h2>
-                    <p className="mt-1! truncate font-mono text-[10px] text-muted-foreground">
-                      {session.pluginId ?? session.modelId}
-                    </p>
+                <span
+                  className="flex size-10 items-center justify-center rounded-lg bg-primary/[0.08] text-primary ring-1 ring-inset ring-primary/10 transition-colors group-hover:bg-primary/[0.12]"
+                  aria-hidden="true"
+                >
+                  <Icon icon="emojione-monotone:old-man" width="19" />
+                </span>
+                <div className="flex min-w-0 flex-col">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-sm font-semibold">
+                        {session.title}
+                      </h2>
+                      <p
+                        className="mt-1! truncate font-mono text-[10px] text-muted-foreground"
+                        translate="no"
+                      >
+                        {session.pluginId ?? session.modelId}
+                      </p>
+                    </div>
+                    <SessionBadge session={session} />
                   </div>
-                  <SessionBadge session={session} />
+                  <div className="mt-auto flex items-end justify-between gap-3 pt-4 text-[11px] text-muted-foreground">
+                    <time
+                      dateTime={session.updatedAt}
+                      className="truncate font-mono tabular-nums"
+                    >
+                      {sessionDateFormatter.format(new Date(session.updatedAt))}
+                    </time>
+                    <Icon
+                      icon="lucide:arrow-up-right"
+                      className="shrink-0 translate-y-0.5 opacity-40 transition-[opacity,transform] group-hover:translate-y-0 group-hover:opacity-100 motion-reduce:transform-none motion-reduce:transition-none"
+                      width="14"
+                      aria-hidden="true"
+                    />
+                  </div>
                 </div>
-                <div className="mt-5 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{new Date(session.updatedAt).toLocaleString()}</span>
-                  <Icon
-                    icon="lucide:arrow-up-right"
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                    width="14"
-                  />
-                </div>
-              </button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute right-2 bottom-2 size-8 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger"
-                aria-label={`删除 ${session.title}`}
-                onClick={() => setDeleteTarget(session)}
-              >
-                <Icon icon="lucide:trash-2" width="14" />
-              </Button>
-            </div>
+              </Link>
+              <div className="flex items-center justify-center border-l border-white/[0.045] bg-white/[0.012]">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-muted-foreground/60 hover:bg-danger/10 hover:text-danger focus-visible:text-danger"
+                  aria-label={`删除 ${session.title}`}
+                  onClick={() => setDeleteTarget(session)}
+                >
+                  <Icon icon="lucide:trash-2" width="14" aria-hidden="true" />
+                </Button>
+              </div>
+            </article>
           ))}
         </div>
       ) : (
@@ -181,6 +209,7 @@ function FatherSessions(): React.ReactElement {
               icon="emojione-monotone:old-man"
               className="mx-auto mb-4 text-muted-foreground"
               width="32"
+              aria-hidden="true"
             />
             <p className="text-sm font-medium">还没有 Father 会话</p>
             <p className="mt-1! text-xs text-muted-foreground">
@@ -194,9 +223,9 @@ function FatherSessions(): React.ReactElement {
         onOpenChange={(open) => {
           if (!open && !deleting) setDeleteTarget(undefined)
         }}
-        title="删除 Father Session？"
-        description="将永久删除该 Session 的对话、workspace 和未安装候选；已经安装的插件 revision 不受影响。"
-        confirmLabel="删除 Session"
+        title="删除 Father 会话？"
+        description="将永久删除这段对话、workspace 和未安装候选；已经安装的插件 revision 不受影响。"
+        confirmLabel="删除会话"
         busy={deleting}
         onConfirm={() => void remove()}
       />
@@ -209,7 +238,6 @@ function FatherConversation({
 }: {
   sessionId: string
 }): React.ReactElement {
-  const navigate = useNavigate()
   const [session, setSession] = useState<FatherSession>()
   const [gate, setGate] = useState<GateView>()
   const [error, setError] = useState("")
@@ -237,21 +265,21 @@ function FatherConversation({
         {error ? (
           <ErrorNotice message={error} />
         ) : (
-          <Icon icon="lucide:loader-circle" className="animate-spin" />
+          <Icon
+            icon="lucide:loader-circle"
+            className="animate-spin"
+            aria-hidden="true"
+          />
         )}
       </div>
     )
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={() => navigate("/father")}
-          aria-label="返回会话列表"
-        >
-          <Icon icon="lucide:arrow-left" width="16" />
+        <Button variant="ghost" size="icon" className="size-8" asChild>
+          <Link to="/father" aria-label="返回会话列表">
+            <Icon icon="lucide:arrow-left" width="16" aria-hidden="true" />
+          </Link>
         </Button>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{session.title}</p>
@@ -321,6 +349,7 @@ function GateCard({
           icon="lucide:loader-circle"
           className="mr-2 inline animate-spin"
           width="13"
+          aria-hidden="true"
         />
         Father 正在准备验证表单…
       </div>
@@ -369,6 +398,7 @@ function GateCard({
               <Icon
                 icon={ready ? "lucide:badge-check" : "lucide:flask-conical"}
                 width="16"
+                aria-hidden="true"
               />
             </span>
             <div>
@@ -445,6 +475,7 @@ function GateCard({
                   icon={busy ? "lucide:loader-circle" : "lucide:play"}
                   className={busy ? "animate-spin" : ""}
                   width="14"
+                  aria-hidden="true"
                 />
                 保存并验证
               </Button>
@@ -453,7 +484,7 @@ function GateCard({
         ) : ready ? (
           <div className="mt-4 flex justify-end">
             <Button size="sm" disabled={busy} onClick={() => void install()}>
-              <Icon icon="lucide:package-check" width="14" />
+              <Icon icon="lucide:package-check" width="14" aria-hidden="true" />
               批准并安装
             </Button>
           </div>
