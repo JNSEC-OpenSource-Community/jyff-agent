@@ -30,4 +30,46 @@ describe("Father HTTP", () => {
       await test.cleanup()
     }
   })
+
+  it("导出 HTML 并删除 Session", async () => {
+    const record = {
+      id: "father-1",
+      title: "amber-otter",
+      status: "stopped" as const,
+      modelId: "test/model",
+      skillRevision: "builtin-v1",
+      createdBy: "local",
+      createdAt: "2026-08-09T00:00:00.000Z",
+      updatedAt: "2026-08-09T00:00:00.000Z",
+    }
+    const remove = vi.fn(async () => undefined)
+    const father = {
+      list: () => [record],
+      get: () => record,
+      sessionPath: () => "/sessions/father-1.jsonl",
+      delete: remove,
+    } as unknown as DashboardFather
+    const test = await createTestApp({
+      father,
+      frontendDist: "/nonexistent",
+      sessionHasConversation: async () => true,
+      exportSessionHtml: async () => Buffer.from("<html>father</html>"),
+    })
+    try {
+      const exported = await test.app.request(
+        "/api/father/sessions/father-1/export",
+      )
+      expect(exported.status).toBe(200)
+      expect(await exported.text()).toContain("father")
+      const deleted = await jsonRequest(
+        test.app,
+        "/api/father/sessions/father-1",
+        "DELETE",
+      )
+      expect(deleted.status).toBe(200)
+      expect(remove).toHaveBeenCalledWith("father-1")
+    } finally {
+      await test.cleanup()
+    }
+  })
 })

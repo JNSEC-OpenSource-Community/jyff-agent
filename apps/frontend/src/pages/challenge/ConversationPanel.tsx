@@ -57,6 +57,7 @@ export function ConversationPanel({
   notice,
   emptyDescription,
   composerPlaceholder,
+  idleStatusLabel,
 }: {
   target: ConversationTarget
   attempt: number
@@ -75,6 +76,7 @@ export function ConversationPanel({
   notice?: ReactNode
   emptyDescription?: string
   composerPlaceholder?: string
+  idleStatusLabel?: string
 }): React.ReactElement {
   const {
     conversation,
@@ -115,7 +117,7 @@ export function ConversationPanel({
     "blocking",
     "writing_writeup",
   ].includes(runStatus)
-  const status = activityLabel(activity, isRunActive)
+  const status = activityLabel(activity, isRunActive, idleStatusLabel)
 
   useLayoutEffect(() => {
     const saved = activeViewStateStore.get(activeViewKey) ?? null
@@ -397,6 +399,7 @@ export function ConversationPanel({
 function activityLabel(
   activity: ReturnType<typeof useConversation>["activity"],
   isRunActive: boolean,
+  idleStatusLabel?: string,
 ): { text: string; active: boolean } {
   if (activity.connection === "reconnecting") {
     return { text: "实时连接中断，正在重连", active: true }
@@ -416,7 +419,10 @@ function activityLabel(
   if (activity.phase === "responding") {
     return { text: "正在分析并生成回复", active: true }
   }
-  if (isRunActive) return { text: "Agent 正在处理题目", active: true }
+  if (isRunActive)
+    return idleStatusLabel
+      ? { text: idleStatusLabel, active: false }
+      : { text: "Agent 正在处理题目", active: true }
   return { text: "历史会话", active: false }
 }
 

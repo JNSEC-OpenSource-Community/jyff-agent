@@ -74,6 +74,31 @@ export function fatherRoutes(services: Services): App {
     )
   })
 
+  app.get("/father/sessions/:sessionId/export", async (c) => {
+    const father = services.requireFather()
+    const id = c.req.param("sessionId")
+    requireSession(services, id)
+    const path = father.sessionPath(id)
+    if (!(await services.exporters.sessionHasConversation(path))) {
+      throw new HttpError(409, "session_not_ready", "该会话尚未产生 Agent 对话")
+    }
+    const body = await services.exporters.exportSessionHtml(path)
+    return new Response(new Uint8Array(body), {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    })
+  })
+
+  app.delete("/father/sessions/:sessionId", async (c) => {
+    const father = services.requireFather()
+    const id = c.req.param("sessionId")
+    requireSession(services, id)
+    await father.delete(id)
+    return c.json({ deleted: true })
+  })
+
   app.post("/father/sessions/:sessionId/message", async (c) => {
     const body = await parseJsonBody(c, fatherMessageSchema, {
       code: "invalid_father_message",

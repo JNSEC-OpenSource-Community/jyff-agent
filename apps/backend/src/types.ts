@@ -51,6 +51,7 @@ export interface DashboardFather {
   send(id: string, message: string): Promise<FatherSessionRecord>
   stop(id: string): Promise<FatherSessionRecord>
   complete(id: string): Promise<FatherSessionRecord>
+  delete(id: string): Promise<void>
   subscribe(id: string, listener: AgentStreamListener): () => void
   setGateStatus(
     id: string,

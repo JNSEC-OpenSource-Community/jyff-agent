@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   ErrorNotice,
   PlatformSetupForm,
   type PlatformSetupOption,
@@ -68,6 +69,8 @@ function FatherSessions(): React.ReactElement {
   const [sessions, setSessions] = useState<FatherSession[]>([])
   const [error, setError] = useState("")
   const [creating, setCreating] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<FatherSession>()
+  const [deleting, setDeleting] = useState(false)
   useEffect(() => {
     void apiRequest<{ sessions: FatherSession[] }>("/api/father/sessions")
       .then((r) => setSessions(r.sessions))
@@ -84,6 +87,21 @@ function FatherSessions(): React.ReactElement {
     } catch (e) {
       setError(errorMessage(e))
       setCreating(false)
+    }
+  }
+  async function remove(): Promise<void> {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await apiMutation(`/api/father/sessions/${deleteTarget.id}`, "DELETE")
+      setSessions((current) =>
+        current.filter(({ id }) => id !== deleteTarget.id),
+      )
+      setDeleteTarget(undefined)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setDeleting(false)
     }
   }
   return (
@@ -114,32 +132,46 @@ function FatherSessions(): React.ReactElement {
       {sessions.length ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {sessions.map((session) => (
-            <button
+            <div
               key={session.id}
-              type="button"
-              onClick={() => navigate(`/father/sessions/${session.id}`)}
-              className="group rounded-xl border border-border bg-card/55 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-card"
+              className="group relative rounded-xl border border-border bg-card/55 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-card"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold">
-                    {session.title}
-                  </h2>
-                  <p className="mt-1! truncate font-mono text-[10px] text-muted-foreground">
-                    {session.pluginId ?? session.modelId}
-                  </p>
+              <button
+                type="button"
+                onClick={() => navigate(`/father/sessions/${session.id}`)}
+                className="w-full p-4 pr-12 text-left"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold">
+                      {session.title}
+                    </h2>
+                    <p className="mt-1! truncate font-mono text-[10px] text-muted-foreground">
+                      {session.pluginId ?? session.modelId}
+                    </p>
+                  </div>
+                  <SessionBadge session={session} />
                 </div>
-                <SessionBadge session={session} />
-              </div>
-              <div className="mt-5 flex items-center justify-between text-[11px] text-muted-foreground">
-                <span>{new Date(session.updatedAt).toLocaleString()}</span>
-                <Icon
-                  icon="lucide:arrow-up-right"
-                  className="opacity-0 transition-opacity group-hover:opacity-100"
-                  width="14"
-                />
-              </div>
-            </button>
+                <div className="mt-5 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>{new Date(session.updatedAt).toLocaleString()}</span>
+                  <Icon
+                    icon="lucide:arrow-up-right"
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    width="14"
+                  />
+                </div>
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-2 bottom-2 size-8 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger"
+                aria-label={`删除 ${session.title}`}
+                onClick={() => setDeleteTarget(session)}
+              >
+                <Icon icon="lucide:trash-2" width="14" />
+              </Button>
+            </div>
           ))}
         </div>
       ) : (
@@ -157,6 +189,17 @@ function FatherSessions(): React.ReactElement {
           </div>
         </Card>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(undefined)
+        }}
+        title="删除 Father Session？"
+        description="将永久删除该 Session 的对话、workspace 和未安装候选；已经安装的插件 revision 不受影响。"
+        confirmLabel="删除 Session"
+        busy={deleting}
+        onConfirm={() => void remove()}
+      />
     </div>
   )
 }
@@ -227,6 +270,7 @@ function FatherConversation({
           conversationUrl={`/api/father/sessions/${sessionId}/conversation`}
           streamUrl={`/api/father/sessions/${sessionId}/events`}
           sendUrl={`/api/father/sessions/${sessionId}/message`}
+          exportUrl={`/api/father/sessions/${sessionId}/export`}
           header={{
             label: "Clanker Father",
             subLabel: session.pluginName ?? session.title,
@@ -235,6 +279,7 @@ function FatherConversation({
           readOnly={["completed", "archived"].includes(session.status)}
           emptyDescription="描述你要创建的平台插件，或告诉 Father 现有插件出了什么问题。"
           composerPlaceholder="描述平台、提供文档或反馈插件问题…"
+          idleStatusLabel="Father 正在等待你的指令"
           notice={
             session.gate ? (
               <GateCard session={session} gate={gate} onChanged={load} />

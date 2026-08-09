@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { CtfFatherAgent } from "@ctf-agent/agents"
 import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
@@ -63,6 +63,7 @@ export interface FatherSessionManagerOptions {
   skillRevision?: string
   workspaceMount?: (sessionId: string) => DockerWorkspaceMount
   sandboxFactory?: typeof DockerSandbox.create
+  agentFactory?: typeof CtfFatherAgent.create
 }
 
 interface FatherSubscription {
@@ -76,7 +77,11 @@ export class FatherSessionManager {
   private readonly subscriptions = new Set<FatherSubscription>()
   private readonly sequences = new Map<string, number>()
   private readonly activeMessageIds = new Map<string, string>()
-  private active?: { record: FatherSessionRecord; agent: CtfFatherAgent }
+  private active?: {
+    record: FatherSessionRecord
+    agent: CtfFatherAgent
+    turn?: Promise<void>
+  }
   private transition: Promise<void> = Promise.resolve()
 
   private constructor(private readonly options: FatherSessionManagerOptions) {}
@@ -161,7 +166,23 @@ export class FatherSessionManager {
     const text = requiredText(message, "消息", 32_000)
     await this.exclusive(async () => {
       const active = await this.ensureActive(id)
-      active.agent.queueUserMessage(text)
+      if (active.agent.state.isStreaming || active.turn) {
+        active.agent.steer(text)
+      } else {
+        const turn = active.agent.prompt(text).then(
+          () => undefined,
+          async (error) => {
+            active.record.status = "failed"
+            active.record.error = errorText(error)
+            active.record.updatedAt = new Date().toISOString()
+            await this.persist()
+          },
+        )
+        const tracked = turn.finally(() => {
+          if (active.turn === tracked) active.turn = undefined
+        })
+        active.turn = tracked
+      }
     })
     return this.get(id) as FatherSessionRecord
   }
@@ -190,6 +211,19 @@ export class FatherSessionManager {
     record.updatedAt = record.completedAt
     await this.persist()
     return { ...record }
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.exclusive(async () => {
+      this.requireRecord(id)
+      if (this.active?.record.id === id) {
+        await this.active.agent.close()
+        this.active = undefined
+      }
+      await rm(this.sessionDirectory(id), { recursive: true, force: true })
+      this.records.delete(id)
+      await this.persist()
+    })
   }
 
   subscribe(id: string, listener: AgentStreamListener): () => void {
@@ -244,7 +278,7 @@ export class FatherSessionManager {
       },
     )
     try {
-      const agent = await CtfFatherAgent.create({
+      const agent = await (this.options.agentFactory ?? CtfFatherAgent.create)({
         sessionId: id,
         sessionDirectory: this.sessionDirectory(id),
         sandbox,
@@ -456,6 +490,9 @@ function parseRecord(value: unknown): FatherSessionRecord | undefined {
   const record = value as Partial<FatherSessionRecord>
   if (
     typeof record.id !== "string" ||
+    !/^father-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      record.id,
+    ) ||
     typeof record.title !== "string" ||
     typeof record.status !== "string" ||
     typeof record.modelId !== "string" ||
