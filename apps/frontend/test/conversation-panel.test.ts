@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { createElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { INITIAL_AGENT_ACTIVITY } from "../src/lib/conversation-stream.ts"
@@ -152,6 +159,33 @@ describe("ConversationPanel scroll affordance", () => {
 
     expect(scroller.scrollTop).toBe(240)
     expect(screen.getByRole("button", { name: "回到底部" })).toBeTruthy()
+  })
+
+  it("运行中可中止 Agent 并刷新状态", async () => {
+    const changed = vi.fn(async () => undefined)
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}))
+    vi.stubGlobal("fetch", fetchMock)
+    render(
+      createElement(ConversationPanel, {
+        target: { type: "solver" },
+        attempt: 1,
+        runStatus: "running",
+        hasConversation: true,
+        conversationUrl: "/conversation",
+        streamUrl: "/events",
+        sendUrl: "/message",
+        stopUrl: "/father/stop",
+        onChanged: changed,
+      }),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "中止 Agent" }))
+
+    await waitFor(() => expect(changed).toHaveBeenCalledOnce())
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/father/stop",
+      expect.objectContaining({ method: "POST" }),
+    )
   })
 })
 

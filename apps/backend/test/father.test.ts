@@ -72,4 +72,23 @@ describe("Father HTTP", () => {
       await test.cleanup()
     }
   })
+
+  it("中止正在运行的 Father Session", async () => {
+    const stop = vi.fn(async () => ({ id: "father-1", status: "stopped" }))
+    const father = { stop } as unknown as DashboardFather
+    const test = await createTestApp({ father, frontendDist: "/nonexistent" })
+    try {
+      const response = await jsonRequest(
+        test.app,
+        "/api/father/sessions/father-1/stop",
+        "POST",
+        {},
+      )
+      expect(response.status).toBe(200)
+      expect(await jsonOf(response)).toMatchObject({ status: "stopped" })
+      expect(stop).toHaveBeenCalledWith("father-1")
+    } finally {
+      await test.cleanup()
+    }
+  })
 })

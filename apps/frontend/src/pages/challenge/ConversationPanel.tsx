@@ -17,6 +17,7 @@ import {
 } from "../../components/index.ts"
 import type { ConversationTarget } from "../../hooks/useChallengeDetails.ts"
 import { useConversation } from "../../hooks/useConversation.ts"
+import { apiMutation } from "../../lib/api.ts"
 import { toolLabel } from "../../lib/conversation.ts"
 import { absoluteTime } from "../../lib/time.ts"
 import { cn } from "../../lib/utils.ts"
@@ -48,6 +49,7 @@ export function ConversationPanel({
   streamUrl,
   sendUrl,
   exportUrl,
+  stopUrl,
   viewKey,
   viewStateStore,
   onSelectSubagent,
@@ -67,6 +69,7 @@ export function ConversationPanel({
   streamUrl: string
   sendUrl: string
   exportUrl?: string
+  stopUrl?: string
   viewKey?: string
   viewStateStore?: ConversationViewStateStore
   onSelectSubagent?(id: string): void
@@ -102,6 +105,8 @@ export function ConversationPanel({
   const pendingRestoreRef = useRef<ConversationViewState | null>(null)
   const [newBelow, setNewBelow] = useState(0)
   const [awayFromBottom, setAwayFromBottom] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const [actionError, setActionError] = useState("")
   const messages = conversation?.messages ?? []
   const contentVersion = useMemo(
     () =>
@@ -208,6 +213,22 @@ export function ConversationPanel({
     await send(message)
   }
 
+  async function stop(): Promise<void> {
+    if (!stopUrl || stopping) return
+    setStopping(true)
+    setActionError("")
+    try {
+      await apiMutation(stopUrl, "POST")
+      await onChanged()
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error ? cause.message : "无法中止 Agent，请稍后重试",
+      )
+    } finally {
+      setStopping(false)
+    }
+  }
+
   return (
     <section
       className="flex h-full min-h-0 flex-1 flex-col"
@@ -254,19 +275,42 @@ export function ConversationPanel({
             </div>
           </div>
         </div>
-        {exportUrl ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 max-lg:px-2"
-            asChild
-          >
-            <a href={exportUrl} target="_blank" rel="noreferrer">
-              <Icon icon="lucide:file-code-2" width="15" aria-hidden="true" />
-              <span className="max-lg:sr-only">查看 HTML</span>
-            </a>
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {stopUrl && isRunActive ? (
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              className="max-lg:size-8 max-lg:px-0"
+              disabled={stopping}
+              aria-label={stopping ? "正在中止 Agent" : "中止 Agent"}
+              onClick={() => void stop()}
+            >
+              <Icon
+                icon={stopping ? "lucide:loader-circle" : "lucide:square"}
+                width="13"
+                className={stopping ? "animate-spin" : "fill-current"}
+                aria-hidden="true"
+              />
+              <span className="max-lg:sr-only">
+                {stopping ? "正在中止" : "中止"}
+              </span>
+            </Button>
+          ) : null}
+          {exportUrl ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 max-lg:px-2"
+              asChild
+            >
+              <a href={exportUrl} target="_blank" rel="noreferrer">
+                <Icon icon="lucide:file-code-2" width="15" aria-hidden="true" />
+                <span className="max-lg:sr-only">查看 HTML</span>
+              </a>
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       <div
@@ -278,6 +322,9 @@ export function ConversationPanel({
         <div className="mx-auto w-full max-w-5xl">
           {loading ? <ConversationSkeleton /> : null}
           {error ? <ErrorNotice message={error} className="mb-4" /> : null}
+          {actionError ? (
+            <ErrorNotice message={actionError} className="mb-4" />
+          ) : null}
           {!loading && messages.length === 0 ? (
             isRunActive ? (
               <WorkingEmptyState label={status.text} />

@@ -71,6 +71,11 @@ describe("FatherSessionManager", () => {
     await manager.send(session.id, "开始工作")
     expect(prompt).toHaveBeenCalledWith("开始工作")
     expect(fakeAgent.steer).not.toHaveBeenCalled()
+
+    const stopped = await manager.stop(session.id)
+    expect(fakeAgent.close).toHaveBeenCalledOnce()
+    expect(stopped.status).toBe("stopped")
+    await expect(access(manager.workspace(session.id))).resolves.toBeUndefined()
   })
 
   it("启动 Father 前将内置 skill 复制到 sandbox workspace", async () => {

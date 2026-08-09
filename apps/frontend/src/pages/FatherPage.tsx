@@ -299,6 +299,7 @@ function FatherConversation({
           streamUrl={`/api/father/sessions/${sessionId}/events`}
           sendUrl={`/api/father/sessions/${sessionId}/message`}
           exportUrl={`/api/father/sessions/${sessionId}/export`}
+          stopUrl={`/api/father/sessions/${sessionId}/stop`}
           header={{
             label: "Clanker Father",
             subLabel: session.pluginName ?? session.title,
