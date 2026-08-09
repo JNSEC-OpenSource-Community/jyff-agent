@@ -17,12 +17,12 @@ SubAgent 是单个 Solver Run 内的专业 worker。主 Solver 负责拆分任�
 | 工具 | 作用 |
 |---|---|
 | `Agent` | 创建前台/后台 worker，或续跑已完成的 worker 会话 |
-| `get_subagent_result` | 查询或等待后台结果；取消等待不会杀死 worker |
+| `get_subagent_result` | 查询或等待后台结果；`interrupt_on_steer` 默认开启，取消等待不会杀死 worker |
 | `steer_subagent` | 向运行中的 worker 注入新方向 |
 | `cancel_subagent` | 取消排队或运行中的 worker |
 | `list_subagents` | 获取本 Run 的完整 fleet |
 
-后台并发默认上限为 4，前台调用不占后台池。后台任务完成后通过结构化 `<task-notification encoding="json">` 通知主 Solver。主 Solver 关闭时，manager 会取消或终止当前 Run 的全部 worker。共享 system prompt 禁止 worker 以计划、准备切换思路或单纯进度说明提前结束；它必须继续实际调查，直到形成可复现交付物、以具体负面证据穷尽有界方向，或主 Solver 明确要求阶段报告。`steer_subagent` 对 running worker 直接排队消息；对 completed/failed/cancelled/aborted/interrupted worker 则从原 JSONL session 恢复同一 ID，作为后台任务继续，完成后再次通知主 Solver。
+后台并发默认上限为 4，前台调用不占后台池。后台任务完成后立即向主 Solver steer 结构化 `<subagent_notification>`；若 Solver 正在以 wait 模式调用 `get_subagent_result` 等待其他 worker，默认中断这次等待，让已排队的 steer 在下一个 turn 进入，但不会取消仍在运行的 worker。调用方可用 `interrupt_on_steer=false` 选择继续等待。主 Solver 关闭时，manager 会取消或终止当前 Run 的全部 worker。共享 system prompt 禁止 worker 以计划、准备切换思路或单纯进度说明提前结束；它必须继续实际调查，直到形成可复现交付物、以具体负面证据穷尽有界方向，或主 Solver 明确要求阶段报告。`steer_subagent` 对 running worker 直接排队消息；对 completed/failed/cancelled/aborted/interrupted worker 则从原 JSONL session 恢复同一 ID，作为后台任务继续，完成后再次通知主 Solver。
 
 派发 prompt 当前受一个基础占位协议约束：只能委派可独立并行、边界清楚且有可验证交付物的任务，不能委派整道题、重复工作或 Flag 提交；prompt 必须使用 `<subagent_task>`，包含 `objective`、`context`、`deliverables` 和 `constraints`。协议定义在 `packages/prompts/src/project.ts`，后续可直接替换。
 

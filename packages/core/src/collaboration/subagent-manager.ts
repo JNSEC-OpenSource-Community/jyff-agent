@@ -290,6 +290,41 @@ export class CtfSubagentManager {
     return snapshot(result)
   }
 
+  async waitForTool(
+    id: string,
+    signal?: AbortSignal,
+    interruptOnSteer = true,
+  ): Promise<{ record: SubagentRecord; waitInterrupted: boolean }> {
+    const current = this.records.get(id)
+    if (!current) throw new Error(`SubAgent 不存在: ${id}`)
+    if (!interruptOnSteer || TERMINAL.has(current.record.status)) {
+      return { record: await this.wait(id, signal), waitInterrupted: false }
+    }
+    const parent = this.parent
+    if (!parent) {
+      return { record: await this.wait(id, signal), waitInterrupted: false }
+    }
+
+    const completed = new AbortController()
+    const combined = signal
+      ? AbortSignal.any([signal, completed.signal])
+      : completed.signal
+    try {
+      return await Promise.race([
+        this.wait(id, combined).then((record) => ({
+          record,
+          waitInterrupted: false,
+        })),
+        waitForParentSteer(parent, combined).then(() => ({
+          record: snapshot(current.record),
+          waitInterrupted: true,
+        })),
+      ])
+    } finally {
+      completed.abort()
+    }
+  }
+
   async steer(id: string, message: string): Promise<SubagentRecord> {
     const managed = this.records.get(id)
     if (!managed) {
@@ -558,13 +593,13 @@ export class CtfSubagentManager {
   private async notifyParent(record: SubagentRecord): Promise<void> {
     const parent = this.parent
     if (!parent || parent.isClosed) return
-    const payload = JSON.stringify({
+    const notification = {
       id: record.id,
       role: record.role,
       status: record.status,
       output: (record.result ?? record.error ?? "No output").slice(0, 16_000),
-    })
-    await parent.followUp(subagentCompletionNotificationPrompt(payload))
+    }
+    await parent.steer(subagentCompletionNotificationPrompt(notification))
   }
 }
 
@@ -629,16 +664,34 @@ export function createSubagentManagerTools(
     {
       name: "get_subagent_result",
       label: "Get SubAgent Result",
-      description: "Read or wait for a background SubAgent result.",
+      description:
+        "Read or wait for a background SubAgent result. Waiting stops when the parent receives a steer unless interrupt_on_steer is false; the worker keeps running.",
       parameters: Type.Object({
         agent_id: Type.String(),
         wait: Type.Optional(Type.Boolean()),
+        interrupt_on_steer: Type.Optional(Type.Boolean()),
       }),
       async execute(_id, raw, signal) {
-        const params = raw as { agent_id: string; wait?: boolean }
-        const record = params.wait
-          ? await manager.wait(params.agent_id, signal)
-          : manager.get(params.agent_id)
+        const params = raw as {
+          agent_id: string
+          wait?: boolean
+          interrupt_on_steer?: boolean
+        }
+        if (params.wait) {
+          const waited = await manager.waitForTool(
+            params.agent_id,
+            signal,
+            params.interrupt_on_steer !== false,
+          )
+          return toolResult({
+            ...waited.record,
+            waitInterrupted: waited.waitInterrupted,
+            ...(waited.waitInterrupted
+              ? { waitInterruptedReason: "parent_steer_queued" }
+              : {}),
+          })
+        }
+        const record = manager.get(params.agent_id)
         if (!record) throw new Error(`SubAgent 不存在: ${params.agent_id}`)
         return toolResult(record)
       },
@@ -734,5 +787,32 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
         reject(error)
       },
     )
+  })
+}
+
+function waitForParentSteer(
+  parent: CtfSolverAgent,
+  signal: AbortSignal,
+): Promise<void> {
+  if (parent.hasQueuedSteerMessages()) return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+    let unsubscribe = () => {}
+    const finish = (operation: () => void) => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener("abort", onAbort)
+      unsubscribe()
+      operation()
+    }
+    const onAbort = () => finish(() => reject(signal.reason))
+    unsubscribe = parent.subscribe((event) => {
+      if (event.type === "queue_update" && event.steer.length > 0) {
+        finish(resolve)
+      }
+    })
+    signal.addEventListener("abort", onAbort, { once: true })
+    // 避免检查和订阅之间到达的 steer 被漏掉。
+    if (parent.hasQueuedSteerMessages()) finish(resolve)
   })
 }

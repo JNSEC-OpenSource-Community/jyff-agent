@@ -128,6 +128,7 @@ export abstract class BaseAgent {
   private readonly compactionInstructions?: string
   private readonly compactionHooks?: CompactionLifecycleHooks
   private queuedMessages = 0
+  private queuedSteerMessages = 0
 
   protected constructor(
     prepared: PreparedBaseAgent,
@@ -159,6 +160,7 @@ export abstract class BaseAgent {
       if (event.type === "tools_update")
         this.state.tools = this.harness.getTools() as unknown as AgentTool[]
       if (event.type === "queue_update") {
+        this.queuedSteerMessages = event.steer.length
         this.queuedMessages =
           event.steer.length + event.followUp.length + event.nextTurn.length
       }
@@ -279,6 +281,9 @@ export abstract class BaseAgent {
   }
   hasQueuedMessages(): boolean {
     return this.queuedMessages > 0
+  }
+  hasQueuedSteerMessages(): boolean {
+    return this.queuedSteerMessages > 0
   }
 
   private async compactIfNeeded(): Promise<void> {

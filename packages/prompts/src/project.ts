@@ -79,6 +79,18 @@ export function blackboardSnapshotPrompt(encodedSnapshot: string): string {
   return `<challenge_blackboard encoding="json">\n${encodedSnapshot}\n</challenge_blackboard>`
 }
 
-export function subagentCompletionNotificationPrompt(payload: string): string {
-  return `<task-notification encoding="json">\n${payload}\n</task-notification>`
+export function subagentCompletionNotificationPrompt(notification: {
+  id: string
+  role: string
+  status: string
+  output: string
+}): string {
+  return [
+    "<subagent_notification>",
+    `  <id>${xml(notification.id)}</id>`,
+    `  <role>${xml(notification.role)}</role>`,
+    `  <status>${xml(notification.status)}</status>`,
+    `  <output>${xml(notification.output)}</output>`,
+    "</subagent_notification>",
+  ].join("\n")
 }

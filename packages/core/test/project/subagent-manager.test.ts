@@ -3,11 +3,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   type ChallengeInfo,
+  type CtfSolverAgent,
   discoverSubagentRoles,
   type Sandbox,
 } from "@ctf-agent/agents"
 import type { CommandResult, SandboxExecOptions } from "@ctf-agent/sandbox"
-import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import type {
+  AgentHarnessEvent,
+  AgentOptions,
+} from "@earendil-works/pi-agent-core"
 import {
   createFauxCore,
   fauxAssistantMessage,
@@ -65,6 +69,107 @@ const challenge: ChallengeInfo = {
 }
 
 describe("CtfSubagentManager", () => {
+  it("后台完成后立即 steer 结构化通知给主 Solver", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-notify-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-notify" })
+    faux.setResponses([fauxAssistantMessage("verified offset < 0x40")])
+    const discovered = await discoverSubagentRoles(root)
+    const parent = fakeParent()
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-notify",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+    })
+    manager.attachParent(parent.agent)
+
+    const created = manager.spawn({
+      role: "general-purpose",
+      prompt: "verify the offset",
+      description: "offset check",
+      background: true,
+    })
+    await manager.wait(created.id)
+    await waitFor(() => parent.steered.length === 1)
+
+    expect(parent.steered[0]).toContain("<subagent_notification>")
+    expect(parent.steered[0]).toContain(`<id>${created.id}</id>`)
+    expect(parent.steered[0]).toContain("verified offset &lt; 0x40")
+    expect(parent.followedUp).toEqual([])
+    await manager.close()
+  })
+
+  it("wait 模式在父 Solver 收到 steer 时中断但不取消 worker", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-wait-steer-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-wait-steer" })
+    let finishWorker!: () => void
+    const workerGate = new Promise<void>((resolve) => {
+      finishWorker = resolve
+    })
+    faux.setResponses([
+      async () => {
+        await workerGate
+        return fauxAssistantMessage("worker eventually finished")
+      },
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    const parent = fakeParent()
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-wait-steer",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+    })
+    manager.attachParent(parent.agent)
+    const created = manager.spawn({
+      role: "general-purpose",
+      prompt: "long investigation",
+      description: "long worker",
+      background: true,
+    })
+    await waitFor(() => manager.get(created.id)?.status === "running")
+
+    const waiting = manager.waitForTool(created.id)
+    let uninterruptedSettled = false
+    const uninterrupted = manager
+      .waitForTool(created.id, undefined, false)
+      .finally(() => {
+        uninterruptedSettled = true
+      })
+    parent.queueSteer()
+    await expect(waiting).resolves.toMatchObject({
+      waitInterrupted: true,
+      record: { id: created.id, status: "running" },
+    })
+    expect(manager.get(created.id)?.status).toBe("running")
+    await Promise.resolve()
+    expect(uninterruptedSettled).toBe(false)
+
+    finishWorker()
+    await expect(uninterrupted).resolves.toMatchObject({
+      waitInterrupted: false,
+      record: {
+        status: "completed",
+        result: "worker eventually finished",
+      },
+    })
+    await manager.close()
+  })
+
   it("以前台任务返回结果，并保留稳定 worker 记录和生命周期", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-subagent-manager-"))
     roots.push(root)
@@ -354,5 +459,47 @@ async function waitFor(
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待 SubAgent 状态超时")
     await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+}
+
+function fakeParent(): {
+  agent: CtfSolverAgent
+  steered: string[]
+  followedUp: string[]
+  queueSteer(): void
+} {
+  const steered: string[] = []
+  const followedUp: string[] = []
+  const listeners = new Set<(event: AgentHarnessEvent) => void>()
+  let queued = false
+  const parent = {
+    isClosed: false,
+    hasQueuedSteerMessages: () => queued,
+    subscribe(listener: (event: AgentHarnessEvent) => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    async steer(message: string) {
+      steered.push(message)
+    },
+    async followUp(message: string) {
+      followedUp.push(message)
+    },
+  }
+  return {
+    agent: parent as unknown as CtfSolverAgent,
+    steered,
+    followedUp,
+    queueSteer() {
+      queued = true
+      for (const listener of listeners) {
+        listener({
+          type: "queue_update",
+          steer: [{ role: "user", content: "notice", timestamp: Date.now() }],
+          followUp: [],
+          nextTurn: [],
+        })
+      }
+    },
   }
 }
