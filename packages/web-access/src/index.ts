@@ -439,7 +439,7 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
   return {
     name: DEFAULT_TOOL_NAMES.webSearch,
     label: "Web Search",
-    description: `Search the web for online information and current results. Returns an AI-synthesized answer with source citations. For CTF technique questions, use the dedicated tricks_search tool instead. Omit provider for general web search. Prefer queries (plural) with 2-4 varied angles over a single query for broader coverage.`,
+    description: `Search the web for online information and current results. Returns an AI-synthesized answer with source citations. For CTF technique questions, use the dedicated tricks_search tool instead. Omit provider for general web search. Prefer queries (plural) with 2-4 varied angles over a single query for broader coverage. IMPORTANT: Do NOT search for, fetch, or look up writeups or solutions for the current challenge, nor any challenge-specific information (e.g. the challenge's flag, intended solve, or exact challenge title/name). Only search for general techniques, concepts, and background knowledge.`,
     parameters: webSearchParams,
     executionMode: "sequential",
     async execute(
