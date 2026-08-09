@@ -16,6 +16,7 @@ import {
   search,
 } from "./gemini-search.ts"
 import { clearCloneCache } from "./github-extract.ts"
+import { searchWithNekozuki } from "./nekozuki.ts"
 import { answerFromPage } from "./page-query.ts"
 import type { SearchOptions, SearchResult } from "./perplexity.ts"
 import {
@@ -65,7 +66,6 @@ export const RESOLVED_SEARCH_PROVIDERS: readonly ResolvedSearchProvider[] = [
   "exa",
   "serpdive",
   "kagi",
-  "nekozuki",
   "ollama",
   "anysearch",
   "xai",
@@ -110,6 +110,7 @@ const DEFAULT_TOOL_NAMES = {
   sourceCheck: "source_check",
   fetchContent: "fetch_content",
   getSearchContent: "get_search_content",
+  tricksSearch: "tricks_search",
 }
 
 const MAX_INLINE_CONTENT = 30_000
@@ -438,7 +439,7 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
   return {
     name: DEFAULT_TOOL_NAMES.webSearch,
     label: "Web Search",
-    description: `Search the web for online information and current results, and search CTF tricks/techniques from the local nekozuki knowledge base. Returns an AI-synthesized answer with source citations. For CTF technique questions (exploits, vulnerabilities, payload patterns), use provider "nekozuki" to query the distilled CTF writeup knowledge base; omit provider to auto-select. For general research, prefer queries (plural) with 2-4 varied angles over a single query.`,
+    description: `Search the web for online information and current results. Returns an AI-synthesized answer with source citations. For CTF technique questions, use the dedicated tricks_search tool instead. Omit provider for general web search. Prefer queries (plural) with 2-4 varied angles over a single query for broader coverage.`,
     parameters: webSearchParams,
     executionMode: "sequential",
     async execute(
@@ -1418,6 +1419,77 @@ function bindRuntime<T extends AgentTool>(
   }
 }
 
+// ---- 工具：tricks_search ----
+
+const tricksSearchParams = Type.Object({
+  query: Type.String({
+    description:
+      "Natural language query for CTF tricks/techniques. Be specific about the vulnerability class, exploit technique, or attack vector you need information on.",
+  }),
+  numResults: Type.Optional(
+    Type.Number({
+      description: "Number of results (default: 5, max: 20)",
+    }),
+  ),
+})
+
+function createTricksSearchTool(): AgentTool<typeof tricksSearchParams> {
+  return {
+    name: DEFAULT_TOOL_NAMES.tricksSearch,
+    label: "CTF Tricks Search",
+    description:
+      "Search CTF tricks and techniques from the distilled nekozuki knowledge base (39k writeups). Use this when you are stuck on a challenge and need technique ideas, or to look up specific CTF techniques (exploits, vulnerabilities, payload patterns, attack vectors). Returns technique descriptions with source citations. Be specific in your query about the vulnerability class or technique you need. Does NOT search the web — only searches the local CTF knowledge base.",
+    parameters: tricksSearchParams,
+    executionMode: "sequential",
+    async execute(
+      _toolCallId,
+      params,
+      signal,
+    ): Promise<AgentToolResult<Record<string, unknown>>> {
+      const query = typeof params.query === "string" ? params.query.trim() : ""
+      if (!query) {
+        return errorResult("No query provided.", { code: "no_query" })
+      }
+      const rt = getRuntime()
+      if (!rt.providers.has("nekozuki")) {
+        return errorResult(
+          "Nekozuki CTF knowledge base is not enabled. Add it to the provider allowlist in the WebUI plugins settings, and configure the server base URL.",
+          { code: "nekozuki_disabled" },
+        )
+      }
+      const numResults =
+        typeof params.numResults === "number" &&
+        Number.isFinite(params.numResults)
+          ? Math.min(20, Math.max(1, Math.floor(params.numResults)))
+          : 5
+
+      try {
+        const response = await searchWithNekozuki(query, {
+          numResults,
+          signal,
+        })
+        const output = response.results
+          .map(
+            (r, i) =>
+              `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet?.slice(0, 300)}`,
+          )
+          .join("\n\n")
+        return {
+          content: [{ type: "text", text: output || "No results found." }],
+          details: {
+            query,
+            resultCount: response.results.length,
+            answer: response.answer,
+          },
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return errorResult(message, { code: "search_failed", query })
+      }
+    },
+  }
+}
+
 export function createWebAccessTools(config: WebAccessConfig): AgentTool[] {
   const runtime = buildRuntime(config)
   setRuntime(runtime)
@@ -1438,5 +1510,6 @@ export function createWebAccessTools(config: WebAccessConfig): AgentTool[] {
     bindRuntime(runtime, createSourceCheckTool()),
     bindRuntime(runtime, createFetchContentTool()),
     bindRuntime(runtime, createGetSearchContentTool()),
+    bindRuntime(runtime, createTricksSearchTool()),
   ]
 }

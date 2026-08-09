@@ -14,8 +14,8 @@ function tools(overrides: Partial<WebAccessConfig> = {}) {
 }
 
 function nekozukiTool() {
-  const tool = tools().find((t) => t.name === "web_search")
-  if (!tool) throw new Error("web_search not found")
+  const tool = tools().find((t) => t.name === "tricks_search")
+  if (!tool) throw new Error("tricks_search not found")
   return tool
 }
 
@@ -36,7 +36,7 @@ afterEach(() => {
 })
 
 describe("nekozuki RAG provider", () => {
-  it("web_search 使用 nekozuki baseUrl 发起 RAG 查询", async () => {
+  it("tricks_search 使用 nekozuki baseUrl 发起 RAG 查询", async () => {
     vi.mocked(fetch).mockResolvedValue(
       ragResponse([
         {
@@ -58,10 +58,7 @@ describe("nekozuki RAG provider", () => {
     expect(text).toContain("sql_injection")
     expect(text).toContain("SLEEP")
     // 请求必须指向 nekozuki 的 /api/rag/query。
-    const [url, init] = vi.mocked(fetch).mock.calls[0] as [
-      string,
-      RequestInit,
-    ]
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit]
     expect(url).toContain("localhost:8000/api/rag/query")
     expect(init.method).toBe("POST")
     expect(JSON.parse(String(init.body))).toEqual({
@@ -78,7 +75,8 @@ describe("nekozuki RAG provider", () => {
       resolveSecret: () => undefined,
     }
     const app = createWebAccessTools(config)
-    const tool = app.find((t) => t.name === "web_search")!
+    const tool = app.find((t) => t.name === "tricks_search")
+    if (!tool) throw new Error("tricks_search not found")
     await tool.execute("call-1", { query: "x" }, undefined)
     const [url] = vi.mocked(fetch).mock.calls[0] as [string]
     expect(url).toContain("localhost:8000/api/rag/query")
@@ -90,9 +88,8 @@ describe("nekozuki RAG provider", () => {
     )
     const tool = nekozukiTool()
     const result = await tool.execute("call-1", { query: "x" }, undefined)
-    const details = result.details as { successfulQueries?: number }
-    expect(details.successfulQueries).toBe(0)
     const text = (result.content[0] as { text: string }).text
-    expect(text).toMatch(/nekozuki/i)
+    expect(text).toMatch(/nekozuki|error/i)
+    expect(result.details).toMatchObject({ code: "search_failed" })
   })
 })

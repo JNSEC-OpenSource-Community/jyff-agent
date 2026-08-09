@@ -37,13 +37,14 @@ afterEach(() => {
 })
 
 describe("createWebAccessTools", () => {
-  it("只保留四个候选工具", () => {
+  it("只保留五个候选工具", () => {
     const names = tools().map((tool) => tool.name)
     expect(names).toEqual([
       "web_search",
       "source_check",
       "fetch_content",
       "get_search_content",
+      "tricks_search",
     ])
   })
 

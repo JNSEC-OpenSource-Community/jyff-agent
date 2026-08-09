@@ -287,7 +287,7 @@ function assertPublicAddress(
   if (isInAllowedRange(normalized, ipVersion, allowRanges)) return
   if (ipVersion === 4 && isBlockedIPv4(normalized)) {
     const hint = isFakeIpProxyAddress(normalized)
-      ? '. This address is in 198.18.0.0/15, commonly used by TUN/fake-IP proxies. If that matches your setup, configure ssrf.allowRanges with ["198.18.0.0/15"] in web-search.json.'
+      ? ". This address is in 198.18.0.0/15, commonly used by TUN/fake-IP proxies. If that matches your setup, configure ssrf.allowRanges in the WebUI plugins settings."
       : ""
     throw new Error(
       `Blocked internal address for ${hostname}: ${normalized}${hint}`,

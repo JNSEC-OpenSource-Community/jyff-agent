@@ -372,6 +372,7 @@ describe("Project", () => {
           "source_check",
           "fetch_content",
           "get_search_content",
+          "tricks_search",
         ]),
       )
     } finally {
