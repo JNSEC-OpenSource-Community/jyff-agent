@@ -311,4 +311,39 @@ describe("file model configuration", () => {
       "custom-openai/solver-model",
     )
   })
+
+  it("首次建模型且 solverModelId 为空时自动落到第一个模型", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-first-"))
+    roots.push(root)
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+    })
+    await configuration.addCustomProvider({
+      name: "DeepSeek",
+      api: "openai-completions",
+      baseUrl: "https://api.deepseek.example/v1",
+      apiKey: "deepseek-key",
+    })
+
+    // 前端新建模型时 solverModelId 为空字符串（尚无 solver 绑定）。
+    const view = await configuration.update({
+      models: [
+        modelEntry({
+          id: "m-1",
+          provider: "custom-deepseek",
+          modelId: "deepseek-v4-flash",
+        }),
+      ],
+      solverModelId: "",
+      tldrModelId: "",
+      subagentModels: {},
+    })
+
+    expect(view.solverModelId).toBe("m-1")
+    expect(view.tldrModelId).toBe("m-1")
+    expect(
+      configuration.createAgentOptions("solver").initialState?.model,
+    ).toMatchObject({ provider: "custom-deepseek", id: "deepseek-v4-flash" })
+  })
 })
