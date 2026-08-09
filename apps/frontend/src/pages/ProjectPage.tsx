@@ -421,9 +421,16 @@ export function ProjectPage() {
               <h2 className="mt-0.5 font-semibold">待审核公告</h2>
             </div>
             <div className="flex items-center gap-2">
-              <Badge tone="warning" className="text-[10px]">
-                {pendingAnnouncements.length}
-              </Badge>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void reviewAnnouncements(pendingAnnouncements, "approved")
+                }
+              >
+                <Icon icon="lucide:check-check" width="13" />
+                全部批准
+              </Button>
               <Button
                 size="sm"
                 variant="secondary"
@@ -434,16 +441,6 @@ export function ProjectPage() {
               >
                 <Icon icon="lucide:x" width="13" />
                 全部拒绝
-              </Button>
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  void reviewAnnouncements(pendingAnnouncements, "approved")
-                }
-              >
-                <Icon icon="lucide:check-check" width="13" />
-                全部批准
               </Button>
             </div>
           </div>

@@ -241,7 +241,6 @@ export async function discoverProjectSkillsWithDiagnostics(
   const env = new SkillDiscoveryEnv(root)
   const directories = [
     "/project/.pi/skills",
-    "/project/.agents/skills",
     ...extraPaths.map((path) => {
       const absolute = resolve(root, path)
       const suffix = relative(root, absolute).replaceAll("\\", "/")

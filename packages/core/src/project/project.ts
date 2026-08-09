@@ -105,7 +105,7 @@ export interface OpenProjectOptions {
   /** Resolve a named secret without placing credentials in project config. */
   resolveSecret?: (name: string) => string | undefined
   sandboxFactory?: (options: DockerSandboxOptions) => Promise<Sandbox>
-  /** 在 .pi/skills 与 .agents/skills 外额外发现的 skill 目录。 */
+  /** 在 .pi/skills 外额外发现的显式 skill 目录。 */
   skillPaths?: readonly string[]
   /** 控制面运行在容器中时，将 Run workspace 映射为 Docker daemon 可见的挂载。 */
   workspaceMount?: (context: {

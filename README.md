@@ -194,6 +194,8 @@ WebUI 可执行入口还支持：
 
 一次 prompt 对应一个 Run 和一个全新 Pi session。若模型正常结束、输出被截断或 provider/WebSocket 异常时仍未提交 Flag，系统会关闭旧 Solver 与 SubAgent，统计一次中断并创建全新的 Run/session，以英文 continuation prompt 继续。中断次数超过阈值后题目进入 `blocked`，等待人工重启；`interrupted`/`blocked` 不消耗常规 attempt 预算。模型请求不发送 `max_tokens` / `max_completion_tokens`，上下文接近窗口时仍使用 Pi compaction 保留关键进度。当前固定 Solver/SubAgent/compaction 提示词已集中为版本化英文占位文案，最终策略正文仍等待人类审阅。
 
+Solver 与 SubAgent 默认只加载项目根目录 `.pi/skills` 中的 skill；供开发 Agent 使用的 `.agents/skills` 不会进入解题环境。额外 Solver skill 必须由宿主通过 `skillPaths` 显式传入，并在每个 Run 创建时复制到容器可见的 `/workspace/.skills/`。
+
 WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”。该操作复用原 Run ID、attempt 编号、workspace 和 Pi JSONL session，不新增 attempt；提示词留空时使用 `INCOMPLETE_CONTINUATION_PROMPT`，也可以提供最长 32,000 字符的自定义继续提示词。
 
 WebUI 使用浏览器路由：`/` 管理全部 Project，`/projects/new` 创建 Project，`/settings` 管理全局凭据、模型池与登录策略，`/projects/:id` 管理一场比赛，`/projects/:id/settings` 管理该比赛的连接与运行配置，`/projects/:id/challenges/:challengeId` 是以对话为核心的题目工作区。Solver 与 SubAgent 复用结构化 Pi session 对话布局；移动端通过底部 Drawer 查看题目状态和 Agents；黑板、Attempts 和 Writeup 分页显示，工具与推理块按需展开。用户可见时间统一转换为本地可读格式。
