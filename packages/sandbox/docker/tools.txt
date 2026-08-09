@@ -6,6 +6,10 @@ when available, add explicit timeouts in the calling Agent, and write generated 
 /workspace.
 
 LANGUAGE RUNTIMES
+  node --experimental-strip-types ./index.ts
+  node --experimental-strip-types --test ./index.test.ts
+  tsc --noEmit --strict --module nodenext --moduleResolution nodenext ./index.ts
+  pnpm --version
   /usr/local/go/bin/go version
   /usr/local/go/bin/gofmt -w ./source.go
   /opt/jdks/8/bin/java -version
@@ -136,7 +140,7 @@ PYTHON AUTOMATION
   ptrace capability depending on how the container is launched.
 
 CORE
-  bash, curl, wget, git, jq, sqlite3, ripgrep, ffuf, hashcat
+  bash, curl, wget, git, jq, sqlite3, ripgrep, node, npm, pnpm, tsc, ffuf, hashcat
 NETWORK
   nc, socat, openssl
 BUILD AND PATCH

@@ -64,6 +64,10 @@ export interface DashboardFather {
 export interface DashboardPlatformExtensions {
   describeCandidate(candidateDirectory: string): Promise<PlatformCandidateView>
   list(): Promise<PlatformExtensionView[]>
+  readCandidateEntry(candidateDirectory: string): Promise<{
+    filename: string
+    content: Buffer
+  }>
   validate(input: {
     sessionId: string
     candidateDirectory: string
@@ -94,6 +98,7 @@ export interface DashboardFatherValidationConfigs {
     secrets: Record<string, string | undefined>
     secretNames: string[]
   }): Promise<void>
+  delete(sessionId: string): Promise<void>
 }
 
 export type DashboardChallengeStatus =

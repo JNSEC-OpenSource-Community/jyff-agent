@@ -33,5 +33,9 @@ describe("FatherValidationConfigStore", () => {
     expect(saved?.configuredSecrets.TOKEN).toEqual({ configured: true })
     expect(saved?.secrets.TOKEN).toBe("secret-value")
     expect(await store.read("father-1", "schema-b")).toBeUndefined()
+
+    await store.delete("father-1")
+    expect(secrets.has("FATHER_EFFDE37CD7FCBB5E_TOKEN")).toBe(false)
+    expect(await store.read("father-1", "schema-a")).toBeUndefined()
   })
 })

@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { join } from "node:path"
 import {
   type AgentSkill,
@@ -160,6 +167,7 @@ export class FatherSessionManager {
         mkdir(join(workspace, name), { recursive: true }),
       ),
     )
+    await this.materializePluginSdk(workspace)
     this.records.set(id, record)
     await this.persist()
     return { ...record }
@@ -260,6 +268,7 @@ export class FatherSessionManager {
       throw new Error("已完成或归档的 Father Session 只读")
     }
     const workspace = this.workspace(id)
+    await this.materializePluginSdk(workspace)
     const skills = await materializeSkills(this.options.skills ?? [], workspace)
     const sandbox = await (this.options.sandboxFactory ?? DockerSandbox.create)(
       {
@@ -296,7 +305,7 @@ export class FatherSessionManager {
           record.updatedAt = new Date().toISOString()
           await this.persist()
         },
-        onRequestValidation: async () => {
+        onRequestTestAccess: async () => {
           record.gate = {
             status: "requested",
             requestedAt: new Date().toISOString(),
@@ -466,6 +475,68 @@ export class FatherSessionManager {
 
   private workspaceUnchecked(id: string): string {
     return join(this.sessionDirectory(id), "workspace")
+  }
+
+  private async materializePluginSdk(workspace: string): Promise<void> {
+    const skill = this.options.skills?.find(
+      ({ name }) => name === "extension-authoring",
+    )
+    if (!skill) return
+    const moduleDirectory = join(
+      workspace,
+      "node_modules",
+      "@ctf-agent",
+      "platform",
+    )
+    await mkdir(moduleDirectory, { recursive: true })
+    await Promise.all([
+      copyFile(
+        join(skill.baseDir, "references", "platform-contract.d.ts"),
+        join(moduleDirectory, "index.d.ts"),
+      ),
+      writeFile(
+        join(moduleDirectory, "package.json"),
+        JSON.stringify({
+          name: "@ctf-agent/platform",
+          type: "module",
+          types: "./index.d.ts",
+        }),
+      ),
+      writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "father-platform-workspace",
+            private: true,
+            type: "module",
+            scripts: {
+              check: "tsc --noEmit",
+              test: "node --experimental-strip-types --test plugin/*.test.ts",
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      ),
+      writeFile(
+        join(workspace, "tsconfig.json"),
+        `${JSON.stringify(
+          {
+            compilerOptions: {
+              strict: true,
+              target: "ES2022",
+              module: "NodeNext",
+              moduleResolution: "NodeNext",
+              noEmit: true,
+              skipLibCheck: true,
+            },
+            include: ["plugin/**/*.ts"],
+          },
+          null,
+          2,
+        )}\n`,
+      ),
+    ])
   }
 
   private indexPath(): string {

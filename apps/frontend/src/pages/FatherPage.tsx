@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import {
@@ -337,12 +337,45 @@ function GateCard({
   const [secrets, setSecrets] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const automaticValidation = useRef("")
+  const validate = useCallback(async (): Promise<void> => {
+    if (!gate) return
+    setBusy(true)
+    setError("")
+    try {
+      await apiMutation(`/api/father/sessions/${session.id}/validate`, "POST", {
+        schemaFingerprint: gate.candidate.schemaFingerprint,
+        config,
+        secrets,
+      })
+      setEditing(false)
+      await onChanged()
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }, [config, gate, onChanged, secrets, session.id])
   useEffect(() => {
     if (gate) {
       setConfig(gate.saved?.config ?? gate.candidate.setup.defaultConfig)
       setEditing(!gate.saved)
     }
   }, [gate])
+  useEffect(() => {
+    const fingerprint = gate?.candidate.schemaFingerprint
+    if (
+      !fingerprint ||
+      !gate.saved ||
+      config !== gate.saved.config ||
+      session.gate?.status !== "requested" ||
+      automaticValidation.current === fingerprint
+    ) {
+      return
+    }
+    automaticValidation.current = fingerprint
+    void validate()
+  }, [config, gate, session.gate?.status, validate])
   if (!gate)
     return (
       <div className="shrink-0 border-t border-border bg-card/80 px-4 py-3 text-xs text-muted-foreground">
@@ -361,22 +394,6 @@ function GateCard({
       gate.candidate.setup.authStrategies[0]?.id ??
       "",
   )
-  async function validate(): Promise<void> {
-    setBusy(true)
-    setError("")
-    try {
-      await apiMutation(`/api/father/sessions/${session.id}/validate`, "POST", {
-        config,
-        secrets,
-      })
-      setEditing(false)
-      await onChanged()
-    } catch (e) {
-      setError(errorMessage(e))
-    } finally {
-      setBusy(false)
-    }
-  }
   async function install(): Promise<void> {
     setBusy(true)
     try {
@@ -483,7 +500,13 @@ function GateCard({
             </div>
           </div>
         ) : ready ? (
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <a href={`/api/father/sessions/${session.id}/plugin.ts`} download>
+                <Icon icon="lucide:download" width="14" aria-hidden="true" />
+                下载 TypeScript
+              </a>
+            </Button>
             <Button size="sm" disabled={busy} onClick={() => void install()}>
               <Icon icon="lucide:package-check" width="14" aria-hidden="true" />
               批准并安装

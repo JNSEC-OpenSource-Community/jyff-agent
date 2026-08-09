@@ -136,6 +136,150 @@ export interface PlatformPlugin {
   connect(options: PlatformConnectOptions): Promise<PlatformProject>
 }
 
+/** Validate an extension-owned setup descriptor without executing plugin code. */
+export function parsePlatformSetupDescriptor(
+  value: unknown,
+): PlatformSetupDescriptor {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("platform setup 无效")
+  }
+  const setup = value as Record<string, unknown>
+  const exactKeys = (
+    object: Record<string, unknown>,
+    allowed: readonly string[],
+    label: string,
+  ) => {
+    if (Object.keys(object).some((key) => !allowed.includes(key))) {
+      throw new Error(`${label} 包含未知字段`)
+    }
+  }
+  exactKeys(
+    setup,
+    ["label", "description", "defaultConfig", "fields", "authStrategies"],
+    "platform setup",
+  )
+  if (typeof setup.label !== "string" || !setup.label.trim())
+    throw new Error("platform setup label 无效")
+  if (typeof setup.description !== "string")
+    throw new Error("platform setup description 无效")
+  if (
+    !setup.defaultConfig ||
+    typeof setup.defaultConfig !== "object" ||
+    Array.isArray(setup.defaultConfig)
+  ) {
+    throw new Error("platform setup defaultConfig 无效")
+  }
+  if (!Array.isArray(setup.fields) || !Array.isArray(setup.authStrategies)) {
+    throw new Error("platform setup fields 无效")
+  }
+  const fieldKeys = new Set<string>()
+  const fields = setup.fields.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error("platform setup field 无效")
+    const field = item as Record<string, unknown>
+    exactKeys(
+      field,
+      ["key", "label", "type", "required", "placeholder", "minimum", "maximum"],
+      "platform setup field",
+    )
+    if (
+      typeof field.key !== "string" ||
+      !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field.key) ||
+      fieldKeys.has(field.key)
+    ) {
+      throw new Error("platform setup field key 无效或重复")
+    }
+    fieldKeys.add(field.key)
+    if (typeof field.label !== "string" || !field.label.trim())
+      throw new Error("platform setup field label 无效")
+    if (!(["text", "url", "integer"] as const).includes(field.type as never))
+      throw new Error("platform setup field type 无效")
+    if (typeof field.required !== "boolean")
+      throw new Error("platform setup field required 无效")
+    if (
+      field.placeholder !== undefined &&
+      typeof field.placeholder !== "string"
+    )
+      throw new Error("platform setup field placeholder 无效")
+    for (const key of ["minimum", "maximum"] as const) {
+      if (field[key] !== undefined && typeof field[key] !== "number")
+        throw new Error(`platform setup field ${key} 无效`)
+    }
+    return field as unknown as PlatformSetupField
+  })
+  const strategyIds = new Set<string>()
+  const authStrategies = setup.authStrategies.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error("platform auth strategy 无效")
+    const strategy = item as Record<string, unknown>
+    exactKeys(
+      strategy,
+      ["id", "label", "config", "secrets"],
+      "platform auth strategy",
+    )
+    if (
+      typeof strategy.id !== "string" ||
+      !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(strategy.id) ||
+      strategyIds.has(strategy.id)
+    ) {
+      throw new Error("platform auth strategy ID 无效或重复")
+    }
+    strategyIds.add(strategy.id)
+    if (typeof strategy.label !== "string" || !strategy.label.trim())
+      throw new Error("platform auth strategy label 无效")
+    if (
+      !strategy.config ||
+      typeof strategy.config !== "object" ||
+      Array.isArray(strategy.config)
+    )
+      throw new Error("platform auth strategy config 无效")
+    if (!Array.isArray(strategy.secrets))
+      throw new Error("platform auth strategy secrets 无效")
+    const secretNames = new Set<string>()
+    const secrets = strategy.secrets.map((secretValue) => {
+      if (
+        !secretValue ||
+        typeof secretValue !== "object" ||
+        Array.isArray(secretValue)
+      )
+        throw new Error("platform secret field 无效")
+      const secret = secretValue as Record<string, unknown>
+      exactKeys(
+        secret,
+        ["name", "label", "type", "required"],
+        "platform secret field",
+      )
+      if (
+        typeof secret.name !== "string" ||
+        !/^[A-Z][A-Z0-9_]{0,79}$/.test(secret.name) ||
+        secretNames.has(secret.name)
+      ) {
+        throw new Error("platform secret name 无效或重复")
+      }
+      secretNames.add(secret.name)
+      if (typeof secret.label !== "string" || !secret.label.trim())
+        throw new Error("platform secret label 无效")
+      if (
+        !(["text", "password", "token", "cookie"] as const).includes(
+          secret.type as never,
+        )
+      )
+        throw new Error("platform secret type 无效")
+      if (typeof secret.required !== "boolean")
+        throw new Error("platform secret required 无效")
+      return secret as unknown as PlatformSecretField
+    })
+    return { ...strategy, secrets } as unknown as PlatformAuthStrategy
+  })
+  return {
+    label: setup.label.trim(),
+    description: setup.description,
+    defaultConfig: setup.defaultConfig as Record<string, unknown>,
+    fields,
+    authStrategies,
+  }
+}
+
 /**
  * Platform adapters mark failures that are safe to retry without charging an
  * Agent attempt. Keep the check structural so Core does not depend on a

@@ -235,6 +235,7 @@ export const fatherMessageSchema = z.object({
 })
 
 export const fatherValidationSchema = z.object({
+  schemaFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   config: z.unknown(),
   secrets: z.record(z.string(), z.string().max(8_192).optional()).optional(),
   expected: z

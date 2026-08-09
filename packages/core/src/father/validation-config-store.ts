@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import type { SecretStore } from "../control-plane/secret-store.ts"
 
@@ -71,6 +71,24 @@ export class FatherValidationConfigStore {
       ),
     )
     await rename(temporary, target)
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    let names: string[] = []
+    try {
+      const stored = JSON.parse(
+        await readFile(this.path(sessionId), "utf8"),
+      ) as StoredValidationConfig
+      names = stored.secretNames
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
+    await this.secrets.set(
+      Object.fromEntries(
+        names.map((name) => [this.key(sessionId, name), undefined]),
+      ),
+    )
+    await rm(this.path(sessionId), { force: true })
   }
 
   private path(sessionId: string): string {

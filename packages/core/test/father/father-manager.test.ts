@@ -98,6 +98,10 @@ describe("FatherSessionManager", () => {
       join(skillDirectory, "references", "platform-contract.md"),
       "# Platform contract",
     )
+    await writeFile(
+      join(skillDirectory, "references", "platform-contract.d.ts"),
+      "export interface PlatformPlugin { readonly id: string }",
+    )
     const fakeAgent = {
       state: { isStreaming: false },
       prompt: vi.fn(async () => undefined),
@@ -157,5 +161,17 @@ describe("FatherSessionManager", () => {
         "utf8",
       ),
     ).toBe("# Platform contract")
+    expect(
+      await readFile(
+        join(
+          manager.workspace(session.id),
+          "node_modules",
+          "@ctf-agent",
+          "platform",
+          "index.d.ts",
+        ),
+        "utf8",
+      ),
+    ).toContain("interface PlatformPlugin")
   })
 })

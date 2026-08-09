@@ -9,26 +9,34 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import {
   type PlatformPlugin,
   type PlatformPluginRegistry,
   type PlatformSetupDescriptor,
   type PlatformValidationProfile,
   type PlatformValidationReport,
-  validatePlatformPlugin,
+  parsePlatformSetupDescriptor,
 } from "@ctf-agent/platform"
+import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
 
 const MAX_EXTENSION_FILES = 200
 const MAX_EXTENSION_BYTES = 2 * 1024 * 1024
 const RESERVED_IDS = new Set(["ctfd", "gzctf"])
 
 export interface PlatformExtensionManifest {
-  schemaVersion: 1
+  schemaVersion: 1 | 2
   id: string
   name: string
   version: string
   entry: string
+  setup?: PlatformSetupDescriptor
+}
+
+export interface PlatformValidationSandboxOptions {
+  image: string
+  workspaceMount?: (sessionId: string) => DockerWorkspaceMount
+  sandboxFactory?: typeof DockerSandbox.create
 }
 
 export interface PlatformExtensionView {
@@ -55,15 +63,18 @@ export class PlatformExtensionStore {
   private constructor(
     private readonly root: string,
     private readonly registry: PlatformPluginRegistry,
+    private readonly validationSandbox?: PlatformValidationSandboxOptions,
   ) {}
 
   static async open(options: {
     root: string
     registry: PlatformPluginRegistry
+    validationSandbox?: PlatformValidationSandboxOptions
   }): Promise<PlatformExtensionStore> {
     const store = new PlatformExtensionStore(
       join(resolve(options.root), ".ctf-agent", "extensions"),
       options.registry,
+      options.validationSandbox,
     )
     await mkdir(store.root, { recursive: true })
     await store.loadInstalled()
@@ -74,17 +85,17 @@ export class PlatformExtensionStore {
     candidateDirectory: string,
   ): Promise<PlatformCandidateView> {
     const candidate = await inspectCandidate(candidateDirectory)
-    const plugin = await loadPlugin(candidate.directory, candidate.manifest)
-    if (!plugin.setup) throw new Error("候选插件没有声明 setup 配置表单")
+    const setup = candidate.manifest.setup
+    if (!setup) throw new Error("候选插件必须在 extension.json 中声明 setup")
     return {
-      pluginId: plugin.id,
+      pluginId: candidate.manifest.id,
       name: candidate.manifest.name,
       version: candidate.manifest.version,
       contentHash: candidate.contentHash,
       schemaFingerprint: createHash("sha256")
-        .update(JSON.stringify(plugin.setup))
+        .update(stableJson(setup))
         .digest("hex"),
-      setup: plugin.setup,
+      setup,
     }
   }
 
@@ -94,14 +105,20 @@ export class PlatformExtensionStore {
     profile: PlatformValidationProfile
   }): Promise<PlatformValidationReport> {
     const candidate = await inspectCandidate(input.candidateDirectory)
-    const plugin = await loadPlugin(candidate.directory, candidate.manifest)
-    const report = await validatePlatformPlugin({
-      plugin,
-      revision: candidate.contentHash.slice(0, 16),
-      contentHash: candidate.contentHash,
-      authorSessionId: input.sessionId,
+    if (!candidate.manifest.setup)
+      throw new Error("候选插件必须在 extension.json 中声明 setup")
+    if (!this.validationSandbox)
+      throw new Error("Platform validation sandbox 未配置")
+    const rawReport = await validateInSandbox({
+      sandbox: this.validationSandbox,
+      sessionId: input.sessionId,
+      candidate,
       profile: input.profile,
     })
+    const report = redactReport(
+      rawReport,
+      Object.values(input.profile.secrets ?? {}),
+    )
     this.reports.set(input.sessionId, report)
     const reportPath = join(
       dirname(input.candidateDirectory),
@@ -198,6 +215,22 @@ export class PlatformExtensionStore {
       })
     }
     return views.sort((left, right) => left.id.localeCompare(right.id))
+  }
+
+  async readCandidateEntry(candidateDirectory: string): Promise<{
+    filename: string
+    content: Buffer
+  }> {
+    const candidate = await inspectCandidate(candidateDirectory)
+    if (!candidate.manifest.entry.endsWith(".ts")) {
+      throw new Error("候选插件入口不是 TypeScript 文件")
+    }
+    return {
+      filename: `${candidate.manifest.id}.ts`,
+      content: await readFile(
+        join(candidate.directory, candidate.manifest.entry),
+      ),
+    }
   }
 
   private async loadInstalled(): Promise<void> {
@@ -310,10 +343,18 @@ function parseManifest(value: unknown): PlatformExtensionManifest {
     throw new Error("extension.json 无效")
   const manifest = value as Record<string, unknown>
   const keys = Object.keys(manifest)
-  const allowed = new Set(["schemaVersion", "id", "name", "version", "entry"])
+  const allowed = new Set([
+    "schemaVersion",
+    "id",
+    "name",
+    "version",
+    "entry",
+    "setup",
+  ])
   if (keys.some((key) => !allowed.has(key)))
     throw new Error("extension.json 包含未知字段")
-  if (manifest.schemaVersion !== 1) throw new Error("不支持的 extension schema")
+  if (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2)
+    throw new Error("不支持的 extension schema")
   if (
     typeof manifest.id !== "string" ||
     !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(manifest.id)
@@ -342,12 +383,110 @@ function parseManifest(value: unknown): PlatformExtensionManifest {
     throw new Error("extension entry 必须是目录内的 JS/TS 文件")
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: manifest.schemaVersion,
     id: manifest.id,
     name: manifest.name.trim(),
     version: manifest.version,
     entry: normalizedEntry,
+    ...(manifest.schemaVersion === 2
+      ? { setup: parsePlatformSetupDescriptor(manifest.setup) }
+      : {}),
   }
+}
+
+async function validateInSandbox(input: {
+  sandbox: PlatformValidationSandboxOptions
+  sessionId: string
+  candidate: Awaited<ReturnType<typeof inspectCandidate>>
+  profile: PlatformValidationProfile
+}): Promise<PlatformValidationReport> {
+  const workspace = dirname(input.candidate.directory)
+  const runtime = join(workspace, ".father-runtime")
+  await mkdir(runtime, { recursive: true })
+  await Promise.all([
+    cp(
+      fileURLToPath(new URL("./validation-runner.ts", import.meta.url)),
+      join(runtime, "validation-runner.ts"),
+    ),
+    cp(
+      fileURLToPath(
+        new URL("../../../platform/src/validation.ts", import.meta.url),
+      ),
+      join(runtime, "platform-validation.ts"),
+    ),
+  ])
+  const sandbox = await (input.sandbox.sandboxFactory ?? DockerSandbox.create)({
+    projectId: "father-validation",
+    runId: `${input.sessionId.slice("father-".length, 26)}-${Date.now()}`,
+    image: input.sandbox.image,
+    workspace,
+    ...(input.sandbox.workspaceMount
+      ? { workspaceMount: input.sandbox.workspaceMount(input.sessionId) }
+      : {}),
+    privileged: false,
+    networkMode: "bridge",
+    resources: {
+      cpus: 2,
+      memoryBytes: 1024 * 1024 * 1024,
+      memorySwapBytes: 1024 * 1024 * 1024,
+      pidsLimit: 256,
+      storageBytes: 2 * 1024 * 1024 * 1024,
+    },
+  })
+  try {
+    const result = await sandbox.exec(
+      [
+        "node",
+        "--experimental-strip-types",
+        "/workspace/.father-runtime/validation-runner.ts",
+      ],
+      {
+        input: JSON.stringify({
+          entry: `/workspace/output/${input.candidate.manifest.entry}`,
+          pluginId: input.candidate.manifest.id,
+          manifestSetup: input.candidate.manifest.setup,
+          revision: input.candidate.contentHash.slice(0, 16),
+          contentHash: input.candidate.contentHash,
+          authorSessionId: input.sessionId,
+          profile: input.profile,
+        }),
+        timeoutMs: 5 * 60_000,
+      },
+    )
+    if (result.code !== 0) {
+      throw new Error(`Docker validation failed with exit code ${result.code}`)
+    }
+    const marker = "__FATHER_REPORT__"
+    const offset = result.stdout.lastIndexOf(marker)
+    if (offset < 0) throw new Error("Docker validation did not return a report")
+    return JSON.parse(
+      result.stdout.slice(offset + marker.length),
+    ) as PlatformValidationReport
+  } finally {
+    await sandbox.close().catch(() => undefined)
+  }
+}
+
+function redactReport(
+  report: PlatformValidationReport,
+  secrets: readonly (string | undefined)[],
+): PlatformValidationReport {
+  let serialized = JSON.stringify(report)
+  for (const secret of secrets) {
+    if (secret) serialized = serialized.replaceAll(secret, "[redacted]")
+  }
+  return JSON.parse(serialized) as PlatformValidationReport
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(",")}}`
+  }
+  return JSON.stringify(value)
 }
 
 async function loadPlugin(

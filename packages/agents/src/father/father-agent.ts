@@ -27,7 +27,7 @@ export interface CreateCtfFatherAgentOptions {
     displayName: string
     task: "create" | "repair"
   }): Promise<void>
-  onRequestValidation?(): Promise<void>
+  onRequestTestAccess?(): Promise<void>
 }
 
 /** 全局平台适配 Agent；所有执行工具都绑定到独立 Docker workspace。 */
@@ -113,14 +113,14 @@ function fatherTools(options: CreateCtfFatherAgentOptions): AgentTool[] {
       },
     },
     {
-      name: "father_request_validation",
-      label: "Request Plugin Validation",
+      name: "father_request_test_access",
+      label: "Request Test Access",
       description:
-        "Ask the user to provide or confirm the platform test configuration for the current candidate.",
+        "Request or reuse the user-provided test-site configuration and credentials for the current candidate. Never ask for credentials in chat or shell commands.",
       parameters: Type.Object({}),
       executionMode: "sequential",
       async execute() {
-        await options.onRequestValidation?.()
+        await options.onRequestTestAccess?.()
         const details = { requested: true, waitingForUser: true }
         return {
           content: [{ type: "text", text: JSON.stringify(details) }],

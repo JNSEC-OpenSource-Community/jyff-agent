@@ -91,10 +91,27 @@ export function fatherRoutes(services: Services): App {
     })
   })
 
+  app.get("/father/sessions/:sessionId/plugin.ts", async (c) => {
+    const father = services.requireFather()
+    const id = c.req.param("sessionId")
+    requireSession(services, id)
+    const source = await services
+      .requireExtensions()
+      .readCandidateEntry(join(father.workspace(id), "output"))
+    c.header("Content-Type", "text/typescript; charset=utf-8")
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${source.filename.replaceAll('"', "")}"`,
+    )
+    c.header("Cache-Control", "no-store")
+    return c.body(new Uint8Array(source.content))
+  })
+
   app.delete("/father/sessions/:sessionId", async (c) => {
     const father = services.requireFather()
     const id = c.req.param("sessionId")
     requireSession(services, id)
+    await services.requireFatherValidationConfigs().delete(id)
     await father.delete(id)
     return c.json({ deleted: true })
   })
@@ -176,6 +193,13 @@ export function fatherRoutes(services: Services): App {
     const candidate = await services
       .requireExtensions()
       .describeCandidate(candidateDirectory)
+    if (body.schemaFingerprint !== candidate.schemaFingerprint) {
+      throw new HttpError(
+        409,
+        "father_validation_schema_changed",
+        "插件配置字段已经变化，请刷新后重新确认",
+      )
+    }
     const secretNames = candidate.setup.authStrategies.flatMap((strategy) =>
       strategy.secrets.map((secret) => secret.name),
     )

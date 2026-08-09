@@ -139,7 +139,7 @@ GZCTF 的玩家接口使用身份 Cookie，不是管理员 API Token。目标站
 
 ## 架构与包边界
 
-全局侧栏的 **Clanker Father** 提供平台适配插件工坊。新建操作无需填写表单，会直接进入随机命名的对话；Father 识别目标插件后自动更新会话名称，并在候选完成时于对话内请求 Validation Gate。测试连接信息使用插件自己的配置表单，只需在配置 schema 不变时填写一次；密钥进入 Secret Store。验证通过后仍需用户显式批准安装。Father 模型在全局模型池中独立绑定，不跟随 Project。详见 [平台插件文档](docs/platform-plugins.md)。
+全局侧栏的 **Clanker Father** 提供平台适配插件工坊。新建操作无需填写表单，会直接进入随机命名的对话；Father 识别目标插件后自动更新会话名称，并在候选具备静态 setup 后请求测试连接信息。测试表单来自 `extension.json`，配置 schema 不变时只需填写一次，密钥进入 Secret Store 且不会暴露给模型。未批准候选在短生命周期 Docker sandbox 中执行 Validation Gate，通过后仍需用户显式批准安装，也可以下载候选的单个 TypeScript 入口文件。Father 模型在全局模型池中独立绑定，不跟随 Project。详见 [平台插件文档](docs/platform-plugins.md)。
 
 ```text
 packages/

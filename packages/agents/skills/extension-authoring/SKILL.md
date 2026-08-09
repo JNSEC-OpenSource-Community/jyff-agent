@@ -9,16 +9,18 @@ Build only a platform extension under `/workspace/plugin` and publish candidate 
 
 ## Workflow
 
-1. Inspect the supplied source, documentation, and test site. Record verified endpoints, authentication state, response shapes, pagination, and error behavior in `/workspace/research/evidence.md`.
-2. Read [platform-contract.md](references/platform-contract.md) before implementing the adapter. Read [validation-gate.md](references/validation-gate.md) before choosing fixtures and test data.
-3. Copy the template from `assets/platform-template` into `/workspace/plugin`. Use a stable lowercase extension ID; never reuse `ctfd` or `gzctf`.
-4. Keep credentials out of source, fixtures, output, and messages. Resolve only manifest-declared secret names through `resolveSecret`.
-5. Implement configuration parsing, the setup descriptor, connection cleanup, stable IDs, challenge binding, attachment download, submission, announcements, and optional environment lifecycle.
-6. Add fast deterministic tests for successful and malformed upstream responses. Include fixture coverage for accepted, rejected, authorization, rate-limit, and protocol-error responses even when the live gate cannot safely trigger every case.
-7. Run formatting, type checking, tests, and import smoke checks inside the sandbox. Fix every local failure.
-8. Copy only the manifest, entry source, required local modules, and tests into `/workspace/output`. Do not include credentials, downloaded source trees, caches, dependencies, or build artifacts.
-9. Request the platform validation gate. When it returns a structured failure, fix the candidate instead of weakening assertions or claiming completion.
-10. Report verified, skipped, and unverified capabilities separately. Finish only after the candidate content hash has a current gate report.
+1. Read [platform-contract.d.ts](references/platform-contract.d.ts) and [platform-contract.md](references/platform-contract.md) before researching the target. Do not search npm, the CTF Agent repository, or production WebUI bundles for the plugin contract.
+2. Inspect supplied source and documentation before the authorized test site. Record verified endpoints, authentication state, response shapes, pagination, and error behavior in `/workspace/research/evidence.md`. Do not inspect minified bundles when readable source is available.
+3. Read [validation-gate.md](references/validation-gate.md) before choosing fixtures and test data.
+4. Copy the template from `assets/platform-template` into `/workspace/plugin`. Use a stable lowercase extension ID; never reuse `ctfd` or `gzctf`. Keep the distributable implementation in one `index.ts`; fixtures and tests may remain separate.
+5. Keep credentials out of source, fixtures, output, and messages. Resolve only manifest-declared secret names through `resolveSecret`.
+6. Implement configuration parsing, the setup descriptor, connection cleanup, stable IDs, challenge binding, attachment download, submission, announcements, and optional environment lifecycle.
+7. Add fast deterministic tests for successful and malformed upstream responses. Include fixture coverage for accepted, rejected, authorization, rate-limit, and protocol-error responses even when the live gate cannot safely trigger every case.
+8. Run formatting, type checking, tests, and import smoke checks inside the sandbox. Fix every local failure.
+9. Copy only `extension.json` and the self-contained `index.ts` into `/workspace/output`. Keep the static manifest `setup` structurally equivalent to the plugin's exported `setup`. Do not include credentials, downloaded source trees, caches, dependencies, or build artifacts.
+10. Call `father_request_test_access` after the setup form and importable candidate exist. Never request credentials in chat or inspect them with shell commands. Reuse the saved test access while the setup schema remains unchanged.
+11. When the gate returns a structured failure, fix the candidate instead of weakening assertions or claiming completion.
+12. Report verified, skipped, and unverified capabilities separately. Finish only after the candidate content hash has a current gate report.
 
 ## Boundaries
 
@@ -28,3 +30,4 @@ Build only a platform extension under `/workspace/plugin` and publish candidate 
 - Do not hide destructive behavior in module initialization, setup descriptors, or validation hooks.
 - Make `close()` idempotent and clean up timers, sockets, cookies, and pending polls.
 - Preserve exact validation artifacts so a later repair Session can reproduce the failure.
+- Use `curl --fail --location` for downloads and verify status, file type, and size before extraction. Stop retrying a source after a rate limit or definitive not-found response.

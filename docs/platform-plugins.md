@@ -114,10 +114,10 @@ WebUI 的全局 **Clanker Father** 用于编写新的平台适配插件。每个
 
 Father 首页只显示历史 Session 和“新建会话”。新 Session 使用随机临时名称并立即打开聊天，插件 ID、正式名称及创建/修复任务由 Father 在理解需求后通过结构化工具声明。候选准备完成时 Father 发出验证请求，WebUI 才在对话中显示 Gate 卡片。
 
-Father 只能在其 workspace 中产出候选目录 `output/`，不能修改控制面源码。候选必须包含严格的 `extension.json`，不得覆盖 `ctfd`、`gzctf`，不得包含 symlink，且受文件数与总体积限制。
+Father 只能在其 workspace 中产出候选目录 `output/`，不能修改控制面源码。候选必须包含 schema v2 `extension.json` 和自包含的单个 TypeScript 入口，不得覆盖 `ctfd`、`gzctf`，不得包含 symlink，且受文件数与总体积限制。`extension.json.setup` 是 WebUI 配置表单的静态来源，因此读取 Gate 时不会在控制面进程中导入未批准代码；Validation Gate 会校验它与插件导出的 setup 一致。
 
-安装前用户必须提供测试站配置并运行 Validation Gate。Gate 直接调用生产使用的 `PlatformPlugin` 契约，包括连接、概览、稳定题目列表、公告、题目详情，以及用户明确启用的错误 flag 和环境生命周期测试。报告绑定候选内容哈希、测试配置指纹和 Father Session；候选发生任何变化后旧报告立即失效。通过只读或完整验证也不会自动安装，仍需用户点击“批准并安装此 Revision”。已安装 revision 以不可变目录保存，并在进程启动时重新注册。
+安装前 Father 通过 `father_request_test_access` 请求测试站配置和登录凭证。Gate 直接调用生产使用的 `PlatformPlugin` 契约，包括连接、概览、稳定题目列表、公告、题目详情，以及用户明确启用的错误 flag 和环境生命周期测试。未批准候选只在短生命周期 Docker sandbox 中加载，配置和密钥通过 stdin 交给 runner，不写入 workspace、JSONL 或报告。报告绑定候选内容哈希、测试配置指纹和 Father Session；候选发生任何变化后旧报告立即失效。通过只读或完整验证也不会自动安装，仍需用户点击“批准并安装此 Revision”。已安装 revision 以不可变目录保存，并在进程启动时重新注册。
 
-测试表单直接来自候选插件的 `PlatformSetupDescriptor`，与创建比赛共用 `PlatformSetupForm`。普通配置按 Session 和 setup schema fingerprint 保存，密钥进入 Father 专用 Secret Store 命名空间；schema 未变化时后续验证自动复用，字段发生变化时要求用户重新确认。验证结果以结构化消息返回同一 Father 对话。
+测试表单来自候选 manifest 中的静态 `PlatformSetupDescriptor`，与创建比赛共用 `PlatformSetupForm`。普通配置按 Session 和 setup schema fingerprint 保存，密钥进入 Father 专用 Secret Store 命名空间；schema 未变化时 Father 后续请求会自动复用并验证，字段发生变化时要求用户重新确认。验证结果以结构化消息返回同一 Father 对话。删除 Session 时对应测试配置与密钥一并清理；验证通过后 WebUI 允许下载候选的单个 `.ts` 入口。
 
 测试密钥只用于当次验证，不写入报告；报告只保存密钥字段名。Father Docker 使用 bridge 网络且不挂载 Docker socket 或宿主源码，宿主内网隔离由部署时的 Docker 网络策略负责。

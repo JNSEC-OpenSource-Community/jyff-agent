@@ -1,3 +1,4 @@
+import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import type { DashboardFather } from "../src/types.ts"
 import { createTestApp, jsonOf, jsonRequest } from "./helpers.ts"
@@ -43,6 +44,7 @@ describe("Father HTTP", () => {
       updatedAt: "2026-08-09T00:00:00.000Z",
     }
     const remove = vi.fn(async () => undefined)
+    const removeValidationConfig = vi.fn(async () => undefined)
     const father = {
       list: () => [record],
       get: () => record,
@@ -51,6 +53,9 @@ describe("Father HTTP", () => {
     } as unknown as DashboardFather
     const test = await createTestApp({
       father,
+      fatherValidationConfigs: {
+        delete: removeValidationConfig,
+      } as never,
       frontendDist: "/nonexistent",
       sessionHasConversation: async () => true,
       exportSessionHtml: async () => Buffer.from("<html>father</html>"),
@@ -67,6 +72,7 @@ describe("Father HTTP", () => {
         "DELETE",
       )
       expect(deleted.status).toBe(200)
+      expect(removeValidationConfig).toHaveBeenCalledWith("father-1")
       expect(remove).toHaveBeenCalledWith("father-1")
     } finally {
       await test.cleanup()
@@ -87,6 +93,48 @@ describe("Father HTTP", () => {
       expect(response.status).toBe(200)
       expect(await jsonOf(response)).toMatchObject({ status: "stopped" })
       expect(stop).toHaveBeenCalledWith("father-1")
+    } finally {
+      await test.cleanup()
+    }
+  })
+
+  it("下载候选插件的单个 TypeScript 入口", async () => {
+    const record = {
+      id: "father-1",
+      title: "demo-platform",
+      status: "stopped" as const,
+      modelId: "test/model",
+      skillRevision: "builtin-v1",
+      createdBy: "local",
+      createdAt: "2026-08-09T00:00:00.000Z",
+      updatedAt: "2026-08-09T00:00:00.000Z",
+    }
+    const father = {
+      get: () => record,
+      workspace: () => "/father/workspace",
+    } as unknown as DashboardFather
+    const readCandidateEntry = vi.fn(async () => ({
+      filename: "demo-platform.ts",
+      content: Buffer.from("export default {}"),
+    }))
+    const test = await createTestApp({
+      father,
+      extensions: { readCandidateEntry } as never,
+      frontendDist: "/nonexistent",
+    })
+    try {
+      const response = await test.app.request(
+        "/api/father/sessions/father-1/plugin.ts",
+      )
+      expect(response.status).toBe(200)
+      expect(response.headers.get("content-type")).toContain("text/typescript")
+      expect(response.headers.get("content-disposition")).toContain(
+        "demo-platform.ts",
+      )
+      expect(await response.text()).toBe("export default {}")
+      expect(readCandidateEntry).toHaveBeenCalledWith(
+        join("/father/workspace", "output"),
+      )
     } finally {
       await test.cleanup()
     }

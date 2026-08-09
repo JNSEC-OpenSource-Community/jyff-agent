@@ -41,7 +41,7 @@ docs/               当前架构与扩展协议
 - 修改行为时，在所属包的 `test/` 中补或更新 Vitest 测试；优先测试公开行为和失败边界，不复制实现细节。
 - 行为或配置发生变化时同步更新 README、对应 `docs/` 和本文件中的不变量。
 - 模型配置是全局 v3 模型池：凭据不进入 `model-config.json`，自定义 Provider 持有 API 类型和 Base URL；编辑自定义 Provider 时保持稳定 ID，未显式提交新 API Key 时保留原密钥。各 Project 在自己的 `runtime-config.json` 中为 Solver、TLDR 和 SubAgent role 绑定模型，并保存最大 Solver 并发量与最大远程环境数。传入 Agent 时必须保留完整 Pi `Models` registry。v2、`scheduler-config.json` 和模型池中的旧绑定只用于兼容迁移。
-- Clanker Father 的模型绑定保存在全局 `model-config.json`，不进入 Project runtime；Father Session 无参数创建并随机命名，插件身份由 Agent 确认。验证表单必须来自候选插件 setup descriptor，配置按 schema fingerprint 复用，密钥写入 Secret Store，安装始终需要用户批准。
+- Clanker Father 的模型绑定保存在全局 `model-config.json`，不进入 Project runtime；Father Session 无参数创建并随机命名，插件身份由 Agent 确认。验证表单必须静态来自候选 schema v2 `extension.json.setup`，不得为展示表单在控制面进程导入未批准候选；候选只在 Docker Gate 中验证。配置按 schema fingerprint 复用，密钥写入 Secret Store且不进入 Agent 对话，安装始终需要用户批准。
 - 远程环境必须经过 Project 级租约协调器：无附件远程题使用 required 优先级；带附件题先本地分析，调用 `ctf_instance_start` 后才进入 verification FIFO。required 只可抢占 verification，verification 不互相抢占；accepted 必须在 writeup 前释放，所有终态幂等清理，并只按 SQLite 租约回收本控制面遗留实例。
 - 自定义 Provider 的模型发现由后端使用 Secret Store 中的密钥请求 `/models`，浏览器只能收到模型 ID；发现失败时模型池必须保留手工输入回退，不得回传上游错误正文或凭据。
 - 多 Project 代码不得依赖“当前选中 Project”的隐式全局状态：HTTP API、SSE、Scheduler、RunStore、workspace 和平台 Secret 都必须按显式 Project ID 隔离。平台 Secret 写入全局 `secrets.json` 时必须使用 Project 命名空间；旧未命名空间键只允许作为兼容读取回退。

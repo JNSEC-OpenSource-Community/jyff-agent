@@ -1,7 +1,39 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "example-platform",
   "name": "Example Platform",
   "version": "0.1.0",
-  "entry": "index.ts"
+  "entry": "index.ts",
+  "setup": {
+    "label": "Example Platform",
+    "description": "Connect to an Example Platform contest.",
+    "defaultConfig": {
+      "baseUrl": "https://example.invalid",
+      "auth": { "type": "token" }
+    },
+    "fields": [
+      {
+        "key": "baseUrl",
+        "label": "Site URL",
+        "type": "url",
+        "required": true,
+        "placeholder": "https://ctf.example.com"
+      }
+    ],
+    "authStrategies": [
+      {
+        "id": "token",
+        "label": "Access token",
+        "config": { "auth": { "type": "token" } },
+        "secrets": [
+          {
+            "name": "EXAMPLE_TOKEN",
+            "label": "Access token",
+            "type": "token",
+            "required": true
+          }
+        ]
+      }
+    ]
+  }
 }

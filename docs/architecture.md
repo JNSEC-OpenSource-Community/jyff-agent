@@ -152,6 +152,6 @@ WebUI 可中止正在运行的 Father；中止会 abort 当前 turn、等待 Age
 
 后端启动时必须从应用源码根目录发现内置 `extension-authoring` skill，缺失时拒绝启动 Father，不能静默降级。Session 激活前，控制面将 skill 的 `SKILL.md`、references 与 assets 完整复制到该 Session 的 `/workspace/.skills/`，Pi 提示词只暴露 sandbox 内可读路径。
 
-Session 创建不接受插件字段，先生成随机名称。Father 使用 `father_identify_plugin` 写入正式插件身份，使用 `father_request_validation` 驱动持久化 Gate 状态。验证配置以候选 setup schema fingerprint 为版本键；验证完成后控制面把 `<plugin_validation_result>` 结构化消息送回原 Session。Father 模型属于全局模型池绑定，创建 Session 时把实际模型记录进 Session 元数据。
+Session 创建不接受插件字段，先生成随机名称。Father 使用 `father_identify_plugin` 写入正式插件身份，使用 `father_request_test_access` 请求或复用测试连接信息。配置表单静态读取 schema v2 `extension.json.setup`，不会为展示表单导入未批准代码；Validation Gate 在短生命周期 Docker sandbox 中执行。验证配置以 setup schema fingerprint 为版本键；验证完成后控制面把 `<plugin_validation_result>` 结构化消息送回原 Session。Father 模型属于全局模型池绑定，创建 Session 时把实际模型记录进 Session 元数据。
 
 平台扩展通过 `PlatformPluginRegistry` 动态进入 ControlPlane。候选插件不会因生成或校验成功而自动生效：`PlatformExtensionStore` 只接受绑定内容哈希的非失败 Validation Report，并在显式批准后复制为不可变 revision、记录作者 Session，再更新 active pointer。ControlPlane 每次解析平台时读取 registry，因此不重启即可让新 Project 使用已批准插件。

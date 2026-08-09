@@ -68,6 +68,18 @@ const platformRegistry = new PlatformPluginRegistry([
 const extensions = await PlatformExtensionStore.open({
   root: options.root,
   registry: platformRegistry,
+  validationSandbox: {
+    image: "ctf-agent-solver:latest",
+    ...(options.workspaceVolume
+      ? {
+          workspaceMount: (sessionId: string) => ({
+            type: "volume" as const,
+            source: options.workspaceVolume as string,
+            subpath: `father/sessions/${sessionId}/workspace`,
+          }),
+        }
+      : {}),
+  },
 })
 const applicationRoot = fileURLToPath(new URL("../../../", import.meta.url))
 const fatherSkills = await discoverProjectSkillsWithDiagnostics(

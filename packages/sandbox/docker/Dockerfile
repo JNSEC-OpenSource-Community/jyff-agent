@@ -255,13 +255,18 @@ RUN wget -q \
     && install -m 0755 /tmp/rtk /usr/local/bin/rtk \
     && rm -rf /tmp/rtk /tmp/rtk.tar.gz
 
-# Node.js & npm 最新版（官方二进制）
+# Node.js、pnpm 与 TypeScript 供 Father 开发和验证平台插件。
 ARG NODE_VERSION=22.19.0
-RUN wget -q \
+ARG NODE_LINUX_X64_SHA256=c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2
+RUN wget -q --tries=5 \
     "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
     -O /tmp/node.tar.xz \
+    && echo "${NODE_LINUX_X64_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
-    && rm -rf /tmp/node.tar.xz
+    && rm -f /tmp/node.tar.xz \
+    && corepack enable \
+    && corepack prepare pnpm@11.20.0 --activate \
+    && npm install --global typescript@5.9.3
 
 # Go 官方 tarball（apt 版过旧；新版本才能解析新版 Go 二进制的 pclntab）
 ARG GO_VERSION=1.26.5
