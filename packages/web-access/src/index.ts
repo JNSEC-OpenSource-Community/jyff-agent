@@ -438,7 +438,7 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
   return {
     name: DEFAULT_TOOL_NAMES.webSearch,
     label: "Web Search",
-    description: `Search the web using OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Jina, SERPdive, Kagi, Ollama, SearXNG, Exa, Perplexity, Gemini, AnySearch, xAI, Bright Data, or SerpBase. Pass a provider array to search only those providers simultaneously, or use provider "all" to search every eligible provider except AnySearch, xAI, Bright Data, and SerpBase. Returns an AI-synthesized answer with source citations. AnySearch, xAI, Bright Data, and SerpBase are available only when explicitly selected. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. The provider allowlist is configured globally in the WebUI; omit provider to auto-select from configured providers.`,
+    description: `Search the web for online information and current results, and search CTF tricks/techniques from the local nekozuki knowledge base. Returns an AI-synthesized answer with source citations. For CTF technique questions (exploits, vulnerabilities, payload patterns), use provider "nekozuki" to query the distilled CTF writeup knowledge base; omit provider to auto-select. For general research, prefer queries (plural) with 2-4 varied angles over a single query.`,
     parameters: webSearchParams,
     executionMode: "sequential",
     async execute(
