@@ -1,9 +1,10 @@
 import { Icon } from "@iconify/react"
 import { useState } from "react"
 import {
+  Badge,
   Button,
   Card,
-  Checkbox,
+  Combobox,
   ErrorNotice,
   Input,
   Label,
@@ -108,15 +109,13 @@ export function WebAccessEditor({
     config.providers.filter((p) => p.configured).map((p) => p.id),
   )
 
-  function toggleProvider(id: string, on: boolean) {
-    setSelected((current) =>
-      on
-        ? current.includes(id)
-          ? current
-          : [...current, id]
-        : current.filter((entry) => entry !== id),
-    )
-  }
+  const providerOptions = WEB_ACCESS_PROVIDERS.filter(
+    (p) => !selected.includes(p),
+  ).map((p) => ({
+    value: p,
+    label: providerLabel(p),
+    description: configured.has(p) ? "已配置" : undefined,
+  }))
 
   const summaryModelOptions = (modelConfiguration?.models ?? [])
     .filter((model) => model.configured)
@@ -187,109 +186,140 @@ export function WebAccessEditor({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {err ? <ErrorNotice message={err} /> : null}
 
-      <Card className="flex items-center justify-between p-4">
-        <div>
-          <h2 className="text-sm font-semibold">Web 访问（搜索 / 抓取）</h2>
-          <p className="text-xs text-muted-foreground">
-            为 Solver 与 SubAgent 提供 web_search / fetch_content / source_check
-            工具。默认关闭；工具运行在宿主进程，走宿主网络出口，SSRF
-            守卫是唯一拦截。
+      <Card className="flex items-center gap-3 p-5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
+          <Icon icon="lucide:globe" width="16" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">web-access</p>
+          <p className="mt-1! truncate text-[11px] text-muted-foreground">
+            为 Agent 提供联网搜索功能
           </p>
         </div>
         <Switch
           checked={enabled}
           onCheckedChange={setEnabled}
-          aria-label="启用 Web 访问插件"
+          aria-label="启用 web-access 插件"
         />
       </Card>
 
       {enabled ? (
         <>
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Provider allowlist</h3>
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Providers</h3>
               <span className="text-xs text-muted-foreground">
-                仅 allowlist 内的 provider 可用
+                {selected.length} / {WEB_ACCESS_PROVIDERS.length} 个
               </span>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {WEB_ACCESS_PROVIDERS.map((provider) => {
-                const on = selected.includes(provider)
-                return (
-                  <div
-                    key={provider}
-                    className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Checkbox
-                        checked={on}
-                        onCheckedChange={(value) =>
-                          toggleProvider(provider, value === true)
-                        }
-                        aria-label={`启用 ${providerLabel(provider)}`}
-                      />
-                      <span>{providerLabel(provider)}</span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      {configured.has(provider) ? (
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                          已配置
+            <Combobox
+              value=""
+              onChange={(v) => {
+                if (v && !selected.includes(v)) {
+                  setSelected((c) => [...c, v])
+                }
+              }}
+              options={providerOptions}
+              placeholder="搜索并添加 provider…"
+              searchPlaceholder="搜索 provider…"
+              emptyText="已全部添加"
+            />
+            {selected.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {selected.map((provider) => {
+                  const hasKey = configured.has(provider)
+                  return (
+                    <Card key={provider} className="flex flex-col p-5">
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
+                          <Icon icon="lucide:key-round" width="16" />
                         </span>
-                      ) : null}
-                      <Input
-                        type="password"
-                        value={keys[provider] ?? ""}
-                        onChange={(e) =>
-                          setKeys((k) => ({
-                            ...k,
-                            [provider]: e.target.value,
-                          }))
-                        }
-                        onBlur={() => {
-                          const value = keys[provider] ?? ""
-                          if (!value.trim()) return
-                          void saveKey(provider, value.trim())
-                            .then(() => {
-                              setKeys((k) => {
-                                const next = { ...k }
-                                delete next[provider]
-                                return next
-                              })
-                              onSaved()
-                            })
-                            .catch((e) => setErr(errorMessage(e)))
-                        }}
-                        placeholder={
-                          configured.has(provider)
-                            ? "已配置（留空不改）"
-                            : "API Key"
-                        }
-                        className="h-7 w-40 text-xs"
-                      />
-                      {configured.has(provider) ? (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          disabled={busy}
-                          onClick={() => void clearKey(provider)}
-                          aria-label={`清除 ${providerLabel(provider)} 密钥`}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">
+                            {providerLabel(provider)}
+                          </p>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {provider === "searxng"
+                              ? "自托管聚合搜索（需配置 baseUrl）"
+                              : provider === "brightdata" ||
+                                  provider === "brightdata-unlocker"
+                                ? "付费代理（需配置 zone）"
+                                : "搜索 / 抓取 provider"}
+                          </p>
+                        </div>
+                        <Badge
+                          tone={hasKey ? "positive" : "neutral"}
+                          className="shrink-0 text-[10px]"
                         >
-                          <Icon icon="lucide:trash-2" width="14" />
+                          {hasKey ? "已配置" : "未配置"}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <Input
+                          type="password"
+                          value={keys[provider] ?? ""}
+                          onChange={(e) =>
+                            setKeys((k) => ({
+                              ...k,
+                              [provider]: e.target.value,
+                            }))
+                          }
+                          onBlur={() => {
+                            const value = keys[provider] ?? ""
+                            if (!value.trim()) return
+                            void saveKey(provider, value.trim())
+                              .then(() => {
+                                setKeys((k) => {
+                                  const next = { ...k }
+                                  delete next[provider]
+                                  return next
+                                })
+                                onSaved()
+                              })
+                              .catch((e) => setErr(errorMessage(e)))
+                          }}
+                          placeholder={
+                            hasKey ? "已配置（留空不改）" : "API Key"
+                          }
+                          className="h-8 flex-1 text-xs"
+                        />
+                        {hasKey ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => void clearKey(provider)}
+                          >
+                            清除
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setSelected((c) =>
+                              c.filter((entry) => entry !== provider),
+                            )
+                          }
+                        >
+                          移除
                         </Button>
-                      ) : null}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            ) : null}
           </Card>
 
-          <Card className="p-4">
-            <h3 className="mb-3 text-sm font-semibold">搜索工作流</h3>
+          <Card className="p-5">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold">搜索工作流</h3>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>摘要模式</Label>
@@ -336,8 +366,8 @@ export function WebAccessEditor({
             </div>
           </Card>
 
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between">
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-semibold">SSRF / 网络策略</h3>
               <div className="flex items-center gap-2">
                 <Label className="text-xs">信任环境代理</Label>
