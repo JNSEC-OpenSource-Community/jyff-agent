@@ -26,6 +26,10 @@ const initialMessage = {
   },
 }
 let mockMessages = [initialMessage]
+let mockActivity = {
+  ...INITIAL_AGENT_ACTIVITY,
+  connection: "connected" as const,
+}
 
 vi.mock("../src/hooks/useConversation.ts", () => ({
   useConversation: () => ({
@@ -36,7 +40,7 @@ vi.mock("../src/hooks/useConversation.ts", () => ({
     error: "",
     message: "",
     sending: false,
-    activity: { ...INITIAL_AGENT_ACTIVITY, connection: "connected" },
+    activity: mockActivity,
     setMessage: vi.fn(),
     send: vi.fn(),
   }),
@@ -44,6 +48,7 @@ vi.mock("../src/hooks/useConversation.ts", () => ({
 
 beforeEach(() => {
   mockMessages = [initialMessage]
+  mockActivity = { ...INITIAL_AGENT_ACTIVITY, connection: "connected" }
 })
 
 afterEach(() => {
@@ -186,6 +191,34 @@ describe("ConversationPanel scroll affordance", () => {
       "/father/stop",
       expect.objectContaining({ method: "POST" }),
     )
+  })
+
+  it("Father 仅在工作时于发送按钮左侧显示图标终止按钮", () => {
+    const props = {
+      target: { type: "solver" as const },
+      attempt: 1,
+      runStatus: "running" as const,
+      hasConversation: true,
+      conversationUrl: "/conversation",
+      streamUrl: "/events",
+      sendUrl: "/message",
+      stopUrl: "/father/stop",
+      stopPlacement: "composer" as const,
+      onChanged: async () => {},
+    }
+    const { rerender } = render(createElement(ConversationPanel, props))
+    expect(screen.queryByRole("button", { name: "中止 Agent" })).toBeNull()
+
+    mockActivity = {
+      ...mockActivity,
+      phase: "responding",
+    }
+    rerender(createElement(ConversationPanel, props))
+
+    const stop = screen.getByRole("button", { name: "中止 Agent" })
+    const send = screen.getByRole("button", { name: "发送消息" })
+    expect(stop.textContent).toBe("")
+    expect(stop.nextElementSibling).toBe(send)
   })
 })
 

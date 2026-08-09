@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs"
-import { join } from "node:path"
-import type { AgentStreamEvent } from "@ctf-agent/core"
+import { basename, join } from "node:path"
+import {
+  type AgentStreamEvent,
+  listWorkspaceArtifacts,
+  readWorkspaceArtifact,
+} from "@ctf-agent/core"
 import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import type { App, AppEnv } from "../context.ts"
@@ -12,6 +16,10 @@ import {
   parseJsonBody,
 } from "../schema.ts"
 import type { Services } from "../services.ts"
+import {
+  WORKSPACE_PREVIEW_MAX_BYTES,
+  workspacePreviewDescriptor,
+} from "../workspace-files.ts"
 
 /** 全局 Clanker Father 多 Session、实时对话与插件 Gate。 */
 export function fatherRoutes(services: Services): App {
@@ -105,6 +113,82 @@ export function fatherRoutes(services: Services): App {
     )
     c.header("Cache-Control", "no-store")
     return c.body(new Uint8Array(source.content))
+  })
+
+  app.get("/father/sessions/:sessionId/workspace/files", async (c) => {
+    const father = services.requireFather()
+    const id = c.req.param("sessionId")
+    requireSession(services, id)
+    const listing = await listWorkspaceArtifacts(father.workspace(id))
+    c.header("Cache-Control", "no-store")
+    return c.json({
+      ...listing,
+      files: listing.files.map((file) => ({
+        ...file,
+        preview: workspacePreviewDescriptor(file.path),
+      })),
+    })
+  })
+
+  app.get("/father/sessions/:sessionId/workspace/files/preview", async (c) => {
+    const father = services.requireFather()
+    const id = c.req.param("sessionId")
+    requireSession(services, id)
+    const artifactPath = c.req.query("path")
+    if (!artifactPath)
+      throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
+    const preview = workspacePreviewDescriptor(artifactPath)
+    if (!preview) {
+      throw new HttpError(
+        415,
+        "workspace_preview_unsupported",
+        "该文件类型不支持预览",
+      )
+    }
+    const content = await readFatherWorkspaceFile(
+      father.workspace(id),
+      artifactPath,
+      WORKSPACE_PREVIEW_MAX_BYTES,
+    )
+    let text: string
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(content)
+    } catch {
+      throw new HttpError(
+        415,
+        "workspace_preview_invalid_text",
+        "文件不是有效的 UTF-8 文本",
+      )
+    }
+    c.header("Cache-Control", "no-store")
+    return c.json({
+      path: artifactPath,
+      size: content.byteLength,
+      content: text,
+      ...preview,
+    })
+  })
+
+  app.get("/father/sessions/:sessionId/workspace/files/download", async (c) => {
+    const father = services.requireFather()
+    const id = c.req.param("sessionId")
+    requireSession(services, id)
+    const artifactPath = c.req.query("path")
+    if (!artifactPath)
+      throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
+    const content = await readFatherWorkspaceFile(
+      father.workspace(id),
+      artifactPath,
+    )
+    const name = basename(artifactPath)
+    c.header("Content-Type", "application/octet-stream")
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${filenameSafe(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    )
+    c.header("Content-Length", String(content.byteLength))
+    c.header("Cache-Control", "no-store")
+    return c.body(Buffer.from(content))
   })
 
   app.delete("/father/sessions/:sessionId", async (c) => {
@@ -268,6 +352,38 @@ function requireSession(services: Services, id: string) {
     )
   }
   return session
+}
+
+async function readFatherWorkspaceFile(
+  workspace: string,
+  artifactPath: string,
+  maximumBytes?: number,
+): Promise<Uint8Array> {
+  try {
+    return await readWorkspaceArtifact(workspace, artifactPath, maximumBytes)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ENOENT")
+      throw new HttpError(404, "workspace_file_not_found", "文件不存在")
+    if (error instanceof Error && error.message.includes("exceeds")) {
+      throw new HttpError(
+        413,
+        "workspace_preview_too_large",
+        "文件超过 256 KiB，无法在线预览",
+      )
+    }
+    if (
+      error instanceof Error &&
+      (error.message.includes("Workspace artifact") || code === "EISDIR")
+    ) {
+      throw new HttpError(400, "invalid_workspace_path", error.message)
+    }
+    throw error
+  }
+}
+
+function filenameSafe(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
 }
 
 class AsyncEventQueue<T> {

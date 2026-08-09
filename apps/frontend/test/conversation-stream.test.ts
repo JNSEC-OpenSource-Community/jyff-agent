@@ -6,6 +6,7 @@ import {
   INITIAL_AGENT_ACTIVITY,
   mergeCanonicalConversation,
   reduceAgentActivity,
+  shouldRefreshAgentView,
 } from "../src/lib/conversation-stream.ts"
 
 const createdAt = "2026-08-09T10:00:00.000Z"
@@ -135,6 +136,47 @@ describe("reduceAgentActivity", () => {
       }),
     )
     expect(completed.streamingMessageId).toBeUndefined()
+  })
+})
+
+describe("shouldRefreshAgentView", () => {
+  it("在 Father 请求测试连接信息后刷新页面投影", () => {
+    expect(
+      shouldRefreshAgentView(
+        streamEvent({
+          type: "tool_completed",
+          toolCallId: "tool-1",
+          toolName: "father_request_test_access",
+          result: { requested: true },
+          isError: false,
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      shouldRefreshAgentView(
+        streamEvent({
+          type: "tool_completed",
+          toolCallId: "tool-2",
+          toolName: "bash",
+          result: "ok",
+          isError: false,
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it("在自动 compact 结束后恢复 responding 状态", () => {
+    const compacting = reduceAgentActivity(
+      INITIAL_AGENT_ACTIVITY,
+      streamEvent({ type: "status_changed", status: "compacting" }),
+    )
+    expect(compacting.phase).toBe("compacting")
+    expect(
+      reduceAgentActivity(
+        compacting,
+        streamEvent({ type: "status_changed", status: "active" }),
+      ).phase,
+    ).toBe("responding")
   })
 })
 

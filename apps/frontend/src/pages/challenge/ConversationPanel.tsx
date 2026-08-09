@@ -60,6 +60,7 @@ export function ConversationPanel({
   emptyDescription,
   composerPlaceholder,
   idleStatusLabel,
+  stopPlacement = "header",
 }: {
   target: ConversationTarget
   attempt: number
@@ -80,6 +81,7 @@ export function ConversationPanel({
   emptyDescription?: string
   composerPlaceholder?: string
   idleStatusLabel?: string
+  stopPlacement?: "header" | "composer"
 }): React.ReactElement {
   const {
     conversation,
@@ -123,6 +125,7 @@ export function ConversationPanel({
     "writing_writeup",
   ].includes(runStatus)
   const status = activityLabel(activity, isRunActive, idleStatusLabel)
+  const isAgentBusy = activity.phase !== "idle"
 
   useLayoutEffect(() => {
     const saved = activeViewStateStore.get(activeViewKey) ?? null
@@ -276,7 +279,7 @@ export function ConversationPanel({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {stopUrl && isRunActive ? (
+          {stopPlacement === "header" && stopUrl && isRunActive ? (
             <Button
               type="button"
               variant="danger"
@@ -422,6 +425,24 @@ export function ConversationPanel({
                 }
               }}
             />
+            {stopPlacement === "composer" && stopUrl && isAgentBusy ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0 rounded-lg text-danger hover:bg-danger/10 hover:text-danger"
+                disabled={stopping}
+                aria-label={stopping ? "正在中止 Agent" : "中止 Agent"}
+                onClick={() => void stop()}
+              >
+                <Icon
+                  icon={stopping ? "lucide:loader-circle" : "lucide:square"}
+                  width="14"
+                  className={stopping ? "animate-spin" : "fill-current"}
+                  aria-hidden="true"
+                />
+              </Button>
+            ) : null}
             <Button
               type="submit"
               size="icon"

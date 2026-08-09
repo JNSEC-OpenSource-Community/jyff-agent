@@ -150,6 +150,8 @@ Clanker Father 是全局、独立于 Project/Solver 生命周期的多 Session A
 
 WebUI 可中止正在运行的 Father；中止会 abort 当前 turn、等待 Agent 退出并关闭 sandbox，然后把 Session 标记为 `stopped`。Session 的 JSONL 与 workspace 保留，后续再次发送消息时按原 Session 重建 sandbox 并继续工作。
 
+Father 对话通过 Pi SSE 展示运行、工具、队列和自动 compaction 状态；`father_request_test_access` 完成时前端重新读取 Session，并弹出由静态 setup 描述生成的 Gate Dialog。终止操作仅在实时事件表明 Agent 正忙时显示在输入框发送按钮左侧。会话页可打开完整 Father workspace 文件树，文件列表、预览和下载复用题目 workspace 的安全读取规则。
+
 后端启动时必须从应用源码根目录发现内置 `extension-authoring` skill，缺失时拒绝启动 Father，不能静默降级。Session 激活前，控制面将 skill 的 `SKILL.md`、references 与 assets 完整复制到该 Session 的 `/workspace/.skills/`，Pi 提示词只暴露 sandbox 内可读路径。
 
 Session 创建不接受插件字段，先生成随机名称。Father 使用 `father_identify_plugin` 写入正式插件身份，使用 `father_request_test_access` 请求或复用测试连接信息。配置表单静态读取 schema v2 `extension.json.setup`，不会为展示表单导入未批准代码；Validation Gate 在短生命周期 Docker sandbox 中执行。验证配置以 setup schema fingerprint 为版本键；验证完成后控制面把 `<plugin_validation_result>` 结构化消息送回原 Session。Father 模型属于全局模型池绑定，创建 Session 时把实际模型记录进 Session 元数据。

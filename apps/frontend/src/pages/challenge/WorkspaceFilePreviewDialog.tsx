@@ -13,7 +13,7 @@ import {
   ErrorNotice,
   Spinner,
 } from "../../components/index.ts"
-import { apiRequest, projectApi } from "../../lib/api.ts"
+import { apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 
 export interface WorkspaceFilePreviewDescriptor {
@@ -33,14 +33,12 @@ interface WorkspaceFilePreview extends WorkspaceFilePreviewDescriptor {
 
 export function WorkspaceFilePreviewDialog({
   file,
-  projectId,
-  challengeId,
+  previewUrl,
   downloadUrl,
   onClose,
 }: {
   file: PreviewableWorkspaceFile | null
-  projectId: string
-  challengeId: string
+  previewUrl: string | null
   downloadUrl: string | null
   onClose(): void
 }) {
@@ -59,12 +57,11 @@ export function WorkspaceFilePreviewDialog({
     setPreview(null)
     setError("")
     setLoading(true)
-    void apiRequest<WorkspaceFilePreview>(
-      projectApi(
-        projectId,
-        `/api/challenges/${encodeURIComponent(challengeId)}/files/preview?path=${encodeURIComponent(file.path)}`,
-      ),
-    )
+    if (!previewUrl) {
+      setLoading(false)
+      return
+    }
+    void apiRequest<WorkspaceFilePreview>(previewUrl)
       .then((next) => {
         if (active) setPreview(next)
       })
@@ -77,7 +74,7 @@ export function WorkspaceFilePreviewDialog({
     return () => {
       active = false
     }
-  }, [challengeId, file, projectId])
+  }, [file, previewUrl])
 
   const name = file?.path.split("/").pop() ?? "文件预览"
   return (

@@ -7,6 +7,7 @@ import {
   INITIAL_AGENT_ACTIVITY,
   mergeCanonicalConversation,
   reduceAgentActivity,
+  shouldRefreshAgentView,
 } from "../lib/conversation-stream.ts"
 import { errorMessage } from "../lib/format.ts"
 import type { DashboardConversation } from "../types.ts"
@@ -87,6 +88,9 @@ export function useConversation(
           (event as MessageEvent<string>).data,
         ) as AgentStreamEvent
         pending.push(parsed)
+        if (shouldRefreshAgentView(parsed)) {
+          void onChanged().catch((cause) => setError(errorMessage(cause)))
+        }
         frame ??= requestAnimationFrame(flush)
       } catch {
         // 丢弃无法解析的增量帧，JSONL 会在下一次加载时校准。
@@ -106,7 +110,7 @@ export function useConversation(
       source.close()
       if (frame !== undefined) cancelAnimationFrame(frame)
     }
-  }, [hasConversation, load, target.streamUrl])
+  }, [hasConversation, load, onChanged, target.streamUrl])
 
   const send = useCallback(
     async (text: string): Promise<void> => {

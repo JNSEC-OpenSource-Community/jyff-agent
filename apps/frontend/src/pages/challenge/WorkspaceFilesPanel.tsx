@@ -26,6 +26,35 @@ export function WorkspaceFilesPanel({
   projectId: string
   challengeId: string
 }) {
+  const baseUrl = projectApi(
+    projectId,
+    `/api/challenges/${encodeURIComponent(challengeId)}/files`,
+  )
+  return (
+    <WorkspaceFilesBrowser
+      listUrl={baseUrl}
+      previewUrl={(path) =>
+        `${baseUrl}/preview?path=${encodeURIComponent(path)}`
+      }
+      downloadUrl={(path) =>
+        `${baseUrl}/download?path=${encodeURIComponent(path)}`
+      }
+      emptyDescription="派发 Solver 后，附件与生成的分析文件会显示在这里。"
+    />
+  )
+}
+
+export function WorkspaceFilesBrowser({
+  listUrl,
+  previewUrl,
+  downloadUrl,
+  emptyDescription,
+}: {
+  listUrl: string
+  previewUrl(path: string): string
+  downloadUrl(path: string): string
+  emptyDescription: string
+}) {
   const [listing, setListing] = useState<WorkspaceFileListing | null>(null)
   const [previewFile, setPreviewFile] =
     useState<PreviewableWorkspaceFile | null>(null)
@@ -36,20 +65,13 @@ export function WorkspaceFilesPanel({
     setLoading(true)
     setError("")
     try {
-      setListing(
-        await apiRequest<WorkspaceFileListing>(
-          projectApi(
-            projectId,
-            `/api/challenges/${encodeURIComponent(challengeId)}/files`,
-          ),
-        ),
-      )
+      setListing(await apiRequest<WorkspaceFileListing>(listUrl))
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
       setLoading(false)
     }
-  }, [challengeId, projectId])
+  }, [listUrl])
 
   useEffect(() => {
     void load()
@@ -68,26 +90,20 @@ export function WorkspaceFilesPanel({
       {listing && listing.files.length > 0 ? (
         <WorkspaceFileTree
           files={listing.files}
-          projectId={projectId}
-          challengeId={challengeId}
+          downloadUrl={downloadUrl}
           onPreview={setPreviewFile}
         />
       ) : !loading ? (
         <EmptyState
           icon="lucide:folder-open"
           title="Workspace 还是空的"
-          description="派发 Solver 后，附件与生成的分析文件会显示在这里。"
+          description={emptyDescription}
         />
       ) : null}
       <WorkspaceFilePreviewDialog
         file={previewFile}
-        projectId={projectId}
-        challengeId={challengeId}
-        downloadUrl={
-          previewFile
-            ? workspaceDownloadUrl(projectId, challengeId, previewFile.path)
-            : null
-        }
+        previewUrl={previewFile ? previewUrl(previewFile.path) : null}
+        downloadUrl={previewFile ? downloadUrl(previewFile.path) : null}
         onClose={() => setPreviewFile(null)}
       />
     </div>
@@ -103,13 +119,11 @@ interface WorkspaceTreeDirectory {
 
 function WorkspaceFileTree({
   files,
-  projectId,
-  challengeId,
+  downloadUrl,
   onPreview,
 }: {
   files: PreviewableWorkspaceFile[]
-  projectId: string
-  challengeId: string
+  downloadUrl(path: string): string
   onPreview(file: PreviewableWorkspaceFile): void
 }) {
   const root = buildWorkspaceTree(files)
@@ -119,8 +133,7 @@ function WorkspaceFileTree({
         <WorkspaceDirectoryNode
           key={directory.path}
           directory={directory}
-          projectId={projectId}
-          challengeId={challengeId}
+          downloadUrl={downloadUrl}
           onPreview={onPreview}
         />
       ))}
@@ -128,7 +141,7 @@ function WorkspaceFileTree({
         <WorkspaceFileRow
           key={file.path}
           file={file}
-          downloadUrl={workspaceDownloadUrl(projectId, challengeId, file.path)}
+          downloadUrl={downloadUrl(file.path)}
           onPreview={onPreview}
         />
       ))}
@@ -138,13 +151,11 @@ function WorkspaceFileTree({
 
 function WorkspaceDirectoryNode({
   directory,
-  projectId,
-  challengeId,
+  downloadUrl,
   onPreview,
 }: {
   directory: WorkspaceTreeDirectory
-  projectId: string
-  challengeId: string
+  downloadUrl(path: string): string
   onPreview(file: PreviewableWorkspaceFile): void
 }) {
   const fileCount = countDirectoryFiles(directory)
@@ -181,8 +192,7 @@ function WorkspaceDirectoryNode({
             <WorkspaceDirectoryNode
               key={child.path}
               directory={child}
-              projectId={projectId}
-              challengeId={challengeId}
+              downloadUrl={downloadUrl}
               onPreview={onPreview}
             />
           ))}
@@ -190,11 +200,7 @@ function WorkspaceDirectoryNode({
             <WorkspaceFileRow
               key={file.path}
               file={file}
-              downloadUrl={workspaceDownloadUrl(
-                projectId,
-                challengeId,
-                file.path,
-              )}
+              downloadUrl={downloadUrl(file.path)}
               onPreview={onPreview}
             />
           ))}
@@ -312,17 +318,6 @@ function countDirectoryFiles(directory: WorkspaceTreeDirectory): number {
       (total, child) => total + countDirectoryFiles(child),
       0,
     )
-  )
-}
-
-function workspaceDownloadUrl(
-  projectId: string,
-  challengeId: string,
-  filePath: string,
-): string {
-  return projectApi(
-    projectId,
-    `/api/challenges/${encodeURIComponent(challengeId)}/files/download?path=${encodeURIComponent(filePath)}`,
   )
 }
 

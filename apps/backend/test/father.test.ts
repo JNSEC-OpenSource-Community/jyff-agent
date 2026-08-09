@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import type { DashboardFather } from "../src/types.ts"
@@ -137,6 +139,75 @@ describe("Father HTTP", () => {
       )
     } finally {
       await test.cleanup()
+    }
+  })
+
+  it("列出、预览并下载 Father workspace 文件", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "father-workspace-"))
+    await mkdir(join(workspace, "plugin"), { recursive: true })
+    await writeFile(
+      join(workspace, "plugin", "index.ts"),
+      "export const id = 'demo'\n",
+    )
+    await writeFile(join(workspace, "fixture.bin"), Buffer.from([0, 1, 2]))
+    const record = {
+      id: "father-1",
+      title: "demo-platform",
+      status: "stopped" as const,
+      modelId: "test/model",
+      skillRevision: "builtin-v1",
+      createdBy: "local",
+      createdAt: "2026-08-09T00:00:00.000Z",
+      updatedAt: "2026-08-09T00:00:00.000Z",
+    }
+    const father = {
+      get: () => record,
+      workspace: () => workspace,
+    } as unknown as DashboardFather
+    const test = await createTestApp({
+      father,
+      frontendDist: "/nonexistent",
+    })
+    try {
+      const listing = await test.app.request(
+        "/api/father/sessions/father-1/workspace/files",
+      )
+      expect(listing.status).toBe(200)
+      expect(await jsonOf(listing)).toMatchObject({
+        truncated: false,
+        files: expect.arrayContaining([
+          expect.objectContaining({
+            path: "plugin/index.ts",
+            preview: { kind: "code", language: "typescript" },
+          }),
+          expect.objectContaining({ path: "fixture.bin", preview: null }),
+        ]),
+      })
+
+      const preview = await test.app.request(
+        "/api/father/sessions/father-1/workspace/files/preview?path=plugin%2Findex.ts",
+      )
+      expect(preview.status).toBe(200)
+      expect(await jsonOf(preview)).toMatchObject({
+        path: "plugin/index.ts",
+        content: "export const id = 'demo'\n",
+      })
+
+      const download = await test.app.request(
+        "/api/father/sessions/father-1/workspace/files/download?path=fixture.bin",
+      )
+      expect(download.status).toBe(200)
+      expect(new Uint8Array(await download.arrayBuffer())).toEqual(
+        new Uint8Array([0, 1, 2]),
+      )
+
+      const traversal = await test.app.request(
+        "/api/father/sessions/father-1/workspace/files/download?path=..%2Fsecret.txt",
+      )
+      expect(traversal.status).toBe(400)
+    } finally {
+      await test.cleanup()
+      await rm(workspace, { recursive: true, force: true })
     }
   })
 })

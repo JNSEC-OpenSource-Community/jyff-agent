@@ -7,6 +7,11 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
   ErrorNotice,
   PlatformSetupForm,
   type PlatformSetupOption,
@@ -14,6 +19,7 @@ import {
 import { apiMutation, apiRequest } from "../lib/api.ts"
 import { errorMessage } from "../lib/format.ts"
 import { ConversationPanel } from "./challenge/ConversationPanel.tsx"
+import { WorkspaceFilesBrowser } from "./challenge/WorkspaceFilesPanel.tsx"
 
 type GateStatus =
   | "requested"
@@ -240,6 +246,10 @@ function FatherConversation({
 }): React.ReactElement {
   const [session, setSession] = useState<FatherSession>()
   const [gate, setGate] = useState<GateView>()
+  const [gateError, setGateError] = useState("")
+  const [gateOpen, setGateOpen] = useState(false)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const lastGateRequest = useRef("")
   const [error, setError] = useState("")
   const load = useCallback(async () => {
     const next = await apiRequest<FatherSession>(
@@ -251,14 +261,30 @@ function FatherConversation({
         setGate(
           await apiRequest<GateView>(`/api/father/sessions/${sessionId}/gate`),
         )
-      } catch {
+        setGateError("")
+      } catch (cause) {
         setGate(undefined)
+        setGateError(errorMessage(cause))
       }
+    } else {
+      setGate(undefined)
+      setGateError("")
     }
   }, [sessionId])
   useEffect(() => {
     void load().catch((e) => setError(errorMessage(e)))
   }, [load])
+  useEffect(() => {
+    const requestedAt = session?.gate?.requestedAt
+    if (
+      !requestedAt ||
+      session.gate?.status === "installed" ||
+      lastGateRequest.current === requestedAt
+    )
+      return
+    lastGateRequest.current = requestedAt
+    setGateOpen(true)
+  }, [session?.gate?.requestedAt, session?.gate?.status])
   if (!session)
     return (
       <div className="grid h-full place-items-center">
@@ -288,6 +314,29 @@ function FatherConversation({
           </p>
         </div>
         <SessionBadge session={session} />
+        <div className="ml-auto flex items-center gap-1">
+          {session.gate ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative size-8"
+              aria-label="打开测试配置"
+              onClick={() => setGateOpen(true)}
+            >
+              <Icon icon="lucide:flask-conical" width="15" aria-hidden="true" />
+              <span className="absolute right-1 bottom-1 size-1.5 rounded-full bg-primary" />
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="查看 Father workspace 文件"
+            onClick={() => setWorkspaceOpen(true)}
+          >
+            <Icon icon="lucide:folder-tree" width="15" aria-hidden="true" />
+          </Button>
+        </div>
       </div>
       <div className="min-h-0 flex-1">
         <ConversationPanel
@@ -309,15 +358,132 @@ function FatherConversation({
           emptyDescription="描述你要创建的平台插件，或告诉 Father 现有插件出了什么问题。"
           composerPlaceholder="描述平台、提供文档或反馈插件问题…"
           idleStatusLabel="Father 正在等待你的指令"
-          notice={
-            session.gate ? (
-              <GateCard session={session} gate={gate} onChanged={load} />
-            ) : null
-          }
+          stopPlacement="composer"
           onChanged={load}
         />
       </div>
+      <FatherGateDialog
+        open={gateOpen}
+        session={session}
+        gate={gate}
+        error={gateError}
+        onOpenChange={setGateOpen}
+        onChanged={load}
+      />
+      <FatherWorkspaceDialog
+        open={workspaceOpen}
+        sessionId={sessionId}
+        onOpenChange={setWorkspaceOpen}
+      />
     </div>
+  )
+}
+
+function FatherWorkspaceDialog({
+  open,
+  sessionId,
+  onOpenChange,
+}: {
+  open: boolean
+  sessionId: string
+  onOpenChange(open: boolean): void
+}): React.ReactElement {
+  const baseUrl = `/api/father/sessions/${sessionId}/workspace/files`
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <header className="flex min-h-14 items-center gap-3 border-b border-border px-4">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Icon icon="lucide:folder-tree" width="16" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="text-sm font-semibold">
+              Father workspace
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              源码、研究记录、测试和候选输出
+            </DialogDescription>
+          </div>
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="关闭文件列表"
+            >
+              <Icon icon="lucide:x" width="16" aria-hidden="true" />
+            </Button>
+          </DialogClose>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          {open ? (
+            <WorkspaceFilesBrowser
+              listUrl={baseUrl}
+              previewUrl={(path) =>
+                `${baseUrl}/preview?path=${encodeURIComponent(path)}`
+              }
+              downloadUrl={(path) =>
+                `${baseUrl}/download?path=${encodeURIComponent(path)}`
+              }
+              emptyDescription="Father 尚未在 workspace 中创建文件。"
+            />
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function FatherGateDialog({
+  open,
+  session,
+  gate,
+  error,
+  onOpenChange,
+  onChanged,
+}: {
+  open: boolean
+  session: FatherSession
+  gate?: GateView
+  error: string
+  onOpenChange(open: boolean): void
+  onChanged(): Promise<void>
+}): React.ReactElement {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:h-auto sm:max-h-[88dvh] sm:w-[min(92vw,58rem)]">
+        <header className="flex min-h-16 items-center gap-3 border-b border-border px-4 sm:px-6">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Icon icon="lucide:flask-conical" width="17" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-sm font-semibold">
+              {gate ? `验证 ${gate.candidate.name}` : "准备测试配置"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              测试连接信息只保存到当前 Father Session
+            </DialogDescription>
+          </div>
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="关闭测试配置"
+            >
+              <Icon icon="lucide:x" width="16" aria-hidden="true" />
+            </Button>
+          </DialogClose>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {error ? (
+            <ErrorNotice message={`无法生成测试表单：${error}`} />
+          ) : (
+            <GateCard session={session} gate={gate} onChanged={onChanged} />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -378,7 +544,7 @@ function GateCard({
   }, [config, gate, session.gate?.status, validate])
   if (!gate)
     return (
-      <div className="shrink-0 border-t border-border bg-card/80 px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex min-h-40 items-center justify-center text-xs text-muted-foreground">
         <Icon
           icon="lucide:loader-circle"
           className="mr-2 inline animate-spin"
@@ -408,8 +574,8 @@ function GateCard({
   }
   const ready = session.gate?.status === "ready"
   return (
-    <div className="max-h-[55dvh] shrink-0 overflow-y-auto border-t border-border bg-card/90 px-4 py-3 backdrop-blur">
-      <div className="mx-auto max-w-5xl rounded-xl border border-primary/25 bg-primary/5 p-4">
+    <div className="space-y-4">
+      <div>
         <div className="flex items-start justify-between gap-3">
           <div className="flex gap-3">
             <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/12 text-primary">
@@ -501,12 +667,6 @@ function GateCard({
           </div>
         ) : ready ? (
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" size="sm" asChild>
-              <a href={`/api/father/sessions/${session.id}/plugin.ts`} download>
-                <Icon icon="lucide:download" width="14" aria-hidden="true" />
-                下载 TypeScript
-              </a>
-            </Button>
             <Button size="sm" disabled={busy} onClick={() => void install()}>
               <Icon icon="lucide:package-check" width="14" aria-hidden="true" />
               批准并安装

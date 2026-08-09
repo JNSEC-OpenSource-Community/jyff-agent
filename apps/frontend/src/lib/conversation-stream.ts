@@ -181,6 +181,14 @@ export function reduceAgentActivity(
   return activity
 }
 
+export function shouldRefreshAgentView(event: AgentStreamEvent): boolean {
+  return (
+    event.type === "agent_finished" ||
+    (event.type === "tool_completed" &&
+      event.toolName === "father_request_test_access")
+  )
+}
+
 function liveEntryId(messageId: string): string {
   return `live:${messageId}`
 }
