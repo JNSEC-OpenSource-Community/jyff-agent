@@ -52,13 +52,12 @@ export function WorkspaceFilesPanel({
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">Workspace 文件</h2>
-          <p className="mt-1! text-xs text-muted-foreground">
-            Solver 与 SubAgent 保留的附件、脚本和分析产物。
-          </p>
-        </div>
+      <div className="mb-3 flex items-center justify-end gap-3">
+        {listing ? (
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {listing.files.length} 个文件
+          </span>
+        ) : null}
         <Button
           size="sm"
           variant="secondary"
@@ -81,18 +80,11 @@ export function WorkspaceFilesPanel({
         </div>
       ) : null}
       {listing && listing.files.length > 0 ? (
-        <ul className="overflow-hidden rounded-xl border border-border bg-card/40">
-          {listing.files.map((file) => (
-            <WorkspaceFileRow
-              key={file.path}
-              file={file}
-              downloadUrl={projectApi(
-                projectId,
-                `/api/challenges/${encodeURIComponent(challengeId)}/files/download?path=${encodeURIComponent(file.path)}`,
-              )}
-            />
-          ))}
-        </ul>
+        <WorkspaceFileTree
+          files={listing.files}
+          projectId={projectId}
+          challengeId={challengeId}
+        />
       ) : !loading ? (
         <EmptyState
           icon="lucide:folder-open"
@@ -104,6 +96,108 @@ export function WorkspaceFilesPanel({
   )
 }
 
+interface WorkspaceTreeDirectory {
+  name: string
+  path: string
+  directories: Map<string, WorkspaceTreeDirectory>
+  files: WorkspaceArtifactEntry[]
+}
+
+function WorkspaceFileTree({
+  files,
+  projectId,
+  challengeId,
+}: {
+  files: WorkspaceArtifactEntry[]
+  projectId: string
+  challengeId: string
+}) {
+  const root = buildWorkspaceTree(files)
+  return (
+    <ul className="overflow-hidden rounded-xl border border-border bg-card/40 py-1">
+      {sortedDirectories(root).map((directory) => (
+        <WorkspaceDirectoryNode
+          key={directory.path}
+          directory={directory}
+          projectId={projectId}
+          challengeId={challengeId}
+        />
+      ))}
+      {sortedFiles(root.files).map((file) => (
+        <WorkspaceFileRow
+          key={file.path}
+          file={file}
+          downloadUrl={workspaceDownloadUrl(projectId, challengeId, file.path)}
+        />
+      ))}
+    </ul>
+  )
+}
+
+function WorkspaceDirectoryNode({
+  directory,
+  projectId,
+  challengeId,
+}: {
+  directory: WorkspaceTreeDirectory
+  projectId: string
+  challengeId: string
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <li>
+      <button
+        type="button"
+        className="flex h-11 w-full items-center gap-2 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Icon
+          icon="lucide:chevron-right"
+          width="14"
+          className={
+            open ? "rotate-90 transition-transform" : "transition-transform"
+          }
+        />
+        <Icon
+          icon={open ? "lucide:folder-open" : "lucide:folder"}
+          width="16"
+          className="text-primary/80"
+        />
+        <span className="min-w-0 flex-1 truncate font-mono">
+          {directory.name}
+        </span>
+        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">
+          {countDirectoryFiles(directory)}
+        </span>
+      </button>
+      {open ? (
+        <ul className="ml-5 border-l border-border/70 pl-2">
+          {sortedDirectories(directory).map((child) => (
+            <WorkspaceDirectoryNode
+              key={child.path}
+              directory={child}
+              projectId={projectId}
+              challengeId={challengeId}
+            />
+          ))}
+          {sortedFiles(directory.files).map((file) => (
+            <WorkspaceFileRow
+              key={file.path}
+              file={file}
+              downloadUrl={workspaceDownloadUrl(
+                projectId,
+                challengeId,
+                file.path,
+              )}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  )
+}
+
 function WorkspaceFileRow({
   file,
   downloadUrl,
@@ -111,20 +205,15 @@ function WorkspaceFileRow({
   file: WorkspaceArtifactEntry
   downloadUrl: string
 }) {
-  const segments = file.path.split("/")
-  const name = segments.pop() ?? file.path
-  const directory = segments.join("/")
+  const name = file.path.split("/").pop() ?? file.path
   return (
-    <li className="flex min-h-16 items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 hover:bg-muted/25">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Icon icon={fileIcon(name)} width="17" />
+    <li className="flex min-h-11 items-center gap-2 px-3 py-1.5 hover:bg-muted/25">
+      <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
+        <Icon icon={fileIcon(name)} width="15" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-mono text-xs font-medium text-foreground">
           {name}
-        </p>
-        <p className="mt-0.5! truncate font-mono text-[11px] text-muted-foreground">
-          {directory || "/"}
         </p>
       </div>
       <div className="hidden shrink-0 text-right text-[11px] text-muted-foreground sm:block">
@@ -137,6 +226,69 @@ function WorkspaceFileRow({
         </a>
       </Button>
     </li>
+  )
+}
+
+function buildWorkspaceTree(
+  files: WorkspaceArtifactEntry[],
+): WorkspaceTreeDirectory {
+  const root: WorkspaceTreeDirectory = {
+    name: "",
+    path: "",
+    directories: new Map(),
+    files: [],
+  }
+  for (const file of files) {
+    const segments = file.path.split("/").filter(Boolean)
+    const fileName = segments.pop()
+    if (!fileName) continue
+    let directory = root
+    for (const segment of segments) {
+      const path = directory.path ? `${directory.path}/${segment}` : segment
+      let child = directory.directories.get(segment)
+      if (!child) {
+        child = { name: segment, path, directories: new Map(), files: [] }
+        directory.directories.set(segment, child)
+      }
+      directory = child
+    }
+    directory.files.push(file)
+  }
+  return root
+}
+
+function sortedDirectories(
+  directory: WorkspaceTreeDirectory,
+): WorkspaceTreeDirectory[] {
+  return [...directory.directories.values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )
+}
+
+function sortedFiles(
+  files: WorkspaceArtifactEntry[],
+): WorkspaceArtifactEntry[] {
+  return [...files].sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function countDirectoryFiles(directory: WorkspaceTreeDirectory): number {
+  return (
+    directory.files.length +
+    [...directory.directories.values()].reduce(
+      (total, child) => total + countDirectoryFiles(child),
+      0,
+    )
+  )
+}
+
+function workspaceDownloadUrl(
+  projectId: string,
+  challengeId: string,
+  filePath: string,
+): string {
+  return projectApi(
+    projectId,
+    `/api/challenges/${encodeURIComponent(challengeId)}/files/download?path=${encodeURIComponent(filePath)}`,
   )
 }
 

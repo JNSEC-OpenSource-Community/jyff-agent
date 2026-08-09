@@ -62,7 +62,7 @@ ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有�
 
 通用 UI 采用 shadcn/ui 的源码托管结构：`apps/frontend/components.json` 是 CLI 配置，Radix/CVA 组件位于 `src/components/ui/`，组合型业务组件位于 `src/components/`，`src/lib/utils.ts` 提供 `cn()`。Tailwind CSS v4 在构建期把 `src/styles.css` 编译为 `dist/app.css`；后端通过 `WEBUI_FRONTEND_DIST` 环境变量定位构建产物（默认 `apps/frontend/dist`），缺失时回退到占位 HTML。图标继续统一通过 Iconify 渲染，不在业务组件中嵌入裸 SVG。
 
-聊天接口直接读取 Pi JSONL 当前分支上的结构化消息，不从 SQLite 事件拼接 transcript。Solver attempt 与 SubAgent 使用同一个消息渲染器；工具、thinking 和元数据可以折叠，黑板、Attempts、Workspace 文件与 Writeup 放在独立 tab。文件列表递归读取题目级 workspace，最多返回 2,000 个普通文件且不跟随 symlink；下载请求同时校验规范化相对路径和真实路径 containment。只有至少存在一条 Assistant 消息时，结构化会话与 Pi HTML 导出才可查看。BrowserRouter 的非 API GET 路由由服务端回退到 `index.html`，刷新嵌套路由不会得到 404。桌面侧栏折叠状态仅作为浏览器本地界面偏好持久化，不进入 Project 配置。
+聊天接口直接读取 Pi JSONL 当前分支上的结构化消息，不从 SQLite 事件拼接 transcript。Solver attempt 与 SubAgent 使用同一个消息渲染器；工具、thinking 和元数据可以折叠，黑板、Attempts、Workspace 文件与 Writeup 放在独立 tab。文件视图以可折叠目录树呈现题目级 workspace，后端最多返回 2,000 个普通文件且不跟随 symlink；下载请求同时校验规范化相对路径和真实路径 containment。只有至少存在一条 Assistant 消息时，结构化会话与 Pi HTML 导出才可查看。BrowserRouter 的非 API GET 路由由服务端回退到 `index.html`，刷新嵌套路由不会得到 404。桌面侧栏折叠状态仅作为浏览器本地界面偏好持久化，不进入 Project 配置。
 
 WebUI 登录默认关闭。启用后 `global-config.json` 只保存 scrypt 参数、盐和摘要；成功登录签发内存 session，并使用 HttpOnly、SameSite=Strict Cookie。除静态 SPA、登录端点和最小健康状态外，API、SSE 与导出均经过同一鉴权门。
 
