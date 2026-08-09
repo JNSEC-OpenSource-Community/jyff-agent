@@ -59,32 +59,6 @@ export function WorkspaceFilesPanel({
 
   return (
     <div className="w-full">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        {listing ? (
-          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <Icon icon="lucide:files" width="14" />
-            <span className="font-mono tabular-nums">
-              {listing.files.length} 个文件
-            </span>
-          </span>
-        ) : (
-          <span />
-        )}
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={loading}
-          onClick={() => void load()}
-        >
-          <Icon
-            icon={loading ? "lucide:loader-circle" : "lucide:refresh-cw"}
-            width="13"
-            className={loading ? "animate-spin" : undefined}
-          />
-          刷新
-        </Button>
-      </div>
-
       {error ? <ErrorNotice message={error} className="mb-4" /> : null}
       {listing?.truncated ? (
         <div className="mb-3 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">
@@ -140,7 +114,7 @@ function WorkspaceFileTree({
 }) {
   const root = buildWorkspaceTree(files)
   return (
-    <ul className="overflow-hidden rounded-xl border border-border bg-card/40 py-1">
+    <ul className="overflow-hidden bg-card/40">
       {sortedDirectories(root).map((directory) => (
         <WorkspaceDirectoryNode
           key={directory.path}
@@ -198,9 +172,6 @@ function WorkspaceDirectoryNode({
         />
         <span className="min-w-0 truncate font-mono text-xs font-medium text-foreground">
           {directory.name}
-        </span>
-        <span className="text-right font-mono text-[11px] tabular-nums text-muted-foreground/70">
-          {fileCount}
         </span>
         <span className="hidden sm:block" />
       </button>
