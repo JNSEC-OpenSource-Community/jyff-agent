@@ -53,6 +53,26 @@ describe("题目路由", () => {
           size: 12,
           modifiedAt: "2026-08-09T00:00:00.000Z",
         },
+        {
+          path: "notes.md",
+          size: 15,
+          modifiedAt: "2026-08-09T00:00:00.000Z",
+        },
+        {
+          path: "capture.pcapng",
+          size: 512,
+          modifiedAt: "2026-08-09T00:00:00.000Z",
+        },
+        {
+          path: "large.log",
+          size: 300_000,
+          modifiedAt: "2026-08-09T00:00:00.000Z",
+        },
+        {
+          path: "invalid.txt",
+          size: 2,
+          modifiedAt: "2026-08-09T00:00:00.000Z",
+        },
       ],
       truncated: false,
     }
@@ -60,13 +80,63 @@ describe("题目路由", () => {
       "artifacts/exploit.py",
       new TextEncoder().encode("print('pwn')"),
     )
+    project.workspaceFileValues.set(
+      "notes.md",
+      new TextEncoder().encode("# Finding\nhello"),
+    )
+    project.workspaceFileValues.set(
+      "invalid.txt",
+      Uint8Array.from([0xc3, 0x28]),
+    )
 
     const listed = await app.request("/api/challenges/pwn-1/files")
     expect(listed.status).toBe(200)
     expect(await jsonOf(listed)).toMatchObject({
-      files: [{ path: "artifacts/exploit.py", size: 12 }],
+      files: [
+        {
+          path: "artifacts/exploit.py",
+          size: 12,
+          preview: { kind: "code", language: "python" },
+        },
+        {
+          path: "notes.md",
+          preview: { kind: "markdown", language: "markdown" },
+        },
+        { path: "capture.pcapng", preview: null },
+        { path: "large.log", preview: { kind: "text", language: "text" } },
+        { path: "invalid.txt", preview: { kind: "text", language: "text" } },
+      ],
       truncated: false,
     })
+
+    const previewed = await app.request(
+      "/api/challenges/pwn-1/files/preview?path=notes.md",
+    )
+    expect(previewed.status).toBe(200)
+    expect(await jsonOf(previewed)).toMatchObject({
+      path: "notes.md",
+      kind: "markdown",
+      language: "markdown",
+      content: "# Finding\nhello",
+    })
+    expect(
+      (
+        await app.request(
+          "/api/challenges/pwn-1/files/preview?path=capture.pcapng",
+        )
+      ).status,
+    ).toBe(415)
+    expect(
+      (await app.request("/api/challenges/pwn-1/files/preview?path=large.log"))
+        .status,
+    ).toBe(413)
+    expect(
+      (
+        await app.request(
+          "/api/challenges/pwn-1/files/preview?path=invalid.txt",
+        )
+      ).status,
+    ).toBe(415)
 
     const downloaded = await app.request(
       "/api/challenges/pwn-1/files/download?path=artifacts%2Fexploit.py",

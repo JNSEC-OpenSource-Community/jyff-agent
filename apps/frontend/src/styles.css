@@ -192,6 +192,54 @@ p {
   background: var(--scrollbar-thumb-hover);
 }
 
+/* Workspace 代码预览：与控制台冷灰紫色系保持一致。 */
+.hljs {
+  color: #d8dee9;
+  background: transparent;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #69707d;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: #9da7f2;
+}
+.hljs-string,
+.hljs-title,
+.hljs-name,
+.hljs-type,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: #8ec7a2;
+}
+.hljs-number,
+.hljs-meta,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-params {
+  color: #d5ad7c;
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-deletion {
+  color: #d98b91;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

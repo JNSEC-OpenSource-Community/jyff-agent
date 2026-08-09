@@ -196,7 +196,7 @@ WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”
 
 WebUI 使用浏览器路由：`/` 管理全部 Project，`/projects/new` 创建 Project，`/settings` 管理全局凭据、模型池与登录策略，`/projects/:id` 管理一场比赛，`/projects/:id/settings` 管理该比赛的连接与运行配置，`/projects/:id/challenges/:challengeId` 是以对话为核心的题目工作区。Solver 与 SubAgent 复用结构化 Pi session 对话布局；移动端通过底部 Drawer 查看题目状态和 Agents；黑板、Attempts 和 Writeup 分页显示，工具与推理块按需展开。用户可见时间统一转换为本地可读格式。
 
-题目页的“文件”Tab 以可折叠目录树列出题目 workspace 中的普通文件并提供下载，少于 8 个文件的目录默认展开；列表最多返回 2,000 项且不跟随 symlink，下载路径同时经过相对路径与真实路径 containment 校验。桌面侧栏折叠偏好保存在浏览器本地，切换页面或刷新后保持不变。
+题目页的“文件”Tab 以可折叠目录树列出题目 workspace 中的普通文件并提供下载，少于 8 个文件的目录默认展开。受支持的代码、纯文本和 Markdown 文件可在响应式弹窗中直接预览；代码按需使用有限语言集高亮，Markdown 复用安全渲染器，预览文件上限为 256 KiB。列表最多返回 2,000 项且不跟随 symlink，预览和下载路径同时经过相对路径与真实路径 containment 校验。桌面侧栏折叠偏好保存在浏览器本地，切换页面或刷新后保持不变。
 
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 

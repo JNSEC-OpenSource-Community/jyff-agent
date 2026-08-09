@@ -1,7 +1,3 @@
-import type {
-  WorkspaceArtifactEntry,
-  WorkspaceArtifactListing,
-} from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
 import { useCallback, useEffect, useState } from "react"
 import {
@@ -13,6 +9,15 @@ import {
 import { apiRequest, projectApi } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import { absoluteTime } from "../../lib/time.ts"
+import {
+  type PreviewableWorkspaceFile,
+  WorkspaceFilePreviewDialog,
+} from "./WorkspaceFilePreviewDialog.tsx"
+
+interface WorkspaceFileListing {
+  files: PreviewableWorkspaceFile[]
+  truncated: boolean
+}
 
 export function WorkspaceFilesPanel({
   projectId,
@@ -21,7 +26,9 @@ export function WorkspaceFilesPanel({
   projectId: string
   challengeId: string
 }) {
-  const [listing, setListing] = useState<WorkspaceArtifactListing | null>(null)
+  const [listing, setListing] = useState<WorkspaceFileListing | null>(null)
+  const [previewFile, setPreviewFile] =
+    useState<PreviewableWorkspaceFile | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
 
@@ -30,7 +37,7 @@ export function WorkspaceFilesPanel({
     setError("")
     try {
       setListing(
-        await apiRequest<WorkspaceArtifactListing>(
+        await apiRequest<WorkspaceFileListing>(
           projectApi(
             projectId,
             `/api/challenges/${encodeURIComponent(challengeId)}/files`,
@@ -60,7 +67,9 @@ export function WorkspaceFilesPanel({
               {listing.files.length} 个文件
             </span>
           </span>
-        ) : null}
+        ) : (
+          <span />
+        )}
         <Button
           size="sm"
           variant="secondary"
@@ -87,6 +96,7 @@ export function WorkspaceFilesPanel({
           files={listing.files}
           projectId={projectId}
           challengeId={challengeId}
+          onPreview={setPreviewFile}
         />
       ) : !loading ? (
         <EmptyState
@@ -95,6 +105,17 @@ export function WorkspaceFilesPanel({
           description="派发 Solver 后，附件与生成的分析文件会显示在这里。"
         />
       ) : null}
+      <WorkspaceFilePreviewDialog
+        file={previewFile}
+        projectId={projectId}
+        challengeId={challengeId}
+        downloadUrl={
+          previewFile
+            ? workspaceDownloadUrl(projectId, challengeId, previewFile.path)
+            : null
+        }
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   )
 }
@@ -103,17 +124,19 @@ interface WorkspaceTreeDirectory {
   name: string
   path: string
   directories: Map<string, WorkspaceTreeDirectory>
-  files: WorkspaceArtifactEntry[]
+  files: PreviewableWorkspaceFile[]
 }
 
 function WorkspaceFileTree({
   files,
   projectId,
   challengeId,
+  onPreview,
 }: {
-  files: WorkspaceArtifactEntry[]
+  files: PreviewableWorkspaceFile[]
   projectId: string
   challengeId: string
+  onPreview(file: PreviewableWorkspaceFile): void
 }) {
   const root = buildWorkspaceTree(files)
   return (
@@ -124,6 +147,7 @@ function WorkspaceFileTree({
           directory={directory}
           projectId={projectId}
           challengeId={challengeId}
+          onPreview={onPreview}
         />
       ))}
       {sortedFiles(root.files).map((file) => (
@@ -131,6 +155,7 @@ function WorkspaceFileTree({
           key={file.path}
           file={file}
           downloadUrl={workspaceDownloadUrl(projectId, challengeId, file.path)}
+          onPreview={onPreview}
         />
       ))}
     </ul>
@@ -141,10 +166,12 @@ function WorkspaceDirectoryNode({
   directory,
   projectId,
   challengeId,
+  onPreview,
 }: {
   directory: WorkspaceTreeDirectory
   projectId: string
   challengeId: string
+  onPreview(file: PreviewableWorkspaceFile): void
 }) {
   const fileCount = countDirectoryFiles(directory)
   const [open, setOpen] = useState(() => fileCount < 8)
@@ -152,8 +179,9 @@ function WorkspaceDirectoryNode({
     <li>
       <button
         type="button"
-        className="grid min-h-12 w-full grid-cols-[14px_20px_minmax(0,1fr)_2rem] items-center gap-2 px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_2rem]"
+        className="grid min-h-12 w-full grid-cols-[14px_20px_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_4.25rem]"
         aria-expanded={open}
+        aria-label={`${open ? "折叠" : "展开"} ${directory.path}`}
         onClick={() => setOpen((current) => !current)}
       >
         <Icon
@@ -168,7 +196,7 @@ function WorkspaceDirectoryNode({
           width="16"
           className="justify-self-center text-primary/80"
         />
-        <span className="min-w-0 truncate font-mono font-medium">
+        <span className="min-w-0 truncate font-mono text-xs font-medium text-foreground">
           {directory.name}
         </span>
         <span className="text-right font-mono text-[11px] tabular-nums text-muted-foreground/70">
@@ -184,6 +212,7 @@ function WorkspaceDirectoryNode({
               directory={child}
               projectId={projectId}
               challengeId={challengeId}
+              onPreview={onPreview}
             />
           ))}
           {sortedFiles(directory.files).map((file) => (
@@ -195,6 +224,7 @@ function WorkspaceDirectoryNode({
                 challengeId,
                 file.path,
               )}
+              onPreview={onPreview}
             />
           ))}
         </ul>
@@ -206,35 +236,64 @@ function WorkspaceDirectoryNode({
 function WorkspaceFileRow({
   file,
   downloadUrl,
+  onPreview,
 }: {
-  file: WorkspaceArtifactEntry
+  file: PreviewableWorkspaceFile
   downloadUrl: string
+  onPreview(file: PreviewableWorkspaceFile): void
 }) {
   const name = file.path.split("/").pop() ?? file.path
   return (
-    <li className="grid min-h-12 grid-cols-[14px_20px_minmax(0,1fr)_2rem] items-center gap-2 px-3 py-1.5 hover:bg-muted/25 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_2rem]">
+    <li className="grid min-h-12 grid-cols-[14px_20px_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 py-1.5 hover:bg-muted/25 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_4.25rem]">
       <span />
       <span className="flex size-5 items-center justify-center text-muted-foreground">
         <Icon icon={fileIcon(name)} width="15" />
       </span>
-      <p className="min-w-0 truncate font-mono text-xs font-medium text-foreground">
-        {name}
-      </p>
+      {file.preview ? (
+        <button
+          type="button"
+          className="min-w-0 truncate text-left font-mono text-xs font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:underline"
+          onClick={() => onPreview(file)}
+        >
+          {name}
+        </button>
+      ) : (
+        <p className="min-w-0 truncate font-mono text-xs font-medium text-foreground">
+          {name}
+        </p>
+      )}
       <div className="hidden shrink-0 text-right text-[11px] text-muted-foreground sm:block">
         <p className="font-mono tabular-nums">{formatFileSize(file.size)}</p>
         <p>{absoluteTime(file.modifiedAt)}</p>
       </div>
-      <Button size="icon" variant="ghost" className="size-8" asChild>
-        <a href={downloadUrl} download={name} aria-label={`下载 ${file.path}`}>
-          <Icon icon="lucide:download" width="15" />
-        </a>
-      </Button>
+      <div className="flex justify-end gap-0.5">
+        {file.preview ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            aria-label={`预览 ${file.path}`}
+            onClick={() => onPreview(file)}
+          >
+            <Icon icon="lucide:eye" width="15" />
+          </Button>
+        ) : null}
+        <Button size="icon" variant="ghost" className="size-8" asChild>
+          <a
+            href={downloadUrl}
+            download={name}
+            aria-label={`下载 ${file.path}`}
+          >
+            <Icon icon="lucide:download" width="15" />
+          </a>
+        </Button>
+      </div>
     </li>
   )
 }
 
 function buildWorkspaceTree(
-  files: WorkspaceArtifactEntry[],
+  files: PreviewableWorkspaceFile[],
 ): WorkspaceTreeDirectory {
   const root: WorkspaceTreeDirectory = {
     name: "",
@@ -270,8 +329,8 @@ function sortedDirectories(
 }
 
 function sortedFiles(
-  files: WorkspaceArtifactEntry[],
-): WorkspaceArtifactEntry[] {
+  files: PreviewableWorkspaceFile[],
+): PreviewableWorkspaceFile[] {
   return [...files].sort((left, right) => left.path.localeCompare(right.path))
 }
 

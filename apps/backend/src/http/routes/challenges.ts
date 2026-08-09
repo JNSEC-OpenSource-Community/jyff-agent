@@ -1,6 +1,7 @@
 import { basename } from "node:path"
 import { Hono } from "hono"
 import { buildChallengeDetails } from "../../domain/view.ts"
+import type { DashboardProject } from "../../types.ts"
 import type { App, AppContext, AppEnv } from "../context.ts"
 import { errorText, HttpError, hasCode } from "../errors.ts"
 import {
@@ -12,6 +13,10 @@ import {
   thinkingLevelSchema,
 } from "../schema.ts"
 import type { Services } from "../services.ts"
+
+const WORKSPACE_PREVIEW_MAX_BYTES = 256 * 1_024
+
+type WorkspacePreviewKind = "markdown" | "code" | "text"
 
 /** 题目级路由：派发/取消、人工消息、思考强度、TLDR、writeup、详情。 */
 export function challengeRoutes(services: Services): App {
@@ -155,7 +160,74 @@ export function challengeRoutes(services: Services): App {
       c.req.param("challengeId"),
     )
     c.header("Cache-Control", "no-store")
-    return c.json(listing)
+    return c.json({
+      ...listing,
+      files: listing.files.map((file) => ({
+        ...file,
+        preview: workspacePreviewDescriptor(file.path),
+      })),
+    })
+  })
+
+  app.get("/challenges/:challengeId/files/preview", async (c) => {
+    const artifactPath = c.req.query("path")
+    if (!artifactPath) {
+      throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
+    }
+    const preview = workspacePreviewDescriptor(artifactPath)
+    if (!preview) {
+      throw new HttpError(
+        415,
+        "workspace_preview_unsupported",
+        "该文件类型不支持预览",
+      )
+    }
+    const project = services.requireProject(projectIdOf(c))
+    const listing = await project.challengeWorkspaceFiles(
+      c.req.param("challengeId"),
+    )
+    const file = listing.files.find(
+      (candidate) => candidate.path === artifactPath,
+    )
+    if (!file) {
+      throw new HttpError(404, "workspace_file_not_found", "文件不存在")
+    }
+    if (file.size > WORKSPACE_PREVIEW_MAX_BYTES) {
+      throw new HttpError(
+        413,
+        "workspace_preview_too_large",
+        "文件超过 256 KiB，无法在线预览",
+      )
+    }
+    const content = await readWorkspaceFile(
+      project,
+      c.req.param("challengeId"),
+      artifactPath,
+    )
+    if (content.byteLength > WORKSPACE_PREVIEW_MAX_BYTES) {
+      throw new HttpError(
+        413,
+        "workspace_preview_too_large",
+        "文件超过 256 KiB，无法在线预览",
+      )
+    }
+    let text: string
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(content)
+    } catch {
+      throw new HttpError(
+        415,
+        "workspace_preview_invalid_text",
+        "文件不是有效的 UTF-8 文本",
+      )
+    }
+    c.header("Cache-Control", "no-store")
+    return c.json({
+      path: artifactPath,
+      size: content.byteLength,
+      content: text,
+      ...preview,
+    })
   })
 
   app.get("/challenges/:challengeId/files/download", async (c) => {
@@ -164,25 +236,11 @@ export function challengeRoutes(services: Services): App {
       throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
     }
     const project = services.requireProject(projectIdOf(c))
-    let content: Uint8Array
-    try {
-      content = await project.challengeWorkspaceFile(
-        c.req.param("challengeId"),
-        artifactPath,
-      )
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code === "ENOENT") {
-        throw new HttpError(404, "workspace_file_not_found", "文件不存在")
-      }
-      if (
-        error instanceof Error &&
-        (error.message.includes("Workspace artifact") || code === "EISDIR")
-      ) {
-        throw new HttpError(400, "invalid_workspace_path", error.message)
-      }
-      throw error
-    }
+    const content = await readWorkspaceFile(
+      project,
+      c.req.param("challengeId"),
+      artifactPath,
+    )
     const name = basename(artifactPath)
     c.header("Content-Type", "application/octet-stream")
     c.header(
@@ -249,4 +307,110 @@ function challengeIdFromPath(path: string): string {
 /** Content-Disposition filename 段白名单清洗：平台/run 数据不可信，防 header 注入。 */
 function filenameSafe(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
+}
+
+async function readWorkspaceFile(
+  project: DashboardProject,
+  challengeId: string,
+  artifactPath: string,
+): Promise<Uint8Array> {
+  try {
+    return await project.challengeWorkspaceFile(challengeId, artifactPath)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ENOENT") {
+      throw new HttpError(404, "workspace_file_not_found", "文件不存在")
+    }
+    if (
+      error instanceof Error &&
+      (error.message.includes("Workspace artifact") || code === "EISDIR")
+    ) {
+      throw new HttpError(400, "invalid_workspace_path", error.message)
+    }
+    throw error
+  }
+}
+
+function workspacePreviewDescriptor(
+  path: string,
+): { kind: WorkspacePreviewKind; language: string } | null {
+  const name = basename(path).toLowerCase()
+  const extension = name.includes(".") ? (name.split(".").pop() ?? "") : ""
+  if (["md", "markdown", "mdown"].includes(extension)) {
+    return { kind: "markdown", language: "markdown" }
+  }
+  const language =
+    WORKSPACE_CODE_LANGUAGES[extension] ?? WORKSPACE_FILE_LANGUAGES[name]
+  if (language) return { kind: "code", language }
+  if (["txt", "log", "csv", "tsv"].includes(extension)) {
+    return { kind: "text", language: "text" }
+  }
+  return null
+}
+
+const WORKSPACE_FILE_LANGUAGES: Readonly<Record<string, string>> = {
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+  "cmakelists.txt": "cmake",
+}
+
+const WORKSPACE_CODE_LANGUAGES: Readonly<Record<string, string>> = {
+  asm: "x86asm",
+  bash: "bash",
+  c: "c",
+  cc: "cpp",
+  cfg: "ini",
+  cjs: "javascript",
+  cmake: "cmake",
+  conf: "ini",
+  cpp: "cpp",
+  cs: "csharp",
+  css: "css",
+  cxx: "cpp",
+  dart: "dart",
+  env: "ini",
+  fish: "bash",
+  go: "go",
+  gql: "graphql",
+  graphql: "graphql",
+  h: "c",
+  hpp: "cpp",
+  htm: "xml",
+  html: "xml",
+  ini: "ini",
+  java: "java",
+  js: "javascript",
+  json: "json",
+  jsonc: "json",
+  jsx: "javascript",
+  kt: "kotlin",
+  kts: "kotlin",
+  less: "less",
+  lua: "lua",
+  mjs: "javascript",
+  php: "php",
+  pl: "perl",
+  pm: "perl",
+  proto: "protobuf",
+  ps1: "powershell",
+  py: "python",
+  pyw: "python",
+  r: "r",
+  rb: "ruby",
+  rs: "rust",
+  sass: "scss",
+  scss: "scss",
+  sh: "bash",
+  sol: "csharp",
+  sql: "sql",
+  svelte: "xml",
+  swift: "swift",
+  toml: "ini",
+  ts: "typescript",
+  tsx: "typescript",
+  vue: "xml",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  zsh: "bash",
 }
