@@ -125,11 +125,15 @@ export async function listWorkspaceArtifacts(
 export async function readWorkspaceArtifact(
   workspace: string,
   untrustedPath: string,
+  maximumBytes?: number,
 ): Promise<Uint8Array> {
   const artifactPath = resolveWorkspaceArtifact(workspace, untrustedPath)
   await assertWorkspaceArtifactContained(workspace, artifactPath)
   const metadata = await lstat(artifactPath)
   if (!metadata.isFile()) throw new Error("Workspace artifact is not a file")
+  if (maximumBytes !== undefined && metadata.size > maximumBytes) {
+    throw new Error(`Workspace artifact exceeds ${maximumBytes} bytes`)
+  }
   return readFile(artifactPath)
 }
 

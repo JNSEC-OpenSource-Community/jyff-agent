@@ -194,6 +194,44 @@ describe("Project", () => {
     }
   })
 
+  it("TLDR 使用宿主机只读工具且不创建 Docker sandbox", async () => {
+    const root = await fixture()
+    let sandboxCreations = 0
+    let modelCalls = 0
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => {
+        sandboxCreations += 1
+        return new FakeSandbox()
+      },
+    })
+    try {
+      const tldrAgentOptions = {
+        ...agentOptions,
+        streamFn: (() => {
+          modelCalls += 1
+          throw new Error("本测试不调用模型")
+        }) as AgentOptions["streamFn"],
+      }
+      const [tldr, duplicate] = await Promise.all([
+        project.refreshTldr("warmup-flag", tldrAgentOptions),
+        project.refreshTldr("warmup-flag", tldrAgentOptions),
+      ])
+
+      expect(sandboxCreations).toBe(0)
+      expect(modelCalls).toBe(1)
+      expect(duplicate).toBe(tldr)
+      expect(tldr).toMatchObject({
+        challengeId: "warmup-flag",
+        model: model.id,
+        error: "TLDR Agent returned no summary",
+      })
+    } finally {
+      await project.close()
+    }
+  })
+
   it("创建题目绑定的 Agent、持久化 workspace，并在 close 后仅删除容器", async () => {
     const root = await fixture()
     const sandbox = new FakeSandbox()

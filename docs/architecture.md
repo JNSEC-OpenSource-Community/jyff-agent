@@ -129,7 +129,7 @@ ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；bas
 
 生产 Scheduler 在 accepted/already_solved 后进入 `writing_writeup`，保留同一 Solver/session 但将 active tools 限制为 `read/write/edit/list`。Solver 必须把英文可复现 writeup 写入题目 workspace，校验失败时最多继续专用 writeup turn，不增加 block score；通过校验后才以 solved 关闭并销毁 sandbox；校验失败会清除临时 terminal submission，再以 failed 关闭，不能被 close callback 自动改回 solved。测试调度器可显式关闭该流程以隔离生命周期测试。
 
-题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，进程重启后以 SQLite 与该 JSONL 作为恢复依据。`CtfTldrAgent` 仅提供 `read/list`，题目、黑板、公告和已有 TLDR 作为不可信数据注入；Project 使用临时 sandbox 挂载同一题目 workspace，生成完成后销毁内存 Agent 和 sandbox。WebUI 详情可查看状态并触发 `/api/challenges/:id/tldr/refresh` 更新。
+题目级 TLDR 的 SQLite 记录独立于 Run，保存最新内容、模型、稳定 workspace 下的 `tldr/session.jsonl` 路径、更新时间和错误；更新采用题目主键 upsert，同一进程内同题的重叠刷新合并为一次生成，进程重启后以 SQLite 与该 JSONL 作为恢复依据。`CtfTldrAgent` 仅提供宿主机侧受 containment 校验的 `read/list`，不会创建 Docker sandbox；工具只列出普通文件、不暴露 TLDR 自身 session，并拒绝路径或 symlink 逃逸、非 UTF-8 文本和超过 64 KiB 的单文件。题目、黑板、公告和已有 TLDR 作为不可信数据注入。WebUI 详情可查看状态并触发 `/api/challenges/:id/tldr/refresh` 更新。
 
 WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`cacheWrite` 单独显示。Solver Run 从持久化 `agent_usage` 聚合；SubAgent 在 worker snapshot 中累计 input/cache read/cache write 并通过兼容迁移列持久化；TLDR 保存最近一次成功生成的 usage。没有可用 usage 或分母为 0 时显示无数据，不显示误导性的 0%。
 

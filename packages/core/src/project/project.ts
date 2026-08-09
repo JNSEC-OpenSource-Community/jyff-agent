@@ -74,6 +74,7 @@ import {
   type RunStatus,
   RunStore,
   type SchedulerQueueRecord,
+  type TldrRecord,
 } from "../persistence/run-store.ts"
 import type {
   AgentStreamEvent,
@@ -83,6 +84,7 @@ import type {
 } from "./agent-stream.ts"
 import {
   ChallengeAttachmentError,
+  challengeAttachmentPath,
   downloadChallengeAttachments,
 } from "./attachments.ts"
 import {
@@ -98,6 +100,7 @@ import {
   type ProjectConfig,
   parseProjectConfig,
 } from "./config.ts"
+import { createTldrWorkspaceTools } from "./tldr-workspace-tools.ts"
 
 export interface OpenProjectOptions {
   root?: string
@@ -193,6 +196,7 @@ export class Project {
   }>()
   private readonly agentStreamSequences = new Map<string, number>()
   private readonly activeStreamMessages = new Map<string, string>()
+  private readonly tldrRefreshes = new Map<string, Promise<TldrRecord>>()
   private closed = false
   private constructor(
     root: string,
@@ -352,29 +356,32 @@ export class Project {
   async refreshTldr(
     challengeId: string,
     agent: AgentOptions,
-  ): Promise<NonNullable<ReturnType<RunStore["tldr"]>>> {
+  ): Promise<TldrRecord> {
+    const active = this.tldrRefreshes.get(challengeId)
+    if (active) return active
+    const refresh = this.generateTldr(challengeId, agent)
+    this.tldrRefreshes.set(challengeId, refresh)
+    try {
+      return await refresh
+    } finally {
+      if (this.tldrRefreshes.get(challengeId) === refresh) {
+        this.tldrRefreshes.delete(challengeId)
+      }
+    }
+  }
+
+  private async generateTldr(
+    challengeId: string,
+    agent: AgentOptions,
+  ): Promise<TldrRecord> {
     const model = agent.initialState?.model
     if (!model) throw new Error("TLDR Agent 缺少可用模型")
     const workspace = challengeWorkspacePath(this.agentDirectory, challengeId)
     const sessionPath = this.tldrSessionPath(challengeId)
     await mkdir(join(workspace, "tldr"), { recursive: true })
-    let sandbox: Sandbox | undefined
     try {
       const capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
-      sandbox = await this.sandboxFactory({
-        projectId: this.config.project.id,
-        runId: `tldr-${challengeId}`,
-        image: this.config.sandbox.image,
-        workspace,
-        workspaceMount: this.workspaceMount?.({
-          runId: `tldr-${challengeId}`,
-          workspace,
-          relativeWorkspace: this.relativeWorkspace(challengeId),
-        }),
-        privileged: this.config.sandbox.privileged,
-        networkMode: this.config.sandbox.networkMode,
-      })
       const blackboard = injectBlackboard(this.runStore, challengeId)
       const announcements = challengeAnnouncementsPrompt(
         this.runStore.challengeAnnouncements(challengeId),
@@ -388,7 +395,10 @@ export class Project {
               id: attachment.id,
               name: attachment.name,
               size: attachment.size ?? 0,
-              path: `/workspace/${attachment.name}`,
+              path: challengeAttachmentPath(attachment.name).replace(
+                /^\/workspace\//,
+                "",
+              ),
             })),
           ),
           timestamp: Date.now(),
@@ -417,7 +427,7 @@ export class Project {
         challenge,
         sessionPath,
         agent,
-        sandbox,
+        tools: createTldrWorkspaceTools(workspace),
         initialMessages,
       })
       try {
@@ -446,8 +456,6 @@ export class Project {
         sessionPath,
         error: errorText(error),
       })
-    } finally {
-      await sandbox?.close()
     }
   }
 

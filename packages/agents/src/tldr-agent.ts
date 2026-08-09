@@ -1,22 +1,24 @@
 import { dirname } from "node:path"
 import type { ChallengeInfo } from "@ctf-agent/platform"
 import { TLDR_SYSTEM_PROMPT } from "@ctf-agent/prompts"
-import type { Sandbox } from "@ctf-agent/sandbox"
-import type { AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core"
+import type {
+  AgentMessage,
+  AgentOptions,
+  AgentTool,
+} from "@earendil-works/pi-agent-core"
 import {
   BaseAgent,
   modelsFromAgentOptions,
   type PreparedBaseAgent,
   prepareBaseAgent,
 } from "./base-agent/index.ts"
-import { createReadonlySandboxTools } from "./solver/sandbox/tools.ts"
 
 export interface CreateTldrAgentOptions {
   projectId: string
   challenge: ChallengeInfo
   sessionPath: string
   agent: AgentOptions
-  sandbox: Sandbox
+  tools: readonly AgentTool[]
   initialMessages?: readonly AgentMessage[]
 }
 
@@ -54,10 +56,7 @@ export class CtfTldrAgent extends BaseAgent {
       model,
       systemPrompt: TLDR_SYSTEM_PROMPT,
       thinkingLevel: "off",
-      tools: createReadonlySandboxTools({
-        sandbox: options.sandbox,
-        cwd: "/workspace",
-      }),
+      tools: options.tools,
       initialMessages:
         options.initialMessages ?? options.agent.initialState?.messages,
       compaction: true,
