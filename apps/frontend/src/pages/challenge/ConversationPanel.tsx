@@ -191,7 +191,7 @@ export function ConversationPanel({
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 max-lg:px-3 max-lg:py-4"
         style={{ scrollbarGutter: "stable" }}
       >
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="mx-auto w-full max-w-5xl">
           {loading ? <ConversationSkeleton /> : null}
           {error ? <ErrorNotice message={error} className="mb-4" /> : null}
           {!loading && messages.length === 0 ? (
@@ -210,7 +210,7 @@ export function ConversationPanel({
             aria-live="polite"
             aria-relevant="additions text"
           >
-            {messages.map(({ entryId, message: item, timestamp }) => {
+            {messages.map(({ entryId, message: item, timestamp }, index) => {
               const streaming =
                 entryId === `live:${activity.streamingMessageId ?? ""}`
               return (
@@ -219,7 +219,7 @@ export function ConversationPanel({
                   className={cn(
                     "group/message relative min-w-0",
                     item.role === "user"
-                      ? "ml-auto max-w-[85%] rounded-xl border border-border/80 bg-muted/70 px-4 py-3"
+                      ? "ml-auto max-w-[88%] overflow-hidden rounded-xl border border-border/80 bg-muted/70 px-4 py-3"
                       : "w-full pl-5 before:absolute before:top-1 before:bottom-1 before:left-0 before:w-px before:bg-border",
                     streaming &&
                       item.role === "assistant" &&
@@ -233,6 +233,7 @@ export function ConversationPanel({
                   <MessageBody
                     message={item}
                     streaming={streaming}
+                    latest={index === messages.length - 1}
                     toolActivities={activity.tools}
                   />
                   {streaming && item.role === "assistant" ? (
@@ -270,7 +271,7 @@ export function ConversationPanel({
         className="shrink-0 border-t border-border/80 bg-card/80 p-3 backdrop-blur-sm max-lg:p-2"
         onSubmit={(event) => void onSubmit(event)}
       >
-        <div className="mx-auto max-w-3xl rounded-xl border border-border bg-background/70 p-1.5 shadow-[0_8px_24px_-18px_rgba(94,106,210,0.65)] transition-colors focus-within:border-primary/45">
+        <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-xl border border-border bg-background/70 p-1.5 shadow-[0_8px_24px_-18px_rgba(94,106,210,0.65)] transition-colors focus-within:border-primary/45">
           <Textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
@@ -283,7 +284,7 @@ export function ConversationPanel({
             name="agent-message"
             autoComplete="off"
             aria-label="发送给 Agent 的消息"
-            className="min-h-10 max-h-40 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
+            className="min-h-10 max-h-40 flex-1 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault()
@@ -291,25 +292,20 @@ export function ConversationPanel({
               }
             }}
           />
-          <div className="flex items-center justify-between gap-3 px-1 pb-0.5">
-            <span className="text-[10px] text-muted-foreground max-sm:hidden">
-              Enter 发送 · Shift + Enter 换行
-            </span>
-            <Button
-              type="submit"
-              size="icon"
-              className="ml-auto size-8 rounded-lg"
-              disabled={sending || !message.trim()}
-              aria-label={sending ? "正在发送消息" : "发送消息"}
-            >
-              <Icon
-                icon={sending ? "lucide:loader-circle" : "lucide:arrow-up"}
-                className={sending ? "animate-spin" : ""}
-                width="16"
-                aria-hidden="true"
-              />
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            size="icon"
+            className="size-8 shrink-0 rounded-lg"
+            disabled={sending || !message.trim()}
+            aria-label={sending ? "正在发送消息" : "发送消息"}
+          >
+            <Icon
+              icon={sending ? "lucide:loader-circle" : "lucide:arrow-up"}
+              className={sending ? "animate-spin" : ""}
+              width="16"
+              aria-hidden="true"
+            />
+          </Button>
         </div>
       </form>
     </section>

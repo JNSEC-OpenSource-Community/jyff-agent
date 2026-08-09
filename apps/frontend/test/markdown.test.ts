@@ -29,4 +29,17 @@ describe("MarkdownContent", () => {
     expect(safeUrlTransform("javascript:alert(1)")).toBe("")
     expect(safeUrlTransform("data:text/html,boom")).toBe("")
   })
+
+  it("使用 highlight.js 高亮 fenced code block", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        MarkdownContent,
+        null,
+        "```python\nif solved:\n    print('flag')\n```",
+      ),
+    )
+    expect(html).toContain('class="hljs language-python"')
+    expect(html).toContain("hljs-keyword")
+    expect(html).toContain("hljs-built_in")
+  })
 })

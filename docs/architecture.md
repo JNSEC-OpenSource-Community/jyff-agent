@@ -133,7 +133,7 @@ ControlPlane 连接平台时先执行公告 baseline，再创建 Scheduler；bas
 
 WebUI 的 Agent 缓存率统一计算为 `cacheRead / (input + cacheRead)`，`cacheWrite` 单独显示。Solver Run 从持久化 `agent_usage` 聚合；SubAgent 在 worker snapshot 中累计 input/cache read/cache write 并通过兼容迁移列持久化；TLDR 保存最近一次成功生成的 usage。没有可用 usage 或分母为 0 时显示无数据，不显示误导性的 0%。
 
-Solver 与 SubAgent 的聊天界面使用按 `Project ID + Run ID + SubAgent ID` 隔离的瞬时 SSE。Core 将 Pi 的 `message_*`、`tool_execution_*`、队列、compact 和 retry 事件归一化后旁路广播；浏览器把增量投影到当前对话，并在重新加载或断线恢复时用 Pi JSONL 结构化会话校准。高频 token 不写入 SQLite，订阅者异常也不得影响 Agent 生命周期。Project 级 snapshot SSE 继续负责题目、调度器和侧栏等低频权威状态。
+Solver 与 SubAgent 的聊天界面使用按 `Project ID + Run ID + SubAgent ID` 隔离的瞬时 SSE。Core 将 Pi 的 `message_*`、`tool_execution_*`、队列、compact 和 retry 事件归一化后旁路广播；浏览器把增量投影到当前对话，并在重新加载或断线恢复时用 Pi JSONL 结构化会话校准。Assistant 文本与推理复用安全的 GFM 渲染和 highlight.js 语言白名单，终端类工具额外安全解析 ANSI SGR 样式；短工具结果自动展开，流式推理在下一条时间线消息出现前保持展开。高频 token 不写入 SQLite，订阅者异常也不得影响 Agent 生命周期。Project 级 snapshot SSE 继续负责题目、调度器和侧栏等低频权威状态。
 
 Solver 停止原因经过 `classifySolverStop` 归一化：`fetch failed`、非人工触发的 `Aborted`、网络断连、Provider 5xx/429 和显式 retryable 错误不增加 block score。每个 attempt 在同一 Solver/Pi session 内有三次 continuation 重试机会，默认分别等待 10 秒、60 秒和 300 秒，并为每次失败记录 `run_transient_failure`；三次机会耗尽后才结束该 attempt。认证/配置错误不重试。模型自然停止、长度耗尽、协议异常和 prompt timeout 在未超过阈值时记录幂等 block event，并在同一 Run/session 追加 continuation prompt；超过阈值才关闭为 blocked。取消、进程关闭和已提交结果不计入 block，等待退避期间也可立即取消或关闭调度器。
 

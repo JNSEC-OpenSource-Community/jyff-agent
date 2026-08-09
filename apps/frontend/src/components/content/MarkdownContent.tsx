@@ -1,6 +1,7 @@
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "../../lib/utils.ts"
+import { SyntaxHighlightedCode } from "./SyntaxHighlightedCode.tsx"
 
 function safeUrlTransform(url: string): string {
   const normalized = defaultUrlTransform(url)
@@ -21,7 +22,7 @@ export function MarkdownContent({
   return (
     <div
       className={cn(
-        "min-w-0 text-sm leading-7 text-foreground/90 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "min-w-0 max-w-full break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className,
       )}
     >
@@ -65,16 +66,23 @@ export function MarkdownContent({
               {children}
             </blockquote>
           ),
-          code: ({ className: codeClassName, children }) =>
-            codeClassName ? (
-              <code className={cn("font-mono", codeClassName)}>{children}</code>
+          code: ({ className: codeClassName, children }) => {
+            const language = /(?:^|\s)language-([\w-]+)/.exec(
+              codeClassName ?? "",
+            )?.[1]
+            return codeClassName ? (
+              <SyntaxHighlightedCode
+                code={String(children).replace(/\n$/, "")}
+                language={language}
+              />
             ) : (
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-primary">
+              <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-primary">
                 {children}
               </code>
-            ),
+            )
+          },
           pre: ({ children }) => (
-            <pre className="my-3 overflow-x-auto rounded-lg border border-border bg-background/70 p-4 font-mono text-xs leading-6">
+            <pre className="my-3 max-w-full overflow-x-auto rounded-lg border border-border bg-background/70 p-4 font-mono text-xs leading-6">
               {children}
             </pre>
           ),

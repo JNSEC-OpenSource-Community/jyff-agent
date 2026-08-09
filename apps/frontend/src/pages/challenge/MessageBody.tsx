@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { Icon } from "@iconify/react"
 import { useEffect, useState } from "react"
+import { AnsiText } from "../../components/content/AnsiText.tsx"
 import { MarkdownContent } from "../../components/content/MarkdownContent.tsx"
 import {
   Badge,
@@ -8,7 +9,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "../../components/index.ts"
-import { roleLabel, textContent, toolLabel } from "../../lib/conversation.ts"
+import {
+  roleLabel,
+  shouldAutoExpandToolResult,
+  textContent,
+  toolLabel,
+} from "../../lib/conversation.ts"
 import type { AgentToolActivity } from "../../lib/conversation-stream.ts"
 import { absoluteTime } from "../../lib/time.ts"
 import { cn } from "../../lib/utils.ts"
@@ -123,12 +129,16 @@ function ToolBlock({
   error,
   extra,
   activity,
+  autoOpen = false,
+  ansi = false,
 }: {
   label: string
   detail: string
   error?: boolean
   extra?: string | null
   activity?: AgentToolActivity
+  autoOpen?: boolean
+  ansi?: boolean
 }): React.ReactElement {
   const elapsed = useElapsed(activity)
   const running = activity?.status === "running"
@@ -140,15 +150,21 @@ function ToolBlock({
       : activity?.status === "succeeded"
         ? `完成 · ${elapsed}`
         : null
+  const renderedDetail = activity?.partialResult
+    ? `${detail}\n\n${stringifyToolOutput(activity.partialResult)}`
+    : activity?.result
+      ? `${detail}\n\n${stringifyToolOutput(activity.result)}`
+      : detail || "（等待输出）"
   return (
     <Collapsible
+      defaultOpen={autoOpen}
       className={cn(
-        "group/tool relative overflow-hidden rounded-lg border transition-colors",
+        "group/tool relative overflow-hidden rounded-lg border transition-colors data-[state=open]:bg-muted/70",
         failed
           ? "border-danger/30 bg-danger/5"
           : running
             ? "agent-tool-running border-primary/35 bg-primary/[0.045]"
-            : "border-border/80 bg-muted/70",
+            : "border-border/80 bg-muted/55",
       )}
     >
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
@@ -198,13 +214,9 @@ function ToolBlock({
           aria-hidden="true"
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="border-t border-border">
-        <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
-          {activity?.partialResult
-            ? `${detail}\n\n${stringifyToolOutput(activity.partialResult)}`
-            : activity?.result
-              ? `${detail}\n\n${stringifyToolOutput(activity.result)}`
-              : detail || "（等待输出）"}
+      <CollapsibleContent className="border-t border-border/80">
+        <pre className="max-w-full overflow-x-auto px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">
+          {ansi ? <AnsiText text={renderedDetail} /> : renderedDetail}
         </pre>
       </CollapsibleContent>
     </Collapsible>
@@ -215,28 +227,49 @@ function ThinkingBlock({
   redacted,
   content,
   streaming = false,
+  latest = false,
 }: {
   redacted: boolean
   content: string
   streaming?: boolean
+  latest?: boolean
 }): React.ReactElement {
+  const [open, setOpen] = useState(streaming)
+  useEffect(() => {
+    if (streaming) setOpen(true)
+    else if (!latest) setOpen(false)
+  }, [latest, streaming])
   return (
-    <Collapsible className="overflow-hidden rounded-lg bg-muted">
-      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
-        <Icon icon="lucide:brain" width="15" aria-hidden="true" />
-        {streaming ? "正在推理" : "推理记录"}
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="group/thinking overflow-hidden rounded-lg border border-border/80 bg-muted/55 transition-colors data-[state=open]:bg-muted/70"
+    >
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-background/60">
+          <Icon icon="lucide:brain" width="14" aria-hidden="true" />
+        </span>
+        <span>{streaming ? "正在推理" : "推理记录"}</span>
         {streaming ? (
           <span className="agent-stream-cursor ml-0.5" aria-hidden="true" />
         ) : null}
         <Icon
           icon="lucide:chevron-down"
-          className="ml-auto shrink-0"
-          width="14"
+          className="ml-auto shrink-0 transition-transform group-data-[state=open]/thinking:rotate-180"
+          width="15"
           aria-hidden="true"
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="px-3 pb-2 text-sm whitespace-pre-wrap text-muted-foreground">
-        {redacted ? "推理内容已由模型提供方隐藏。" : content}
+      <CollapsibleContent className="border-t border-border/80 px-3 py-2.5">
+        {redacted ? (
+          <p className="text-sm text-muted-foreground">
+            推理内容已由模型提供方隐藏。
+          </p>
+        ) : (
+          <MarkdownContent className="text-muted-foreground">
+            {content}
+          </MarkdownContent>
+        )}
       </CollapsibleContent>
     </Collapsible>
   )
@@ -245,10 +278,12 @@ function ThinkingBlock({
 export function MessageBody({
   message,
   streaming = false,
+  latest = false,
   toolActivities = {},
 }: {
   message: AgentMessage
   streaming?: boolean
+  latest?: boolean
   toolActivities?: Record<string, AgentToolActivity>
 }): React.ReactElement {
   if (message.role === "user") {
@@ -287,6 +322,7 @@ export function MessageBody({
                 redacted={part.redacted === true}
                 content={part.thinking}
                 streaming={streaming}
+                latest={latest}
               />
             )
           if (part.type === "toolCall")
@@ -297,6 +333,7 @@ export function MessageBody({
                 detail={JSON.stringify(part.arguments, null, 2)}
                 extra={toolDetail(part.name, part.arguments)}
                 activity={toolActivities[part.id]}
+                ansi={part.name === "bash"}
               />
             )
           return null
@@ -310,11 +347,14 @@ export function MessageBody({
     )
   }
   if (message.role === "toolResult") {
+    const detail = textContent(message.content)
     return (
       <ToolBlock
         label={`${toolLabel(message.toolName)} · 返回`}
-        detail={textContent(message.content)}
+        detail={detail}
         error={message.isError}
+        autoOpen={shouldAutoExpandToolResult(detail)}
+        ansi={message.toolName === "bash"}
       />
     )
   }
@@ -322,12 +362,15 @@ export function MessageBody({
   const custom = message as unknown as Record<string, unknown>
   if (message.role === "bashExecution") {
     const cmd = String(custom.command ?? "")
+    const detail = `$ ${cmd}\n${String(custom.output ?? "")}`
     return (
       <ToolBlock
         label="终端命令"
-        detail={`$ ${cmd}\n${String(custom.output ?? "")}`}
+        detail={detail}
         error={typeof custom.exitCode === "number" && custom.exitCode !== 0}
         extra={cmd.length > 50 ? `${cmd.slice(0, 50)}…` : cmd || null}
+        autoOpen={shouldAutoExpandToolResult(detail)}
+        ansi
       />
     )
   }

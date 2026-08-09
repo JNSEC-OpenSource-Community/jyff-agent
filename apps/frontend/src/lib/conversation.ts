@@ -31,3 +31,10 @@ export function roleLabel(role: AgentMessage["role"]): string {
 export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name
 }
+
+/** 小型工具结果无需额外点击即可阅读；大型输出仍保持折叠以控制时间线高度。 */
+export function shouldAutoExpandToolResult(text: string): boolean {
+  const normalized = text.trim()
+  if (!normalized) return false
+  return normalized.length <= 480 && normalized.split(/\r?\n/).length <= 6
+}

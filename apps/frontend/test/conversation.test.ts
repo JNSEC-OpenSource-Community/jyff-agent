@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { roleLabel, textContent, toolLabel } from "../src/lib/conversation.ts"
+import {
+  roleLabel,
+  shouldAutoExpandToolResult,
+  textContent,
+  toolLabel,
+} from "../src/lib/conversation.ts"
 
 describe("textContent", () => {
   it("原样返回字符串 content", () => {
@@ -53,5 +58,14 @@ describe("toolLabel", () => {
 
   it("未知工具原样返回", () => {
     expect(toolLabel("unknown_tool")).toBe("unknown_tool")
+  })
+})
+
+describe("shouldAutoExpandToolResult", () => {
+  it("仅自动展开非空的小型工具结果", () => {
+    expect(shouldAutoExpandToolResult("ok\nflag found")).toBe(true)
+    expect(shouldAutoExpandToolResult("")).toBe(false)
+    expect(shouldAutoExpandToolResult("x".repeat(481))).toBe(false)
+    expect(shouldAutoExpandToolResult("1\n2\n3\n4\n5\n6\n7")).toBe(false)
   })
 })
