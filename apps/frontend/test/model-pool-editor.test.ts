@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { createElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { modelPoolEntryId } from "../src/lib/model-pool.ts"
 import { ModelPoolEditor } from "../src/pages/settings/ModelPoolEditor.tsx"
 import type {
   ModelAuthenticationView,
@@ -48,6 +55,7 @@ const authentication: ModelAuthenticationView = {
 
 describe("模型池自定义供应商模型选择", () => {
   afterEach(() => {
+    cleanup()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -95,5 +103,59 @@ describe("模型池自定义供应商模型选择", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
     expect(screen.getByPlaceholderText("输入兼容端点的模型 ID")).toBeTruthy()
+  })
+
+  it("新模型使用 Provider、模型和推理档位生成 ID", () => {
+    expect(
+      modelPoolEntryId({
+        provider: "openai",
+        modelId: "gpt-5.4",
+        thinkingEnabled: true,
+        reasoningEffort: "high",
+      }),
+    ).toBe("openai/gpt-5.4@high")
+    expect(
+      modelPoolEntryId({
+        provider: "openai",
+        modelId: "gpt-5.4",
+        thinkingEnabled: false,
+        reasoningEffort: "high",
+      }),
+    ).toBe("openai/gpt-5.4@off")
+  })
+
+  it("添加新模型时不再生成 m-N ID", () => {
+    render(
+      createElement(ModelPoolEditor, {
+        configuration: { ...configuration, customProviders: [] },
+        authentication: {
+          ...authentication,
+          providers: [
+            {
+              id: "openai",
+              name: "OpenAI",
+              description: "OpenAI API",
+              configured: true,
+              credentialType: "api_key",
+              methods: [],
+              models: [
+                {
+                  id: "gpt-5.4",
+                  name: "GPT-5.4",
+                  contextWindow: 400_000,
+                  reasoning: true,
+                },
+              ],
+            },
+          ],
+        },
+        onSaved: () => undefined,
+      }),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "添加" }))
+    const ids = screen.getAllByLabelText<HTMLInputElement>("模型配置 ID")
+    expect(ids.at(-1)?.value).toBe("openai/gpt-5.4@medium")
+    expect(ids.at(-1)?.readOnly).toBe(true)
   })
 })

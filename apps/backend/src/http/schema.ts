@@ -41,9 +41,9 @@ export const modelPoolEntrySchema = z.object({
     .string({ message: "Models[?] ID 必须是字符串" })
     .trim()
     .min(1, { message: "模型配置 ID 不能为空" })
-    .max(128, { message: "模型配置 ID 长度不能超过 128" })
-    .regex(ID_PATTERN, {
-      message: "模型配置 ID 只能包含字母、数字、点、下划线和连字符",
+    .max(512, { message: "模型配置 ID 长度不能超过 512" })
+    .refine((value) => !hasControlCharacter(value), {
+      message: "模型配置 ID 不能包含控制字符",
     }),
   provider: z
     .string({ message: "Provider 必须是字符串" })
@@ -104,7 +104,7 @@ const optionalBinding = (label: string) =>
   z
     .string({ message: `${label} 必须是字符串` })
     .trim()
-    .max(128, { message: `${label} 长度不能超过 128` })
+    .max(512, { message: `${label} 长度不能超过 512` })
 
 /** 全局模型池更新：条目级校验 + 跨条目引用/一致性校验。 */
 export const modelConfigurationUpdateSchema = z

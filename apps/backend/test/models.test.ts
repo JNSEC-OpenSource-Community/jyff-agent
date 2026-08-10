@@ -191,6 +191,35 @@ describe("模型配置与模型鉴权路由", () => {
     ).toBe(400)
   })
 
+  it("模型配置接受语义化模型 ID", async () => {
+    const project = new FakeDashboardProject()
+    const { app } = createWebUiApp({
+      project,
+      modelConfiguration: new FakeModelConfiguration(),
+      frontendDist: "/nonexistent",
+    })
+    const id = "openai/gpt-5.4@high"
+    const response = await jsonRequest(app, "/api/model-config", "POST", {
+      models: [
+        {
+          id,
+          provider: "openai",
+          modelId: "gpt-5.4",
+          contextWindow: 400_000,
+          thinkingEnabled: true,
+          reasoningEffort: "high",
+          passthroughThinking: false,
+        },
+      ],
+      solverModelId: id,
+      tldrModelId: id,
+      fatherModelId: id,
+      subagentModels: {},
+    })
+
+    expect(response.status).toBe(200)
+  })
+
   it("模型凭据导入、列出与移除且不泄露原文", async () => {
     const { app, authentication } = await appWithAuth()
 

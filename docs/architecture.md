@@ -72,6 +72,8 @@ ControlPlane 同时持有多个 `ManagedProjectRuntime`。每个 runtime 都有�
 
 WebUI 登录默认关闭。启用后 `global-config.json` 只保存 scrypt 参数、盐和摘要；成功登录签发内存 session，并使用 HttpOnly、SameSite=Strict Cookie。除静态 SPA、登录端点和最小健康状态外，API、SSE 与导出均经过同一鉴权门。
 
+全局模型池中新建条目的配置 ID 由 WebUI 按 `provider/model-id@thinkinglevel` 生成，并随尚未保存条目的 Provider、Model ID 与推理档位同步；关闭推理时使用 `@off`。后端允许该语义 ID 作为全局与 Project 模型绑定键。旧条目不自动改名，避免破坏已有 `runtime-config.json` 引用。
+
 ## 一次 Solver Run
 
 `Project.createSolver()` 的主要流程：

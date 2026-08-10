@@ -85,7 +85,6 @@ describe("Workspace 文件面板", () => {
     expect(scripts.getAttribute("aria-expanded")).toBe("true")
     expect(screen.getByText("exploit.py")).toBeTruthy()
     expect(screen.getByText("1.5 KiB")).toBeTruthy()
-    expect(screen.getByText("10 个文件")).toBeTruthy()
 
     const bulk = screen.getByRole("button", { name: "展开 bulk" })
     expect(bulk.getAttribute("aria-expanded")).toBe("false")

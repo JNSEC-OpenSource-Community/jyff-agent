@@ -22,6 +22,7 @@ import {
 } from "../../components/index.ts"
 import { apiMutation, apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
+import { modelPoolEntryId } from "../../lib/model-pool.ts"
 import type {
   ModelAuthenticationView,
   ModelConfigurationUpdate,
@@ -31,11 +32,13 @@ import type {
 
 interface EM extends ModelPoolEntryUpdate {
   uiKey: string
+  automaticId: boolean
   supportedThinkingLevels: string[]
 }
 
 const ed = (m: ModelConfigurationView["models"][number]): EM => ({
   uiKey: crypto.randomUUID(),
+  automaticId: false,
   id: m.id,
   provider: m.provider,
   modelId: m.modelId,
@@ -112,7 +115,13 @@ export function ModelPoolEditor({
   )
 
   function up(i: number, p: Partial<EM>) {
-    setModels((c) => c.map((m, j) => (j === i ? { ...m, ...p } : m)))
+    setModels((current) =>
+      current.map((model, index) => {
+        if (index !== i) return model
+        const next = { ...model, ...p }
+        return next.automaticId ? { ...next, id: modelPoolEntryId(next) } : next
+      }),
+    )
   }
 
   function modelOptions(providerId: string) {
@@ -131,7 +140,8 @@ export function ModelPoolEditor({
     try {
       const payload: ModelConfigurationUpdate = {
         models: models.map(
-          ({ uiKey: _, supportedThinkingLevels: __, ...m }) => m,
+          ({ uiKey: _, automaticId: __, supportedThinkingLevels: ___, ...m }) =>
+            m,
         ),
         solverModelId: configuration.solverModelId,
         tldrModelId: configuration.tldrModelId,
@@ -190,7 +200,10 @@ export function ModelPoolEditor({
               <Input
                 aria-label="模型配置 ID"
                 value={m.id}
-                onChange={(e) => up(i, { id: e.target.value })}
+                readOnly={m.automaticId}
+                onChange={(e) =>
+                  up(i, { id: e.target.value, automaticId: false })
+                }
                 className="h-7 flex-1 border-0 bg-transparent text-sm font-medium shadow-none focus-visible:ring-0"
               />
               <Button
@@ -355,17 +368,21 @@ export function ModelPoolEditor({
               ) ?? authentication.providers.find((x) => x.configured)
             const cp = configuration.customProviders[0]
             const s = p?.models[0]
+            const entry = {
+              provider: p?.id ?? cp?.id ?? "",
+              modelId: s?.id ?? "",
+              contextWindow: s?.contextWindow ?? 128000,
+              thinkingEnabled: s?.reasoning ?? true,
+              reasoningEffort: s?.reasoning ? "medium" : "off",
+              passthroughThinking: false,
+            }
             setModels((c) => [
               ...c,
               {
                 uiKey: crypto.randomUUID(),
-                id: `m-${c.length + 1}`,
-                provider: p?.id ?? cp?.id ?? "",
-                modelId: s?.id ?? "",
-                contextWindow: s?.contextWindow ?? 128000,
-                thinkingEnabled: s?.reasoning ?? true,
-                reasoningEffort: s?.reasoning ? "medium" : "off",
-                passthroughThinking: false,
+                automaticId: true,
+                id: modelPoolEntryId(entry),
+                ...entry,
                 supportedThinkingLevels: s?.reasoning
                   ? ["off", "low", "medium", "high"]
                   : ["off"],
