@@ -17,7 +17,7 @@ apps/
 └── frontend/  React 客户端（shadcn/ui 组件与 Tailwind CSS v4）
 ```
 
-后台平台轮询只服务于活跃 Solver 或已开启的自动调度；空闲 Project 仍可由 WebUI 显式刷新。归档 Project 不参与进程启动时的平台连接。归档操作会暂停自动调度，但保留已经活跃的 Solver；最后一个活跃 Solver 结束后，控制面关闭在线 runtime 并打开不含 Scheduler 的只读本地 runtime。平台连接失败时也回退到该 runtime，使 SQLite、历史对话、Writeup 与 workspace 保持可读；启动或重试 Solver 必须要求在线且未归档。取消归档时重新建立在线 runtime。
+后台平台轮询只服务于活跃 Solver 或已开启的自动调度；空闲 Project 仍可由 WebUI 显式刷新。归档 Project 不参与进程启动时的平台连接。归档操作会暂停自动调度，但保留已经活跃的 Solver；最后一个活跃 Solver 结束后，控制面关闭在线 runtime 并打开不含在线 Scheduler 的只读本地 runtime。RunStore 按字段保存最后一次成功取得的比赛概览、题目目录、公告与环境视图；平台接口部分失败时只让失败字段读取该缓存，不丢弃同轮已经成功取得的数据。平台连接失败或归档时，本地 runtime 使用这些缓存和持久队列生成与在线页面同结构的快照，使题名、分类、分值、状态、历史对话、Writeup 与 workspace 保持可读。所有解题操作必须要求在线且未归档；临时平台故障使用 Scheduler suspend 阻止继续领取，但保留自动调度意图及 SQLite 队列，不能调用会清空队列的人工 pause。取消归档或平台恢复时重新开放在线 runtime。
 
 主要依赖方向是 `apps/backend → core → agents/platform/sandbox`；`apps/backend`、`core` 与 `agents` 共享依赖 `prompts`，而 `prompts` 只依赖 `platform` 的题目类型。`agents` 可以依赖 `platform` 与 `sandbox`，但不能依赖 `core`、Project 或 SQLite。跨包公开 API 从各包的 `src/index.ts` 导出。
 
@@ -120,7 +120,7 @@ Run 级人工重试与题目级重新派发是两个不同操作。重新派发�
 ## 持久化职责
 
 - Pi JSONL：单个 Solver/SubAgent 的完整对话树、thinking、工具状态和 compaction；WebUI 对明确选择且已经产生 assistant 消息的 attempt/SubAgent session 读取当前分支的结构化消息，并可调用 Pi HTML 导出器，不提供题目级“最新 Run”推断，也不从 SQLite 事件重建 transcript。导出以 HTML 页面内联呈现、不强制下载。活跃 Solver Run 从内存 AgentState 读取 system prompt 与 tools metadata；关闭后从 Run 目录的 `session-export-metadata.json` 恢复同一信息；
-- SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数和黑板；
+- SQLite RunStore：Run 状态、事件时间线、SubAgent 摘要、调度状态、Session 中断计数、黑板，以及只读降级所需的最后成功平台视图；
 - 题目级 workspace：附件、脚本、反编译结果、`writeup.md` 和其他跨复活保留的解题产物。
 
 题目级目录使用 challenge ID 的 SHA-256 截断值作为 `safe-key`，不会把平台 ID 直接拼入宿主机路径。文件 API 可复用 `resolveWorkspaceArtifact()` 和 symlink containment 检查拒绝路径逃逸。`validateChallengeWriteup()` 已提供 UTF-8、大小和必需标题校验；accepted Flag 后的 `writing_writeup` turn 与延迟 sandbox 清理由后续 lifecycle supervisor 接管，在该接入完成前不得把 validator 的存在误认为交付生命周期已经切换。

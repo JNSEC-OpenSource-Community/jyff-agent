@@ -73,6 +73,7 @@ import {
   type ChallengeSchedulingDisposition,
   type EnqueueSchedulerChallenge,
   type MoveSchedulerChallenge,
+  type PlatformViewCache,
   type RunEvent,
   type RunFilter,
   type RunRecord,
@@ -559,26 +560,38 @@ export class Project {
 
   async refresh(): Promise<ContestOverview> {
     if (this.localOnly) throw new Error("比赛平台当前不可用")
-    return this.platform.refresh()
+    const overview = await this.platform.refresh()
+    this.runStore.cachePlatformView("overview", overview)
+    return overview
   }
   async overview(): Promise<ContestOverview> {
     if (this.localOnly) {
-      return {
-        id: this.config.project.id,
-        name: this.config.project.name,
-        challenges: this.localChallenges().length,
-        announcements: 0,
-      }
+      return (
+        this.runStore.platformViewCache().overview ?? {
+          id: this.config.project.id,
+          name: this.config.project.name,
+          challenges: this.localChallenges().length,
+          announcements:
+            this.runStore.platformViewCache().announcements?.length ?? 0,
+        }
+      )
     }
-    return this.platform.getOverview()
+    const overview = await this.platform.getOverview()
+    this.runStore.cachePlatformView("overview", overview)
+    return overview
   }
   async challenges(): Promise<ChallengeSummary[]> {
     if (this.localOnly) return this.localChallenges()
-    return this.platform.listChallenges()
+    const challenges = await this.platform.listChallenges()
+    this.runStore.cachePlatformView("challenges", challenges)
+    return challenges
   }
   async announcements(): Promise<Announcement[]> {
-    if (this.localOnly) return []
-    return this.platform.listAnnouncements()
+    if (this.localOnly)
+      return this.runStore.platformViewCache().announcements ?? []
+    const announcements = await this.platform.listAnnouncements()
+    this.runStore.cachePlatformView("announcements", announcements)
+    return announcements
   }
   async syncAnnouncements(options: { steerActive?: boolean } = {}): Promise<{
     announcements: number
@@ -586,8 +599,8 @@ export class Project {
     steered: number
   }> {
     const [announcements, challenges] = await Promise.all([
-      this.platform.listAnnouncements(),
-      this.platform.listChallenges(),
+      this.announcements(),
+      this.challenges(),
     ])
     let linked = 0
     let steered = 0
@@ -709,8 +722,11 @@ export class Project {
     return this.skills
   }
   async environments(): Promise<RemoteEnvironment[]> {
-    if (this.localOnly) return []
-    return this.platform.listRemoteEnvironments()
+    if (this.localOnly)
+      return this.runStore.platformViewCache().environments ?? []
+    const environments = await this.platform.listRemoteEnvironments()
+    this.runStore.cachePlatformView("environments", environments)
+    return environments
   }
   async destroyEnvironment(id: string): Promise<void> {
     if (await this.remoteEnvironments.destroyEnvironment(id)) return
@@ -726,7 +742,13 @@ export class Project {
     return this.runStore.listRuns(filter)
   }
 
+  cachedPlatformView(): PlatformViewCache {
+    return this.runStore.platformViewCache()
+  }
+
   private localChallenges(): ChallengeSummary[] {
+    const cached = this.runStore.platformViewCache().challenges ?? []
+    const cachedIds = new Set(cached.map((challenge) => challenge.id))
     const challengeIds = new Set([
       ...this.runStore.listRuns().map((run) => run.challengeId),
       ...this.runStore.getBlackboardStats().map((stats) => stats.challengeId),
@@ -735,15 +757,18 @@ export class Project {
         .challengeSchedulingOverrides()
         .map((item) => item.challengeId),
     ])
-    return [...challengeIds].map((challengeId) => ({
-      id: challengeId,
-      title: challengeId,
-      category: "本地记录",
-      score: 0,
-      solved: this.runStore
-        .listRuns({ challengeId })
-        .some((run) => run.status === "solved"),
-    }))
+    const localOnly = [...challengeIds]
+      .filter((challengeId) => !cachedIds.has(challengeId))
+      .map((challengeId) => ({
+        id: challengeId,
+        title: challengeId,
+        category: "本地记录",
+        score: 0,
+        solved: this.runStore
+          .listRuns({ challengeId })
+          .some((run) => run.status === "solved"),
+      }))
+    return [...cached, ...localOnly]
   }
   runEvents(runId: string): RunEvent[] {
     return this.runStore.events(runId)

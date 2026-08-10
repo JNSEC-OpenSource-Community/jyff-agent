@@ -65,7 +65,7 @@ describe("系统与快照路由", () => {
     expect(project.refreshCalls).toBe(1)
   })
 
-  it("平台读取失败时从本地 Run 构建快照和题目详情", async () => {
+  it("平台部分读取失败时保留其余题目内容和本地 Run 详情", async () => {
     const project = new FakeDashboardProject()
     project.overviewError = new Error("platform offline")
     testApp = await createTestApp({ project })
@@ -78,9 +78,11 @@ describe("系统与快照路由", () => {
       challenges: [
         expect.objectContaining({
           id: "pwn-1",
-          title: "pwn-1",
-          category: "本地记录",
+          title: "Heap Garden",
+          category: "pwn",
         }),
+        expect.objectContaining({ id: "web-1", title: "Cookie Jar" }),
+        expect.objectContaining({ id: "misc-1", title: "Signal" }),
       ],
     })
 

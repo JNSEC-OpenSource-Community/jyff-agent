@@ -1,4 +1,10 @@
-import type { RunEvent, RunRecord } from "@ctf-agent/core"
+import type {
+  ChallengeSummary,
+  ContestSchedulerSnapshot,
+  RunEvent,
+  RunRecord,
+  SchedulerQueueEntry,
+} from "@ctf-agent/core"
 import type {
   AgentCacheStats,
   ChallengeDetails,
@@ -32,38 +38,22 @@ export async function buildDashboardSnapshot(
   projectId?: string,
 ): Promise<DashboardSnapshot> {
   const runs = project.runs()
-  let overview: import("@ctf-agent/core").ContestOverview
-  let listed: import("@ctf-agent/core").ChallengeSummary[]
-  let announcements: import("@ctf-agent/core").Announcement[]
-  let announcementCandidates: ReturnType<
-    DashboardProject["announcementCandidates"]
-  >
-  let environments: import("@ctf-agent/core").RemoteEnvironment[]
-  try {
-    const online = await Promise.all([
-      project.overview(),
-      project.challenges(),
-      project.announcements(),
-      project.announcementCandidates(),
-      project.environments(),
-    ] as const)
-    overview = online[0]
-    listed = online[1]
-    announcements = online[2]
-    announcementCandidates = online[3]
-    environments = online[4]
-    controlPlane?.reportPlatformSuccess?.(projectId)
-  } catch (error) {
-    controlPlane?.reportPlatformFailure?.(projectId, error)
-    const state = controlPlane?.snapshot(projectId)
-    const challengeIds = [...new Set(runs.map((run) => run.challengeId))]
-    overview = {
-      id: state?.projectId ?? "local",
-      name: state?.projectName ?? "本地记录",
-      challenges: challengeIds.length,
-      announcements: 0,
-    }
-    listed = challengeIds.map((challengeId) => ({
+  const reads = await Promise.allSettled([
+    project.overview(),
+    project.challenges(),
+    project.announcements(),
+    project.environments(),
+  ] as const)
+  const failed = reads.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  )
+  if (failed) controlPlane?.reportPlatformFailure?.(projectId, failed.reason)
+  else controlPlane?.reportPlatformSuccess?.(projectId)
+
+  const cached = project.cachedPlatformView?.() ?? {}
+  const challengeIds = [...new Set(runs.map((run) => run.challengeId))]
+  const fallbackChallenges: ChallengeSummary[] = challengeIds.map(
+    (challengeId) => ({
       id: challengeId,
       title: challengeId,
       category: "本地记录",
@@ -71,12 +61,22 @@ export async function buildDashboardSnapshot(
       solved: runs.some(
         (run) => run.challengeId === challengeId && run.status === "solved",
       ),
-    }))
-    announcements = []
-    announcementCandidates = project.announcementCandidates()
-    environments = []
-  }
-  const schedulerSnapshot = scheduler?.snapshot() ?? null
+    }),
+  )
+  const overview = settledValue(reads[0]) ??
+    cached.overview ?? {
+      id: controlPlane?.snapshot(projectId).projectId ?? "local",
+      name: controlPlane?.snapshot(projectId).projectName ?? "本地记录",
+      challenges: cached.challenges?.length ?? challengeIds.length,
+      announcements: cached.announcements?.length ?? 0,
+    }
+  const listed =
+    settledValue(reads[1]) ?? cached.challenges ?? fallbackChallenges
+  const announcements = settledValue(reads[2]) ?? cached.announcements ?? []
+  const announcementCandidates = project.announcementCandidates()
+  const environments = settledValue(reads[3]) ?? cached.environments ?? []
+  const schedulerSnapshot =
+    scheduler?.snapshot() ?? readOnlySchedulerSnapshot(project)
   const queuedByChallenge = new Map(
     schedulerSnapshot?.queued.map((item) => [item.challengeId, item]) ?? [],
   )
@@ -151,6 +151,45 @@ export async function buildDashboardSnapshot(
     environments,
     scheduler: schedulerSnapshot,
     controlPlane: controlPlane?.snapshot(projectId) ?? null,
+  }
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>): T | undefined {
+  return result.status === "fulfilled" ? result.value : undefined
+}
+
+function readOnlySchedulerSnapshot(
+  project: DashboardProject,
+): ContestSchedulerSnapshot {
+  const validSources = new Set<SchedulerQueueEntry["source"]>([
+    "auto",
+    "manual",
+    "retry",
+    "revival",
+  ])
+  return {
+    available: false,
+    unavailableReason: "平台当前不可用，只能查看本地记录",
+    autoEnabled: false,
+    maxConcurrent: 0,
+    maxAttempts: 0,
+    maxSessionInterruptions: 0,
+    queued: (project.schedulerQueue?.() ?? []).flatMap((item) =>
+      validSources.has(item.source as SchedulerQueueEntry["source"])
+        ? [
+            {
+              challengeId: item.challengeId,
+              source: item.source as SchedulerQueueEntry["source"],
+              lane: item.lane,
+              manualOverride: item.manualOverride,
+              enqueuedAt: item.enqueuedAt,
+              position: item.position,
+              version: item.version,
+            },
+          ]
+        : [],
+    ),
+    active: [],
   }
 }
 

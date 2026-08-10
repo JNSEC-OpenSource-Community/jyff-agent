@@ -49,9 +49,11 @@ import type { DashboardChallenge, DashboardSnapshot } from "../types.ts"
 function QueueItem({
   entry,
   challenge,
+  disabled = false,
 }: {
   entry: SchedulerQueueEntry
   challenge?: DashboardChallenge
+  disabled?: boolean
 }) {
   const {
     attributes,
@@ -60,7 +62,7 @@ function QueueItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: entry.challengeId })
+  } = useSortable({ id: entry.challengeId, disabled })
   return (
     <div
       ref={setNodeRef}
@@ -68,7 +70,10 @@ function QueueItem({
       {...attributes}
       {...listeners}
       className={cn(
-        "flex cursor-grab items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm transition-all hover:border-primary/30 hover:cursor-grab active:cursor-grabbing",
+        "flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm transition-all",
+        disabled
+          ? "cursor-default opacity-75"
+          : "cursor-grab hover:border-primary/30 hover:cursor-grab active:cursor-grabbing",
         isDragging &&
           "cursor-grabbing border-dashed border-primary/40 opacity-60 shadow-lg",
       )}
@@ -348,6 +353,9 @@ export function ProjectPage() {
   const pendingAnnouncements = snapshot.announcementCandidates.filter(
     (candidate) => candidate.approvalStatus === "pending",
   )
+  const operationsAvailable =
+    snapshot.scheduler?.available === true &&
+    (!snapshot.controlPlane || snapshot.controlPlane.phase === "ready")
 
   const recent = recentChallenges(snapshot.challenges, 5)
   const visible = sortChallenges(
@@ -360,7 +368,7 @@ export function ProjectPage() {
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            {snapshot.overview.id} · Live
+            {snapshot.overview.id} · {operationsAvailable ? "Live" : "只读"}
           </p>
           <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
             {snapshot.overview.name}
@@ -374,7 +382,7 @@ export function ProjectPage() {
           <Button
             variant="secondary"
             onClick={() => void action("/api/refresh")}
-            disabled={busy}
+            disabled={busy || !operationsAvailable}
             size="sm"
           >
             <Icon
@@ -449,7 +457,7 @@ export function ProjectPage() {
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                disabled={busy}
+                disabled={busy || !operationsAvailable}
                 onClick={() =>
                   void reviewAnnouncements(pendingAnnouncements, "approved")
                 }
@@ -460,7 +468,7 @@ export function ProjectPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={busy}
+                disabled={busy || !operationsAvailable}
                 onClick={() =>
                   void reviewAnnouncements(pendingAnnouncements, "rejected")
                 }
@@ -498,7 +506,7 @@ export function ProjectPage() {
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={busy}
+                    disabled={busy || !operationsAvailable}
                     onClick={() =>
                       void reviewAnnouncements([candidate], "approved")
                     }
@@ -509,7 +517,7 @@ export function ProjectPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy}
+                    disabled={busy || !operationsAvailable}
                     onClick={() =>
                       void reviewAnnouncements([candidate], "rejected")
                     }
@@ -558,6 +566,7 @@ export function ProjectPage() {
                         key={e.challengeId}
                         entry={e}
                         challenge={byId.get(e.challengeId)}
+                        disabled={!operationsAvailable}
                       />
                     ))}
                   </div>
@@ -769,7 +778,9 @@ export function ProjectPage() {
                       <div className="flex items-center justify-end gap-1">
                         <Select
                           value={c.schedulingDisposition ?? "default"}
-                          disabled={schedulingBusy === c.id}
+                          disabled={
+                            schedulingBusy === c.id || !operationsAvailable
+                          }
                           onValueChange={(value) =>
                             void setSchedulingDisposition(
                               c.id,
@@ -796,16 +807,11 @@ export function ProjectPage() {
                             />
                           </SelectTrigger>
                           <SelectContent align="end">
-                            <SelectItem value="default">自动判断</SelectItem>
+                            <SelectItem value="default">跟随调度</SelectItem>
                             <SelectItem value="excluded">不调度</SelectItem>
-                            <SelectItem value="solved">标记为已解出</SelectItem>
+                            <SelectItem value="solved">已解出</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Icon
-                          icon="lucide:chevron-right"
-                          width="14"
-                          className="text-muted-foreground/40"
-                        />
                       </div>
                     </td>
                   </tr>

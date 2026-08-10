@@ -24,6 +24,42 @@ async function storeFixture(): Promise<{
 }
 
 describe("RunStore", () => {
+  it("持久化最后一次成功的平台视图", async () => {
+    const { path, store } = await storeFixture()
+    store.cachePlatformView("overview", {
+      id: "contest-1",
+      name: "Cached CTF",
+      challenges: 1,
+      announcements: 1,
+    })
+    store.cachePlatformView("challenges", [
+      {
+        id: "web-1",
+        title: "Cached Web",
+        category: "web",
+        score: 500,
+        solved: false,
+      },
+    ])
+    store.cachePlatformView("announcements", [
+      {
+        id: "notice-1",
+        title: "Hint",
+        content: "Attachment updated",
+        publishedAt: "2026-08-10T00:00:00.000Z",
+      },
+    ])
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.platformViewCache()).toMatchObject({
+      overview: { name: "Cached CTF" },
+      challenges: [{ id: "web-1", title: "Cached Web", score: 500 }],
+      announcements: [{ id: "notice-1", title: "Hint" }],
+    })
+    reopened.close()
+  })
+
   it("持久化并清除题目人工调度状态", async () => {
     const { path, store } = await storeFixture()
     expect(store.challengeSchedulingDisposition("web-skip")).toBeNull()

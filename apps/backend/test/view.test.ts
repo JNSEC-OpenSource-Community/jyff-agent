@@ -67,6 +67,36 @@ describe("WebUI dashboard model", () => {
     expect(project.runEventsCalls).toBe(0)
   })
 
+  it("没有在线调度器时仍返回不可操作的持久队列", async () => {
+    const project = new FakeDashboardProject()
+    project.schedulerQueueValues = [
+      {
+        challengeId: "misc-1",
+        source: "manual",
+        lane: "normal",
+        position: 1,
+        manualOverride: true,
+        enqueuedAt: "2026-08-10T00:00:00.000Z",
+        version: 3,
+      },
+    ]
+
+    const snapshot = await buildDashboardSnapshot(project)
+
+    expect(snapshot.scheduler).toMatchObject({
+      available: false,
+      queued: [
+        {
+          challengeId: "misc-1",
+          source: "manual",
+          position: 1,
+          version: 3,
+        },
+      ],
+    })
+    expect(snapshot.stats.queued).toBe(1)
+  })
+
   it("生成包含时间线、环境和协作黑板的单题详情", async () => {
     const project = new FakeDashboardProject()
     const details = await buildChallengeDetails(project, "pwn-1")

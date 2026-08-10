@@ -1,6 +1,12 @@
 import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import type {
+  Announcement,
+  ChallengeSummary,
+  ContestOverview,
+  RemoteEnvironment,
+} from "@ctf-agent/platform"
 import type { SubagentRecord } from "../collaboration/subagent-manager.ts"
 import type {
   RemoteEnvironmentLeaseRecord,
@@ -164,6 +170,15 @@ export interface ChallengeSchedulingOverride {
   disposition: ChallengeSchedulingDisposition
   updatedAt: string
 }
+
+export interface PlatformViewCache {
+  overview?: ContestOverview
+  challenges?: ChallengeSummary[]
+  announcements?: Announcement[]
+  environments?: RemoteEnvironment[]
+}
+
+type PlatformViewCacheKey = keyof PlatformViewCache
 
 export interface RecordChallengeBlockEvent {
   challengeId: string
@@ -872,6 +887,12 @@ export class RunStore {
         updated_at TEXT NOT NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS platform_view_cache (
+        cache_key TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
       CREATE TABLE IF NOT EXISTS remote_environment_leases (
         run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
         challenge_id TEXT NOT NULL,
@@ -1169,6 +1190,48 @@ export class RunStore {
       throw error
     }
     return new RunStore(path, database)
+  }
+
+  cachePlatformView<K extends PlatformViewCacheKey>(
+    key: K,
+    value: NonNullable<PlatformViewCache[K]>,
+  ): void {
+    this.assertOpen()
+    this.database
+      .prepare(`
+        INSERT INTO platform_view_cache (cache_key, payload_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          payload_json = excluded.payload_json,
+          updated_at = excluded.updated_at
+      `)
+      .run(key, JSON.stringify(value), new Date().toISOString())
+  }
+
+  platformViewCache(): PlatformViewCache {
+    this.assertOpen()
+    const rows = this.database
+      .prepare("SELECT cache_key, payload_json FROM platform_view_cache")
+      .all() as unknown as Array<{
+      cache_key: PlatformViewCacheKey
+      payload_json: string
+    }>
+    const cache: PlatformViewCache = {}
+    for (const row of rows) {
+      if (
+        !["overview", "challenges", "announcements", "environments"].includes(
+          row.cache_key,
+        )
+      ) {
+        continue
+      }
+      try {
+        Object.assign(cache, { [row.cache_key]: JSON.parse(row.payload_json) })
+      } catch {
+        // 损坏的缓存不能阻止本地 Run/session 进入只读模式。
+      }
+    }
+    return cache
   }
 
   createRun(input: CreateRunRecord): RunRecord {

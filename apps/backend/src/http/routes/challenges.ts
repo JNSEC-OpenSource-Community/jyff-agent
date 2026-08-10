@@ -56,6 +56,7 @@ export function challengeRoutes(services: Services): App {
 
   app.patch("/challenges/:challengeId/scheduling", async (c) => {
     const challengeId = c.req.param("challengeId")
+    services.requireSolverScheduler(projectIdOf(c))
     const project = services.requireProject(projectIdOf(c))
     const exists = (await project.challenges()).some(
       (challenge) => challenge.id === challengeId,
@@ -77,6 +78,7 @@ export function challengeRoutes(services: Services): App {
 
   // 题目级对话框：向该题当前活跃的 solver 发送人工消息（走 project，不走调度器）。
   app.post("/challenges/:challengeId/message", async (c) => {
+    services.assertSolverOperationsAvailable(projectIdOf(c))
     const project = services.requireProject(projectIdOf(c))
     const body = await parseJsonBody(c, challengeMessageSchema, {
       code: "invalid_message",
@@ -105,6 +107,7 @@ export function challengeRoutes(services: Services): App {
 
   // 运行中切换思考强度：向该题当前活跃的 solver 设置 thinkingLevel（下一 turn 生效）。
   app.post("/challenges/:challengeId/thinking-level", async (c) => {
+    services.assertSolverOperationsAvailable(projectIdOf(c))
     const project = services.requireProject(projectIdOf(c))
     const body = await parseJsonBody(c, thinkingLevelSchema, {
       code: "invalid_level",

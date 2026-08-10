@@ -32,7 +32,7 @@ export function schedulerRoutes(services: Services): App {
 
   app.post("/scheduler/auto/pause", async (c) => {
     await readJsonBody(c)
-    services.requireScheduler(projectIdOf(c)).pauseAuto()
+    services.requireSolverScheduler(projectIdOf(c)).pauseAuto()
     return c.json(await refreshFor(c))
   })
 
@@ -41,7 +41,7 @@ export function schedulerRoutes(services: Services): App {
       code: "invalid_scheduler_configuration",
     })
     await services
-      .requireScheduler(projectIdOf(c))
+      .requireSolverScheduler(projectIdOf(c))
       .setMaxConcurrent(body.maxConcurrent)
     return c.json(await refreshFor(c))
   })
@@ -54,7 +54,7 @@ export function schedulerRoutes(services: Services): App {
       },
     })
     services
-      .requireScheduler(projectIdOf(c))
+      .requireSolverScheduler(projectIdOf(c))
       .reorderQueue(c.req.param("challengeId"), {
         position: body.position,
         expectedVersion: body.expectedVersion,

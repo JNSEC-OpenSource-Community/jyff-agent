@@ -166,6 +166,7 @@ export class ContestScheduler {
   private lastError?: string
   private maxConcurrent: number
   private queueGeneration = 0
+  private suspensionReason?: string
 
   constructor(
     private readonly project: Project,
@@ -245,6 +246,19 @@ export class ContestScheduler {
         this.project.removeSchedulerChallenge(item.challenge.id)
     }
     this.queue.length = 0
+    return this.snapshot()
+  }
+
+  /** 平台暂不可用时冻结领取，不清除持久队列或自动调度意图。 */
+  suspend(reason: string): ContestSchedulerSnapshot {
+    this.suspensionReason = reason
+    return this.snapshot()
+  }
+
+  /** 平台恢复后继续处理挂起前保留的队列。 */
+  resume(): ContestSchedulerSnapshot {
+    this.suspensionReason = undefined
+    this.pump()
     return this.snapshot()
   }
 
@@ -1241,6 +1255,12 @@ export class ContestScheduler {
   }
 
   private availability(): SchedulerAvailability {
+    if (this.suspensionReason) {
+      return {
+        available: false,
+        unavailableReason: this.suspensionReason,
+      }
+    }
     return (
       this.options.availability?.() ?? {
         available: this.options.available ?? true,

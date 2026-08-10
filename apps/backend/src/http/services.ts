@@ -177,14 +177,17 @@ export class Services {
   }
 
   requireSolverScheduler(projectId?: string): DashboardScheduler {
-    if (this.options.controlPlane?.canStartSolver?.(projectId) === false) {
-      throw new HttpError(
-        409,
-        "solver_unavailable",
-        "平台故障或 Project 已归档，当前只能查看本地记录",
-      )
-    }
+    this.assertSolverOperationsAvailable(projectId)
     return this.requireScheduler(projectId)
+  }
+
+  assertSolverOperationsAvailable(projectId?: string): void {
+    if (this.options.controlPlane?.canStartSolver?.(projectId) !== false) return
+    throw new HttpError(
+      409,
+      "solver_unavailable",
+      "平台故障或 Project 已归档，当前只能查看本地记录",
+    )
   }
 
   canStartSolver(projectId?: string): boolean {

@@ -295,8 +295,8 @@ export class ControlPlane {
   reportPlatformFailure(projectId: string | undefined, error: unknown): void {
     const runtime = this.resolveRuntime(projectId)
     if (!runtime || runtime.localOnly) return
-    runtime.scheduler?.pauseAuto()
     runtime.lastError = `平台同步失败: ${errorText(error)}`
+    runtime.scheduler?.suspend(runtime.lastError)
     this.setRuntimePhase(runtime, "degraded")
   }
 
@@ -311,6 +311,7 @@ export class ControlPlane {
       return
     }
     runtime.lastError = null
+    runtime.scheduler?.resume()
     this.setRuntimePhase(runtime, "ready")
   }
 
@@ -585,12 +586,13 @@ export class ControlPlane {
           await project.syncAnnouncements()
           if (runtime.phase === "degraded") {
             runtime.lastError = null
+            runtime.scheduler?.resume()
             this.setRuntimePhase(runtime, "ready")
           }
         },
         onError: (error) => {
-          runtime.scheduler?.pauseAuto()
           runtime.lastError = `公告轮询失败: ${errorText(error)}`
+          runtime.scheduler?.suspend(runtime.lastError)
           this.setRuntimePhase(runtime, "degraded")
         },
       })

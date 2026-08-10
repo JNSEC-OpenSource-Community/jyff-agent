@@ -863,6 +863,43 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("平台挂起时保留内存和 SQLite 中的等待队列", async () => {
+    const first = challenge(1)
+    const queued = challenge(2)
+    const challenges = [first, queued]
+    const project = await fixture(challenges, new SandboxTracker())
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(
+          requiredChallenge(
+            challenges.find((challenge) => challenge.id === summary.id),
+          ),
+          500,
+        ),
+    })
+    try {
+      await scheduler.dispatch(first.id)
+      await waitUntil(() => scheduler.snapshot().active.length === 1)
+      await scheduler.dispatch(queued.id)
+      expect(scheduler.snapshot().queued).toHaveLength(1)
+      scheduler.suspend("platform offline")
+      expect(scheduler.snapshot()).toMatchObject({
+        available: false,
+        unavailableReason: "platform offline",
+        queued: [{ challengeId: queued.id }],
+      })
+      expect(project.schedulerQueue()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ challengeId: queued.id }),
+        ]),
+      )
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("运行时配置模型后立即开放调度操作", async () => {
     const item = challenge(1)
     const project = await fixture([item], new SandboxTracker())

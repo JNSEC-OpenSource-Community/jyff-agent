@@ -12,6 +12,7 @@ import type {
   RunEvent,
   RunFilter,
   RunRecord,
+  SchedulerQueueRecord,
   SubagentRecord,
   TldrRecord,
   WorkspaceArtifactListing,
@@ -79,6 +80,7 @@ export class FakeDashboardProject implements DashboardProject {
       endpoint: "tcp://127.0.0.1:31337",
     },
   ]
+  schedulerQueueValues: SchedulerQueueRecord[] = []
   runValues: RunRecord[] = [
     {
       id: "run-pwn-1",
@@ -269,6 +271,10 @@ export class FakeDashboardProject implements DashboardProject {
     return this.environmentValues
   }
   async setMaxRemoteEnvironments(_maxConcurrent: number): Promise<void> {}
+
+  schedulerQueue(): SchedulerQueueRecord[] {
+    return this.schedulerQueueValues
+  }
 
   runs(filter: RunFilter = {}): RunRecord[] {
     return this.runValues.filter((run) => {

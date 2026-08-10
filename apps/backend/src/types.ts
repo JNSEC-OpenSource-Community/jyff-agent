@@ -17,12 +17,14 @@ import type {
   PlatformExtensionView,
   PlatformValidationProfile,
   PlatformValidationReport,
+  PlatformViewCache,
   ProjectConfig,
   RemoteEnvironment,
   RunEvent,
   RunFilter,
   RunRecord,
   RunSessionExportMetadata,
+  SchedulerQueueRecord,
   SubagentRecord,
   TldrRecord,
   WorkspaceArtifactListing,
@@ -216,6 +218,8 @@ export interface DashboardProject {
     status: "approved" | "rejected",
   ): Promise<ChallengeAnnouncementRecord>
   environments(): Promise<RemoteEnvironment[]>
+  cachedPlatformView?(): PlatformViewCache
+  schedulerQueue?(): SchedulerQueueRecord[]
   setMaxRemoteEnvironments(maxConcurrent: number): Promise<void>
   runs(filter?: RunFilter): RunRecord[]
   /** 返回已持久化的原生 Pi session，供 HTML 导出读取。 */

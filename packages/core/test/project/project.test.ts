@@ -121,6 +121,21 @@ describe("Project", () => {
       attempt: 1,
       source: "manual",
     })
+    store.cachePlatformView("overview", {
+      id: "local",
+      name: "Local History",
+      challenges: 1,
+      announcements: 0,
+    })
+    store.cachePlatformView("challenges", [
+      {
+        id: "pwn-1",
+        title: "Cached Heap Garden",
+        category: "pwn",
+        score: 500,
+        solved: false,
+      },
+    ])
     store.close()
 
     const project = await Project.openLocal({
@@ -142,10 +157,16 @@ describe("Project", () => {
       expect(await project.challenges()).toEqual([
         expect.objectContaining({
           id: "pwn-1",
-          title: "pwn-1",
-          category: "本地记录",
+          title: "Cached Heap Garden",
+          category: "pwn",
+          score: 500,
         }),
       ])
+      expect(await project.overview()).toMatchObject({
+        id: "local",
+        name: "Local History",
+        challenges: 1,
+      })
       expect(project.runs()).toEqual([
         expect.objectContaining({ id: "run-local", challengeId: "pwn-1" }),
       ])
