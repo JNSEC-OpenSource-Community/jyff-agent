@@ -92,14 +92,21 @@ describe("PlatformExtensionStore", () => {
       candidateDirectory: candidate,
       profile,
     })
-    const activated = await store.activate({
+    const restartedRegistry = new PlatformPluginRegistry([])
+    const restarted = await PlatformExtensionStore.open({
+      root,
+      registry: restartedRegistry,
+      validationSandbox: fakeValidationSandbox(),
+    })
+    const activated = await restarted.activate({
       sessionId: "father-1",
       candidateDirectory: candidate,
     })
     expect(activated.authorSessionId).toBe("father-1")
     expect(
-      registry.list().find(({ plugin }) => plugin.id === "demo-platform")
-        ?.source,
+      restartedRegistry
+        .list()
+        .find(({ plugin }) => plugin.id === "demo-platform")?.source,
     ).toBe("extension")
   })
 

@@ -100,6 +100,76 @@ describe("Father HTTP", () => {
     }
   })
 
+  it("使用 Session 持久化报告恢复批准安装", async () => {
+    const report = {
+      pluginId: "demo-platform",
+      revision: "abc123",
+      contentHash: "a".repeat(64),
+      harnessVersion: "1",
+      profileId: "father-father-1",
+      profileFingerprint: "profile",
+      authorSessionId: "father-1",
+      status: "read_only_verified" as const,
+      startedAt: "2026-08-09T00:00:00.000Z",
+      completedAt: "2026-08-09T00:00:01.000Z",
+      checks: [],
+      capabilities: {},
+      cleanup: { projectClosed: true, environmentDestroyed: null },
+    }
+    const record = {
+      id: "father-1",
+      title: "demo-platform",
+      status: "stopped" as const,
+      modelId: "test/model",
+      skillRevision: "builtin-v1",
+      createdBy: "local",
+      createdAt: "2026-08-09T00:00:00.000Z",
+      updatedAt: "2026-08-09T00:00:01.000Z",
+      gate: {
+        status: "ready" as const,
+        requestedAt: "2026-08-09T00:00:00.000Z",
+        report,
+      },
+    }
+    const setGateStatus = vi.fn(async () => record)
+    const father = {
+      get: () => record,
+      workspace: () => "/father/workspace",
+      setGateStatus,
+    } as unknown as DashboardFather
+    const activate = vi.fn(async () => ({
+      id: "demo-platform",
+      name: "Demo Platform",
+      version: "1.0.0",
+      activeRevision: "abc123",
+    }))
+    const test = await createTestApp({
+      father,
+      extensions: { activate } as never,
+      frontendDist: "/nonexistent",
+    })
+    try {
+      const response = await jsonRequest(
+        test.app,
+        "/api/father/sessions/father-1/activate",
+        "POST",
+        {},
+      )
+      expect(response.status).toBe(200)
+      expect(activate).toHaveBeenCalledWith({
+        sessionId: "father-1",
+        candidateDirectory: join("/father/workspace", "output"),
+        validationReport: report,
+      })
+      expect(setGateStatus).toHaveBeenCalledWith(
+        "father-1",
+        expect.objectContaining({ status: "installed", report }),
+      )
+    } finally {
+      await test.cleanup()
+    }
+  })
+
   it("下载候选插件的单个 TypeScript 入口", async () => {
     const record = {
       id: "father-1",

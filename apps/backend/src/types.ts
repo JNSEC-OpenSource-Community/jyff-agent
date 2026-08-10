@@ -76,7 +76,9 @@ export interface DashboardPlatformExtensions {
   activate(input: {
     sessionId: string
     candidateDirectory: string
+    validationReport?: PlatformValidationReport
   }): Promise<PlatformExtensionView>
+  deleteValidationReport(sessionId: string): Promise<void>
 }
 
 export interface DashboardFatherValidationConfigs {

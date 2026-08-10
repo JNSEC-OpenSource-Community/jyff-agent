@@ -6,6 +6,7 @@ import {
   readdir,
   readFile,
   rename,
+  unlink,
   writeFile,
 } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
@@ -23,6 +24,7 @@ import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
 const MAX_EXTENSION_FILES = 200
 const MAX_EXTENSION_BYTES = 2 * 1024 * 1024
 const RESERVED_IDS = new Set(["ctfd", "gzctf"])
+const VALIDATION_REPORTS_DIRECTORY = ".validation-reports"
 
 export interface PlatformExtensionManifest {
   schemaVersion: 1 | 2
@@ -120,6 +122,10 @@ export class PlatformExtensionStore {
       Object.values(input.profile.secrets ?? {}),
     )
     this.reports.set(input.sessionId, report)
+    await atomicWrite(
+      this.validationReportPath(input.sessionId),
+      JSON.stringify(report, null, 2),
+    )
     const reportPath = join(
       dirname(input.candidateDirectory),
       "validation-report.json",
@@ -131,10 +137,26 @@ export class PlatformExtensionStore {
   async activate(input: {
     sessionId: string
     candidateDirectory: string
+    validationReport?: PlatformValidationReport
   }): Promise<PlatformExtensionView> {
-    const report = this.reports.get(input.sessionId)
-    if (!report || report.status === "failed") {
+    const report =
+      this.reports.get(input.sessionId) ??
+      (await this.readValidationReport(input.sessionId)) ??
+      input.validationReport
+    if (
+      !report ||
+      !["read_only_verified", "fully_verified"].includes(report.status)
+    ) {
       throw new Error("候选插件尚未通过 Validation Gate")
+    }
+    if (report.authorSessionId !== input.sessionId) {
+      throw new Error("Validation Report 与 Father Session 不一致")
+    }
+    if (
+      !/^[a-f0-9]{64}$/.test(report.contentHash) ||
+      report.revision !== report.contentHash.slice(0, 16)
+    ) {
+      throw new Error("Validation Report revision 无效")
     }
     const candidate = await inspectCandidate(input.candidateDirectory)
     if (candidate.contentHash !== report.contentHash) {
@@ -143,6 +165,11 @@ export class PlatformExtensionStore {
     if (candidate.manifest.id !== report.pluginId) {
       throw new Error("候选 manifest 与验证报告插件 ID 不一致")
     }
+    this.reports.set(input.sessionId, report)
+    await atomicWrite(
+      this.validationReportPath(input.sessionId),
+      JSON.stringify(report, null, 2),
+    )
     const revision = report.revision
     const target = this.revisionDirectory(candidate.manifest.id, revision)
     try {
@@ -233,10 +260,18 @@ export class PlatformExtensionStore {
     }
   }
 
+  async deleteValidationReport(sessionId: string): Promise<void> {
+    this.reports.delete(sessionId)
+    await unlink(this.validationReportPath(sessionId)).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    })
+  }
+
   private async loadInstalled(): Promise<void> {
     const entries = await readdir(this.root, { withFileTypes: true })
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue
+      if (!entry.isDirectory() || entry.name === VALIDATION_REPORTS_DIRECTORY)
+        continue
       try {
         const extensionDirectory = this.extensionDirectory(entry.name)
         const active = JSON.parse(
@@ -276,6 +311,24 @@ export class PlatformExtensionStore {
 
   private revisionDirectory(id: string, revision: string): string {
     return join(this.extensionDirectory(id), "revisions", revision)
+  }
+
+  private validationReportPath(sessionId: string): string {
+    const key = createHash("sha256").update(sessionId).digest("hex")
+    return join(this.root, VALIDATION_REPORTS_DIRECTORY, `${key}.json`)
+  }
+
+  private async readValidationReport(
+    sessionId: string,
+  ): Promise<PlatformValidationReport | undefined> {
+    try {
+      return JSON.parse(
+        await readFile(this.validationReportPath(sessionId), "utf8"),
+      ) as PlatformValidationReport
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      throw new Error("持久化 Validation Report 无效", { cause: error })
+    }
   }
 }
 

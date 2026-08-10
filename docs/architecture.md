@@ -156,4 +156,4 @@ Father 对话通过 Pi SSE 展示运行、工具、队列和自动 compaction �
 
 Session 创建不接受插件字段，先生成随机名称。Father 使用 `father_identify_plugin` 写入正式插件身份，使用 `father_request_test_access` 请求或复用测试连接信息。配置表单静态读取 schema v2 `extension.json.setup`，不会为展示表单导入未批准代码；Validation Gate 在短生命周期 Docker sandbox 中执行。验证配置以 setup schema fingerprint 为版本键；验证完成后控制面把 `<plugin_validation_result>` 结构化消息送回原 Session。Father 模型属于全局模型池绑定，创建 Session 时把实际模型记录进 Session 元数据。
 
-平台扩展通过 `PlatformPluginRegistry` 动态进入 ControlPlane。候选插件不会因生成或校验成功而自动生效：`PlatformExtensionStore` 只接受绑定内容哈希的非失败 Validation Report，并在显式批准后复制为不可变 revision、记录作者 Session，再更新 active pointer。ControlPlane 每次解析平台时读取 registry，因此不重启即可让新 Project 使用已批准插件。
+平台扩展通过 `PlatformPluginRegistry` 动态进入 ControlPlane。候选插件不会因生成或校验成功而自动生效：`PlatformExtensionStore` 只接受绑定内容哈希的非失败 Validation Report，并把可用于批准的报告持久化到 Father sandbox 不可写的控制面目录；重启后也能继续安装。升级前已经通过验证的 Session 可使用自身持久化的 Gate Report 完成首次安装并回填该可信副本。显式批准后，候选会复制为不可变 revision、记录作者 Session，再更新 active pointer。ControlPlane 每次解析平台时读取 registry，因此不重启即可让新 Project 使用已批准插件。

@@ -196,6 +196,7 @@ export function fatherRoutes(services: Services): App {
     const id = c.req.param("sessionId")
     requireSession(services, id)
     await services.requireFatherValidationConfigs().delete(id)
+    await services.extensions?.deleteValidationReport(id)
     await father.delete(id)
     return c.json({ deleted: true })
   })
@@ -321,16 +322,23 @@ export function fatherRoutes(services: Services): App {
   app.post("/father/sessions/:sessionId/activate", async (c) => {
     const id = c.req.param("sessionId")
     const father = services.requireFather()
-    requireSession(services, id)
+    const current = requireSession(services, id)
+    if (current.gate?.status !== "ready" || !current.gate.report) {
+      throw new HttpError(
+        409,
+        "father_validation_not_ready",
+        "候选插件尚未通过 Validation Gate",
+      )
+    }
     const extension = await services.requireExtensions().activate({
       sessionId: id,
       candidateDirectory: join(father.workspace(id), "output"),
+      validationReport: current.gate.report,
     })
-    const current = father.get(id)
     await father.setGateStatus(id, {
       status: "installed",
-      requestedAt: current?.gate?.requestedAt ?? new Date().toISOString(),
-      report: current?.gate?.report,
+      requestedAt: current.gate.requestedAt,
+      report: current.gate.report,
     })
     return c.json(extension)
   })
