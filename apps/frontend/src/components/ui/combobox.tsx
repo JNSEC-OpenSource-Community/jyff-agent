@@ -72,7 +72,10 @@ function Combobox({
             className,
           )}
         >
-          <span className="truncate">
+          <span
+            className="min-w-0 flex-1 truncate text-left"
+            title={selected?.label}
+          >
             {selected ? selected.label : placeholder}
           </span>
           <Icon

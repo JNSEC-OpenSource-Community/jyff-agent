@@ -417,7 +417,8 @@ function ModelField({
         emptyText="无匹配"
         options={models.map((m) => ({
           value: m.id,
-          label: `${m.id} · ${m.provider}/${m.modelId}`,
+          // m.id 已包含 provider、modelId 与 thinking level，重复拼接会撑破窄屏选择框。
+          label: m.id,
           description: m.configured ? undefined : "不可用",
           disabled: !m.configured,
         }))}
