@@ -189,10 +189,10 @@ export class FatherSessionManager {
             await this.persist()
           },
         )
-        const tracked = turn.finally(() => {
-          if (active.turn === tracked) active.turn = undefined
-        })
+        const tracked = turn.finally(() => this.releaseAfterTurn(active))
         active.turn = tracked
+        // 自动回收发生在后台；失败状态会被持久化，避免未处理的 rejection。
+        void tracked.catch(() => undefined)
       }
     })
     return this.get(id) as FatherSessionRecord
@@ -329,6 +329,33 @@ export class FatherSessionManager {
       await this.persist()
       throw error
     }
+  }
+
+  /**
+   * Father 的 workspace 和 JSONL 会话可在宿主机上保留，Docker sandbox 仅服务于当前回合。
+   * 下一条修复或验证反馈会通过 ensureActive 按需创建新的 sandbox。
+   */
+  private async releaseAfterTurn(
+    active: NonNullable<typeof this.active>,
+  ): Promise<void> {
+    await this.exclusive(async () => {
+      if (this.active !== active || active.turn === undefined) return
+      active.turn = undefined
+      try {
+        await active.agent.close()
+      } catch (error) {
+        active.record.status = "failed"
+        active.record.error = `Sandbox 回收失败: ${errorText(error)}`
+        active.record.updatedAt = new Date().toISOString()
+        this.active = undefined
+        await this.persist()
+        throw error
+      }
+      active.record.status = "stopped"
+      active.record.updatedAt = new Date().toISOString()
+      this.active = undefined
+      await this.persist()
+    })
   }
 
   async setGateStatus(

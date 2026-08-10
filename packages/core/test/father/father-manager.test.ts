@@ -78,6 +78,55 @@ describe("FatherSessionManager", () => {
     await expect(access(manager.workspace(session.id))).resolves.toBeUndefined()
   })
 
+  it("每个 Father 工作回合结束后回收 sandbox，并在修复时按需重建", async () => {
+    const root = await mkdtemp(join(tmpdir(), "father-recycle-"))
+    roots.push(root)
+    const prompts: Array<() => void> = []
+    const sandboxFactory = vi.fn(async () => ({ close: vi.fn() }))
+    const agents: Array<{
+      close: ReturnType<typeof vi.fn>
+    }> = []
+    const manager = await FatherSessionManager.open({
+      root,
+      image: "unused",
+      createAgentOptions: () =>
+        ({
+          initialState: { model: { provider: "test", id: "model" } },
+        }) as AgentOptions,
+      sandboxFactory: sandboxFactory as never,
+      agentFactory: vi.fn(async () => {
+        let finish: (() => void) | undefined
+        const agent = {
+          state: { isStreaming: false },
+          prompt: vi.fn(
+            () =>
+              new Promise<void>((resolve) => {
+                finish = resolve
+              }),
+          ),
+          steer: vi.fn(),
+          close: vi.fn(async () => undefined),
+          subscribe: vi.fn(),
+        }
+        agents.push(agent)
+        prompts.push(() => finish?.())
+        return agent
+      }) as never,
+    })
+    const session = await manager.create({ createdBy: "nick" })
+
+    await manager.send(session.id, "制作插件")
+    expect(sandboxFactory).toHaveBeenCalledTimes(1)
+    prompts[0]?.()
+    await vi.waitFor(() => expect(agents[0]?.close).toHaveBeenCalledOnce())
+    expect(manager.get(session.id)?.status).toBe("stopped")
+
+    await manager.send(session.id, "修复验证失败的问题")
+    expect(sandboxFactory).toHaveBeenCalledTimes(2)
+    prompts[1]?.()
+    await vi.waitFor(() => expect(agents[1]?.close).toHaveBeenCalledOnce())
+  })
+
   it("启动 Father 前将内置 skill 复制到 sandbox workspace", async () => {
     const root = await mkdtemp(join(tmpdir(), "father-skill-"))
     roots.push(root)

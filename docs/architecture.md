@@ -61,7 +61,7 @@ Provider API Key 只在后端解析。模型发现失败时保留手工输入，
 
 插件 manifest 必须是 schema v2，并提供静态 `setup`。候选先由 WebUI 展示配置表单，再进入 Docker Validation Gate；报告绑定 session、内容 hash、revision 和 setup fingerprint。只有验证成功且用户批准后才注册到 PlatformRegistry。
 
-Father session 可以在没有运行 Solver 时创建。session 初始使用随机名称，Father 识别插件后再替换为插件名。修复插件时创建新 session，历史 session、候选目录和验证报告保留，便于追溯。
+Father session 可以在没有运行 Solver 时创建。session 初始使用随机名称，Father 识别插件后再替换为插件名。每个 Father 工作回合结束后都会回收 Docker sandbox，但保留宿主机 workspace 与 Pi JSONL；后续修复或 Validation Gate 反馈会按需创建新 sandbox。修复插件时创建新 session，历史 session、候选目录和验证报告保留，便于追溯。
 
 ## SSE 与前端
 
