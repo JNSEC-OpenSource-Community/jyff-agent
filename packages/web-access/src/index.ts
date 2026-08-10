@@ -1510,6 +1510,8 @@ export function createWebAccessTools(config: WebAccessConfig): AgentTool[] {
     bindRuntime(runtime, createSourceCheckTool()),
     bindRuntime(runtime, createFetchContentTool()),
     bindRuntime(runtime, createGetSearchContentTool()),
-    bindRuntime(runtime, createTricksSearchTool()),
+    ...(runtime.providers.has("nekozuki")
+      ? [bindRuntime(runtime, createTricksSearchTool())]
+      : []),
   ]
 }

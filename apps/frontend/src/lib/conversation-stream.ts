@@ -1,4 +1,7 @@
-import type { AgentStreamEvent } from "@ctf-agent/core"
+import {
+  type AgentStreamEvent,
+  appendAgentMessageDelta,
+} from "@ctf-agent/core/agent-stream"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import type { DashboardConversation } from "../types.ts"
 
@@ -62,7 +65,7 @@ export function applyAgentStreamEvent(
       if (current) {
         messages[index] = {
           ...current,
-          message: appendAssistantDelta(
+          message: appendAgentMessageDelta(
             current.message,
             event.contentIndex,
             event.type === "text_delta" ? "text" : "thinking",
@@ -204,29 +207,4 @@ function upsertLiveMessage(
   const next = { entryId, timestamp, message }
   if (index >= 0) messages[index] = next
   else messages.push(next)
-}
-
-function appendAssistantDelta(
-  message: AgentMessage,
-  contentIndex: number,
-  type: "text" | "thinking",
-  delta: string,
-): AgentMessage {
-  if (message.role !== "assistant") return message
-  const content = [...message.content]
-  const current = content[contentIndex]
-  if (type === "text") {
-    content[contentIndex] = {
-      type: "text",
-      text: current?.type === "text" ? `${current.text}${delta}` : delta,
-    }
-  } else {
-    content[contentIndex] = {
-      type: "thinking",
-      thinking:
-        current?.type === "thinking" ? `${current.thinking}${delta}` : delta,
-      redacted: false,
-    }
-  }
-  return { ...message, content }
 }

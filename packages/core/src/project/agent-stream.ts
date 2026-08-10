@@ -78,3 +78,34 @@ type WithoutAgentStreamEnvelope<T> = T extends AgentStreamEvent
   : never
 
 export type AgentStreamPayload = WithoutAgentStreamEnvelope<AgentStreamEvent>
+
+/**
+ * 将一个文本增量折叠进 Assistant 消息。
+ *
+ * 服务端用它维护可重放的 in-flight 快照，前端用它消费实时事件；两端采用
+ * 同一规则，避免切页重连时依赖上游 event.message 的更新时机。
+ */
+export function appendAgentMessageDelta(
+  message: AgentMessage,
+  contentIndex: number,
+  type: "text" | "thinking",
+  delta: string,
+): AgentMessage {
+  if (message.role !== "assistant") return message
+  const content = [...message.content]
+  const current = content[contentIndex]
+  if (type === "text") {
+    content[contentIndex] = {
+      type: "text",
+      text: current?.type === "text" ? `${current.text}${delta}` : delta,
+    }
+  } else {
+    content[contentIndex] = {
+      type: "thinking",
+      thinking:
+        current?.type === "thinking" ? `${current.thinking}${delta}` : delta,
+      redacted: false,
+    }
+  }
+  return { ...message, content }
+}

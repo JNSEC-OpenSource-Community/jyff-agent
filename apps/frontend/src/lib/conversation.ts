@@ -24,6 +24,7 @@ export function textContent(content: unknown): string {
 export function roleLabel(role: AgentMessage["role"]): string {
   if (role === "assistant") return "AGENT"
   if (role === "user") return "YOU / SYSTEM"
+  if (role === "compactionSummary") return "COMPACTION"
   return "TOOL"
 }
 

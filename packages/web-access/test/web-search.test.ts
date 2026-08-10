@@ -37,15 +37,20 @@ afterEach(() => {
 })
 
 describe("createWebAccessTools", () => {
-  it("只保留五个候选工具", () => {
+  it("未启用 nekozuki 时不注入 tricks_search", () => {
     const names = tools().map((tool) => tool.name)
     expect(names).toEqual([
       "web_search",
       "source_check",
       "fetch_content",
       "get_search_content",
-      "tricks_search",
     ])
+  })
+
+  it("启用 nekozuki 时注入 tricks_search", () => {
+    expect(
+      tools({ providers: ["brave", "nekozuki"] }).map((tool) => tool.name),
+    ).toContain("tricks_search")
   })
 
   it("web_search 使用 allowlist 内的 provider（brave），不读 process.env", async () => {

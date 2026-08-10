@@ -481,9 +481,9 @@ describe("Project", () => {
           "source_check",
           "fetch_content",
           "get_search_content",
-          "tricks_search",
         ]),
       )
+      expect(names).not.toContain("tricks_search")
     } finally {
       await enabled.close()
     }

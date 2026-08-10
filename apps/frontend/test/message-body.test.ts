@@ -136,6 +136,24 @@ describe("MessageBody", () => {
     fireEvent.click(screen.getByRole("button", { name: /打开对话/ }))
     expect(select).toHaveBeenCalledWith("worker-done")
   })
+
+  it("将 Blocked 收尾提示渲染为独立卡片而非 Active SubAgents", () => {
+    render(
+      createElement(MessageBody, {
+        message: {
+          role: "user",
+          content:
+            '<blocked_finalization>\n<active_subagents encoding="json">\n[]\n</active_subagents>\n\nThe investigation is now considered stuck.\n</blocked_finalization>',
+          timestamp: 1,
+        },
+      }),
+    )
+    expect(screen.getByText("Blocked Finalization")).toBeTruthy()
+    expect(
+      screen.getByText(/investigation is now considered stuck/),
+    ).toBeTruthy()
+    expect(screen.queryByText("Active SubAgents")).toBeNull()
+  })
 })
 
 function toolResult(text: string): AgentMessage {

@@ -65,7 +65,7 @@ Father session 可以在没有运行 Solver 时创建。session 初始使用随�
 
 ## SSE 与前端
 
-后端推送 session、工具调用、SubAgent、验证和运行状态事件。前端按 session 保留滚动位置；切换 Solver/SubAgent 时读取对应 usage。长 URL 使用截断展示，复制操作使用原值。
+后端推送 session、工具调用、SubAgent、验证和运行状态事件；对尚未落盘的流式 Assistant 消息保留最新快照，前端切换后可继续显示中途的文本和思考内容。前端按 session 保留滚动位置；切换 Solver/SubAgent 时读取对应 usage。长 URL 使用截断展示，复制操作使用原值。会话读取同时投影 Pi 的 compaction 摘要，避免 compacted 分支丢失上下文。
 
 事件包含 `projectId`、`sessionId`、类型和服务端时间。SubAgent 的新建、取消、等待和结果调用显示为特殊卡片；点击卡片可跳转对应 session。等待结果时若 steer 队列出现消息，后端取消等待并优先处理 steer。
 

@@ -1162,7 +1162,14 @@ export class ContestScheduler {
       )
       const outcome = await runSolverPrompt({
         solver,
-        prompt: `${activeSubagentsPrompt(records)}\n\n${BLOCKED_FINALIZATION_PROMPT}`,
+        // 收尾指令和 SubAgent 快照属于同一轮，但必须有独立根节点，
+        // 否则 WebUI 会把整条消息误识别为 active_subagents 卡片。
+        prompt: [
+          "<blocked_finalization>",
+          activeSubagentsPrompt(records),
+          BLOCKED_FINALIZATION_PROMPT,
+          "</blocked_finalization>",
+        ].join("\n\n"),
         timeoutMs: Math.min(this.options.challengeTimeoutMs ?? 30_000, 30_000),
         abortGraceMs: this.options.abortGraceMs ?? 5_000,
       })

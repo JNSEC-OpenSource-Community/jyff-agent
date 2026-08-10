@@ -581,6 +581,8 @@ function XmlContent({
           title="Active SubAgents"
         />
       )
+    case "blocked_finalization":
+      return <BlockedFinalizationCard parsed={parsed} />
     case "task-notification":
       return (
         <JsonCard
@@ -600,6 +602,36 @@ function XmlContent({
     default:
       return <GenericXmlCard tag={tag} content={content} />
   }
+}
+
+function BlockedFinalizationCard({
+  parsed,
+}: {
+  parsed: ReturnType<typeof parseXmlContent>
+}): React.ReactElement {
+  const content = parsed.content
+    .replace(/^<blocked_finalization\b[^>]*>\s*/i, "")
+    .replace(/\s*<\/blocked_finalization>\s*$/i, "")
+    .replace(/<active_subagents\b[^>]*>[\s\S]*?<\/active_subagents>\s*/i, "")
+    .trim()
+  return (
+    <div className="overflow-hidden rounded-lg border border-warning/30 bg-warning/5">
+      <div className="flex items-center gap-2 border-b border-warning/20 px-3 py-2">
+        <Icon
+          icon="lucide:circle-alert"
+          width="14"
+          className="text-warning"
+          aria-hidden="true"
+        />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Blocked Finalization
+        </span>
+      </div>
+      <div className="px-3 py-2.5 text-sm text-muted-foreground">
+        <MarkdownContent>{content}</MarkdownContent>
+      </div>
+    </div>
+  )
 }
 /** <challenge_context> 卡片：题目概览 */
 function ChallengeContextCard({

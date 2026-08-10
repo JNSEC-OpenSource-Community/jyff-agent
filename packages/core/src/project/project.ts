@@ -89,6 +89,7 @@ import type {
   AgentStreamPayload,
   AgentStreamTarget,
 } from "./agent-stream.ts"
+import { appendAgentMessageDelta } from "./agent-stream.ts"
 import {
   ChallengeAttachmentError,
   challengeAttachmentPath,
@@ -217,6 +218,11 @@ export class Project {
   }>()
   private readonly agentStreamSequences = new Map<string, number>()
   private readonly activeStreamMessages = new Map<string, string>()
+  /** 当前未落盘的 assistant 消息，用于浏览器重连后恢复流式 thinking。 */
+  private readonly activeStreamSnapshots = new Map<
+    string,
+    { messageId: string; message: AgentMessage }
+  >()
   private readonly tldrRefreshes = new Map<string, Promise<TldrRecord>>()
   private closed = false
   private constructor(
@@ -381,6 +387,19 @@ export class Project {
   ): () => void {
     const subscription = { target: { ...target }, listener }
     this.agentStreamListeners.add(subscription)
+    const key = `${target.runId}\u0000${target.subagentId ?? "solver"}`
+    const snapshot = this.activeStreamSnapshots.get(key)
+    if (snapshot) {
+      listener({
+        type: "message_started",
+        messageId: snapshot.messageId,
+        message: snapshot.message,
+        runId: target.runId,
+        ...(target.subagentId ? { subagentId: target.subagentId } : {}),
+        seq: this.agentStreamSequences.get(key) ?? 0,
+        createdAt: new Date().toISOString(),
+      })
+    }
     return () => this.agentStreamListeners.delete(subscription)
   }
   async runSessionExportMetadata(
@@ -1440,6 +1459,7 @@ export class Project {
     this.agentStreamListeners.clear()
     this.agentStreamSequences.clear()
     this.activeStreamMessages.clear()
+    this.activeStreamSnapshots.clear()
     const errors: unknown[] = []
     const solverResults = await Promise.allSettled(
       [...this.solvers].map((solver) => solver.close("manual")),
@@ -1483,31 +1503,52 @@ export class Project {
     if (event.type === "agent_start") payload = { type: "agent_started" }
     else if (event.type === "agent_end") payload = { type: "agent_finished" }
     else if (event.type === "message_start") {
+      const id = messageId()
+      this.activeStreamSnapshots.set(key, {
+        messageId: id,
+        message: structuredClone(event.message),
+      })
       payload = {
         type: "message_started",
-        messageId: messageId(),
+        messageId: id,
         message: event.message,
       }
     } else if (event.type === "message_update") {
+      const id = messageId()
+      const current = this.activeStreamSnapshots.get(key)
       const update = event.assistantMessageEvent
+      const message =
+        current &&
+        (update.type === "text_delta" || update.type === "thinking_delta")
+          ? appendAgentMessageDelta(
+              current.message,
+              update.contentIndex,
+              update.type === "text_delta" ? "text" : "thinking",
+              update.delta,
+            )
+          : structuredClone(event.message)
+      this.activeStreamSnapshots.set(key, {
+        messageId: id,
+        message,
+      })
       if (update.type === "text_delta") {
         payload = {
           type: "text_delta",
-          messageId: messageId(),
+          messageId: id,
           contentIndex: update.contentIndex,
           delta: update.delta,
         }
       } else if (update.type === "thinking_delta") {
         payload = {
           type: "thinking_delta",
-          messageId: messageId(),
+          messageId: id,
           contentIndex: update.contentIndex,
           delta: update.delta,
         }
       } else if (update.type === "toolcall_end") {
         payload = {
           type: "message_updated",
-          messageId: messageId(),
+          messageId: id,
           message: event.message,
         }
       }
@@ -1518,6 +1559,7 @@ export class Project {
         message: event.message,
       }
       this.activeStreamMessages.delete(key)
+      this.activeStreamSnapshots.delete(key)
     } else if (event.type === "tool_execution_start") {
       payload = {
         type: "tool_started",
