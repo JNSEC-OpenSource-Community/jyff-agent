@@ -398,7 +398,7 @@ describe("ControlPlane", () => {
     await control.close()
   })
 
-  it("旧版未命名空间的 Secret 仍可只读回退", async () => {
+  it("未命名空间 Secret 不会被读取", async () => {
     const root = await rootFixture()
     await writeConfig(root, config())
     const secretStore = await FileSecretStore.open(
@@ -412,18 +412,31 @@ describe("ControlPlane", () => {
       secretStore,
     })
 
-    expect(await control.start()).toMatchObject({ phase: "ready" })
-    expect(plugin.connectedTokens).toContainEqual({
-      projectId: "setup-test",
-      token: "legacy-token",
-    })
+    expect(await control.start()).toMatchObject({ phase: "degraded" })
+    expect(plugin.connectedTokens).toEqual([])
     await control.close()
   })
 })
 
 async function writeConfig(root: string, value: ProjectConfig): Promise<void> {
-  await mkdir(join(root, ".pi"), { recursive: true })
-  await writeFile(join(root, ".pi", "ctf-config.json"), JSON.stringify(value))
+  const state = join(root, ".ctf-agent")
+  await mkdir(state, { recursive: true })
+  await writeFile(join(state, "project-config.json"), JSON.stringify(value))
+  await writeFile(
+    join(state, "project-registry.json"),
+    JSON.stringify({
+      version: 1,
+      projects: [
+        {
+          id: value.project.id,
+          directory: ".",
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+          archived: false,
+        },
+      ],
+    }),
+  )
 }
 
 async function accessPath(path: string): Promise<boolean> {

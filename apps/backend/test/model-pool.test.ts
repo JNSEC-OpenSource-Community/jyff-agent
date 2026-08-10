@@ -167,7 +167,7 @@ describe("file model configuration", () => {
     expect(await readFile(secretsPath, "utf8")).toContain("original-secret")
   })
 
-  it("把旧模型配置中的明文 Key 迁移到 Secret Store", async () => {
+  it("拒绝非 v3 模型配置", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-migration-"))
     roots.push(root)
     const storagePath = join(root, "model-config.json")
@@ -181,14 +181,12 @@ describe("file model configuration", () => {
       }),
     )
 
-    await createFileModelConfiguration({
-      storagePath,
-      secretStore: await FileSecretStore.open(secretsPath),
-    })
-
-    expect(await readFile(storagePath, "utf8")).not.toContain("legacy-key")
-    expect(await readFile(storagePath, "utf8")).not.toContain("maxTokens")
-    expect(await readFile(secretsPath, "utf8")).toContain("legacy-key")
+    await expect(
+      createFileModelConfiguration({
+        storagePath,
+        secretStore: await FileSecretStore.open(secretsPath),
+      }),
+    ).rejects.toThrow("必须使用 v3")
   })
 
   it("从 OpenAI-compatible 请求中移除两种输出 token 字段", () => {

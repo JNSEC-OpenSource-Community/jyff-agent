@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 
@@ -22,7 +22,7 @@ export interface StoredProjectConfig {
   createdAt: string
   updatedAt: string
   archived: boolean
-  legacy: boolean
+  rootProject: boolean
 }
 
 /**
@@ -34,13 +34,11 @@ export interface StoredProjectConfig {
 export class ProjectConfigStore {
   readonly stateDirectory: string
   readonly path: string
-  readonly legacyPath: string
   readonly registryPath: string
 
   constructor(readonly root: string) {
     this.stateDirectory = join(root, ".ctf-agent")
     this.path = join(this.stateDirectory, "project-config.json")
-    this.legacyPath = join(root, ".pi", "ctf-config.json")
     this.registryPath = join(this.stateDirectory, "project-registry.json")
   }
 
@@ -67,25 +65,10 @@ export class ProjectConfigStore {
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
         archived: entry.archived,
-        legacy: entry.directory === ".",
+        rootProject: entry.directory === ".",
       })
     }
 
-    const legacy =
-      (await readConfig(this.path)) ?? (await readConfig(this.legacyPath))
-    if (legacy && !ids.has(legacy.project.id)) {
-      const timestamp = await fileTimestamp(
-        (await readConfig(this.path)) ? this.path : this.legacyPath,
-      )
-      records.unshift({
-        config: legacy,
-        stateDirectory: this.stateDirectory,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        archived: false,
-        legacy: true,
-      })
-    }
     return records
   }
 
@@ -125,7 +108,7 @@ export class ProjectConfigStore {
       entry = {
         id: validated.project.id,
         directory:
-          existing?.legacy || records.length === 0
+          existing?.rootProject || records.length === 0
             ? "."
             : `projects/${projectStorageKey(validated.project.id)}`,
         createdAt: existing?.createdAt ?? now,
@@ -149,7 +132,7 @@ export class ProjectConfigStore {
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
       archived: entry.archived,
-      legacy: entry.directory === ".",
+      rootProject: entry.directory === ".",
     }
   }
 
@@ -167,7 +150,7 @@ export class ProjectConfigStore {
       projects: registry.projects.filter((entry) => entry.id !== projectId),
     })
 
-    if (!record.legacy) {
+    if (!record.rootProject) {
       const expectedDirectory = resolve(
         this.stateDirectory,
         "projects",
@@ -180,7 +163,6 @@ export class ProjectConfigStore {
       return cloneRecord(record)
     }
 
-    const legacyFallback = await readConfig(this.legacyPath)
     const projectArtifacts = [
       this.path,
       join(this.stateDirectory, "runtime-config.json"),
@@ -191,9 +173,6 @@ export class ProjectConfigStore {
       join(this.stateDirectory, "runs"),
       join(this.stateDirectory, "challenges"),
     ]
-    if (legacyFallback?.project.id === projectId) {
-      projectArtifacts.push(this.legacyPath)
-    }
     await Promise.all(
       projectArtifacts.map((path) =>
         rm(path, { recursive: true, force: true }),
@@ -209,7 +188,7 @@ export class ProjectConfigStore {
     )
     if (!record) throw new Error(`Project 不存在: ${projectId}`)
 
-    if (!record.legacy) {
+    if (!record.rootProject) {
       const expectedDirectory = resolve(
         this.stateDirectory,
         "projects",
@@ -250,7 +229,7 @@ export class ProjectConfigStore {
     if (!entry) {
       entry = {
         id: projectId,
-        directory: record.legacy
+        directory: record.rootProject
           ? "."
           : `projects/${projectStorageKey(projectId)}`,
         createdAt: record.createdAt,
@@ -351,14 +330,6 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8")
   await rename(temporary, path)
-}
-
-async function fileTimestamp(path: string): Promise<string> {
-  try {
-    return (await stat(path)).mtime.toISOString()
-  } catch {
-    return new Date(0).toISOString()
-  }
 }
 
 function cloneRecord(record: StoredProjectConfig): StoredProjectConfig {

@@ -27,7 +27,7 @@ const RESERVED_IDS = new Set(["ctfd", "gzctf"])
 const VALIDATION_REPORTS_DIRECTORY = ".validation-reports"
 
 export interface PlatformExtensionManifest {
-  schemaVersion: 1 | 2
+  schemaVersion: 2
   id: string
   name: string
   version: string
@@ -406,8 +406,8 @@ function parseManifest(value: unknown): PlatformExtensionManifest {
   ])
   if (keys.some((key) => !allowed.has(key)))
     throw new Error("extension.json 包含未知字段")
-  if (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2)
-    throw new Error("不支持的 extension schema")
+  if (manifest.schemaVersion !== 2)
+    throw new Error("只支持 extension schema v2")
   if (
     typeof manifest.id !== "string" ||
     !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(manifest.id)
@@ -441,9 +441,7 @@ function parseManifest(value: unknown): PlatformExtensionManifest {
     name: manifest.name.trim(),
     version: manifest.version,
     entry: normalizedEntry,
-    ...(manifest.schemaVersion === 2
-      ? { setup: parsePlatformSetupDescriptor(manifest.setup) }
-      : {}),
+    setup: parsePlatformSetupDescriptor(manifest.setup),
   }
 }
 

@@ -1,4 +1,4 @@
-# Platform contract
+# Platform contract (schema v2)
 
 Export one `PlatformPlugin` as `platformPlugin` or the default export. Its ID must match `extension.json`.
 

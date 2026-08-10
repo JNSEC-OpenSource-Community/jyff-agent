@@ -559,7 +559,7 @@ export class ControlPlane {
         ...projectOptions,
         root: this.root,
         stateDirectory: runtime.record.stateDirectory,
-        workspaceNamespace: runtime.record.legacy
+        workspaceNamespace: runtime.record.rootProject
           ? undefined
           : `projects/${projectStorageKey(projectId)}`,
         config: runtime.record.config,
@@ -625,7 +625,7 @@ export class ControlPlane {
       ...projectOptions,
       root: this.root,
       stateDirectory: runtime.record.stateDirectory,
-      workspaceNamespace: runtime.record.legacy
+      workspaceNamespace: runtime.record.rootProject
         ? undefined
         : `projects/${projectStorageKey(projectId)}`,
       config: runtime.record.config,
@@ -665,8 +665,7 @@ export class ControlPlane {
   ): (name: string) => string | undefined {
     return (name) =>
       overrides[name] ??
-      this.secretStore.get(projectSecretName(projectId, name)) ??
-      this.secretStore.get(name)
+      this.secretStore.get(projectSecretName(projectId, name))
   }
 
   private hasProjectSecret(
@@ -674,8 +673,9 @@ export class ControlPlane {
     name: string,
   ): boolean {
     return Boolean(
-      (projectId && this.secretStore.has(projectSecretName(projectId, name))) ||
-        this.secretStore.has(name),
+      Boolean(
+        projectId && this.secretStore.has(projectSecretName(projectId, name)),
+      ),
     )
   }
 

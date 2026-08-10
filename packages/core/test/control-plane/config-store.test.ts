@@ -63,12 +63,27 @@ describe("ProjectConfigStore", () => {
     )
   })
 
-  it("把旧单 Project 映射到原状态目录以保留 RunStore 和 workspace", async () => {
+  it("保留注册表根 Project 的状态目录", async () => {
     const root = await fixture()
     await mkdir(join(root, ".ctf-agent"), { recursive: true })
     await writeFile(
       join(root, ".ctf-agent", "project-config.json"),
       JSON.stringify(config("legacy", "Legacy Project")),
+    )
+    await writeFile(
+      join(root, ".ctf-agent", "project-registry.json"),
+      JSON.stringify({
+        version: 1,
+        projects: [
+          {
+            id: "legacy",
+            directory: ".",
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+            archived: false,
+          },
+        ],
+      }),
     )
     await writeFile(join(root, ".ctf-agent", "runs.sqlite"), "legacy-state")
     const store = new ProjectConfigStore(root)
@@ -77,7 +92,7 @@ describe("ProjectConfigStore", () => {
     expect(legacy).toMatchObject({
       config: { project: { id: "legacy", name: "Legacy Project" } },
       stateDirectory: join(root, ".ctf-agent"),
-      legacy: true,
+      rootProject: true,
     })
 
     const updated = await store.saveProject(config("legacy", "Renamed"))
@@ -165,7 +180,7 @@ describe("ProjectConfigStore", () => {
     )
   })
 
-  it("删除旧版 Project 时只清理项目状态并保留全局配置", async () => {
+  it("删除根 Project 时只清理项目状态并保留全局配置", async () => {
     const root = await fixture()
     const stateDirectory = join(root, ".ctf-agent")
     await mkdir(join(stateDirectory, "runs"), { recursive: true })
@@ -173,6 +188,21 @@ describe("ProjectConfigStore", () => {
     await writeFile(
       join(stateDirectory, "project-config.json"),
       JSON.stringify(config("legacy")),
+    )
+    await writeFile(
+      join(stateDirectory, "project-registry.json"),
+      JSON.stringify({
+        version: 1,
+        projects: [
+          {
+            id: "legacy",
+            directory: ".",
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+            archived: false,
+          },
+        ],
+      }),
     )
     await writeFile(join(stateDirectory, "runtime-config.json"), "runtime")
     await writeFile(join(stateDirectory, "runs.sqlite"), "state")

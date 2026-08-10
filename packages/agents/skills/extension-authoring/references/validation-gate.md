@@ -1,4 +1,4 @@
-# Validation gate
+# Validation gate (current)
 
 The gate loads the exact candidate revision through the production plugin loader and uses user-supplied test configuration.
 

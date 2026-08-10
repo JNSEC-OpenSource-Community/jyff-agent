@@ -39,7 +39,6 @@ import type {
   WebAccessModelAuth,
 } from "../types.ts"
 
-const LEGACY_MODEL_API_KEY_SECRET = "CTF_MODEL_API_KEY"
 const MODEL_API_KEY_SECRET_PREFIX = "CTF_MODEL_API_KEY_"
 const PASSTHROUGH_THINKING_MAP = Object.fromEntries(
   ["minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [
@@ -99,22 +98,7 @@ export async function createFileModelConfiguration(
   options: FileModelConfigurationOptions,
 ): Promise<AgentModelConfiguration> {
   const parsed = await readStoredConfiguration(options.storagePath)
-  const legacySecret =
-    parsed.legacyApiKey ?? options.secretStore.get(LEGACY_MODEL_API_KEY_SECRET)
-  const firstProvider = parsed.configuration.models[0]?.provider
-  if (
-    legacySecret &&
-    firstProvider &&
-    !options.secretStore.has(providerSecret(firstProvider))
-  ) {
-    await options.secretStore.set({
-      [providerSecret(firstProvider)]: legacySecret,
-    })
-  }
-  if (parsed.legacyApiKey !== undefined || parsed.needsRewrite) {
-    await persistConfiguration(options.storagePath, parsed.configuration)
-  }
-  return new PersistentModelConfiguration(options, parsed.configuration)
+  return new PersistentModelConfiguration(options, parsed)
 }
 
 class PersistentModelConfiguration implements AgentModelConfiguration {
@@ -503,72 +487,21 @@ function dropNullHeaders(
   return out
 }
 
-async function readStoredConfiguration(path: string): Promise<{
-  configuration: StoredModelConfiguration
-  legacyApiKey?: string
-  needsRewrite?: boolean
-}> {
+async function readStoredConfiguration(
+  path: string,
+): Promise<StoredModelConfiguration> {
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(path, "utf8"))
   } catch (error) {
-    if (hasCode(error, "ENOENT")) return { configuration: emptyConfiguration() }
+    if (hasCode(error, "ENOENT")) return emptyConfiguration()
     throw new Error(`无法读取模型配置: ${path}`, { cause: error })
   }
   if (!isRecord(parsed)) throw new Error(`模型配置格式无效: ${path}`)
-  if (parsed.version === 3 && Array.isArray(parsed.models)) {
-    return { configuration: parseVersionThree(parsed) }
+  if (parsed.version !== 3 || !Array.isArray(parsed.models)) {
+    throw new Error("模型配置必须使用 v3 格式，请重新导入模型配置")
   }
-  if (parsed.version === 2 && Array.isArray(parsed.models)) {
-    return { configuration: migrateVersionTwo(parsed), needsRewrite: true }
-  }
-
-  const modelId = stringValue(parsed.modelId)
-  const provider = stringValue(parsed.provider) ?? "openrouter"
-  const models: StoredModelEntry[] = modelId
-    ? [
-        {
-          id: "default",
-          provider,
-          modelId,
-          contextWindow: positiveInteger(parsed.contextWindow)
-            ? parsed.contextWindow
-            : 64_000,
-          thinkingEnabled:
-            typeof parsed.thinkingEnabled === "boolean"
-              ? parsed.thinkingEnabled
-              : true,
-          reasoningEffort:
-            stringValue(parsed.reasoningEffort) ??
-            DEFAULT_SOLVER_THINKING_LEVEL,
-          passthroughThinking: parsed.passthroughThinking === true,
-        },
-      ]
-    : []
-  return {
-    configuration: {
-      version: 3,
-      providers: stringValue(parsed.baseUrl)
-        ? [
-            {
-              id: provider,
-              name: provider,
-              api: "openai-completions",
-              baseUrl: stringValue(parsed.baseUrl) ?? "",
-            },
-          ]
-        : [],
-      models,
-      solverModelId: models[0]?.id ?? "",
-      tldrModelId: models[0]?.id ?? "",
-      fatherModelId: models[0]?.id ?? "",
-      subagentModels: {},
-    },
-    ...(typeof parsed.apiKey === "string"
-      ? { legacyApiKey: parsed.apiKey }
-      : {}),
-    needsRewrite: true,
-  }
+  return parseVersionThree(parsed)
 }
 
 function parseVersionThree(
@@ -595,48 +528,6 @@ function parseVersionThree(
   return {
     version: 3,
     providers,
-    models,
-    solverModelId,
-    tldrModelId,
-    fatherModelId,
-    subagentModels,
-  }
-}
-
-function migrateVersionTwo(
-  parsed: Record<string, unknown>,
-): StoredModelConfiguration {
-  const rawModels = parsed.models as unknown[]
-  const providers = new Map<string, StoredCustomProvider>()
-  const models = rawModels.map((value, index) => {
-    if (!isRecord(value)) throw new Error(`模型配置 models[${index}] 格式无效`)
-    const baseUrl = stringValue(value.baseUrl)?.replace(/\/+$/, "") ?? ""
-    const entry = storedEntry(value, index)
-    if (baseUrl) {
-      providers.set(entry.provider, {
-        id: entry.provider,
-        name: entry.provider,
-        api: "openai-completions",
-        baseUrl,
-      })
-    }
-    return entry
-  })
-  const ids = new Set(models.map((entry) => entry.id))
-  const solverModelId = stringValue(parsed.solverModelId) ?? ""
-  const tldrModelId = stringValue(parsed.tldrModelId) ?? solverModelId
-  const fatherModelId = stringValue(parsed.fatherModelId) ?? solverModelId
-  const subagentModels = stringRecord(parsed.subagentModels)
-  validateReferences(
-    ids,
-    solverModelId,
-    tldrModelId,
-    fatherModelId,
-    subagentModels,
-  )
-  return {
-    version: 3,
-    providers: [...providers.values()],
     models,
     solverModelId,
     tldrModelId,
