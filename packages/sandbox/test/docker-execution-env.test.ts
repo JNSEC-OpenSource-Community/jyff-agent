@@ -11,6 +11,7 @@ class FakeSandbox implements Sandbox {
   readonly calls: Array<{ args: string[]; options?: SandboxExecOptions }> = []
   readonly files = new Map<string, Buffer>()
   nativeFailuresRemaining = 0
+  nextCommandResult: CommandResult | undefined
 
   async exec(
     args: string[],
@@ -18,7 +19,7 @@ class FakeSandbox implements Sandbox {
   ): Promise<CommandResult> {
     this.calls.push({ args, options })
     if (args[0] !== "python3") {
-      return { code: 0, stdout: "", stderr: "" }
+      return this.nextCommandResult ?? { code: 0, stdout: "", stderr: "" }
     }
     if (this.nativeFailuresRemaining-- > 0) {
       return { code: 0xc0000142, stdout: "", stderr: "" }
@@ -65,11 +66,32 @@ describe("DockerExecutionEnv", () => {
     expect(sandbox.calls.at(-1)?.options?.timeoutMs).toBeUndefined()
   })
 
-  it("显式 timeout 仍按秒转换并传递给 sandbox", async () => {
+  it("显式 timeout 在容器内执行，并为 Docker 客户端保留上报宽限", async () => {
     const sandbox = new FakeSandbox()
     await new DockerExecutionEnv(sandbox).exec("sleep 3600", { timeout: 1_201 })
 
-    expect(sandbox.calls.at(-1)?.options?.timeoutMs).toBe(1_201_000)
+    const call = sandbox.calls.at(-1)
+    expect(call?.options?.timeoutMs).toBe(1_206_000)
+    expect(call?.args.join(" ")).toContain(
+      'timeout --kill-after=5s "$2"s bash -lc "$3"',
+    )
+    expect(call?.args.at(-2)).toBe("1201")
+  })
+
+  it("容器内 timeout 返回标记时报告 timeout 错误", async () => {
+    const sandbox = new FakeSandbox()
+    sandbox.nextCommandResult = {
+      code: 124,
+      stdout: "",
+      stderr: "__CTF_AGENT_COMMAND_TIMED_OUT__\n",
+    }
+
+    const result = await new DockerExecutionEnv(sandbox).exec("sleep 3600", {
+      timeout: 120,
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe("timeout")
   })
 
   it("Windows 原生进程初始化失败时有限重试文件 helper", async () => {

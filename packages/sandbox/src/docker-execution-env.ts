@@ -22,6 +22,8 @@ const WORKSPACE = "/workspace"
 const MAX_TIMER_MS = 2_147_483_647
 const BASH_CAPTURE_FLUSH_BYTES = 512 * 1024
 const FILE_HELPER_MAX_ATTEMPTS = 3
+const COMMAND_TIMEOUT_MARKER = "__CTF_AGENT_COMMAND_TIMED_OUT__"
+const COMMAND_TIMEOUT_GRACE_MS = 5_000
 
 const FILE_HELPER = String.raw`
 import base64, json, os, shutil, stat, sys, uuid
@@ -193,20 +195,31 @@ export class DockerExecutionEnv implements ExecutionEnv {
           : []),
       "bash",
       "-lc",
-      'cd -- "$1" && exec bash -lc "$2"',
+      // timeout 在容器内结束命令进程组；仅杀 docker CLI 无法可靠停止 Docker Desktop 中的 exec。
+      'cd -- "$1" && if [ -n "$2" ]; then timeout --kill-after=5s "$2"s bash -lc "$3"; status=$?; if [ "$status" -eq 124 ]; then printf "%s\\n" "__CTF_AGENT_COMMAND_TIMED_OUT__" >&2; fi; exit "$status"; else exec bash -lc "$3"; fi',
       "ctf-agent",
       cwd.value,
+      timeoutSeconds === undefined ? "" : String(timeoutSeconds),
       command,
     ]
     try {
       const result = await this.sandbox.exec(args, {
         signal: options.abortSignal,
+        // 留出容器内 timeout 上报退出码的时间，避免宿主先杀 docker CLI。
         ...(timeoutSeconds === undefined
           ? {}
-          : { timeoutMs: timeoutSeconds * 1000 }),
+          : { timeoutMs: timeoutSeconds * 1000 + COMMAND_TIMEOUT_GRACE_MS }),
         onStdout: options.onStdout,
         onStderr: options.onStderr,
       })
+      if (result.stderr.includes(COMMAND_TIMEOUT_MARKER)) {
+        return err(
+          new ExecutionError(
+            "timeout",
+            `Command timed out after ${timeoutSeconds} seconds`,
+          ),
+        )
+      }
       return ok({
         stdout: result.stdout,
         stderr: result.stderr,
