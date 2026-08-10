@@ -24,6 +24,35 @@ async function storeFixture(): Promise<{
 }
 
 describe("RunStore", () => {
+  it("持久化并清除题目人工调度状态", async () => {
+    const { path, store } = await storeFixture()
+    expect(store.challengeSchedulingDisposition("web-skip")).toBeNull()
+    store.setChallengeSchedulingDisposition("web-skip", "excluded")
+    store.setChallengeSchedulingDisposition("crypto-solved", "solved")
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.challengeSchedulingDisposition("web-skip")).toBe("excluded")
+    expect(reopened.challengeSchedulingDisposition("crypto-solved")).toBe(
+      "solved",
+    )
+    expect(reopened.challengeSchedulingOverrides()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          challengeId: "web-skip",
+          disposition: "excluded",
+        }),
+        expect.objectContaining({
+          challengeId: "crypto-solved",
+          disposition: "solved",
+        }),
+      ]),
+    )
+    reopened.setChallengeSchedulingDisposition("web-skip", null)
+    expect(reopened.challengeSchedulingDisposition("web-skip")).toBeNull()
+    reopened.close()
+  })
+
   it("持久化远程环境租约并随 Run 删除", async () => {
     const { path, store } = await storeFixture()
     store.createRun({

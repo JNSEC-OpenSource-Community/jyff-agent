@@ -163,6 +163,40 @@ function solvingAgent(item: TestChallenge, delayMs = 0): AgentOptions {
 }
 
 describe("ContestScheduler", () => {
+  it("不将人工排除或标记已解出的题目加入任何调度队列", async () => {
+    const skipped = challenge(90)
+    const solved = challenge(91)
+    const tracker = new SandboxTracker()
+    const project = await fixture([skipped, solved], tracker)
+    project.enqueueSchedulerChallenge({
+      challengeId: skipped.id,
+      source: "auto",
+    })
+    project.setChallengeSchedulingDisposition(skipped.id, "excluded")
+    project.setChallengeSchedulingDisposition(solved.id, "solved")
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      createAgentOptions: () => solvingAgent(skipped),
+    })
+
+    try {
+      await scheduler.startAuto()
+      expect(scheduler.snapshot()).toMatchObject({ queued: [], active: [] })
+      expect(project.schedulerQueue()).toEqual([])
+      expect(project.runs()).toEqual([])
+      expect(project.isChallengeSolved(solved.id)).toBe(true)
+      await expect(
+        scheduler.dispatch(skipped.id, { force: true }),
+      ).rejects.toMatchObject({ code: "excluded" })
+      await expect(
+        scheduler.dispatch(solved.id, { force: true }),
+      ).rejects.toMatchObject({ code: "excluded" })
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it.each([
     {
       label: "默认 continuation prompt",

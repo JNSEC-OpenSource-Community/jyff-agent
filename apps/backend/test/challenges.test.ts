@@ -1,7 +1,11 @@
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import { describe, expect, it } from "vitest"
 import { createWebUiApp } from "../src/server.ts"
-import { FakeDashboardProject, FakeModelConfiguration } from "./fake-project.ts"
+import {
+  FakeDashboardProject,
+  FakeDashboardScheduler,
+  FakeModelConfiguration,
+} from "./fake-project.ts"
 import { jsonOf, jsonRequest } from "./helpers.ts"
 
 function appWithProject() {
@@ -11,6 +15,87 @@ function appWithProject() {
 }
 
 describe("题目路由", () => {
+  it("设置不调度或人工已解状态并移出队列", async () => {
+    const project = new FakeDashboardProject()
+    const scheduler = new FakeDashboardScheduler()
+    scheduler.value.queued = [
+      {
+        challengeId: "pwn-1",
+        source: "auto",
+        lane: "normal",
+        manualOverride: false,
+        enqueuedAt: "2026-07-29T12:00:00.000Z",
+        position: 1,
+        version: 1,
+      },
+    ]
+    const { app } = createWebUiApp({
+      project,
+      scheduler,
+      frontendDist: "/nonexistent",
+    })
+
+    const excluded = await jsonRequest(
+      app,
+      "/api/challenges/pwn-1/scheduling",
+      "PATCH",
+      { disposition: "excluded" },
+    )
+    expect(excluded.status).toBe(200)
+    expect(project.challengeSchedulingDisposition("pwn-1")).toBe("excluded")
+    expect(scheduler.value.queued).toEqual([])
+    expect(await jsonOf(excluded)).toMatchObject({
+      challenges: expect.arrayContaining([
+        expect.objectContaining({
+          id: "pwn-1",
+          status: "excluded",
+          schedulingDisposition: "excluded",
+        }),
+      ]),
+    })
+
+    const solved = await jsonRequest(
+      app,
+      "/api/challenges/misc-1/scheduling",
+      "PATCH",
+      { disposition: "solved" },
+    )
+    expect(solved.status).toBe(200)
+    expect(await jsonOf(solved)).toMatchObject({
+      challenges: expect.arrayContaining([
+        expect.objectContaining({
+          id: "misc-1",
+          status: "solved",
+          schedulingDisposition: "solved",
+        }),
+      ]),
+    })
+
+    const restored = await jsonRequest(
+      app,
+      "/api/challenges/pwn-1/scheduling",
+      "PATCH",
+      { disposition: "default" },
+    )
+    expect(restored.status).toBe(200)
+    expect(project.challengeSchedulingDisposition("pwn-1")).toBeNull()
+
+    expect(
+      (
+        await jsonRequest(app, "/api/challenges/pwn-1/scheduling", "PATCH", {
+          disposition: "invalid",
+        })
+      ).status,
+    ).toBe(400)
+    expect(
+      (
+        await jsonRequest(app, "/api/challenges/missing/scheduling", "PATCH", {
+          disposition: "excluded",
+        })
+      ).status,
+    ).toBe(404)
+  })
+
   it("详情包含 SubAgent 列表，未知题目 404", async () => {
     const { app } = appWithProject()
     const details = await app.request("/api/challenges/pwn-1")

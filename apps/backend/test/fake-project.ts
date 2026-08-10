@@ -166,6 +166,23 @@ export class FakeDashboardProject implements DashboardProject {
   thinkingLevelResult: { runId: string } | { error: "no_active_run" } = {
     runId: "run-pwn-1",
   }
+  schedulingDispositions = new Map<string, "excluded" | "solved">()
+
+  challengeSchedulingDisposition(challengeId: string) {
+    return this.schedulingDispositions.get(challengeId) ?? null
+  }
+
+  setChallengeSchedulingDisposition(
+    challengeId: string,
+    disposition: "excluded" | "solved" | null,
+  ) {
+    if (disposition) this.schedulingDispositions.set(challengeId, disposition)
+    else this.schedulingDispositions.delete(challengeId)
+  }
+
+  removeSchedulerChallenge(_challengeId: string): boolean {
+    return false
+  }
 
   async sendMessage(
     challengeId: string,

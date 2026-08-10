@@ -111,6 +111,7 @@ export type DashboardChallengeStatus =
   | "blocking"
   | "writing_writeup"
   | "solved"
+  | "excluded"
   | "failed"
   | "timed_out"
   | "cancelled"
@@ -125,6 +126,7 @@ export interface DashboardChallenge {
   score: number
   status: DashboardChallengeStatus
   platformSolved: boolean
+  schedulingDisposition?: "excluded" | "solved"
   needsEnv?: boolean
   attempts: number
   latestRunId: string | null
@@ -248,6 +250,14 @@ export interface DashboardProject {
   refreshTldr(challengeId: string, agent: AgentOptions): Promise<TldrRecord>
   schedulerAttemptCount(challengeId: string): number
   sessionInterruptionCount(challengeId: string): number
+  challengeSchedulingDisposition(
+    challengeId: string,
+  ): "excluded" | "solved" | null
+  setChallengeSchedulingDisposition(
+    challengeId: string,
+    disposition: "excluded" | "solved" | null,
+  ): unknown
+  removeSchedulerChallenge(challengeId: string): boolean
   /**
    * 向某题当前活跃的 solver 发送人工消息(题目级对话框)。
    * 无活跃 solver 时 reject 一个带 code:"no_active_run" 的 Error。

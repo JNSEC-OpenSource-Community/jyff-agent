@@ -157,6 +157,14 @@ export interface ChallengeRuntimeState {
   updatedAt: string | null
 }
 
+export type ChallengeSchedulingDisposition = "excluded" | "solved"
+
+export interface ChallengeSchedulingOverride {
+  challengeId: string
+  disposition: ChallengeSchedulingDisposition
+  updatedAt: string
+}
+
 export interface RecordChallengeBlockEvent {
   challengeId: string
   runId: string
@@ -857,6 +865,12 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS scheduler_queue_order
         ON scheduler_queue(manual_override DESC, lane, position, enqueued_at);
+
+      CREATE TABLE IF NOT EXISTS challenge_scheduling_overrides (
+        challenge_id TEXT PRIMARY KEY,
+        disposition TEXT NOT NULL CHECK (disposition IN ('excluded', 'solved')),
+        updated_at TEXT NOT NULL
+      ) STRICT;
 
       CREATE TABLE IF NOT EXISTS remote_environment_leases (
         run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
@@ -1741,6 +1755,75 @@ export class RunStore {
       `)
       .all() as unknown as SchedulerQueueRow[]
     return rows.map(schedulerQueueFromRow)
+  }
+
+  challengeSchedulingDisposition(
+    challengeId: string,
+  ): ChallengeSchedulingDisposition | null {
+    this.assertOpen()
+    const row = this.database
+      .prepare(`
+        SELECT disposition FROM challenge_scheduling_overrides
+        WHERE challenge_id = ?
+      `)
+      .get(challengeId) as
+      | { disposition: ChallengeSchedulingDisposition }
+      | undefined
+    return row?.disposition ?? null
+  }
+
+  challengeSchedulingOverrides(): ChallengeSchedulingOverride[] {
+    this.assertOpen()
+    return this.database
+      .prepare(`
+        SELECT challenge_id, disposition, updated_at
+        FROM challenge_scheduling_overrides
+        ORDER BY updated_at DESC, challenge_id ASC
+      `)
+      .all()
+      .map((row) => {
+        const value = row as {
+          challenge_id: string
+          disposition: ChallengeSchedulingDisposition
+          updated_at: string
+        }
+        return {
+          challengeId: value.challenge_id,
+          disposition: value.disposition,
+          updatedAt: value.updated_at,
+        }
+      })
+  }
+
+  setChallengeSchedulingDisposition(
+    challengeId: string,
+    disposition: ChallengeSchedulingDisposition | null,
+  ): ChallengeSchedulingOverride | null {
+    this.assertOpen()
+    if (!challengeId.trim() || challengeId.length > 512)
+      throw new Error("challengeId must contain 1 to 512 characters")
+    if (disposition === null) {
+      this.database
+        .prepare(
+          "DELETE FROM challenge_scheduling_overrides WHERE challenge_id = ?",
+        )
+        .run(challengeId)
+      return null
+    }
+    if (disposition !== "excluded" && disposition !== "solved")
+      throw new Error("Unsupported challenge scheduling disposition")
+    const updatedAt = new Date().toISOString()
+    this.database
+      .prepare(`
+        INSERT INTO challenge_scheduling_overrides (
+          challenge_id, disposition, updated_at
+        ) VALUES (?, ?, ?)
+        ON CONFLICT(challenge_id) DO UPDATE SET
+          disposition = excluded.disposition,
+          updated_at = excluded.updated_at
+      `)
+      .run(challengeId, disposition, updatedAt)
+    return { challengeId, disposition, updatedAt }
   }
 
   moveSchedulerChallenge(input: MoveSchedulerChallenge): SchedulerQueueRecord {

@@ -65,6 +65,7 @@ import {
 import {
   type AnnouncementApprovalStatus,
   type ChallengeAnnouncementRecord,
+  type ChallengeSchedulingDisposition,
   type EnqueueSchedulerChallenge,
   type MoveSchedulerChallenge,
   type RunEvent,
@@ -714,6 +715,9 @@ export class Project {
       ...this.runStore.listRuns().map((run) => run.challengeId),
       ...this.runStore.getBlackboardStats().map((stats) => stats.challengeId),
       ...this.runStore.schedulerQueue().map((item) => item.challengeId),
+      ...this.runStore
+        .challengeSchedulingOverrides()
+        .map((item) => item.challengeId),
     ])
     return [...challengeIds].map((challengeId) => ({
       id: challengeId,
@@ -776,7 +780,27 @@ export class Project {
     return manager.cancel(subagentId)
   }
   isChallengeSolved(challengeId: string): boolean {
-    return this.runStore.isSolved(challengeId)
+    return (
+      this.runStore.isSolved(challengeId) ||
+      this.runStore.challengeSchedulingDisposition(challengeId) === "solved"
+    )
+  }
+  isChallengeSchedulingExcluded(challengeId: string): boolean {
+    return (
+      this.runStore.challengeSchedulingDisposition(challengeId) === "excluded"
+    )
+  }
+  challengeSchedulingDisposition(challengeId: string) {
+    return this.runStore.challengeSchedulingDisposition(challengeId)
+  }
+  setChallengeSchedulingDisposition(
+    challengeId: string,
+    disposition: ChallengeSchedulingDisposition | null,
+  ) {
+    return this.runStore.setChallengeSchedulingDisposition(
+      challengeId,
+      disposition,
+    )
   }
   nextAttempt(challengeId: string): number {
     return this.runStore.nextAttempt(challengeId)

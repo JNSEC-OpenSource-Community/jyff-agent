@@ -7,6 +7,7 @@ import { errorText, HttpError, hasCode } from "../errors.ts"
 import {
   announcementReviewSchema,
   challengeMessageSchema,
+  challengeSchedulingSchema,
   dispatchSchema,
   parseJsonBody,
   readJsonBody,
@@ -50,6 +51,27 @@ export function challengeRoutes(services: Services): App {
     await services
       .requireScheduler(projectIdOf(c))
       .cancel(c.req.param("challengeId"))
+    return c.json(await refreshFor(c))
+  })
+
+  app.patch("/challenges/:challengeId/scheduling", async (c) => {
+    const challengeId = c.req.param("challengeId")
+    const project = services.requireProject(projectIdOf(c))
+    const exists = (await project.challenges()).some(
+      (challenge) => challenge.id === challengeId,
+    )
+    if (!exists) throw new HttpError(404, "challenge_not_found", "题目不存在")
+    const body = await parseJsonBody(c, challengeSchedulingSchema, {
+      code: "invalid_challenge_scheduling",
+    })
+    project.setChallengeSchedulingDisposition(
+      challengeId,
+      body.disposition === "default" ? null : body.disposition,
+    )
+    const scheduler = services.currentScheduler(projectIdOf(c))
+    if (body.disposition === "default") await scheduler?.reconcile()
+    else if (scheduler) await scheduler.cancel(challengeId)
+    else project.removeSchedulerChallenge(challengeId)
     return c.json(await refreshFor(c))
   })
 

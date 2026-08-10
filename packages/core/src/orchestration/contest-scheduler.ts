@@ -107,6 +107,7 @@ export class ContestSchedulerError extends Error {
       | "already_solved"
       | "attempts_exhausted"
       | "blocked"
+      | "excluded"
       | "queue_version_conflict",
     message: string,
   ) {
@@ -280,7 +281,8 @@ export class ContestScheduler {
       if (
         !challenge ||
         challenge.solved ||
-        this.project.isChallengeSolved(persisted.challengeId)
+        this.project.isChallengeSolved(persisted.challengeId) ||
+        this.project.isChallengeSchedulingExcluded(persisted.challengeId)
       ) {
         this.project.removeSchedulerChallenge(persisted.challengeId)
         continue
@@ -302,6 +304,7 @@ export class ContestScheduler {
       if (
         challenge.solved ||
         this.project.isChallengeSolved(challenge.id) ||
+        this.project.isChallengeSchedulingExcluded(challenge.id) ||
         this.project.isChallengeBlocked(challenge.id) ||
         this.hasChallenge(challenge.id)
       ) {
@@ -314,6 +317,7 @@ export class ContestScheduler {
       (challenge) =>
         !challenge.solved &&
         !this.project.isChallengeSolved(challenge.id) &&
+        !this.project.isChallengeSchedulingExcluded(challenge.id) &&
         !this.project.isChallengeBlocked(challenge.id),
     )
     if (!ordinaryOutstanding) {
@@ -321,6 +325,7 @@ export class ContestScheduler {
         .filter(
           (challenge) =>
             !challenge.solved &&
+            !this.project.isChallengeSchedulingExcluded(challenge.id) &&
             this.project.isChallengeBlocked(challenge.id) &&
             !this.hasChallenge(challenge.id),
         )
@@ -364,6 +369,16 @@ export class ContestScheduler {
       throw new ContestSchedulerError(
         "challenge_not_found",
         `平台不存在题目: ${challengeId}`,
+      )
+    }
+    const schedulingDisposition =
+      this.project.challengeSchedulingDisposition(challengeId)
+    if (schedulingDisposition) {
+      throw new ContestSchedulerError(
+        "excluded",
+        schedulingDisposition === "solved"
+          ? "该题已人工标记为已解出；请先恢复默认调度状态"
+          : "该题已标记为不调度；请先恢复默认调度状态",
       )
     }
     const solved =
@@ -429,6 +444,12 @@ export class ContestScheduler {
       throw new ContestSchedulerError(
         "challenge_not_found",
         `平台不存在题目: ${run.challengeId}`,
+      )
+    }
+    if (this.project.challengeSchedulingDisposition(run.challengeId)) {
+      throw new ContestSchedulerError(
+        "excluded",
+        "该题已设置人工调度状态；请先恢复默认调度状态",
       )
     }
     if (challenge.solved || this.project.isChallengeSolved(run.challengeId)) {

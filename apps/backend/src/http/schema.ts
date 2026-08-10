@@ -226,6 +226,10 @@ export const queueMoveSchema = z.object({
 /** 人工派发/取消。 */
 export const dispatchSchema = z.object({ force: z.boolean().optional() })
 
+export const challengeSchedulingSchema = z.object({
+  disposition: z.enum(["default", "excluded", "solved"]),
+})
+
 export const fatherSessionCreateSchema = z.object({
   parentSessionId: z.string().trim().min(1).max(128).optional(),
 })

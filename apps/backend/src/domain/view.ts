@@ -98,8 +98,12 @@ export async function buildDashboardSnapshot(
     const schedulerActive = activeByChallenge.get(challenge.id)
     const lastEvent = latest ? project.latestRunEvent(latest.id) : undefined
     const blackboard = blackboardByChallenge.get(challenge.id)
+    const schedulingDisposition = project.challengeSchedulingDisposition(
+      challenge.id,
+    )
     const status = challengeStatus(
       challenge.solved === true,
+      schedulingDisposition,
       challengeRuns,
       active,
       queued !== undefined,
@@ -112,6 +116,7 @@ export async function buildDashboardSnapshot(
       score: challenge.score,
       status,
       platformSolved: challenge.solved === true,
+      ...(schedulingDisposition ? { schedulingDisposition } : {}),
       ...(challenge.needsEnv === undefined
         ? {}
         : { needsEnv: challenge.needsEnv }),
@@ -317,11 +322,14 @@ function groupRuns(runs: RunRecord[]): Map<string, RunRecord[]> {
 
 function challengeStatus(
   platformSolved: boolean,
+  schedulingDisposition: "excluded" | "solved" | null,
   runs: RunRecord[],
   active: RunRecord | undefined,
   queued: boolean,
   schedulerPhase: "preparing" | "running" | "cancelling" | undefined,
 ): DashboardChallengeStatus {
+  if (schedulingDisposition === "solved") return "solved"
+  if (schedulingDisposition === "excluded") return "excluded"
   if (schedulerPhase)
     return schedulerPhase === "preparing" ? "preparing" : "running"
   if (active) return active.status
@@ -380,6 +388,8 @@ function progressLabel(
       return "已进入调度队列"
     case "pending":
       return "尚未入队"
+    case "excluded":
+      return "已标记为不调度"
     case "preparing":
       return "正在准备沙箱"
     case "running":
