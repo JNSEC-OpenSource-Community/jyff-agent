@@ -1,6 +1,6 @@
-# CTF Agent
+# JYFF Agent
 
-基于 Pi 的批量 CTF 解题控制面：WebUI 管理 Project、平台连接、模型池、Solver、SubAgent 与 Clanker Father。
+基于 Pi 的批量 CTF 解题 Clanker：WebUI 管理 Project、平台连接、模型池、Solver、SubAgent 与 Clanker Father。
 
 ## 快速开始
 
@@ -8,6 +8,7 @@
 
 ```bash
 corepack pnpm install
+corepack pnpm build:sandbox
 corepack pnpm dev
 ```
 
@@ -19,6 +20,10 @@ corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm build:webui
 ```
+
+开发服务启动后打开终端输出的 WebUI 地址。首次使用顺序建议为：先在全局设置中添加 Provider 和模型，再创建 Project，最后填写平台连接信息。没有可用 Solver 模型时，Project 可以浏览本地记录，但不能启动调度。
+
+常用环境变量包括 `CTF_AGENT_ROOT`（数据根目录）、`CTF_AGENT_HOST`、`CTF_AGENT_PORT` 和 Docker 镜像配置。生产环境应把数据根目录放在持久化磁盘，并定期备份 `.ctf-agent`；其中 `secrets.json` 必须按密钥文件处理。
 
 ## 目录
 
@@ -33,34 +38,25 @@ corepack pnpm build:webui
 | `packages/prompts` | 角色提示词 |
 | `packages/web-access` | 搜索、页面读取与正文提取 |
 
-## 当前配置
+后端入口是 `apps/backend/src/main.ts`，HTTP 路由在 `apps/backend/src/http/routes`，前端页面在 `apps/frontend/src/pages`。修改行为时优先在对应包的 `test/` 增加公开行为测试，不要直接依赖内部字段。
 
-- 全局模型池唯一格式为 `model-config.json` v3；凭据只进 Secret Store。
-- Project 状态位于 `.ctf-agent/project-registry.json` 与哈希子目录。
-- Project 的 `runtime-config.json` 绑定 Solver、TLDR、SubAgent 和最大并发。
-- 平台 Secret 必须使用 Project 命名空间。
-- 插件唯一接受 extension schema v2：`extension.json` + TypeScript/JavaScript 入口。
+## 数据布局
 
-不再读取旧版模型文件、旧 Project 根配置、未命名空间 Secret 或旧插件 schema。
+```text
+.ctf-agent/
+├── project-registry.json       # Project 索引
+├── model-config.json            # 全局模型池 v3
+├── secrets.json                 # Secret Store（不提交）
+└── projects/<sha256-prefix>/   # Project 独立目录
+    ├── project-config.json
+    ├── runtime-config.json
+    ├── runs.sqlite
+    ├── runs/<run-id>/           # Pi JSONL 与运行产物
+    ├── challenges/              # 题目 workspace
+    └── extensions/              # 已安装插件 revision
+```
 
-## 运行流程
-
-1. 创建 Project，配置平台和全局模型。
-2. 调度器创建 Solver Run；每个 Run 使用独立 Docker sandbox 和 Pi JSONL session。
-3. Solver 可派发共享 sandbox 的 SubAgent，结果通过结构化消息回传。
-4. TLDR 读取 workspace 与只读工具生成摘要，不创建额外容器。
-5. 平台故障时保留最后成功快照，Project 进入只读降级；恢复后继续调度。
-
-## Clanker Father
-
-Father 在独立 session 中修复平台适配或创建插件。session 自动命名并保留历史。候选插件必须声明 schema v2 `setup`，在 Docker Validation Gate 中验证；验证配置由 WebUI 表单收集，凭据通过一次性授权请求注入，不写入对话。安装前必须人工批准，成功后可下载完整 workspace 或单个入口文件。
-
-## 安全边界
-
-- Agent 只能操作其 sandbox/workspace；控制面源码不直接暴露给 Solver。
-- 插件候选在批准前不导入主进程，验证使用短生命周期容器。
-- 文件 API 做路径 containment、普通文件、UTF-8、大小和数量限制。
-- 删除 Project、安装插件、提供测试凭据等动作需要明确用户操作。
+Project 注册表的 `directory` 只允许 `.` 或由项目 ID 派生的哈希目录。删除 Project 会删除其状态目录；“重置 Solver”只删除 runs、challenges 和 SQLite，不删除 Project 配置、模型或平台凭据。
 
 ## 文档
 
@@ -69,3 +65,15 @@ Father 在独立 session 中修复平台适配或创建插件。session 自动�
 - [黑板协议](docs/blackboard-spec.md)
 - [SubAgent](docs/subagents.md)
 - [Father 插件开发](packages/agents/skills/extension-authoring/SKILL.md)
+
+## 故障排查
+
+| 现象 | 检查项 |
+| --- | --- |
+| Docker create name conflict | `docker ps -a --filter name=ctf-solver`，确认残留容器后删除或改名 |
+| Project 显示只读 | 查看平台连接、最近成功快照和后端日志；连接恢复后会自动恢复调度 |
+| 模型不可用 | 检查模型池条目、Provider 凭据、API 类型和 `/models` 发现结果 |
+| Father 验证失败 | 确认候选 hash 未变化、setup 表单已保存、Validation Gate 报告属于当前 session |
+| WebUI 无事件 | 检查浏览器网络面板中的 SSE 连接和 Project ID 是否正确 |
+
+代码提交前至少运行 `corepack pnpm check`、`corepack pnpm typecheck` 和受影响包的 Vitest；Dockerfile 修改还要运行 `docker build --check`。
