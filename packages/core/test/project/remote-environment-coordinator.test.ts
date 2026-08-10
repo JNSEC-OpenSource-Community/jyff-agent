@@ -71,6 +71,44 @@ function capability(id: string, log: string[]): ChallengeCapability {
 }
 
 describe("RemoteEnvironmentCoordinator", () => {
+  it("包装实例型 capability 时保留原型上的附件下载方法", async () => {
+    const coordinator = new RemoteEnvironmentCoordinator(
+      1,
+      new MemoryLeaseStore(),
+    )
+    class PrototypeCapability implements ChallengeCapability {
+      readonly instance = capability("prototype", []).instance
+
+      async getInfo(): Promise<ChallengeInfo> {
+        return challenge("prototype", 1)
+      }
+
+      async downloadAttachment() {
+        return {
+          attachment: { id: "attachment-0", name: "attachment-0.txt" },
+          content: new Uint8Array([1]),
+        }
+      }
+
+      async submitFlag() {
+        return { status: "accepted" as const, message: "accepted" }
+      }
+    }
+
+    const managed = coordinator.manage({
+      runId: "run-prototype",
+      challenge: challenge("prototype", 1),
+      capability: new PrototypeCapability(),
+    })
+
+    await expect(managed.getInfo()).resolves.toMatchObject({ id: "prototype" })
+    await expect(managed.downloadAttachment("attachment-0")).resolves.toEqual({
+      attachment: { id: "attachment-0", name: "attachment-0.txt" },
+      content: new Uint8Array([1]),
+    })
+    await coordinator.close()
+  })
+
   it("无附件请求会抢占附件题验证租约", async () => {
     const log: string[] = []
     const revoked = vi.fn()

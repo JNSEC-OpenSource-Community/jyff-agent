@@ -33,6 +33,8 @@ export const EVENT_LABELS: Record<string, string> = {
   tool_finished: "工具执行完成",
   flag_submitted: "Flag 提交结果",
   run_finished: "本次尝试结束",
+  run_creation_failed: "创建 Solver 失败",
+  run_creation_blocked: "创建 Solver 失败，已暂停",
   run_interrupted: "运行异常中断",
   run_blocked: "连续中断，已暂停",
   session_interruptions_reset: "人工重置中断计数",

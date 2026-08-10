@@ -70,7 +70,11 @@ export class RemoteEnvironmentCoordinator {
     const priority: RemoteEnvironmentPriority =
       options.challenge.attachments.length === 0 ? "required" : "verification"
     return {
-      ...capability,
+      // capability 通常是适配器实例，方法位于原型而非可枚举自有属性。
+      // 不能使用对象展开，否则会在容器题中丢失 downloadAttachment/getInfo。
+      getInfo: async () => await capability.getInfo(),
+      downloadAttachment: async (attachmentId) =>
+        await capability.downloadAttachment(attachmentId),
       submitFlag: async (flag): Promise<FlagSubmission> => {
         const submission = await capability.submitFlag(flag)
         if (

@@ -95,6 +95,19 @@ export function AttemptHistory({
               />
             </div>
 
+            {run.error ? (
+              <ErrorNotice
+                message={`运行失败原因：${run.error}`}
+                className="mt-3"
+              />
+            ) : null}
+            {run.cleanupError ? (
+              <ErrorNotice
+                message={`资源清理异常：${run.cleanupError}`}
+                className="mt-3"
+              />
+            ) : null}
+
             <Collapsible className="mt-3">
               <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
                 查看运行事件
@@ -114,6 +127,11 @@ export function AttemptHistory({
                     <strong className="text-foreground/80">
                       {EVENT_LABELS[event.type] ?? event.type}
                     </strong>
+                    {eventFailureMessage(event.data) ? (
+                      <span className="min-w-0 break-all text-destructive">
+                        {eventFailureMessage(event.data)}
+                      </span>
+                    ) : null}
                   </div>
                 ))}
               </CollapsibleContent>
@@ -154,6 +172,14 @@ export function AttemptHistory({
       ))}
     </div>
   )
+}
+
+/** 创建失败事件保留历史 Run 的根因，兼容旧记录没有 Run.error 的情况。 */
+function eventFailureMessage(data: unknown): string | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data))
+    return null
+  const error = (data as Record<string, unknown>).error
+  return typeof error === "string" && error.trim() ? error : null
 }
 
 function Metric({ value, label }: { value: string | number; label: string }) {
