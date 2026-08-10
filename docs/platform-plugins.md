@@ -4,6 +4,8 @@
 
 `packages/platform` 提供 CTFd 与 GZCTF。插件实现连接、题目、公告、环境、提交和可选管理能力，并通过统一 `PlatformPlugin` 契约注册。
 
+内置插件直接编译进控制面，不经过 `extension.json` 加载流程，因此不携带扩展 schema 版本。它们和外部 schema v2 插件共享同一 `PlatformPlugin`、`PlatformSetupDescriptor`、Validation 和 Secret 边界。代码中的 CTFd `/api/v1/` 是 CTFd 服务端的上游 REST API 版本，与本项目插件 schema 无关。
+
 插件生命周期为：解析配置 → `connect` → 获取 overview → 刷新题目/公告 → 绑定题目 → 读取详情/附件/提交 → 管理远程环境 → `close`。`close` 必须幂等，即使连接只完成了一半也能安全调用。
 
 | 能力 | 必需 | 约束 |

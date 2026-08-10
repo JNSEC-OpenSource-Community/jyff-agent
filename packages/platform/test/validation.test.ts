@@ -1,10 +1,23 @@
 import { describe, expect, it, vi } from "vitest"
+import { ctfdPlatform } from "../src/ctfd.ts"
+import { gzctfPlatform } from "../src/gzctf.ts"
 import type { PlatformPlugin } from "../src/index.ts"
 import {
   fingerprintProfile,
   PlatformPluginRegistry,
+  parsePlatformSetupDescriptor,
   validatePlatformPlugin,
 } from "../src/index.ts"
+
+describe("内置平台 setup", () => {
+  it("CTFd 与 GZCTF 使用当前 setup 契约", () => {
+    for (const platform of [ctfdPlatform, gzctfPlatform]) {
+      expect(() => parsePlatformSetupDescriptor(platform.setup)).not.toThrow()
+      expect(platform.setup?.fields).toBeDefined()
+      expect(platform.setup?.authStrategies).toBeDefined()
+    }
+  })
+})
 
 describe("PlatformPluginRegistry", () => {
   it("拒绝扩展覆盖内置插件", () => {
