@@ -9,6 +9,7 @@ COPY packages/platform/package.json packages/platform/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/sandbox/package.json packages/sandbox/package.json
 COPY packages/prompts/package.json packages/prompts/package.json
+COPY packages/web-access/package.json packages/web-access/package.json
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/frontend/package.json apps/frontend/package.json
 RUN corepack pnpm install --frozen-lockfile \
@@ -29,6 +30,7 @@ COPY packages/platform/package.json packages/platform/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/sandbox/package.json packages/sandbox/package.json
 COPY packages/prompts/package.json packages/prompts/package.json
+COPY packages/web-access/package.json packages/web-access/package.json
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/frontend/package.json apps/frontend/package.json
 RUN corepack pnpm install --frozen-lockfile --prod \
