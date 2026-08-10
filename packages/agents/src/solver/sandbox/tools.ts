@@ -1,3 +1,4 @@
+import { posix } from "node:path"
 import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
 import {
   DockerBashExecutionEnv,
@@ -120,8 +121,55 @@ export function createSubagentTools(options: SubagentToolOptions): AgentTool[] {
 export function createSolverTools(options: SolverToolOptions): AgentTool[] {
   const submissionRateLimiter =
     options.submissionRateLimiter ?? new FlagSubmissionRateLimiter()
+  const platformFiles = new DockerExecutionEnv(options.sandbox)
   const tools: AgentTool[] = [
     ...createSandboxTools(options),
+    {
+      name: "ctf_challenge_info",
+      label: "Refresh Challenge Details",
+      description:
+        "Refresh and return the current challenge details. Use when an announcement says the statement, score, environment guidance, or attachment list changed.",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      async execute() {
+        return result(
+          (await options.capability.getInfo()) as unknown as Record<
+            string,
+            unknown
+          >,
+        )
+      },
+    },
+    {
+      name: "ctf_download_attachment",
+      label: "Download Challenge Attachment",
+      description:
+        "Download or refresh one attachment into /workspace/attachments. Use when the challenge attachment list or file content may have been updated; call ctf_challenge_info first to obtain the current attachment ID.",
+      parameters: Type.Object({
+        attachmentId: Type.String({ minLength: 1 }),
+      }),
+      executionMode: "sequential",
+      async execute(_id, params, signal) {
+        const payload = await options.capability.downloadAttachment(
+          (params as { attachmentId: string }).attachmentId,
+        )
+        const path = refreshedAttachmentPath(payload.attachment.name)
+        const saved = await platformFiles.replaceFile(
+          path,
+          payload.content,
+          signal,
+        )
+        if (!saved.ok)
+          throw new Error(`无法保存题目附件: ${saved.error.message}`, {
+            cause: saved.error,
+          })
+        return result({
+          attachment: payload.attachment,
+          path,
+          size: payload.content.byteLength,
+        })
+      },
+    },
     {
       name: "ctf_submit_flag",
       label: "Submit Flag",
@@ -188,6 +236,12 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
   }
 
   return tools
+}
+
+function refreshedAttachmentPath(name: string): string {
+  const basename = posix.basename(name.replaceAll("\\", "/"))
+  const safe = basename.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 160)
+  return `/workspace/attachments/${safe && !/^\.+$/.test(safe) ? safe : "download.bin"}`
 }
 
 function createListTool(env: DockerExecutionEnv): AgentTool {

@@ -220,15 +220,39 @@ describe("Solver tools", () => {
     expect(appendCalls.length).toBeLessThanOrEqual(3)
   })
 
-  it("不再向 Solver 暴露题目读取和附件下载工具", () => {
-    const names = createSolverTools({
+  it("题目或附件更新后可重新读取详情并原子刷新附件", async () => {
+    const sandbox = new FakeSandbox()
+    const tools = createSolverTools({
       capability: capability(),
-      sandbox: new FakeSandbox(),
+      sandbox,
       onTerminalSubmission: () => {},
-    }).map((item) => item.name)
+    })
 
-    expect(names).not.toContain("ctf_challenge_info")
-    expect(names).not.toContain("ctf_download_attachment")
+    const info = await tool("ctf_challenge_info", tools).execute("info", {})
+    const downloaded = await tool("ctf_download_attachment", tools).execute(
+      "download",
+      { attachmentId: "attachment-1" },
+    )
+
+    expect(info.details).toMatchObject({ id: "only", description: "desc" })
+    expect(downloaded.details).toMatchObject({
+      attachment: { id: "attachment-1", name: "flag.bin" },
+      path: "/workspace/attachments/flag.bin",
+      size: 3,
+    })
+    expect(
+      sandbox.calls
+        .filter((call) => call.args[0] === "python3")
+        .map((call) => JSON.parse(call.input ?? "{}")),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          op: "replace",
+          path: "/workspace/attachments/flag.bin",
+          base64: "AP8B",
+        }),
+      ]),
+    )
   })
 
   it("提交成功会通知 Agent 在本轮结束后回收容器", async () => {

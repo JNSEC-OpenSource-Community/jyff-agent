@@ -304,8 +304,9 @@ describe("Project", () => {
       expect.arrayContaining(["read", "write", "edit", "list", "bash"]),
     )
     expect(toolNames).not.toContain("ctf_instance_start")
-    expect(toolNames).not.toContain("ctf_challenge_info")
-    expect(toolNames).not.toContain("ctf_download_attachment")
+    expect(toolNames).toEqual(
+      expect.arrayContaining(["ctf_challenge_info", "ctf_download_attachment"]),
+    )
     expect(toolNames).not.toContain("load_skill")
     expect(toolNames).toEqual(
       expect.arrayContaining([
