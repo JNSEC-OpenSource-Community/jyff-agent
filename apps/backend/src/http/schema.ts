@@ -180,7 +180,7 @@ const subagentModelsSchema = z
       .string({ message: "SubAgent Model 必须是字符串" })
       .trim()
       .min(1, { message: "SubAgent Model 不能为空" })
-      .max(128, { message: "SubAgent Model 长度不能超过 128" }),
+      .max(512, { message: "SubAgent Model 长度不能超过 512" }),
     { message: "SubAgent Models 必须是对象" },
   )
   .optional()
@@ -397,6 +397,38 @@ export const modelLoginSchema = z.object({
 export const modelPromptSchema = z.object({
   value: z.string().trim().min(1).max(16_384),
 })
+
+/** web-access 插件全局配置。 */
+export const webAccessConfigurationSchema = z
+  .object({
+    enabled: z.boolean({ message: "enabled 必须是布尔值" }).optional(),
+    providers: z.array(z.string().trim().min(1).max(64)).max(64).optional(),
+    workflow: z.enum(["none", "auto-summary"]).optional(),
+    summaryModel: z
+      .object({
+        provider: z.string().trim().min(1).max(128),
+        id: z.string().trim().min(1).max(256),
+      })
+      .nullable()
+      .optional(),
+    ssrf: z
+      .object({
+        allowRanges: z.array(z.string().trim().min(1).max(256)).optional(),
+        trustEnvProxy: z.boolean().optional(),
+      })
+      .optional(),
+    providerConfig: z
+      .record(z.string(), z.record(z.string(), z.string()))
+      .optional(),
+  })
+  .strict()
+
+/** web-access 某 provider 的密钥写入。 */
+export const webAccessKeySchema = z
+  .object({
+    apiKey: z.string().trim().max(16_384).nullable().optional(),
+  })
+  .strict()
 
 /** auth.json 导入。 */
 export const modelImportSchema = z.object({

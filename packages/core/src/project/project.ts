@@ -35,10 +35,15 @@ import {
   newRunId,
   type Sandbox,
 } from "@ctf-agent/sandbox"
+import {
+  createWebAccessTools,
+  type WebAccessConfig,
+} from "@ctf-agent/web-access"
 import type {
   AgentHarnessEvent,
   AgentMessage,
   AgentOptions,
+  AgentTool,
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core"
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
@@ -118,6 +123,15 @@ export interface OpenProjectOptions {
   sandboxFactory?: (options: DockerSandboxOptions) => Promise<Sandbox>
   /** 在 .pi/skills 外额外发现的显式 skill 目录。 */
   skillPaths?: readonly string[]
+  /**
+   * web-access 工具配置工厂：给定宿主 challenge workspace（bind-mount 到容器
+   * /workspace）与 run 级 AbortSignal（run 结束 abort → 清理 web 缓存），返回
+   * WebAccessConfig；返回 null 时禁用 web 工具。
+   */
+  webAccessConfig?: (
+    workspace: string,
+    signal: AbortSignal,
+  ) => WebAccessConfig | null | Promise<WebAccessConfig | null>
   /** 控制面运行在容器中时，将 Run workspace 映射为 Docker daemon 可见的挂载。 */
   workspaceMount?: (context: {
     runId: string
@@ -218,6 +232,7 @@ export class Project {
     private readonly remoteEnvironments: RemoteEnvironmentCoordinator,
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly workspaceNamespace: string | undefined,
+    private readonly webAccessConfig: OpenProjectOptions["webAccessConfig"],
     private readonly telemetry: Required<ProjectTelemetryOptions>,
     private readonly subagentRuntime: {
       maxConcurrent: number
@@ -309,6 +324,7 @@ export class Project {
         remoteEnvironments,
         options.workspaceMount,
         normalizeWorkspaceNamespace(options.workspaceNamespace),
+        options.webAccessConfig,
         {
           level: options.telemetry?.level ?? "safe",
           maxTextLength: Math.max(
@@ -1094,6 +1110,18 @@ export class Project {
             },
           ]
 
+      // web-access 工具（搜索/fetch/source-check），默认关闭；host 通过
+      // webAccessConfig 工厂提供 allowlist + 密钥 + 模型解析器。
+      const webAccessSignal = new AbortController()
+      let webAccessTools: AgentTool[] = []
+      if (this.webAccessConfig) {
+        const config = await this.webAccessConfig(
+          workspace,
+          webAccessSignal.signal,
+        )
+        if (config) webAccessTools = createWebAccessTools(config)
+      }
+
       subagentManager = new CtfSubagentManager({
         projectId: this.config.project.id,
         runId,
@@ -1103,6 +1131,7 @@ export class Project {
         agent: options.agent,
         roles: this.configuredSubagentRoles(),
         skills,
+        webAccessTools,
         maxConcurrent: this.subagentRuntime.maxConcurrent,
         onAgentEvent: (subagent, event) => {
           this.publishAgentEvent(runId, subagent.id, event)
@@ -1146,6 +1175,7 @@ export class Project {
             ...options.agent.initialState,
             tools: [
               ...(options.agent.initialState?.tools ?? []),
+              ...webAccessTools,
               ...createBlackboardTools({
                 runStore: this.runStore,
                 challengeId,
@@ -1169,7 +1199,10 @@ export class Project {
           compaction: options.compaction,
           closeOnSubmission: options.writeup !== true,
         },
-        onBeforeCleanup: () => subagentManager?.close(),
+        onBeforeCleanup: () => {
+          webAccessSignal.abort()
+          return subagentManager?.close()
+        },
         onClosed: async (details) => {
           this.solvers.delete(solver)
           this.subagentManagers.delete(runId)

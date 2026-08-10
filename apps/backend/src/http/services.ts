@@ -5,6 +5,7 @@ import {
   piSessionHasConversation,
   readPiSessionConversation,
 } from "../domain/html-export.ts"
+import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
 import type {
   DashboardControlPlane,
   DashboardConversation,
@@ -34,6 +35,7 @@ export interface ServicesOptions {
   father?: DashboardFather
   fatherValidationConfigs?: DashboardFatherValidationConfigs
   extensions?: DashboardPlatformExtensions
+  webAccessConfiguration?: WebAccessConfiguration
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
@@ -91,6 +93,10 @@ export class Services {
 
   get modelAuthentication(): DashboardModelAuthentication | undefined {
     return this.options.modelAuthentication
+  }
+
+  get webAccessConfiguration(): WebAccessConfiguration | undefined {
+    return this.options.webAccessConfiguration
   }
 
   get authentication(): DashboardWebUiAuthentication | undefined {
@@ -244,6 +250,18 @@ export class Services {
       )
     }
     return authentication
+  }
+
+  requireWebAccess(): WebAccessConfiguration {
+    const configuration = this.options.webAccessConfiguration
+    if (!configuration) {
+      throw new HttpError(
+        404,
+        "web_access_unavailable",
+        "当前控制面不支持 web-access 插件配置",
+      )
+    }
+    return configuration
   }
 
   /** 全局路由（无 project 上下文）的作用域视图。 */

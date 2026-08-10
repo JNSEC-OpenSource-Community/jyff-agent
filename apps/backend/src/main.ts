@@ -8,6 +8,7 @@ import {
   FatherValidationConfigStore,
   FileSecretStore,
   PlatformExtensionStore,
+  webAccessSecretName,
 } from "@ctf-agent/core"
 import {
   ctfdPlatform,
@@ -18,6 +19,7 @@ import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
 import { createFileSchedulerConfiguration } from "./domain/scheduler-config.ts"
+import { createFileWebAccessConfiguration } from "./domain/web-access-config.ts"
 import { createFileWebUiAuthentication } from "./domain/webui-auth.ts"
 import { startWebUi } from "./server.ts"
 
@@ -49,6 +51,10 @@ const modelConfiguration = await createFileModelConfiguration({
   storagePath: join(stateDirectory, "model-config.json"),
   secretStore,
   authentication: modelAuthentication,
+})
+const webAccessConfiguration = await createFileWebAccessConfiguration({
+  storagePath: join(stateDirectory, "web-access.json"),
+  secretStore,
 })
 const schedulerConfiguration = await createFileSchedulerConfiguration({
   storagePath: join(stateDirectory, "scheduler-config.json"),
@@ -151,6 +157,29 @@ const controlPlane = await ControlPlane.create({
           }),
         }
       : {}),
+    // web-access 插件默认关闭；启用时把 allowlist + 密钥 + 模型解析器组装成
+    // WebAccessConfig。密钥只从全局 SecretStore 读取，读 API 永不返回值。
+    webAccessConfig: async (workspace, signal) => {
+      const snapshot = await webAccessConfiguration.projectSnapshot()
+      if (!snapshot.enabled || snapshot.providers.length === 0) return null
+      return {
+        providers: snapshot.providers,
+        workflow: snapshot.workflow,
+        resolveSecret: (provider) =>
+          secretStore.get(webAccessSecretName(provider)),
+        modelAuth: modelConfiguration.resolveModelAuth(),
+        ...(snapshot.summaryModel
+          ? { summaryModel: snapshot.summaryModel }
+          : {}),
+        workspaceHostPath: workspace,
+        ssrf: snapshot.ssrf,
+        timeouts: snapshot.timeouts,
+        ...(snapshot.providerConfig
+          ? { providerConfig: snapshot.providerConfig }
+          : {}),
+        sessionSignal: signal,
+      }
+    },
   },
   createProjectOptions: async (context) => {
     const runtime = await projectRuntimeConfiguration(context)
@@ -201,6 +230,7 @@ const webui = await startWebUi({
   father,
   fatherValidationConfigs,
   extensions,
+  webAccessConfiguration,
   projectRuntimeConfiguration: (projectId) =>
     projectRuntimeConfigurations.get(projectId),
   onProjectDeleted: (projectId) => {

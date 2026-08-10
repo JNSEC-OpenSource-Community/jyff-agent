@@ -430,6 +430,32 @@ export interface ModelAuthenticationView {
   importFileAvailable: boolean
 }
 
+/** web-access 插件 provider 的状态视图（绝不包含密钥值）。 */
+export interface WebAccessProviderView {
+  id: string
+  /** 是否在 allowlist 中（WebUI 复选框选中状态）。 */
+  enabled: boolean
+  configured: boolean
+}
+
+export interface WebAccessConfigurationView {
+  enabled: boolean
+  providers: WebAccessProviderView[]
+  workflow: "none" | "auto-summary"
+  summaryModel?: { provider: string; id: string }
+  ssrf: { allowRanges: string[]; trustEnvProxy: boolean }
+  providerConfig?: Record<string, Record<string, string>>
+}
+
+export interface WebAccessConfigurationUpdate {
+  enabled?: boolean
+  providers?: string[]
+  workflow?: "none" | "auto-summary"
+  summaryModel?: { provider: string; id: string } | null
+  ssrf?: { allowRanges?: string[]; trustEnvProxy?: boolean }
+  providerConfig?: Record<string, Record<string, string>>
+}
+
 export type ModelAuthLoginStatus =
   | "running"
   | "awaiting_input"

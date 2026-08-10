@@ -1,5 +1,6 @@
 import type { RunSessionExportMetadata } from "@ctf-agent/core"
 import { type Context, Hono } from "hono"
+import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
 import type {
   DashboardControlPlane,
   DashboardConversation,
@@ -28,6 +29,7 @@ import {
   scopedSystemRoutes,
   systemRoutes,
 } from "./routes/system.ts"
+import { webAccessRoutes } from "./routes/web-access.ts"
 import { Services } from "./services.ts"
 import type { SseHub } from "./sse/hub.ts"
 import type { SnapshotSync } from "./sync.ts"
@@ -46,6 +48,7 @@ export interface WebUiOptions {
   father?: DashboardFather
   fatherValidationConfigs?: DashboardFatherValidationConfigs
   extensions?: DashboardPlatformExtensions
+  webAccessConfiguration?: WebAccessConfiguration
   secureCookies?: boolean
   projectRuntimeConfiguration?: (
     projectId: string,
@@ -107,6 +110,7 @@ export function buildRouter(services: Services, options: WebUiOptions): App {
   api.route("/", fatherRoutes(services))
   api.route("/", runRoutes(services))
   api.route("/", modelsRoutes(services))
+  api.route("/", webAccessRoutes(services))
   app.route("/api", api)
 
   // 项目级路由：注入 scope 后挂载到两种路径形态（新式与旧式 /api 后缀）。
