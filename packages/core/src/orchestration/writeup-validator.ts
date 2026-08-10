@@ -54,7 +54,7 @@ export async function validateChallengeWriteup(
   for (const heading of WRITEUP_REQUIRED_HEADINGS) {
     const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     if (!new RegExp(`^##\\s+${escaped}\\s*$`, "im").test(text)) {
-      errors.push(`Missing required heading: ## ${heading}`)
+      errors.push(`Missing required heading: ## ${heading}\n`)
     }
   }
   return { valid: errors.length === 0, path, errors, size: bytes.length }
