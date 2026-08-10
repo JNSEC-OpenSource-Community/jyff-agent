@@ -205,11 +205,13 @@ WebUI 也可以针对一个已经结束的 attempt 执行“重试此 Attempt”
 
 WebUI 使用浏览器路由：`/` 管理全部 Project，`/projects/new` 创建 Project，`/settings` 管理全局凭据、模型池与登录策略，`/projects/:id` 管理一场比赛，`/projects/:id/settings` 管理该比赛的连接与运行配置，`/projects/:id/challenges/:challengeId` 是以对话为核心的题目工作区。Solver 与 SubAgent 复用结构化 Pi session 对话布局；移动端通过底部 Drawer 查看题目状态和 Agents；黑板、Attempts 和 Writeup 分页显示，工具与推理块按需展开。用户可见时间统一转换为本地可读格式。
 
-Project 首页的待执行队列限制高度并在溢出时内部滚动，待审核公告支持逐条或全部批准/拒绝。比赛配置中的“重置所有 Solver”会先停止该 Project 的调度器、Solver 与 SubAgent，再清空 SQLite Run 状态、Pi 会话、黑板、公告审核、调度队列和题目 workspace；Project 注册信息、平台连接配置与凭据、模型绑定和并发量保持不变，随后重新连接该 Project。
+Project 首页的待执行队列限制高度并在溢出时内部滚动，待审核公告支持逐条或全部批准/拒绝。全部题目表可将单题设为“不调度”或“人工已解出”，状态保存在 Project SQLite；两者都会移出当前队列、停止活跃 Run，并阻止自动、人工和重试再次入队，恢复“自动判断”后才重新参与调度。比赛配置中的“重置所有 Solver”会先停止该 Project 的调度器、Solver 与 SubAgent，再清空 SQLite Run 状态、Pi 会话、黑板、公告审核、调度队列和题目 workspace；Project 注册信息、平台连接配置与凭据、模型绑定和并发量保持不变，随后重新连接该 Project。
 
 题目页的“文件”Tab 以可折叠目录树列出题目 workspace 中的普通文件并提供下载，少于 8 个文件的目录默认展开。受支持的代码、纯文本和 Markdown 文件可在响应式弹窗中直接预览；代码按需使用有限语言集高亮，Markdown 复用安全渲染器，预览文件上限为 256 KiB。列表最多返回 2,000 项且不跟随 symlink，预览和下载路径同时经过相对路径与真实路径 containment 校验。桌面侧栏折叠偏好保存在浏览器本地，切换页面或刷新后保持不变。
 
 题目页右侧状态栏跟随当前选中的 Solver/SubAgent 显示输入、缓存读写和实时缓存率。远程环境除状态外还显示可复制的完整 URL；长地址在侧栏内截断，不会撑破布局。平台未声明题目是否需要环境时显示“平台未提供”，与明确的“不需要”区分。Solver 与各 SubAgent 的对话浏览位置独立保留，来回切换后恢复原位置。
+
+Solver 还拥有绑定当前题目的 `ctf_challenge_info` 与 `ctf_download_attachment`。当公告提示题面、环境说明或附件发生变化时，Solver 可重新读取详情，并按附件 ID 将最新文件原子替换到 `/workspace/attachments/`；这两个工具不能访问其他题目。
 
 当前发行镜像启用 OpenAI-compatible、OpenAI Responses / Codex 与 Anthropic Messages；其他 Pi Provider 仍按需裁剪。原生 Provider 由 Pi 负责请求签名、OAuth 刷新和对应 stream 实现。
 

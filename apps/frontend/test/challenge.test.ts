@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   ACTIVE_STATUSES,
+  challengeCategoryMark,
   filterChallenges,
   recentChallenges,
   sortChallenges,
@@ -167,5 +168,22 @@ describe("recentChallenges", () => {
       challenge({ id: "c", lastActivityAt: null }),
     ]
     expect(recentChallenges(list, 2).map((c) => c.id)).toEqual(["b", "a"])
+  })
+})
+
+describe("challengeCategoryMark", () => {
+  it("中文分类显示首个汉字，英文分类显示三字母缩写", () => {
+    expect(challengeCategoryMark("美工设计")).toEqual({
+      text: "美",
+      chinese: true,
+    })
+    expect(challengeCategoryMark("现代密码")).toEqual({
+      text: "现",
+      chinese: true,
+    })
+    expect(challengeCategoryMark("web")).toEqual({
+      text: "WEB",
+      chinese: false,
+    })
   })
 })

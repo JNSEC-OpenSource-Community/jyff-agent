@@ -33,6 +33,7 @@ import {
 } from "../components/index.ts"
 import { apiMutation, apiRequest, projectApi } from "../lib/api.ts"
 import {
+  challengeCategoryMark,
   filterChallenges,
   recentChallenges,
   sortChallenges,
@@ -184,6 +185,7 @@ export function ProjectPage() {
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [schedulingBusy, setSchedulingBusy] = useState("")
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -302,6 +304,30 @@ export function ProjectPage() {
       await load().catch(() => undefined)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function setSchedulingDisposition(
+    challengeId: string,
+    disposition: "default" | "excluded" | "solved",
+  ) {
+    setSchedulingBusy(challengeId)
+    setError("")
+    try {
+      const next = await apiMutation<DashboardSnapshot>(
+        projectApi(
+          projectId,
+          `/api/challenges/${encodeURIComponent(challengeId)}/scheduling`,
+        ),
+        "PATCH",
+        { disposition },
+      )
+      setSnapshot(next)
+      setQueue(next.scheduler?.queued ?? [])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSchedulingBusy("")
     }
   }
 
@@ -571,39 +597,49 @@ export function ProjectPage() {
             </span>
           </div>
           <div className="flex-1 divide-y divide-border/60">
-            {recent.map((c) => (
-              <Link
-                key={c.id}
-                to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
-                className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted"
-              >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border font-mono text-[10px] font-bold text-muted-foreground">
-                  {c.category.slice(0, 3).toUpperCase()}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium group-hover:text-primary transition-colors">
-                    {c.title}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {c.score} pts
-                    {c.status === "solved" && c.lastActivityAt
-                      ? ` · 解出 ${relativeTime(c.lastActivityAt)}`
-                      : ` · ${c.progress}`}
-                  </p>
-                </div>
-                <Badge
-                  tone={toneForStatus(c.status)}
-                  className="shrink-0 text-[10px]"
+            {recent.map((c) => {
+              const categoryMark = challengeCategoryMark(c.category)
+              return (
+                <Link
+                  key={c.id}
+                  to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
+                  className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted"
                 >
-                  {STATUS_LABELS[c.status] ?? c.status}
-                </Badge>
-                <Icon
-                  icon="lucide:chevron-right"
-                  width="13"
-                  className="shrink-0 text-muted-foreground/40"
-                />
-              </Link>
-            ))}
+                  <span
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-md border border-border font-bold text-muted-foreground",
+                      categoryMark.chinese
+                        ? "font-sans text-sm"
+                        : "font-mono text-[10px]",
+                    )}
+                  >
+                    {categoryMark.text}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium group-hover:text-primary transition-colors">
+                      {c.title}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {c.score} pts
+                      {c.status === "solved" && c.lastActivityAt
+                        ? ` · 解出 ${relativeTime(c.lastActivityAt)}`
+                        : ` · ${c.progress}`}
+                    </p>
+                  </div>
+                  <Badge
+                    tone={toneForStatus(c.status)}
+                    className="shrink-0 text-[10px]"
+                  >
+                    {STATUS_LABELS[c.status] ?? c.status}
+                  </Badge>
+                  <Icon
+                    icon="lucide:chevron-right"
+                    width="13"
+                    className="shrink-0 text-muted-foreground/40"
+                  />
+                </Link>
+              )
+            })}
             {snapshot.challenges.length > 5 && (
               <a
                 href="#all"
@@ -649,6 +685,7 @@ export function ProjectPage() {
                 <SelectItem value="active">执行中</SelectItem>
                 <SelectItem value="queued">队列中</SelectItem>
                 <SelectItem value="pending">未调度</SelectItem>
+                <SelectItem value="excluded">不调度</SelectItem>
                 <SelectItem value="solved">已解出</SelectItem>
                 <SelectItem value="attention">需处理</SelectItem>
               </SelectContent>
@@ -724,12 +761,52 @@ export function ProjectPage() {
                         {STATUS_LABELS[c.status] ?? c.status}
                       </Badge>
                     </td>
-                    <td className="py-3 pr-5">
-                      <Icon
-                        icon="lucide:chevron-right"
-                        width="14"
-                        className="text-muted-foreground/40"
-                      />
+                    <td
+                      className="py-3 pr-5"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <Select
+                          value={c.schedulingDisposition ?? "default"}
+                          disabled={schedulingBusy === c.id}
+                          onValueChange={(value) =>
+                            void setSchedulingDisposition(
+                              c.id,
+                              value as "default" | "excluded" | "solved",
+                            )
+                          }
+                        >
+                          <SelectTrigger
+                            hideIcon
+                            className="size-8 justify-center border-0 bg-transparent p-0 shadow-none hover:bg-muted"
+                            aria-label={`设置 ${c.title} 的调度状态`}
+                          >
+                            <Icon
+                              icon={
+                                schedulingBusy === c.id
+                                  ? "lucide:loader-circle"
+                                  : "lucide:ellipsis"
+                              }
+                              className={
+                                schedulingBusy === c.id ? "animate-spin" : ""
+                              }
+                              width="15"
+                              aria-hidden="true"
+                            />
+                          </SelectTrigger>
+                          <SelectContent align="end">
+                            <SelectItem value="default">自动判断</SelectItem>
+                            <SelectItem value="excluded">不调度</SelectItem>
+                            <SelectItem value="solved">标记为已解出</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Icon
+                          icon="lucide:chevron-right"
+                          width="14"
+                          className="text-muted-foreground/40"
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -42,6 +42,7 @@ export type DashboardChallengeStatus =
   | "blocking"
   | "writing_writeup"
   | "solved"
+  | "excluded"
   | "failed"
   | "timed_out"
   | "cancelled"
@@ -56,6 +57,7 @@ export interface DashboardChallenge {
   score: number
   status: DashboardChallengeStatus
   platformSolved: boolean
+  schedulingDisposition?: "excluded" | "solved"
   needsEnv?: boolean
   attempts: number
   latestRunId: string | null

@@ -28,6 +28,7 @@ export function toneForStatus(
   if (ATTENTION_STATUSES.includes(status as DashboardChallengeStatus))
     return "danger"
   if (["queued", "pending"].includes(status)) return "warning"
+  if (status === "excluded") return "neutral"
   return "neutral"
 }
 
@@ -96,4 +97,16 @@ export function recentChallenges(
         Date.parse(left.lastActivityAt ?? "0"),
     )
     .slice(0, limit)
+}
+
+/** 中文分类使用首个汉字，英文分类保留紧凑三字母缩写。 */
+export function challengeCategoryMark(category: string): {
+  text: string
+  chinese: boolean
+} {
+  const han = [...category].find((character) =>
+    /\p{Script=Han}/u.test(character),
+  )
+  if (han) return { text: han, chinese: true }
+  return { text: category.slice(0, 3).toUpperCase(), chinese: false }
 }

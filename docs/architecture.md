@@ -82,7 +82,7 @@ WebUI 登录默认关闭。启用后 `global-config.json` 只保存 scrypt 参�
 4. 自动下载全部附件到容器的 `/workspace/attachments/<文件名>`；同题后续 attempt 会复用内容未变化的附件，内容变化时以同目录原子替换刷新，避免覆盖仍被旧进程执行的 inode 时触发 `ETXTBSY`；
 5. 把题目信息与附件路径编码为 `<challenge_context>` 初始 user 消息；
 6. 创建共享同一 sandbox 的 SubAgent manager；
-7. 装配 Solver 的容器工具、平台工具、黑板工具与 SubAgent 工具；
+7. 装配 Solver 的容器工具、平台工具、黑板工具与 SubAgent 工具；平台工具除 Flag 和环境生命周期外，还可在题目或附件更新后重新调用当前题目的 `getInfo()`/`downloadAttachment()`，附件原子替换写入 `/workspace/attachments/`；
 8. 用 Pi 原生 append-only JSONL session 运行并持久化消息树。
 
 远程实例不由各 Solver 直接竞争平台配额。Project 级 `RemoteEnvironmentCoordinator` 包装单题 `ChallengeCapability.instance`，以 SQLite `remote_environment_leases` 记录本控制面持有的租约，并串行化回收与启动。无附件远程题的申请属于 `required`；带附件题从 `local-first` 开始，Solver 只有在本地分析得到待验证结果并调用 `ctf_instance_start` 后才晋升为 `verification` 请求。请求按 required 优先、同级 FIFO 排队，工具调用可由 Solver abort；required 可以回收最早的 verification 租约，但 verification 不互相抢占。被回收的 Solver 会收到 `<environment_revoked>` steer，不能继续使用旧 endpoint。terminal submission 在 writeup turn 前释放租约，所有关闭路径再次幂等清理；Project 重连时只按持久化租约回收本系统遗留环境，不主动销毁未管理的队员实例。
@@ -143,7 +143,7 @@ Solver 停止原因经过 `classifySolverStop` 归一化：`fetch failed`、非�
 
 Scheduler 已关闭 Solver 的隐式 BaseAgent compaction，并在每个 turn 前读取 context pressure。compact 边界先以 `delta=2` 预判有效阈值：可 compact 时执行 CTF compact 并写入 `compact_performed=true`，会超阈值时跳过 compact 并直接进入 `blocking`。`CTF_COMPACTION_PROMPT` 只让摘要保留未被权威快照覆盖的 Solver 本地调查状态；该提示词由 `CtfSolverAgent` 传给 Pi `AgentHarness.compact()`。compact 成功后，控制面按题目信息、非空黑板、已批准公告、SubAgent snapshot 的顺序组成一个恢复块，并把它直接前置到实际触发模型的首个 post-compact user turn；不再逐条 append 成消息树上的兄弟叶子。各部分因此不在摘要中重复，compact 期间完成的 worker 结果也会进入该 turn。blocking 阶段先取消尚未启动的 queued SubAgent；running SubAgent 的当前 turn 会在保留已有回复后中止，并从同一 JSONL session 启动明确的 final-report turn，最长等待 30 秒。只有所有 worker 都进入终态且最新 snapshot 已生成后，主 Solver 才执行一次 `BLOCKED_FINALIZATION_PROMPT` final turn；SubAgent snapshot 同样直接前置到该 user turn。该收尾要求终止遗留进程、删除临时文件，并把所有保留文件的准确路径与用途记录为 Evidence。最终无论成功还是失败都关闭为 blocked，失败追加 `block_finalization_failed`。因 legacy interruption 上限而进入 blocking 时使用独立的 `forceChallengeBlocked` 生命周期更新，只改变 blocked 事实，不重复增加 block score；存在 ledger 的 Run 也不会再被 close callback 重复计分。事件 key 由 Run/session 事件序列稳定派生，崩溃重放不会重复计分。
 
-调度等待队列持久化在 `scheduler_queue`，记录 normal/blocked lane、lane 内位置、人工跨 lane override 和乐观锁版本。自主调度优先填充 normal lane；普通题耗尽后，按 `blocked_at` 顺序加入 blocked revival。领取复活题时保留原 block score，`revival_count` 和 `lifecycle_generation` 各增加 1，因此有效阈值增加 4。人工重排使用版本检查，冲突时拒绝覆盖；数据库队列在进程关闭后保留，显式暂停自主调度或取消排队题目时才删除相应记录。生产默认 Solver 并发数为 8。
+调度等待队列持久化在 `scheduler_queue`，记录 normal/blocked lane、lane 内位置、人工跨 lane override 和乐观锁版本。Project 首页设置的单题人工状态持久化在 `challenge_scheduling_overrides`：`excluded` 与 `solved` 都是自动调度、人工派发和 Run 重试的硬过滤条件；设置时移出队列并取消活跃 Run，清除后才恢复平台与 RunStore 的默认判断。自主调度优先填充 normal lane；普通题耗尽后，按 `blocked_at` 顺序加入 blocked revival。领取复活题时保留原 block score，`revival_count` 和 `lifecycle_generation` 各增加 1，因此有效阈值增加 4。人工重排使用版本检查，冲突时拒绝覆盖；数据库队列在进程关闭后保留，显式暂停自主调度或取消排队题目时才删除相应记录。生产默认 Solver 并发数为 8。
 # Clanker Father 与运行时平台扩展
 
 Clanker Father 是全局、独立于 Project/Solver 生命周期的多 Session Agent。Father Session 延迟创建 Docker sandbox，并且一个进程同时只保持一个活跃 Father sandbox；切换 Session 时关闭前一个容器，但保留 workspace 与 Pi JSONL。

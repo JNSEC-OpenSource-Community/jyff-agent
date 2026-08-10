@@ -313,7 +313,6 @@ function FatherConversation({
             {session.modelId}
           </p>
         </div>
-        <SessionBadge session={session} />
         <div className="ml-auto flex items-center gap-1">
           {session.gate ? (
             <Button
@@ -577,28 +576,21 @@ function GateCard({
     <div className="space-y-4">
       <div>
         <div className="flex items-start justify-between gap-3">
-          <div className="flex gap-3">
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/12 text-primary">
-              <Icon
-                icon={ready ? "lucide:badge-check" : "lucide:flask-conical"}
-                width="16"
-                aria-hidden="true"
-              />
-            </span>
-            <div>
-              <p className="text-sm font-semibold">
-                {ready
-                  ? `${gate.candidate.name} 验证通过`
-                  : `验证 ${gate.candidate.name}`}
-              </p>
-              <p className="mt-1! text-xs text-muted-foreground">
-                {ready
-                  ? "报告已绑定当前插件 revision，安装仍需你的批准。"
-                  : gate.saved && !editing
-                    ? "已保存测试配置，Father 可以继续复用。"
-                    : "填写一次测试站连接信息；密钥不会写入验证报告。"}
-              </p>
-            </div>
+          <div>
+            <p className="text-sm font-semibold">
+              {ready
+                ? "验证通过"
+                : gate.saved && !editing
+                  ? "测试配置已保存"
+                  : "填写测试配置"}
+            </p>
+            <p className="mt-1! text-xs text-muted-foreground">
+              {ready
+                ? "报告已绑定当前插件 revision，安装仍需你的批准。"
+                : gate.saved && !editing
+                  ? "已保存测试配置，Father 可以继续复用。"
+                  : "填写一次测试站连接信息；密钥不会写入验证报告。"}
+            </p>
           </div>
           {gate.saved && !editing && !ready ? (
             <div className="flex gap-2">
