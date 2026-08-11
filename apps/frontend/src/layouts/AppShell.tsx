@@ -102,19 +102,15 @@ export function AppShell() {
 
       {/* ── Main ── */}
       <main className="main-mobile relative min-w-0 flex-1 overflow-y-auto">
-        <div className="mobile-menu-bar">
-          <button
-            type="button"
-            className="mobile-menu-trigger size-10 items-center justify-center rounded-md border border-border bg-card text-foreground"
-            onClick={() => setMobileOpen(true)}
-            aria-label="菜单"
-          >
-            <Icon icon="lucide:menu" width={19} />
-          </button>
-        </div>
-        <div className="main-outlet">
-          <Outlet />
-        </div>
+        <button
+          type="button"
+          className="mobile-menu-trigger absolute z-40 size-10 items-center justify-center rounded-md border border-border bg-card text-foreground"
+          onClick={() => setMobileOpen(true)}
+          aria-label="菜单"
+        >
+          <Icon icon="lucide:menu" width={19} />
+        </button>
+        <Outlet />
       </main>
     </div>
   )

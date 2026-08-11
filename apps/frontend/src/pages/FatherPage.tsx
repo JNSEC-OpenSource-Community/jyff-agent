@@ -102,7 +102,7 @@ function FatherSessions(): React.ReactElement {
     }
   }
   return (
-    <div className="page-container max-w-5xl">
+    <div className="page-container">
       <PageHeader
         eyebrow="平台插件"
         title="Clanker Father"
