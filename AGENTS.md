@@ -15,6 +15,7 @@
 - Run one test file with `vp test run path/to/file.test.ts`; use `-t "test name"` for one test. `vp run test:runner` is the existing shortcut for the contest runner suite.
 - For Dockerfile changes, also run `docker build --check -f apps/backend/Dockerfile .`.
 - Production-like WebUI uses `docker compose -f compose.webui.yaml up --build -d`; it requires Docker socket access and the `ctf-agent-data` volume.
+- Git commit message must obey gitmoji + conventional mix pattern，such as `✨ feat(solver): add a new feature` or `🐛 fix(core): fix something`
 
 ## Architecture
 

@@ -1,7 +1,9 @@
+@layer theme, base, components, utilities;
 @import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap");
-@import "tailwindcss";
 @import "tw-animate-css";
-
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities) important;
+@import "tailwindcss/theme.css" layer(theme);
 @custom-variant dark (&:is(.dark *));
 
 /* ── Theme tokens ──

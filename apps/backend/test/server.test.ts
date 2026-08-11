@@ -32,13 +32,15 @@ describe("WebUI 服务集成", () => {
   })
 
   it("静态资源：dist 产物按单斜杠路径提供，index.html 映射到 /", async () => {
-    const { mkdtemp, writeFile } = await import("node:fs/promises")
+    const { mkdir, mkdtemp, writeFile } = await import("node:fs/promises")
     const { tmpdir } = await import("node:os")
     const path = await import("node:path")
     const dist = await mkdtemp(path.join(tmpdir(), "webui-dist-"))
     await writeFile(path.join(dist, "index.html"), "<html>index</html>")
     await writeFile(path.join(dist, "app.js"), "console.log(1)")
     await writeFile(path.join(dist, "app.css"), "body{}")
+    await mkdir(path.join(dist, "assets"))
+    await writeFile(path.join(dist, "assets", "chunk.js"), "console.log(2)")
     const { app } = createWebUiApp({
       project: new FakeDashboardProject(),
       frontendDist: dist,
@@ -49,6 +51,10 @@ describe("WebUI 服务集成", () => {
     expect(script.status).toBe(200)
     expect(await script.text()).toBe("console.log(1)")
     expect(script.headers.get("content-type")).toContain("javascript")
+    const nestedScript = await app.request("/assets/chunk.js")
+    expect(nestedScript.status).toBe(200)
+    expect(await nestedScript.text()).toBe("console.log(2)")
+    expect(nestedScript.headers.get("content-type")).toContain("javascript")
     const style = await app.request("/app.css")
     expect(style.status).toBe(200)
     expect(await style.text()).toBe("body{}")

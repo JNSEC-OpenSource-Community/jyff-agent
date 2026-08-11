@@ -7,7 +7,6 @@
     "build:webui": "vp build",
     "check": "vp check",
     "test": "vp test run",
-    "test:runner": "vp test run packages/core/test/runner/contest-runner.test.ts",
     "test:watch": "vp test",
     "webui": "vp build && node --experimental-transform-types apps/backend/src/main.ts",
     "format": "vp fmt --write",
@@ -20,6 +19,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
+    "stylelint-config-tailwindcss": "^1.0.1",
     "typescript": "^5.9.3",
     "vite": "catalog:",
     "vite-plus": "catalog:"

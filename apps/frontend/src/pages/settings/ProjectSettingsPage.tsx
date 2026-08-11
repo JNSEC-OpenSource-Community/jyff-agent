@@ -119,10 +119,15 @@ export function ProjectSettingsPage() {
 
   return (
     <div className="page-container">
-      <header className="mb-5 border-b border-border pb-4">
-        <h1 className="text-xl font-semibold tracking-tight">比赛配置</h1>
+      <header className="mb-8">
+        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          {pcfg.project.id}
+        </p>
+        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">比赛配置</h1>
+        <p className="hero-desc mt-3! max-w-2xl text-sm text-muted-foreground">
+          The hardest part in today's CTF.
+        </p>
       </header>
-
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
 
       <Tabs defaultValue="runtime">

@@ -3,8 +3,10 @@ packages:
   - apps/*
 
 allowBuilds:
+  "@google/genai": true
   "@parcel/watcher": false
   esbuild: true
+  protobufjs: true
 
 catalog:
   vite-plus: 0.2.8

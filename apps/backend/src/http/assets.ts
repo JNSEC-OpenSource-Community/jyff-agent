@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises"
-import { dirname, extname, join, resolve } from "node:path"
+import { dirname, extname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 export interface StaticAsset {
@@ -65,21 +65,25 @@ export async function loadStaticAssets(frontendDist?: string): Promise<Map<strin
   return assets
 }
 
-async function collectFiles(directory: string, assets: Map<string, StaticAsset>): Promise<void> {
+async function collectFiles(
+  directory: string,
+  assets: Map<string, StaticAsset>,
+  root = directory,
+): Promise<void> {
   const entries = await readdir(directory, { withFileTypes: true })
   for (const entry of entries) {
     const absolute = join(directory, entry.name)
     if (entry.isDirectory()) {
-      await collectFiles(absolute, assets)
+      await collectFiles(absolute, assets, root)
       continue
     }
-    assets.set(`/${relativeRoute(directory, absolute)}`, {
+    assets.set(`/${relativeRoute(root, absolute)}`, {
       content: new Uint8Array(await readFile(absolute)),
       contentType: contentTypeFor(absolute),
     })
   }
 }
 
-function relativeRoute(base: string, absolute: string): string {
-  return absolute.slice(base.length).replaceAll("\\", "/").replace(/^\//, "")
+function relativeRoute(root: string, absolute: string): string {
+  return relative(root, absolute).replaceAll("\\", "/")
 }
