@@ -216,7 +216,7 @@ describe("ContestRunner", () => {
               { stopReason: "toolUse" },
             ),
             async () => {
-              await new Promise((resolve) => setTimeout(resolve, 250))
+              await new Promise((resolve) => setTimeout(resolve, 1_000))
               return fauxAssistantMessage("too late")
             },
           ])
