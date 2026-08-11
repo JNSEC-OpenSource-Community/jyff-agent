@@ -197,7 +197,7 @@ function ProjectCard({
             {project.platformId}
           </span>
         </div>
-        <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{project.name}</h3>
+        <h3 className="mt-1 truncate text-base font-semibold tracking-tight">{project.name}</h3>
         <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 border-t border-border/70 pt-3 text-xs">
           <span className="text-muted-foreground">解题进度</span>
           <strong className="text-right font-mono tabular-nums">

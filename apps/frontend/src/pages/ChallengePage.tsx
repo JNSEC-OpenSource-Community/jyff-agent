@@ -125,7 +125,7 @@ export function ChallengePage() {
             </div>
 
             <div className="shrink-0 border-b border-border lg:hidden">
-              <div className="flex h-12 items-center gap-2 pr-12 pl-2">
+              <div className="flex h-12 items-center gap-2 pr-15 pl-2">
                 <Button
                   type="button"
                   size="sm"

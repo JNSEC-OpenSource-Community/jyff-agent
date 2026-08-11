@@ -557,8 +557,8 @@ p {
     display: none !important;
   }
   .mobile-menu-trigger {
-    top: max(0.75rem, env(safe-area-inset-top));
-    right: max(0.75rem, env(safe-area-inset-right));
+    top: max(1.9rem, env(safe-area-inset-top));
+    right: max(1.25rem, env(safe-area-inset-right));
     display: flex;
   }
 }

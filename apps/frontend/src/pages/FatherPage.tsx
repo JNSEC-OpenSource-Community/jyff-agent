@@ -259,7 +259,7 @@ function FatherConversation({ sessionId }: { sessionId: string }): React.ReactEl
     )
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4 pr-20 sm:px-5 sm:pr-20 lg:pr-5">
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-3">
         <Button variant="ghost" size="icon" className="size-8" asChild>
           <Link to="/father" aria-label="返回会话列表">
             <Icon icon="lucide:arrow-left" width="16" aria-hidden="true" />
