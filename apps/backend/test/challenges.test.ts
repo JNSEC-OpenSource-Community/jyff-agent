@@ -1,5 +1,5 @@
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { createWebUiApp } from "../src/server.ts"
 import {
   FakeDashboardProject,
@@ -35,12 +35,9 @@ describe("题目路由", () => {
       frontendDist: "/nonexistent",
     })
 
-    const excluded = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/scheduling",
-      "PATCH",
-      { disposition: "excluded" },
-    )
+    const excluded = await jsonRequest(app, "/api/challenges/pwn-1/scheduling", "PATCH", {
+      disposition: "excluded",
+    })
     expect(excluded.status).toBe(200)
     expect(project.challengeSchedulingDisposition("pwn-1")).toBe("excluded")
     expect(scheduler.value.queued).toEqual([])
@@ -54,12 +51,9 @@ describe("题目路由", () => {
       ]),
     })
 
-    const solved = await jsonRequest(
-      app,
-      "/api/challenges/misc-1/scheduling",
-      "PATCH",
-      { disposition: "solved" },
-    )
+    const solved = await jsonRequest(app, "/api/challenges/misc-1/scheduling", "PATCH", {
+      disposition: "solved",
+    })
     expect(solved.status).toBe(200)
     expect(await jsonOf(solved)).toMatchObject({
       challenges: expect.arrayContaining([
@@ -71,12 +65,9 @@ describe("题目路由", () => {
       ]),
     })
 
-    const restored = await jsonRequest(
-      app,
-      "/api/challenges/pwn-1/scheduling",
-      "PATCH",
-      { disposition: "default" },
-    )
+    const restored = await jsonRequest(app, "/api/challenges/pwn-1/scheduling", "PATCH", {
+      disposition: "default",
+    })
     expect(restored.status).toBe(200)
     expect(project.challengeSchedulingDisposition("pwn-1")).toBeNull()
 
@@ -121,9 +112,9 @@ describe("题目路由", () => {
   it("详情兜底路径：带任意后缀的 challenge 路径按题目 ID 解析", async () => {
     const { app } = appWithProject()
     expect((await app.request("/api/challenges/pwn-1/export")).status).toBe(404)
-    expect(
-      await jsonOf(await app.request("/api/challenges/pwn-1/export")),
-    ).toMatchObject({ error: "challenge_not_found" })
+    expect(await jsonOf(await app.request("/api/challenges/pwn-1/export"))).toMatchObject({
+      error: "challenge_not_found",
+    })
     // URL 编码的题目 ID 正常解码
     const encoded = await app.request("/api/challenges/pwn%2D1")
     expect(encoded.status).toBe(200)
@@ -165,14 +156,8 @@ describe("题目路由", () => {
       "artifacts/exploit.py",
       new TextEncoder().encode("print('pwn')"),
     )
-    project.workspaceFileValues.set(
-      "notes.md",
-      new TextEncoder().encode("# Finding\nhello"),
-    )
-    project.workspaceFileValues.set(
-      "invalid.txt",
-      Uint8Array.from([0xc3, 0x28]),
-    )
+    project.workspaceFileValues.set("notes.md", new TextEncoder().encode("# Finding\nhello"))
+    project.workspaceFileValues.set("invalid.txt", Uint8Array.from([0xc3, 0x28]))
 
     const listed = await app.request("/api/challenges/pwn-1/files")
     expect(listed.status).toBe(200)
@@ -194,9 +179,7 @@ describe("题目路由", () => {
       truncated: false,
     })
 
-    const previewed = await app.request(
-      "/api/challenges/pwn-1/files/preview?path=notes.md",
-    )
+    const previewed = await app.request("/api/challenges/pwn-1/files/preview?path=notes.md")
     expect(previewed.status).toBe(200)
     expect(await jsonOf(previewed)).toMatchObject({
       path: "notes.md",
@@ -205,45 +188,26 @@ describe("题目路由", () => {
       content: "# Finding\nhello",
     })
     expect(
-      (
-        await app.request(
-          "/api/challenges/pwn-1/files/preview?path=capture.pcapng",
-        )
-      ).status,
+      (await app.request("/api/challenges/pwn-1/files/preview?path=capture.pcapng")).status,
     ).toBe(415)
-    expect(
-      (await app.request("/api/challenges/pwn-1/files/preview?path=large.log"))
-        .status,
-    ).toBe(413)
-    expect(
-      (
-        await app.request(
-          "/api/challenges/pwn-1/files/preview?path=invalid.txt",
-        )
-      ).status,
-    ).toBe(415)
+    expect((await app.request("/api/challenges/pwn-1/files/preview?path=large.log")).status).toBe(
+      413,
+    )
+    expect((await app.request("/api/challenges/pwn-1/files/preview?path=invalid.txt")).status).toBe(
+      415,
+    )
 
     const downloaded = await app.request(
       "/api/challenges/pwn-1/files/download?path=artifacts%2Fexploit.py",
     )
     expect(downloaded.status).toBe(200)
-    expect(downloaded.headers.get("content-disposition")).toContain(
-      'filename="exploit.py"',
-    )
+    expect(downloaded.headers.get("content-disposition")).toContain('filename="exploit.py"')
     expect(await downloaded.text()).toBe("print('pwn')")
     expect(
-      (
-        await app.request(
-          "/api/challenges/pwn-1/files/download?path=missing.txt",
-        )
-      ).status,
+      (await app.request("/api/challenges/pwn-1/files/download?path=missing.txt")).status,
     ).toBe(404)
     expect(
-      (
-        await app.request(
-          "/api/challenges/pwn-1/files/download?path=..%2Fsecret.txt",
-        )
-      ).status,
+      (await app.request("/api/challenges/pwn-1/files/download?path=..%2Fsecret.txt")).status,
     ).toBe(400)
   })
 
@@ -264,13 +228,7 @@ describe("题目路由", () => {
     },
   ])(
     "TLDR $label",
-    async ({
-      configured,
-      expectStatus,
-      expectError,
-      refreshCalls,
-      expectContent,
-    }) => {
+    async ({ configured, expectStatus, expectError, refreshCalls, expectContent }) => {
       const project = new FakeDashboardProject()
       if (configured) {
         project.tldrValue = {
@@ -324,15 +282,9 @@ describe("题目路由", () => {
       const read = await app.request("/api/challenges/pwn-1/tldr")
       expect(read.status).toBe(200)
 
-      const refresh = await jsonRequest(
-        app,
-        "/api/challenges/pwn-1/tldr/refresh",
-        "POST",
-        {},
-      )
+      const refresh = await jsonRequest(app, "/api/challenges/pwn-1/tldr/refresh", "POST", {})
       expect(refresh.status).toBe(expectStatus)
-      if (expectError)
-        expect(await jsonOf(refresh)).toMatchObject({ error: expectError })
+      if (expectError) expect(await jsonOf(refresh)).toMatchObject({ error: expectError })
       if (expectContent)
         expect(await jsonOf(refresh)).toMatchObject({
           tldr: {
@@ -364,27 +316,18 @@ describe("题目路由", () => {
       expectError: "no_active_run",
       setNoRun: true,
     },
-  ])(
-    "切换思考强度 $label",
-    async ({ level, expectStatus, expectError, setNoRun }) => {
-      const { app, project } = appWithProject()
-      if (setNoRun) project.thinkingLevelResult = { error: "no_active_run" }
+  ])("切换思考强度 $label", async ({ level, expectStatus, expectError, setNoRun }) => {
+    const { app, project } = appWithProject()
+    if (setNoRun) project.thinkingLevelResult = { error: "no_active_run" }
 
-      const response = await jsonRequest(
-        app,
-        "/api/challenges/pwn-1/thinking-level",
-        "POST",
-        { level },
-      )
-      expect(response.status).toBe(expectStatus)
-      if (expectError)
-        expect(await jsonOf(response)).toMatchObject({ error: expectError })
-      if (expectStatus === 200)
-        expect(project.thinkingLevelCalls).toEqual([
-          { challengeId: "pwn-1", level },
-        ])
-    },
-  )
+    const response = await jsonRequest(app, "/api/challenges/pwn-1/thinking-level", "POST", {
+      level,
+    })
+    expect(response.status).toBe(expectStatus)
+    if (expectError) expect(await jsonOf(response)).toMatchObject({ error: expectError })
+    if (expectStatus === 200)
+      expect(project.thinkingLevelCalls).toEqual([{ challengeId: "pwn-1", level }])
+  })
 
   it.each([
     {
@@ -409,25 +352,12 @@ describe("题目路由", () => {
     },
   ])(
     "发送人工消息 $label",
-    async ({
-      text,
-      expectStatus,
-      expectResult,
-      setNoRun,
-      setInvalidMessage,
-      expectMessage,
-    }) => {
+    async ({ text, expectStatus, expectResult, setNoRun, setInvalidMessage, expectMessage }) => {
       const { app, project } = appWithProject()
       if (setNoRun) project.sendMessageResult = { error: "no_active_run" }
-      if (setInvalidMessage)
-        project.sendMessageResult = { error: "invalid_message" }
+      if (setInvalidMessage) project.sendMessageResult = { error: "invalid_message" }
 
-      const response = await jsonRequest(
-        app,
-        "/api/challenges/pwn-1/message",
-        "POST",
-        { text },
-      )
+      const response = await jsonRequest(app, "/api/challenges/pwn-1/message", "POST", { text })
       expect(response.status).toBe(expectStatus)
       if (expectResult) expect(await jsonOf(response)).toEqual(expectResult)
       if (expectMessage)
@@ -440,10 +370,7 @@ describe("题目路由", () => {
 
   it("消息路由不要求 scheduler（dispatch 才要求）", async () => {
     const { app } = appWithProject()
-    expect(
-      (await jsonRequest(app, "/api/challenges/pwn-1/dispatch", "POST", {}))
-        .status,
-    ).toBe(503)
+    expect((await jsonRequest(app, "/api/challenges/pwn-1/dispatch", "POST", {})).status).toBe(503)
   })
 
   it.each([
@@ -492,9 +419,7 @@ describe("题目路由", () => {
       const response = await app.request("/api/challenges/pwn-1/writeup")
       expect(response.status).toBe(expectStatus)
       if (expectContentType)
-        expect(response.headers.get("content-type")).toContain(
-          expectContentType,
-        )
+        expect(response.headers.get("content-type")).toContain(expectContentType)
       if (expectBody) expect(await response.text()).toContain(expectBody)
       if (expectError)
         expect(await jsonOf(response)).toMatchObject({

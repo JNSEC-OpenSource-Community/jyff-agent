@@ -13,7 +13,7 @@ export interface ComboboxOption {
 
 interface ComboboxProps {
   value: string
-  onChange(value: string): void
+  onChange: (value: string) => void
   options: ComboboxOption[]
   placeholder?: string
   emptyLabel?: string
@@ -72,10 +72,7 @@ function Combobox({
             className,
           )}
         >
-          <span
-            className="min-w-0 flex-1 truncate text-left"
-            title={selected?.label}
-          >
+          <span className="min-w-0 flex-1 truncate text-left" title={selected?.label}>
             {selected ? selected.label : placeholder}
           </span>
           <Icon
@@ -113,11 +110,7 @@ function Combobox({
                 {emptyText}
               </Command.Empty>
               {emptyLabel ? (
-                <CommandItem
-                  active={value === ""}
-                  onSelect={() => select("")}
-                  label={emptyLabel}
-                />
+                <CommandItem active={value === ""} onSelect={() => select("")} label={emptyLabel} />
               ) : null}
               {filtered.map((option) => (
                 <CommandItem
@@ -148,7 +141,7 @@ function CommandItem({
 }: {
   active: boolean
   disabled?: boolean
-  onSelect(value: string): void
+  onSelect: (value: string) => void
   label: string
   description?: string
   compact?: boolean
@@ -165,31 +158,17 @@ function CommandItem({
         active && "bg-accent/60",
       )}
     >
-      <span
-        className={cn(
-          "min-w-0 flex-1",
-          compact && "flex items-baseline gap-2 truncate",
-        )}
-      >
+      <span className={cn("min-w-0 flex-1", compact && "flex items-baseline gap-2 truncate")}>
         <span className={cn("truncate", !compact && "block")}>{label}</span>
         {description ? (
-          <span
-            className={cn(
-              "truncate text-xs text-muted-foreground",
-              !compact && "block",
-            )}
-          >
+          <span className={cn("truncate text-xs text-muted-foreground", !compact && "block")}>
             {compact ? "· " : ""}
             {description}
           </span>
         ) : null}
       </span>
       {active ? (
-        <Icon
-          icon="lucide:check"
-          className="absolute right-2 shrink-0"
-          width="14"
-        />
+        <Icon icon="lucide:check" className="absolute right-2 shrink-0" width="14" />
       ) : null}
     </Command.Item>
   )

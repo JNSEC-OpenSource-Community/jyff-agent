@@ -70,10 +70,7 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function requestSignal(
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): AbortSignal {
+function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
@@ -89,9 +86,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -115,9 +110,7 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
   return { include, exclude }
 }
 
-function mapRecencyFilter(
-  value: SearchOptions["recencyFilter"],
-): string | undefined {
+function mapRecencyFilter(value: SearchOptions["recencyFilter"]): string | undefined {
   if (value === "day") return "d1"
   if (value === "week") return "w1"
   if (value === "month") return "m1"
@@ -125,10 +118,7 @@ function mapRecencyFilter(
   return undefined
 }
 
-function buildSearchBody(
-  query: string,
-  options: QueritSearchOptions,
-): Record<string, unknown> {
+function buildSearchBody(query: string, options: QueritSearchOptions): Record<string, unknown> {
   const { include, exclude } = mapDomainFilter(options.domainFilter)
   const date = mapRecencyFilter(options.recencyFilter)
   const filters: Record<string, unknown> = {}
@@ -147,8 +137,7 @@ function buildSearchBody(
 }
 
 function normalizeTimeoutMs(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value))
-    return CONTENTS_TIMEOUT_MS
+  if (typeof value !== "number" || !Number.isFinite(value)) return CONTENTS_TIMEOUT_MS
   return Math.max(1, Math.floor(value))
 }
 
@@ -157,10 +146,7 @@ function crawlTimeoutSeconds(value: number | undefined): number {
   return Math.max(1, Math.min(Math.ceil(value / 1_000), 60))
 }
 
-function buildContentsBody(
-  urls: string[],
-  options: ExtractOptions = {},
-): Record<string, unknown> {
+function buildContentsBody(urls: string[], options: ExtractOptions = {}): Record<string, unknown> {
   return {
     urls,
     format: "markdown",
@@ -193,9 +179,7 @@ async function queritJsonRequest<T>(
     const message = errorMessage(err)
     const isRequestAbort =
       err instanceof Error
-        ? err.name === "AbortError" ||
-          err.name === "TimeoutError" ||
-          /abort|timeout/i.test(message)
+        ? err.name === "AbortError" || err.name === "TimeoutError" || /abort|timeout/i.test(message)
         : /abort|timeout/i.test(message)
     if (!signal?.aborted && isRequestAbort) {
       const timeoutError = new Error(
@@ -220,9 +204,7 @@ async function queritJsonRequest<T>(
   try {
     return JSON.parse(raw) as T
   } catch (err) {
-    throw new Error(
-      `Querit ${label} API returned invalid JSON: ${errorMessage(err)}`,
-    )
+    throw new Error(`Querit ${label} API returned invalid JSON: ${errorMessage(err)}`)
   }
 }
 
@@ -232,40 +214,28 @@ function assertApiSuccess(
 ): void {
   const code = Number(data.error_code)
   if (!Number.isFinite(code) || code !== 200) {
-    const renderedCode =
-      data.error_code === undefined ? "unknown" : String(data.error_code)
+    const renderedCode = data.error_code === undefined ? "unknown" : String(data.error_code)
     const message =
       typeof data.error_msg === "string" && data.error_msg.trim()
         ? `: ${data.error_msg.trim()}`
         : ""
-    throw new Error(
-      `Querit ${label} API returned error ${renderedCode}${message}`,
-    )
+    throw new Error(`Querit ${label} API returned error ${renderedCode}${message}`)
   }
 }
 
-function mapSearchResults(
-  data: QueritSearchResponse,
-): SearchResponse["results"] {
+function mapSearchResults(data: QueritSearchResponse): SearchResponse["results"] {
   const items = data.results?.result
   if (!Array.isArray(items)) {
     throw new Error("Querit Search API returned an unexpected response shape")
   }
   return items.flatMap((item) => {
-    if (!item || typeof item.url !== "string" || item.url.trim().length === 0)
-      return []
+    if (!item || typeof item.url !== "string" || item.url.trim().length === 0) return []
     const url = item.url.trim()
     return [
       {
-        title:
-          typeof item.title === "string" && item.title.trim()
-            ? item.title.trim()
-            : url,
+        title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : url,
         url,
-        snippet:
-          typeof item.snippet === "string"
-            ? item.snippet.replace(/\s+/g, " ").trim()
-            : "",
+        snippet: typeof item.snippet === "string" ? item.snippet.replace(/\s+/g, " ").trim() : "",
       },
     ]
   })
@@ -274,8 +244,7 @@ function mapSearchResults(
 function buildAnswer(results: SearchResponse["results"]): string {
   return results
     .map((result) => {
-      if (result.snippet)
-        return `${result.snippet}\nSource: ${result.title} (${result.url})`
+      if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`
       return `Source: ${result.title} (${result.url})`
     })
     .join("\n\n")
@@ -285,19 +254,12 @@ function mapContentResult(
   result: QueritContentResult | undefined,
   requestedUrl: string,
 ): ExtractedContent | null {
-  if (
-    !result ||
-    typeof result.content !== "string" ||
-    result.content.trim().length === 0
-  )
+  if (!result || typeof result.content !== "string" || result.content.trim().length === 0)
     return null
   const metadata = result.extrasMeta
   return {
     url: requestedUrl,
-    title:
-      metadata && typeof metadata.title === "string"
-        ? metadata.title.trim()
-        : "",
+    title: metadata && typeof metadata.title === "string" ? metadata.title.trim() : "",
     content: result.content.trim(),
     error: null,
   }
@@ -311,14 +273,11 @@ function findContentResult(
 ): QueritContentResult | undefined {
   if (!Array.isArray(data.results)) return undefined
   const exact = data.results.find(
-    (item) =>
-      item?.url === requestedUrl || item?.extrasMeta?.url === requestedUrl,
+    (item) => item?.url === requestedUrl || item?.extrasMeta?.url === requestedUrl,
   )
   if (exact) return exact
   if (requestedCount === 1) return data.results[0]
-  return data.results.length === requestedCount
-    ? data.results[index]
-    : undefined
+  return data.results.length === requestedCount ? data.results[index] : undefined
 }
 
 function failedContentStatus(
@@ -379,9 +338,7 @@ export async function searchWithQuerit(
 ): Promise<SearchResponse> {
   const apiKey = getApiKey(options.signal)
   if (!apiKey) {
-    throw new Error(
-      "Querit Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Querit Search API key not configured. Set it via the WebUI plugins settings.")
   }
   const activityId = activityMonitor.logStart({ type: "api", query })
   try {
@@ -425,9 +382,7 @@ export async function extractWithQuerit(
 ): Promise<ExtractedContent | null> {
   const apiKey = getApiKey(signal)
   if (!apiKey) {
-    throw new Error(
-      "Querit Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Querit Search API key not configured. Set it via the WebUI plugins settings.")
   }
   const activityId = activityMonitor.logStart({ type: "fetch", url })
   try {

@@ -8,19 +8,14 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1.17.0
         with:
-          version: 11.20.0
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: corepack enable
-      - run: corepack pnpm install --frozen-lockfile
-      - run: corepack pnpm check
-      - run: corepack pnpm typecheck
-      - run: corepack pnpm test
-      - run: corepack pnpm build:webui
-      - run: docker build --check apps/backend
+          node-version: "22.19.0"
+          cache: true
+      - run: vp install --frozen-lockfile
+      - run: vp check
+      - run: vp run typecheck
+      - run: vp test
+      - run: vp build
+      - run: docker build --check -f apps/backend/Dockerfile .

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import {
   agentCacheStats,
   buildChallengeDetails,
@@ -48,21 +48,20 @@ describe("WebUI dashboard model", () => {
       attempts: 1,
       queued: 0,
     })
-    expect(
-      snapshot.challenges.find((challenge) => challenge.id === "pwn-1"),
-    ).toMatchObject({
+    expect(snapshot.challenges.find((challenge) => challenge.id === "pwn-1")).toMatchObject({
       status: "running",
       progress: "正在执行 终端命令",
       attempts: 1,
       evidence: 1,
       openOpportunities: 1,
     })
-    expect(
-      snapshot.challenges.find((challenge) => challenge.id === "pwn-1"),
-    ).not.toHaveProperty("needsEnv")
-    expect(
-      snapshot.challenges.find((challenge) => challenge.id === "web-1"),
-    ).toMatchObject({ status: "solved", progress: "Flag 已确认" })
+    expect(snapshot.challenges.find((challenge) => challenge.id === "pwn-1")).not.toHaveProperty(
+      "needsEnv",
+    )
+    expect(snapshot.challenges.find((challenge) => challenge.id === "web-1")).toMatchObject({
+      status: "solved",
+      progress: "Flag 已确认",
+    })
     expect(project.latestRunEventCalls).toBe(1)
     expect(project.runEventsCalls).toBe(0)
   })
@@ -110,9 +109,7 @@ describe("WebUI dashboard model", () => {
     expect(details?.runs[0]?.subagents[0]?.hasConversation).toBe(true)
     expect(details?.environment?.endpoint).toBe("tcp://127.0.0.1:31337")
     expect(details?.blackboard.evidence[0]?.description).toBe("PIE enabled")
-    await expect(
-      buildChallengeDetails(project, "missing"),
-    ).resolves.toBeUndefined()
+    await expect(buildChallengeDetails(project, "missing")).resolves.toBeUndefined()
   })
 
   it("未产生 Agent 消息或工具调用的 attempt 不标记为可导出", async () => {
@@ -147,12 +144,7 @@ describe("WebUI dashboard model", () => {
     const snapshot = await buildDashboardSnapshot(project)
     const overviewCalls = project.overviewCalls
 
-    const details = await buildChallengeDetails(
-      project,
-      "pwn-1",
-      undefined,
-      snapshot,
-    )
+    const details = await buildChallengeDetails(project, "pwn-1", undefined, snapshot)
 
     expect(details?.challenge.title).toBe("Heap Garden")
     expect(project.overviewCalls).toBe(overviewCalls)
@@ -185,9 +177,7 @@ describe("WebUI dashboard model", () => {
     )
 
     const details = await buildChallengeDetails(project, "pwn-1")
-    const thinking = details?.runs[0]?.events.filter(
-      (event) => event.type === "agent_thinking",
-    )
+    const thinking = details?.runs[0]?.events.filter((event) => event.type === "agent_thinking")
     expect(thinking).toHaveLength(1)
     expect(thinking?.[0]?.data).toMatchObject({ text: "先看保护机制" })
   })
@@ -200,9 +190,7 @@ describe("WebUI dashboard model", () => {
 
     expect(snapshot.scheduler).toMatchObject({ autoEnabled: false })
     expect(snapshot.stats.queued).toBe(1)
-    expect(
-      snapshot.challenges.find((challenge) => challenge.id === "misc-1"),
-    ).toMatchObject({
+    expect(snapshot.challenges.find((challenge) => challenge.id === "misc-1")).toMatchObject({
       status: "queued",
       progress: "已进入调度队列",
       queuePosition: 1,
@@ -220,9 +208,9 @@ describe("WebUI dashboard model", () => {
       createdAt: "2026-07-29T12:01:00.000Z",
     })
     const human = await buildDashboardSnapshot(project)
-    expect(
-      human.challenges.find((challenge) => challenge.id === "pwn-1")?.progress,
-    ).toBe("已发送人工消息")
+    expect(human.challenges.find((challenge) => challenge.id === "pwn-1")?.progress).toBe(
+      "已发送人工消息",
+    )
 
     project.eventValues.get("run-pwn-1")?.push({
       id: 3,
@@ -232,9 +220,9 @@ describe("WebUI dashboard model", () => {
       createdAt: "2026-07-29T12:01:10.000Z",
     })
     const agent = await buildDashboardSnapshot(project)
-    expect(
-      agent.challenges.find((challenge) => challenge.id === "pwn-1")?.progress,
-    ).toBe("Agent 正在回复")
+    expect(agent.challenges.find((challenge) => challenge.id === "pwn-1")?.progress).toBe(
+      "Agent 正在回复",
+    )
 
     project.eventValues.get("run-pwn-1")?.push({
       id: 4,
@@ -249,9 +237,9 @@ describe("WebUI dashboard model", () => {
       createdAt: "2026-07-29T12:01:30.000Z",
     })
     const usage = await buildDashboardSnapshot(project)
-    expect(
-      usage.challenges.find((challenge) => challenge.id === "pwn-1")?.progress,
-    ).toBe("已记录本轮用量")
+    expect(usage.challenges.find((challenge) => challenge.id === "pwn-1")?.progress).toBe(
+      "已记录本轮用量",
+    )
 
     // 详情时间线应包含全部新事件
     const details = await buildChallengeDetails(project, "pwn-1")

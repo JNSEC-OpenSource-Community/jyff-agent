@@ -24,11 +24,7 @@ import { modelsRoutes, scopedModelsRoutes } from "./routes/models.ts"
 import { projectsRoutes, scopedProjectRoutes } from "./routes/projects.ts"
 import { runRoutes } from "./routes/runs.ts"
 import { schedulerRoutes } from "./routes/scheduler.ts"
-import {
-  healthRoutes,
-  scopedSystemRoutes,
-  systemRoutes,
-} from "./routes/system.ts"
+import { healthRoutes, scopedSystemRoutes, systemRoutes } from "./routes/system.ts"
 import { webAccessRoutes } from "./routes/web-access.ts"
 import { Services } from "./services.ts"
 import type { SseHub } from "./sse/hub.ts"
@@ -55,10 +51,7 @@ export interface WebUiOptions {
   ) => DashboardProjectRuntimeConfiguration | undefined
   onProjectDeleted?: (projectId: string) => void | Promise<void>
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
-  exportSessionHtml?: (
-    sessionPath: string,
-    metadata?: RunSessionExportMetadata,
-  ) => Promise<Buffer>
+  exportSessionHtml?: (sessionPath: string, metadata?: RunSessionExportMetadata) => Promise<Buffer>
   /** 测试可替换原生 Pi session 的对话可用性检查。 */
   sessionHasConversation?: (sessionPath: string) => Promise<boolean>
   /** 测试可替换原生 Pi session 的结构化对话读取器。 */

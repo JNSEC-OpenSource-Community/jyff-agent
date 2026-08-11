@@ -17,8 +17,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
 
   // Parse all RSC chunks into a map
   const chunkMap = new Map<string, string>()
-  const scriptRegex =
-    /<script>self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/g
+  const scriptRegex = /<script>self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/g
 
   for (const match of html.matchAll(scriptRegex)) {
     let content: string
@@ -59,7 +58,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
   // Parse and cache parsed chunks
   const parsedCache = new Map<string, unknown>()
 
-  function getParsedChunk(id: string): unknown | null {
+  function getParsedChunk(id: string): unknown {
     if (parsedCache.has(id)) return parsedCache.get(id)
 
     const chunk = chunkMap.get(id)
@@ -82,10 +81,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
   type Node = unknown
   const visitedRefs = new Set<string>()
 
-  function extractNode(
-    node: Node,
-    ctx = { inTable: false, inCode: false },
-  ): string {
+  function extractNode(node: Node, ctx = { inTable: false, inCode: false }): string {
     if (node === null || node === undefined) return ""
 
     if (typeof node === "string") {
@@ -101,11 +97,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
         return result
       }
       // Filter out RSC-specific artifacts, but preserve content inside code blocks
-      if (
-        !ctx.inCode &&
-        (node === "$undefined" || node === "$" || /^\$[A-Z]/.test(node))
-      )
-        return ""
+      if (!ctx.inCode && (node === "$undefined" || node === "$" || /^\$[A-Z]/.test(node))) return ""
       return node.trim() ? node : ""
     }
 
@@ -143,7 +135,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
 
         // Check for heading components with baseId
         if (props.baseId && props.children) {
-          return `## ${String(props.children)}\n\n`
+          return `## ${extractNode(props.children as Node).trim()}\n\n`
         }
 
         visitedRefs.add(refId)
@@ -183,9 +175,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
           return ctx.inCode ? codeContent : `\`${codeContent}\``
         }
         case "pre": {
-          const preContent = children
-            ? extractNode(children as Node, { ...ctx, inCode: true })
-            : ""
+          const preContent = children ? extractNode(children as Node, { ...ctx, inCode: true }) : ""
           return `\`\`\`\n${preContent}\n\`\`\`\n\n`
         }
         case "strong":
@@ -216,9 +206,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
           return content
         case "a": {
           const href = props.href as string | undefined
-          return href && !href.startsWith("#")
-            ? `[${content}](${href})`
-            : content
+          return href && !href.startsWith("#") ? `[${content}](${href})` : content
         }
         default:
           return content
@@ -365,11 +353,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
     visitedRefs.clear()
     const text = extractNode(parsed)
 
-    if (
-      text.trim().length > 50 &&
-      !text.includes("page was not found") &&
-      !text.includes("404")
-    ) {
+    if (text.trim().length > 50 && !text.includes("page was not found") && !text.includes("404")) {
       contentParts.push({ order: parseInt(id, 16), text: text.trim() })
     }
   }

@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { appendAgentMessageDelta } from "../../src/project/agent-stream.ts"
 
 describe("appendAgentMessageDelta", () => {
@@ -9,12 +9,7 @@ describe("appendAgentMessageDelta", () => {
       { type: "text", text: "" },
     ])
 
-    const updated = appendAgentMessageDelta(
-      original,
-      0,
-      "thinking",
-      " ELF header",
-    )
+    const updated = appendAgentMessageDelta(original, 0, "thinking", " ELF header")
 
     expect(updated).not.toBe(original)
     expect(updated).toMatchObject({
@@ -32,12 +27,7 @@ describe("appendAgentMessageDelta", () => {
   })
 
   it("缺少目标 block 时创建对应的增量 block", () => {
-    const updated = appendAgentMessageDelta(
-      assistantMessage([]),
-      0,
-      "thinking",
-      "恢复内容",
-    )
+    const updated = appendAgentMessageDelta(assistantMessage([]), 0, "thinking", "恢复内容")
 
     expect(updated).toMatchObject({
       content: [{ type: "thinking", thinking: "恢复内容" }],

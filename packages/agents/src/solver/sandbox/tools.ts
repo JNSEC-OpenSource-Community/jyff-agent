@@ -72,14 +72,10 @@ export class FlagSubmissionRateLimiter {
 
   acquire(): void {
     const now = this.now()
-    this.timestamps = this.timestamps.filter(
-      (timestamp) => now - timestamp < this.windowMs,
-    )
+    this.timestamps = this.timestamps.filter((timestamp) => now - timestamp < this.windowMs)
     const oldestTimestamp = this.timestamps[0]
     if (oldestTimestamp !== undefined && this.timestamps.length >= this.limit) {
-      throw new FlagSubmissionRateLimitError(
-        oldestTimestamp + this.windowMs - now,
-      )
+      throw new FlagSubmissionRateLimitError(oldestTimestamp + this.windowMs - now)
     }
     this.timestamps.push(now)
   }
@@ -91,12 +87,9 @@ export function createSandboxTools(options: SandboxToolOptions): AgentTool[] {
   const context: ExecutionToolContext = { env }
   const rtk = new RtkRewriter(env)
   return [
-    bindDynamicExecutionTool(
-      createBashTool({ prepare: rtk.prepare() }),
-      () => ({
-        env: new DockerBashExecutionEnv(options.sandbox, { cwd: options.cwd }),
-      }),
-    ),
+    bindDynamicExecutionTool(createBashTool({ prepare: rtk.prepare() }), () => ({
+      env: new DockerBashExecutionEnv(options.sandbox, { cwd: options.cwd }),
+    })),
     bindExecutionTool(createReadTool(), context),
     bindExecutionTool(createWriteTool(), context),
     bindExecutionTool(createEditTool(), context),
@@ -105,9 +98,7 @@ export function createSandboxTools(options: SandboxToolOptions): AgentTool[] {
 }
 
 /** Workers share the prepared workspace, but cannot submit or own remote-instance lifecycle. */
-export function createReadonlySandboxTools(
-  options: SandboxToolOptions,
-): AgentTool[] {
+export function createReadonlySandboxTools(options: SandboxToolOptions): AgentTool[] {
   const env = new DockerExecutionEnv(options.sandbox, { cwd: options.cwd })
   const context: ExecutionToolContext = { env }
   return [bindExecutionTool(createReadTool(), context), createListTool(env)]
@@ -119,8 +110,7 @@ export function createSubagentTools(options: SubagentToolOptions): AgentTool[] {
 
 /** Every capability closure is bound to one challenge and one Docker environment. */
 export function createSolverTools(options: SolverToolOptions): AgentTool[] {
-  const submissionRateLimiter =
-    options.submissionRateLimiter ?? new FlagSubmissionRateLimiter()
+  const submissionRateLimiter = options.submissionRateLimiter ?? new FlagSubmissionRateLimiter()
   const platformFiles = new DockerExecutionEnv(options.sandbox)
   const tools: AgentTool[] = [
     ...createSandboxTools(options),
@@ -132,12 +122,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       parameters: Type.Object({}),
       executionMode: "sequential",
       async execute() {
-        return result(
-          (await options.capability.getInfo()) as unknown as Record<
-            string,
-            unknown
-          >,
-        )
+        return result((await options.capability.getInfo()) as unknown as Record<string, unknown>)
       },
     },
     {
@@ -154,11 +139,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
           (params as { attachmentId: string }).attachmentId,
         )
         const path = refreshedAttachmentPath(payload.attachment.name)
-        const saved = await platformFiles.replaceFile(
-          path,
-          payload.content,
-          signal,
-        )
+        const saved = await platformFiles.replaceFile(path, payload.content, signal)
         if (!saved.ok)
           throw new Error(`无法保存题目附件: ${saved.error.message}`, {
             cause: saved.error,
@@ -178,12 +159,8 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       executionMode: "sequential",
       async execute(_id, params) {
         submissionRateLimiter?.acquire()
-        const submission = await options.capability.submitFlag(
-          (params as { flag: string }).flag,
-        )
-        const terminal =
-          submission.status === "accepted" ||
-          submission.status === "already_solved"
+        const submission = await options.capability.submitFlag((params as { flag: string }).flag)
+        const terminal = submission.status === "accepted" || submission.status === "already_solved"
         if (terminal) options.onTerminalSubmission(submission)
         return {
           ...result(submission),
@@ -203,12 +180,7 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
         parameters: Type.Object({}),
         executionMode: "sequential",
         async execute(_id, _params, signal) {
-          return result(
-            (await instance.start(signal)) as unknown as Record<
-              string,
-              unknown
-            >,
-          )
+          return result((await instance.start(signal)) as unknown as Record<string, unknown>)
         },
       },
       {
@@ -252,12 +224,8 @@ function createListTool(env: DockerExecutionEnv): AgentTool {
     parameters: Type.Object({ path: Type.String() }),
     executionMode: "sequential",
     async execute(_id, params, signal) {
-      const listed = await env.listDir(
-        (params as { path: string }).path,
-        signal,
-      )
-      if (!listed.ok)
-        throw new Error(listed.error.message, { cause: listed.error })
+      const listed = await env.listDir((params as { path: string }).path, signal)
+      if (!listed.ok) throw new Error(listed.error.message, { cause: listed.error })
       return result({
         entries: listed.value.map(({ name, kind, size }) => ({
           name,

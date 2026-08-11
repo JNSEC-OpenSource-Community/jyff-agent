@@ -1,12 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { FakeDashboardProject } from "./fake-project.ts"
-import {
-  createTestApp,
-  jsonOf,
-  jsonRequest,
-  readSseUntil,
-  type TestApp,
-} from "./helpers.ts"
+import { createTestApp, jsonOf, jsonRequest, readSseUntil, type TestApp } from "./helpers.ts"
 
 describe("系统与快照路由", () => {
   let testApp: TestApp | undefined
@@ -99,10 +93,7 @@ describe("系统与快照路由", () => {
     testApp = await createTestApp()
     const { app } = testApp
 
-    for (const prefix of [
-      "/api/projects/whatever",
-      "/api/projects/whatever/api",
-    ]) {
+    for (const prefix of ["/api/projects/whatever", "/api/projects/whatever/api"]) {
       const snapshot = await app.request(`${prefix}/snapshot`)
       expect(snapshot.status).toBe(200)
       expect(await jsonOf(snapshot)).toMatchObject({
@@ -138,16 +129,11 @@ describe("系统与快照路由", () => {
     testApp = await createTestApp({ project })
     const { app } = testApp
 
-    const response = await jsonRequest(
-      app,
-      "/api/announcements/review",
-      "POST",
-      {
-        challengeId: "web-1",
-        announcementKey: "notice:revision",
-        status: "approved",
-      },
-    )
+    const response = await jsonRequest(app, "/api/announcements/review", "POST", {
+      challengeId: "web-1",
+      announcementKey: "notice:revision",
+      status: "approved",
+    })
     expect(response.status).toBe(200)
     expect(project.announcementReviews).toEqual([
       {

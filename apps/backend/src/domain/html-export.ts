@@ -23,9 +23,7 @@ let piHtmlExportModule: Promise<PiHtmlExportModule> | undefined
  */
 async function loadPiHtmlExporter(): Promise<PiHtmlExportModule> {
   piHtmlExportModule ??= import(
-    pathToFileURL(
-      join(getPackageDir(), "dist", "core", "export-html", "index.js"),
-    ).href
+    pathToFileURL(join(getPackageDir(), "dist", "core", "export-html", "index.js")).href
   ) as Promise<PiHtmlExportModule>
   return await piHtmlExportModule
 }
@@ -40,11 +38,7 @@ export async function exportPiSessionHtml(
   try {
     const exporter = await loadPiHtmlExporter()
     if (metadata) {
-      await exporter.exportSessionToHtml(
-        SessionManager.open(sessionPath),
-        metadata,
-        outputPath,
-      )
+      await exporter.exportSessionToHtml(SessionManager.open(sessionPath), metadata, outputPath)
     } else {
       await exporter.exportFromFile(sessionPath, outputPath)
     }
@@ -55,20 +49,14 @@ export async function exportPiSessionHtml(
 }
 
 /** 只有至少一条 assistant 消息时，HTML 才包含可供查看的 Agent 对话。 */
-export async function piSessionHasConversation(
-  sessionPath: string,
-): Promise<boolean> {
+export async function piSessionHasConversation(sessionPath: string): Promise<boolean> {
   return SessionManager.open(sessionPath)
     .getEntries()
-    .some(
-      (entry) => entry.type === "message" && entry.message.role === "assistant",
-    )
+    .some((entry) => entry.type === "message" && entry.message.role === "assistant")
 }
 
 /** 读取当前 Pi 分支上的原生消息，供 WebUI 的 Solver/SubAgent 对话视图复用。 */
-export function readPiSessionConversation(
-  sessionPath: string,
-): DashboardConversation {
+export function readPiSessionConversation(sessionPath: string): DashboardConversation {
   const messages = SessionManager.open(sessionPath)
     .getBranch()
     .filter((entry) => entry.type === "message")

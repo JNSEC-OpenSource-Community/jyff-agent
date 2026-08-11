@@ -10,11 +10,7 @@ import {
   PlatformExtensionStore,
   webAccessSecretName,
 } from "@ctf-agent/core"
-import {
-  ctfdPlatform,
-  gzctfPlatform,
-  PlatformPluginRegistry,
-} from "@ctf-agent/platform"
+import { ctfdPlatform, gzctfPlatform, PlatformPluginRegistry } from "@ctf-agent/platform"
 import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
@@ -40,9 +36,7 @@ interface WebUiProcessOptions {
 
 const options = parseOptions(process.argv.slice(2))
 const stateDirectory = join(options.root, ".ctf-agent")
-const secretStore = await FileSecretStore.open(
-  join(stateDirectory, "secrets.json"),
-)
+const secretStore = await FileSecretStore.open(join(stateDirectory, "secrets.json"))
 const modelAuthentication = await createFileModelAuthentication({
   storagePath: join(stateDirectory, "auth.json"),
   importPath: options.authFile,
@@ -67,10 +61,7 @@ const projectRuntimeConfigurations = new Map<
   string,
   Awaited<ReturnType<typeof createFileProjectRuntimeConfiguration>>
 >()
-const platformRegistry = new PlatformPluginRegistry([
-  ctfdPlatform,
-  gzctfPlatform,
-])
+const platformRegistry = new PlatformPluginRegistry([ctfdPlatform, gzctfPlatform])
 const extensions = await PlatformExtensionStore.open({
   root: options.root,
   registry: platformRegistry,
@@ -88,17 +79,14 @@ const extensions = await PlatformExtensionStore.open({
   },
 })
 const applicationRoot = fileURLToPath(new URL("../../../", import.meta.url))
-const fatherSkills = await discoverProjectSkillsWithDiagnostics(
-  applicationRoot,
-  ["packages/agents/skills/extension-authoring"],
-)
+const fatherSkills = await discoverProjectSkillsWithDiagnostics(applicationRoot, [
+  "packages/agents/skills/extension-authoring",
+])
 if (fatherSkills.diagnostics.length > 0) {
   console.warn("extension-authoring skill 加载警告", fatherSkills.diagnostics)
 }
 if (!fatherSkills.skills.some(({ name }) => name === "extension-authoring")) {
-  throw new Error(
-    "内置 extension-authoring skill 加载失败，拒绝启动 Clanker Father",
-  )
+  throw new Error("内置 extension-authoring skill 加载失败，拒绝启动 Clanker Father")
 }
 const father = await FatherSessionManager.open({
   root: options.root,
@@ -116,14 +104,8 @@ const father = await FatherSessionManager.open({
       }
     : {}),
 })
-const fatherValidationConfigs = new FatherValidationConfigStore(
-  options.root,
-  secretStore,
-)
-async function projectRuntimeConfiguration(context: {
-  projectId: string
-  stateDirectory: string
-}) {
+const fatherValidationConfigs = new FatherValidationConfigStore(options.root, secretStore)
+async function projectRuntimeConfiguration(context: { projectId: string; stateDirectory: string }) {
   const existing = projectRuntimeConfigurations.get(context.projectId)
   if (existing) return existing
   const globalModels = modelConfiguration.snapshot()
@@ -136,8 +118,7 @@ async function projectRuntimeConfiguration(context: {
       maxConcurrent: schedulerConfiguration.snapshot(),
       maxRemoteEnvironments: 1,
     },
-    availableModelIds: () =>
-      new Set(modelConfiguration.snapshot().models.map((model) => model.id)),
+    availableModelIds: () => new Set(modelConfiguration.snapshot().models.map((model) => model.id)),
   })
   projectRuntimeConfigurations.set(context.projectId, configuration)
   return configuration
@@ -165,18 +146,13 @@ const controlPlane = await ControlPlane.create({
       return {
         providers: snapshot.providers,
         workflow: snapshot.workflow,
-        resolveSecret: (provider) =>
-          secretStore.get(webAccessSecretName(provider)),
+        resolveSecret: (provider) => secretStore.get(webAccessSecretName(provider)),
         modelAuth: modelConfiguration.resolveModelAuth(),
-        ...(snapshot.summaryModel
-          ? { summaryModel: snapshot.summaryModel }
-          : {}),
+        ...(snapshot.summaryModel ? { summaryModel: snapshot.summaryModel } : {}),
         workspaceHostPath: workspace,
         ssrf: snapshot.ssrf,
         timeouts: snapshot.timeouts,
-        ...(snapshot.providerConfig
-          ? { providerConfig: snapshot.providerConfig }
-          : {}),
+        ...(snapshot.providerConfig ? { providerConfig: snapshot.providerConfig } : {}),
         sessionSignal: signal,
       }
     },
@@ -188,8 +164,7 @@ const controlPlane = await ControlPlane.create({
         maxConcurrent: runtime.snapshot().maxRemoteEnvironments,
       },
       subagents: {
-        modelForRole: (role) =>
-          modelConfiguration.modelForSubagent(role, runtime.snapshot()),
+        modelForRole: (role) => modelConfiguration.modelForSubagent(role, runtime.snapshot()),
       },
     }
   },
@@ -206,13 +181,10 @@ const controlPlane = await ControlPlane.create({
         const model = modelConfiguration.snapshot(runtime.snapshot())
         return {
           available: model.configured,
-          ...(model.unavailableReason
-            ? { unavailableReason: model.unavailableReason }
-            : {}),
+          ...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
         }
       },
-      createAgentOptions: () =>
-        modelConfiguration.createAgentOptions("solver", runtime.snapshot()),
+      createAgentOptions: () => modelConfiguration.createAgentOptions("solver", runtime.snapshot()),
       compaction: true,
       onMaxConcurrentChange: async (maxConcurrent) => {
         await runtime.update({ ...runtime.snapshot(), maxConcurrent })
@@ -231,8 +203,7 @@ const webui = await startWebUi({
   fatherValidationConfigs,
   extensions,
   webAccessConfiguration,
-  projectRuntimeConfiguration: (projectId) =>
-    projectRuntimeConfigurations.get(projectId),
+  projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
   onProjectDeleted: (projectId) => {
     projectRuntimeConfigurations.delete(projectId)
   },
@@ -255,9 +226,7 @@ if (options.autoStart) {
       await scheduler.startAuto()
       console.log(`${project.name}：自主调度已开启`)
     } else {
-      console.log(
-        `${project.name}：自主调度未开启：${availability.unavailableReason}`,
-      )
+      console.log(`${project.name}：自主调度未开启：${availability.unavailableReason}`)
     }
   }
 }
@@ -315,32 +284,17 @@ function parseOptions(args: string[]): WebUiProcessOptions {
     root: resolve(values.get("--root") ?? process.cwd()),
     host: values.get("--host") ?? "0.0.0.0",
     port: positiveInteger(values, "--port", 3_000, 65_535),
-    pollIntervalMs: positiveInteger(
-      values,
-      "--poll-interval-ms",
-      1_000,
-      60_000,
-    ),
+    pollIntervalMs: positiveInteger(values, "--poll-interval-ms", 1_000, 60_000),
     maxConcurrent: positiveInteger(values, "--max-concurrent", 8, 64),
     maxAttempts: positiveInteger(values, "--max-attempts", 2, 100),
-    maxSessionInterruptions: positiveInteger(
-      values,
-      "--max-session-interruptions",
-      3,
-      100,
-    ),
+    maxSessionInterruptions: positiveInteger(values, "--max-session-interruptions", 3, 100),
     challengeTimeoutMs: positiveInteger(
       values,
       "--challenge-timeout-ms",
       30 * 60_000,
       24 * 60 * 60_000,
     ),
-    retryDelayMs: positiveInteger(
-      values,
-      "--retry-delay-ms",
-      2_000,
-      60 * 60_000,
-    ),
+    retryDelayMs: positiveInteger(values, "--retry-delay-ms", 2_000, 60 * 60_000),
     ...(values.get("--workspace-volume")
       ? { workspaceVolume: values.get("--workspace-volume") }
       : {}),

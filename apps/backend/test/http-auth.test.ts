@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { createFileWebUiAuthentication } from "../src/domain/webui-auth.ts"
 import { createWebUiApp, type WebUiApp } from "../src/server.ts"
 import { FakeDashboardProject } from "./fake-project.ts"
@@ -12,18 +12,14 @@ describe("WebUI 鉴权", () => {
   let webApp: WebUiApp | undefined
 
   afterEach(async () => {
-    await Promise.all(
-      roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-    )
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
     webApp = undefined
   })
 
   async function appWithAuth(enabled = true) {
     const root = await mkdtemp(join(tmpdir(), "ctf-webui-auth-"))
     roots.push(root)
-    const authentication = await createFileWebUiAuthentication(
-      join(root, "global-config.json"),
-    )
+    const authentication = await createFileWebUiAuthentication(join(root, "global-config.json"))
     if (enabled) {
       await authentication.configure({
         enabled: true,
@@ -71,17 +67,9 @@ describe("WebUI 鉴权", () => {
     })
     expect(snapshot.status).toBe(200)
 
-    const logout = await jsonRequest(
-      app,
-      "/api/auth/logout",
-      "POST",
-      {},
-      { Cookie: cookie ?? "" },
-    )
+    const logout = await jsonRequest(app, "/api/auth/logout", "POST", {}, { Cookie: cookie ?? "" })
     expect(logout.status).toBe(200)
-    expect(
-      authentication.authenticate(cookie?.split("=")[1]?.split(";")[0]),
-    ).toBe(false)
+    expect(authentication.authenticate(cookie?.split("=")[1]?.split(";")[0])).toBe(false)
     expect(
       (
         await app.request("/api/snapshot", {
@@ -143,16 +131,11 @@ describe("WebUI 鉴权", () => {
   it("配置鉴权：启用/禁用并校验表单", async () => {
     const { app, authentication } = await appWithAuth(false)
 
-    const enabled = await jsonRequest(
-      app,
-      "/api/global-config/authentication",
-      "POST",
-      {
-        enabled: true,
-        username: "operator",
-        password: "new-password",
-      },
-    )
+    const enabled = await jsonRequest(app, "/api/global-config/authentication", "POST", {
+      enabled: true,
+      username: "operator",
+      password: "new-password",
+    })
     expect(enabled.status).toBe(200)
     expect(authentication.snapshot().enabled).toBe(true)
 

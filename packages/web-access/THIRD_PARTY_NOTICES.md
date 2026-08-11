@@ -12,13 +12,13 @@
 
 ## 运行时依赖
 
-| 包 | License | 用途 |
-|---|---|---|
-| `@earendil-works/pi-ai` | MIT | `complete` / `Model` / `Api` 类型（auto-summary） |
-| `@mozilla/readability` | Apache-2.0 | 正文抽取 |
-| `linkedom` | MIT | DOM 解析 |
-| `p-limit` | MIT | 并发限流 |
-| `promise.try` | MIT | `Promise.try` ponyfill |
-| `turndown` | MIT | HTML → Markdown |
-| `typebox` | MIT | 工具参数 schema |
-| `unpdf` | MIT | PDF 文本抽取 |
+| 包                      | License    | 用途                                              |
+| ----------------------- | ---------- | ------------------------------------------------- |
+| `@earendil-works/pi-ai` | MIT        | `complete` / `Model` / `Api` 类型（auto-summary） |
+| `@mozilla/readability`  | Apache-2.0 | 正文抽取                                          |
+| `linkedom`              | MIT        | DOM 解析                                          |
+| `p-limit`               | MIT        | 并发限流                                          |
+| `promise.try`           | MIT        | `Promise.try` ponyfill                            |
+| `turndown`              | MIT        | HTML → Markdown                                   |
+| `typebox`               | MIT        | 工具参数 schema                                   |
+| `unpdf`                 | MIT        | PDF 文本抽取                                      |

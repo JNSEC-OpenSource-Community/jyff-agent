@@ -10,9 +10,7 @@ import {
 export const BLACKBOARD_TOOL_MAX_CHARACTERS = 64_000
 export const BLACKBOARD_INJECTION_MAX_CHARACTERS = 16_000
 
-function result(
-  details: Record<string, unknown>,
-): AgentToolResult<Record<string, unknown>> {
+function result(details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
   return {
     content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
     details,
@@ -46,20 +44,14 @@ export function serializeBlackboard(
     lines.push("")
   }
 
-  const openOpportunities = summary.opportunities.filter(
-    (o) => o.status === "open",
-  )
-  const concludedOpportunities = summary.opportunities.filter(
-    (o) => o.status === "concluded",
-  )
+  const openOpportunities = summary.opportunities.filter((o) => o.status === "open")
+  const concludedOpportunities = summary.opportunities.filter((o) => o.status === "concluded")
 
   if (openOpportunities.length > 0) {
     lines.push("## Open Opportunities")
     for (const o of openOpportunities) {
       const sources = o.sourceEvidenceIds.map((id) => `e${id}`).join(", ")
-      lines.push(
-        `- [o${o.id}] from ${sources}: ${JSON.stringify(o.description)}`,
-      )
+      lines.push(`- [o${o.id}] from ${sources}: ${JSON.stringify(o.description)}`)
     }
     lines.push("")
   }
@@ -98,9 +90,7 @@ export interface BlackboardToolOptions {
   runId: string
 }
 
-export function createBlackboardTools(
-  options: BlackboardToolOptions,
-): AgentTool[] {
+export function createBlackboardTools(options: BlackboardToolOptions): AgentTool[] {
   const { runStore, challengeId, runId } = options
 
   return [
@@ -172,11 +162,7 @@ export function createBlackboardTools(
           }
         }
 
-        if (
-          !input.evidence &&
-          !input.opportunity &&
-          !input.concludeOpportunity
-        ) {
+        if (!input.evidence && !input.opportunity && !input.concludeOpportunity) {
           throw new Error(
             "At least one of evidence, opportunity, or concludeOpportunity is required",
           )
@@ -186,11 +172,7 @@ export function createBlackboardTools(
 
         if (input.evidence) {
           try {
-            const record = runStore.recordEvidence(
-              challengeId,
-              runId,
-              input.evidence.description,
-            )
+            const record = runStore.recordEvidence(challengeId, runId, input.evidence.description)
             details.evidence = record
           } catch (err) {
             details.evidenceError = errorText(err)
@@ -274,17 +256,11 @@ export function createBlackboardTools(
           switch (input.action) {
             case "update_evidence": {
               if (input.evidenceId === undefined || !input.description) {
-                throw new Error(
-                  "update_evidence requires evidenceId and description",
-                )
+                throw new Error("update_evidence requires evidenceId and description")
               }
               return result({
                 action: input.action,
-                record: runStore.updateEvidence(
-                  challengeId,
-                  input.evidenceId,
-                  input.description,
-                ),
+                record: runStore.updateEvidence(challengeId, input.evidenceId, input.description),
               })
             }
             case "delete_evidence": {
@@ -302,18 +278,12 @@ export function createBlackboardTools(
               }
               return result({
                 action: input.action,
-                record: runStore.updateOpportunity(
-                  challengeId,
-                  input.opportunityId,
-                  {
-                    ...(input.description === undefined
-                      ? {}
-                      : { description: input.description }),
-                    ...(input.sourceEvidenceIds === undefined
-                      ? {}
-                      : { sourceEvidenceIds: input.sourceEvidenceIds }),
-                  },
-                ),
+                record: runStore.updateOpportunity(challengeId, input.opportunityId, {
+                  ...(input.description === undefined ? {} : { description: input.description }),
+                  ...(input.sourceEvidenceIds === undefined
+                    ? {}
+                    : { sourceEvidenceIds: input.sourceEvidenceIds }),
+                }),
               })
             }
             case "delete_opportunity": {
@@ -322,10 +292,7 @@ export function createBlackboardTools(
               }
               return result({
                 action: input.action,
-                record: runStore.deleteOpportunity(
-                  challengeId,
-                  input.opportunityId,
-                ),
+                record: runStore.deleteOpportunity(challengeId, input.opportunityId),
               })
             }
           }

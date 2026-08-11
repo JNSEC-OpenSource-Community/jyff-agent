@@ -14,10 +14,7 @@ import {
   thinkingLevelSchema,
 } from "../schema.ts"
 import type { Services } from "../services.ts"
-import {
-  WORKSPACE_PREVIEW_MAX_BYTES,
-  workspacePreviewDescriptor,
-} from "../workspace-files.ts"
+import { WORKSPACE_PREVIEW_MAX_BYTES, workspacePreviewDescriptor } from "../workspace-files.ts"
 
 /** 题目级路由：派发/取消、人工消息、思考强度、TLDR、writeup、详情。 */
 export function challengeRoutes(services: Services): App {
@@ -30,9 +27,7 @@ export function challengeRoutes(services: Services): App {
 
   const refreshFor = (c: AppContext) => {
     const projectId = projectIdOf(c)
-    return projectId
-      ? services.sync.refreshProject(projectId)
-      : services.sync.refresh()
+    return projectId ? services.sync.refreshProject(projectId) : services.sync.refresh()
   }
 
   app.post("/challenges/:challengeId/dispatch", async (c) => {
@@ -48,9 +43,7 @@ export function challengeRoutes(services: Services): App {
 
   app.post("/challenges/:challengeId/cancel", async (c) => {
     await readJsonBody(c)
-    await services
-      .requireScheduler(projectIdOf(c))
-      .cancel(c.req.param("challengeId"))
+    await services.requireScheduler(projectIdOf(c)).cancel(c.req.param("challengeId"))
     return c.json(await refreshFor(c))
   })
 
@@ -58,9 +51,7 @@ export function challengeRoutes(services: Services): App {
     const challengeId = c.req.param("challengeId")
     services.requireSolverScheduler(projectIdOf(c))
     const project = services.requireProject(projectIdOf(c))
-    const exists = (await project.challenges()).some(
-      (challenge) => challenge.id === challengeId,
-    )
+    const exists = (await project.challenges()).some((challenge) => challenge.id === challengeId)
     if (!exists) throw new HttpError(404, "challenge_not_found", "题目不存在")
     const body = await parseJsonBody(c, challengeSchedulingSchema, {
       code: "invalid_challenge_scheduling",
@@ -84,9 +75,7 @@ export function challengeRoutes(services: Services): App {
       code: "invalid_message",
     })
     try {
-      return c.json(
-        await project.sendMessage(c.req.param("challengeId"), body.text),
-      )
+      return c.json(await project.sendMessage(c.req.param("challengeId"), body.text))
     } catch (error) {
       if (hasCode(error, "no_active_run")) {
         throw new HttpError(409, "no_active_run", "该题当前没有运行中的 Agent")
@@ -96,9 +85,7 @@ export function challengeRoutes(services: Services): App {
         throw new HttpError(
           400,
           "invalid_message",
-          error instanceof Error && error.message
-            ? error.message
-            : "invalid_message",
+          error instanceof Error && error.message ? error.message : "invalid_message",
         )
       }
       throw error
@@ -113,9 +100,7 @@ export function challengeRoutes(services: Services): App {
       code: "invalid_level",
     })
     try {
-      return c.json(
-        await project.setThinkingLevel(c.req.param("challengeId"), body.level),
-      )
+      return c.json(await project.setThinkingLevel(c.req.param("challengeId"), body.level))
     } catch (error) {
       if (hasCode(error, "no_active_run")) {
         throw new HttpError(409, "no_active_run", "该题当前没有运行中的 Agent")
@@ -132,11 +117,8 @@ export function challengeRoutes(services: Services): App {
     const modelConfiguration = services.modelConfiguration
     const bindings = services.runtime(projectIdOf(c))?.snapshot()
     const modelSnapshot = modelConfiguration?.snapshot(bindings)
-    const tldrModelId =
-      modelSnapshot?.tldrModelId || modelSnapshot?.solverModelId
-    const tldrModel = modelSnapshot?.models.find(
-      (model) => model.id === tldrModelId,
-    )
+    const tldrModelId = modelSnapshot?.tldrModelId || modelSnapshot?.solverModelId
+    const tldrModel = modelSnapshot?.models.find((model) => model.id === tldrModelId)
     if (!modelConfiguration || !tldrModel?.configured) {
       throw new HttpError(
         503,
@@ -165,10 +147,7 @@ export function challengeRoutes(services: Services): App {
     const challengeId = c.req.param("challengeId")
     const writeup = await project.challengeWriteup(challengeId)
     if (!writeup.validation.valid || !writeup.content) {
-      return c.json(
-        { error: "writeup_unavailable", validation: writeup.validation },
-        409,
-      )
+      return c.json({ error: "writeup_unavailable", validation: writeup.validation }, 409)
     }
     c.header("Content-Type", "text/markdown; charset=utf-8")
     c.header(
@@ -181,9 +160,7 @@ export function challengeRoutes(services: Services): App {
 
   app.get("/challenges/:challengeId/files", async (c) => {
     const project = services.requireProject(projectIdOf(c))
-    const listing = await project.challengeWorkspaceFiles(
-      c.req.param("challengeId"),
-    )
+    const listing = await project.challengeWorkspaceFiles(c.req.param("challengeId"))
     c.header("Cache-Control", "no-store")
     return c.json({
       ...listing,
@@ -201,50 +178,26 @@ export function challengeRoutes(services: Services): App {
     }
     const preview = workspacePreviewDescriptor(artifactPath)
     if (!preview) {
-      throw new HttpError(
-        415,
-        "workspace_preview_unsupported",
-        "该文件类型不支持预览",
-      )
+      throw new HttpError(415, "workspace_preview_unsupported", "该文件类型不支持预览")
     }
     const project = services.requireProject(projectIdOf(c))
-    const listing = await project.challengeWorkspaceFiles(
-      c.req.param("challengeId"),
-    )
-    const file = listing.files.find(
-      (candidate) => candidate.path === artifactPath,
-    )
+    const listing = await project.challengeWorkspaceFiles(c.req.param("challengeId"))
+    const file = listing.files.find((candidate) => candidate.path === artifactPath)
     if (!file) {
       throw new HttpError(404, "workspace_file_not_found", "文件不存在")
     }
     if (file.size > WORKSPACE_PREVIEW_MAX_BYTES) {
-      throw new HttpError(
-        413,
-        "workspace_preview_too_large",
-        "文件超过 256 KiB，无法在线预览",
-      )
+      throw new HttpError(413, "workspace_preview_too_large", "文件超过 256 KiB，无法在线预览")
     }
-    const content = await readWorkspaceFile(
-      project,
-      c.req.param("challengeId"),
-      artifactPath,
-    )
+    const content = await readWorkspaceFile(project, c.req.param("challengeId"), artifactPath)
     if (content.byteLength > WORKSPACE_PREVIEW_MAX_BYTES) {
-      throw new HttpError(
-        413,
-        "workspace_preview_too_large",
-        "文件超过 256 KiB，无法在线预览",
-      )
+      throw new HttpError(413, "workspace_preview_too_large", "文件超过 256 KiB，无法在线预览")
     }
     let text: string
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(content)
     } catch {
-      throw new HttpError(
-        415,
-        "workspace_preview_invalid_text",
-        "文件不是有效的 UTF-8 文本",
-      )
+      throw new HttpError(415, "workspace_preview_invalid_text", "文件不是有效的 UTF-8 文本")
     }
     c.header("Cache-Control", "no-store")
     return c.json({
@@ -261,11 +214,7 @@ export function challengeRoutes(services: Services): App {
       throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
     }
     const project = services.requireProject(projectIdOf(c))
-    const content = await readWorkspaceFile(
-      project,
-      c.req.param("challengeId"),
-      artifactPath,
-    )
+    const content = await readWorkspaceFile(project, c.req.param("challengeId"), artifactPath)
     const name = basename(artifactPath)
     c.header("Content-Type", "application/octet-stream")
     c.header(
@@ -284,18 +233,10 @@ export function challengeRoutes(services: Services): App {
       code: "invalid_announcement_review",
     })
     try {
-      await project.reviewChallengeAnnouncement(
-        body.challengeId,
-        body.announcementKey,
-        body.status,
-      )
+      await project.reviewChallengeAnnouncement(body.challengeId, body.announcementKey, body.status)
     } catch (error) {
       if (hasCode(error, "announcement_candidate_not_found")) {
-        throw new HttpError(
-          404,
-          "announcement_candidate_not_found",
-          errorText(error),
-        )
+        throw new HttpError(404, "announcement_candidate_not_found", errorText(error))
       }
       throw error
     }

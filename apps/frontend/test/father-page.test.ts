@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { FatherPage } from "../src/pages/FatherPage.tsx"
 
 afterEach(() => {
@@ -57,9 +57,7 @@ describe("Clanker Father 入口", () => {
     expect(screen.queryByPlaceholderText("插件 ID，如 rctf")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }))
     await waitFor(() =>
-      expect(screen.getByTestId("location").textContent).toBe(
-        "/father/sessions/father-1",
-      ),
+      expect(screen.getByTestId("location").textContent).toBe("/father/sessions/father-1"),
     )
     expect(fetchMock.mock.calls[1]?.[1]?.body).toBe("{}")
   })
@@ -104,17 +102,11 @@ describe("Clanker Father 入口", () => {
     expect(sessionLink.getAttribute("href")).toBe("/father/sessions/father-2")
 
     fireEvent.click(screen.getByRole("button", { name: "删除 ctfd-adapter" }))
-    expect(
-      await screen.findByRole("alertdialog", { name: "删除 Father 会话？" }),
-    ).toBeTruthy()
+    expect(await screen.findByRole("alertdialog", { name: "删除 Father 会话？" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "删除会话" })).toBeTruthy()
   })
 })
 
 function Location(): React.ReactElement {
-  return createElement(
-    "span",
-    { "data-testid": "location" },
-    useLocation().pathname,
-  )
+  return createElement("span", { "data-testid": "location" }, useLocation().pathname)
 }

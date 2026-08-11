@@ -24,7 +24,7 @@ export function AttemptHistory({
 }: {
   projectId: string
   runs: DashboardRun[]
-  onChanged(): Promise<void>
+  onChanged: () => Promise<void>
 }): React.ReactElement {
   const [prompts, setPrompts] = useState<Record<string, string>>({})
   const [busyRun, setBusyRun] = useState<string | null>(null)
@@ -68,15 +68,13 @@ export function AttemptHistory({
                   #{run.attempt}
                 </span>
                 <div>
-                  <strong className="block text-sm font-medium">
-                    {run.id}
-                  </strong>
+                  <strong className="block text-sm font-medium">{run.id}</strong>
                   <small className="text-muted-foreground text-xs">
                     {absoluteTime(run.createdAt)}
                   </small>
                 </div>
               </div>
-              <Badge tone={toneForStatus(run.status)} className="text-[10px]">
+              <Badge tone={toneForStatus(run.status)}>
                 {STATUS_LABELS[run.status] ?? run.status}
               </Badge>
             </div>
@@ -87,25 +85,17 @@ export function AttemptHistory({
               <Metric value={run.cache.inputTokens} label="输入 tokens" />
               <Metric
                 value={
-                  run.cache.cacheRate === null
-                    ? "—"
-                    : `${Math.round(run.cache.cacheRate * 100)}%`
+                  run.cache.cacheRate === null ? "—" : `${Math.round(run.cache.cacheRate * 100)}%`
                 }
                 label="缓存命中"
               />
             </div>
 
             {run.error ? (
-              <ErrorNotice
-                message={`运行失败原因：${run.error}`}
-                className="mt-3"
-              />
+              <ErrorNotice message={`运行失败原因：${run.error}`} className="mt-3" />
             ) : null}
             {run.cleanupError ? (
-              <ErrorNotice
-                message={`资源清理异常：${run.cleanupError}`}
-                className="mt-3"
-              />
+              <ErrorNotice message={`资源清理异常：${run.cleanupError}`} className="mt-3" />
             ) : null}
 
             <Collapsible className="mt-3">
@@ -157,11 +147,7 @@ export function AttemptHistory({
               disabled={busyRun !== null}
             >
               <Icon
-                icon={
-                  busyRun === run.id
-                    ? "lucide:loader-circle"
-                    : "lucide:rotate-ccw"
-                }
+                icon={busyRun === run.id ? "lucide:loader-circle" : "lucide:rotate-ccw"}
                 className={busyRun === run.id ? "animate-spin" : ""}
                 width="14"
               />
@@ -176,8 +162,7 @@ export function AttemptHistory({
 
 /** 创建失败事件保留历史 Run 的根因，兼容旧记录没有 Run.error 的情况。 */
 function eventFailureMessage(data: unknown): string | null {
-  if (typeof data !== "object" || data === null || Array.isArray(data))
-    return null
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null
   const error = (data as Record<string, unknown>).error
   return typeof error === "string" && error.trim() ? error : null
 }

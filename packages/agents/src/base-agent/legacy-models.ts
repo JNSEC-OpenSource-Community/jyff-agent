@@ -23,10 +23,7 @@ type AgentOptionsWithModels = AgentOptions & {
  * boundary used by the scheduler. This lets Solver, TLDR and SubAgent share the
  * same configured model pool instead of rebuilding a one-model registry.
  */
-export function attachModelsToAgentOptions(
-  options: AgentOptions,
-  models: Models,
-): AgentOptions {
+export function attachModelsToAgentOptions(options: AgentOptions, models: Models): AgentOptions {
   Object.defineProperty(options, AGENT_MODELS, {
     value: models,
     enumerable: false,
@@ -36,11 +33,7 @@ export function attachModelsToAgentOptions(
   return options
 }
 
-function failureMessage(
-  model: Model<Api>,
-  error: unknown,
-  aborted: boolean,
-): AssistantMessage {
+function failureMessage(model: Model<Api>, error: unknown, aborted: boolean): AssistantMessage {
   return {
     role: "assistant",
     content: [],
@@ -75,11 +68,7 @@ function adaptStream(
       for await (const event of source) output.push(event)
       output.end(await source.result())
     } catch (error) {
-      const message = failureMessage(
-        model,
-        error,
-        options?.signal?.aborted === true,
-      )
+      const message = failureMessage(model, error, options?.signal?.aborted === true)
       output.push({
         type: "error",
         reason: message.stopReason === "aborted" ? "aborted" : "error",
@@ -95,18 +84,12 @@ function adaptStream(
  * Compatibility bridge for callers that still create Pi's old `AgentOptions`.
  * New agents should receive a shared `Models` registry directly.
  */
-export function modelsFromAgentOptions(
-  options: AgentOptions,
-  model: Model<Api>,
-): Models {
+export function modelsFromAgentOptions(options: AgentOptions, model: Model<Api>): Models {
   const attached = (options as AgentOptionsWithModels)[AGENT_MODELS]
   if (attached) return attached
   const models = createModels()
-  const stream = (
-    candidate: Model<Api>,
-    context: Context,
-    streamOptions?: SimpleStreamOptions,
-  ) => adaptStream(options.streamFn, candidate, context, streamOptions)
+  const stream = (candidate: Model<Api>, context: Context, streamOptions?: SimpleStreamOptions) =>
+    adaptStream(options.streamFn, candidate, context, streamOptions)
   models.setProvider(
     createProvider({
       id: model.provider,

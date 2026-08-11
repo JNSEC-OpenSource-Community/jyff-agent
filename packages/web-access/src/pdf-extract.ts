@@ -43,26 +43,18 @@ export function loadPDFConfig(): PDFConfig {
 function resolveOutputDir(): string {
   const pdfDir = getRuntime().pdfDir
   if (!pdfDir) {
-    throw new Error(
-      "PDF extraction disabled (no sandbox-visible workspace path).",
-    )
+    throw new Error("PDF extraction disabled (no sandbox-visible workspace path).")
   }
   return pdfDir
 }
 
 async function getUnpdf() {
-  if (
-    typeof (Promise as PromiseConstructor & { try?: unknown }).try !==
-    "function"
-  ) {
+  if (typeof (Promise as PromiseConstructor & { try?: unknown }).try !== "function") {
     const { default: promiseTry } = await import("promise.try")
     promiseTry.shim()
   }
 
-  const [unpdf, pdfjs] = await Promise.all([
-    import("unpdf"),
-    import("unpdf/pdfjs"),
-  ])
+  const [unpdf, pdfjs] = await Promise.all([import("unpdf"), import("unpdf/pdfjs")])
   const { VerbosityLevel } = pdfjs as typeof pdfjs & {
     VerbosityLevel: { ERRORS: number }
   }
@@ -78,13 +70,7 @@ export async function extractPDFToMarkdown(
   url: string,
   options: PDFExtractOptions = {},
 ): Promise<PDFExtractResult> {
-  const {
-    maxPages = DEFAULT_MAX_PAGES,
-    outputDir,
-    filename,
-    signal,
-    geminiTimeoutMs,
-  } = options
+  const { maxPages = DEFAULT_MAX_PAGES, outputDir, filename, signal, geminiTimeoutMs } = options
   const resolvedOutputDir = outputDir ?? resolveOutputDir()
 
   const safeMaxPages = Number.isFinite(maxPages)
@@ -98,9 +84,7 @@ export async function extractPDFToMarkdown(
         maxPages: safeMaxPages,
         title: urlTitle,
         ...(signal ? { signal } : {}),
-        ...(geminiTimeoutMs !== undefined
-          ? { timeoutMs: geminiTimeoutMs }
-          : {}),
+        ...(geminiTimeoutMs !== undefined ? { timeoutMs: geminiTimeoutMs } : {}),
       })
       return writeMarkdownResult({
         markdownBody,
@@ -125,10 +109,8 @@ export async function extractPDFToMarkdown(
       ? (metadata.info as Record<string, unknown>)
       : null
 
-  const metaTitle =
-    typeof metadataInfo?.Title === "string" ? metadataInfo.Title : undefined
-  const metaAuthor =
-    typeof metadataInfo?.Author === "string" ? metadataInfo.Author : undefined
+  const metaTitle = typeof metadataInfo?.Title === "string" ? metadataInfo.Title : undefined
+  const metaAuthor = typeof metadataInfo?.Author === "string" ? metadataInfo.Author : undefined
   const title = metaTitle?.trim() || urlTitle
   const pagesToExtract = Math.min(pdf.numPages, safeMaxPages)
   const truncated = pdf.numPages > safeMaxPages
@@ -208,8 +190,7 @@ async function writeMarkdownResult(options: {
   }
 
   const content = lines.join("\n")
-  const outputFilename =
-    options.filename || `${sanitizeFilename(options.title)}.md`
+  const outputFilename = options.filename || `${sanitizeFilename(options.title)}.md`
   const outputPath = join(options.outputDir, outputFilename)
 
   await mkdir(options.outputDir, { recursive: true })

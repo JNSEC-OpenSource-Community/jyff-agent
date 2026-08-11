@@ -73,14 +73,10 @@ export class RemoteEnvironmentCoordinator {
       // capability 通常是适配器实例，方法位于原型而非可枚举自有属性。
       // 不能使用对象展开，否则会在容器题中丢失 downloadAttachment/getInfo。
       getInfo: async () => await capability.getInfo(),
-      downloadAttachment: async (attachmentId) =>
-        await capability.downloadAttachment(attachmentId),
+      downloadAttachment: async (attachmentId) => await capability.downloadAttachment(attachmentId),
       submitFlag: async (flag): Promise<FlagSubmission> => {
         const submission = await capability.submitFlag(flag)
-        if (
-          submission.status === "accepted" ||
-          submission.status === "already_solved"
-        ) {
+        if (submission.status === "accepted" || submission.status === "already_solved") {
           try {
             await this.release(options.runId)
           } catch (error) {
@@ -161,7 +157,7 @@ export class RemoteEnvironmentCoordinator {
     for (const request of this.pending.splice(0)) request.reject(error)
     const failures: unknown[] = []
     await this.withLock(async () => {
-      for (const lease of [...this.active.values()]) {
+      for (const lease of this.active.values()) {
         try {
           await this.destroyLease(lease)
         } catch (cause) {
@@ -169,8 +165,7 @@ export class RemoteEnvironmentCoordinator {
         }
       }
     })
-    if (failures.length > 0)
-      throw new AggregateError(failures, "远程环境回收不完整")
+    if (failures.length > 0) throw new AggregateError(failures, "远程环境回收不完整")
   }
 
   private async acquire(
@@ -182,20 +177,14 @@ export class RemoteEnvironmentCoordinator {
     const result = await this.withLock(async () => {
       if (this.closed) throw abortError("远程环境协调器已关闭")
       const existing = this.active.get(input.runId)
-      if (existing)
-        return { kind: "ready" as const, environment: existing.environment }
+      if (existing) return { kind: "ready" as const, environment: existing.environment }
 
-      const alreadyPending = this.pending.find(
-        (request) => request.runId === input.runId,
-      )
+      const alreadyPending = this.pending.find((request) => request.runId === input.runId)
       if (alreadyPending) {
         throw new Error(`Run ${input.runId} 已在等待远程环境`)
       }
 
-      if (
-        this.active.size >= this.maxConcurrent &&
-        input.priority === "required"
-      ) {
+      if (this.active.size >= this.maxConcurrent && input.priority === "required") {
         const victim = this.oldestVerificationLease()
         if (victim) {
           await this.revoke(
@@ -246,10 +235,7 @@ export class RemoteEnvironmentCoordinator {
     }
   }
 
-  private async cancelPending(
-    request: PendingRequest,
-    error: Error,
-  ): Promise<void> {
+  private async cancelPending(request: PendingRequest, error: Error): Promise<void> {
     await this.withLock(async () => {
       const index = this.pending.indexOf(request)
       if (index < 0) return
@@ -260,9 +246,7 @@ export class RemoteEnvironmentCoordinator {
 
   private async release(runId: string): Promise<void> {
     await this.withLock(async () => {
-      const pendingIndex = this.pending.findIndex(
-        (request) => request.runId === runId,
-      )
+      const pendingIndex = this.pending.findIndex((request) => request.runId === runId)
       if (pendingIndex >= 0) {
         const [request] = this.pending.splice(pendingIndex, 1)
         request?.reject(abortError("远程环境申请已释放"))
@@ -351,8 +335,7 @@ export class RemoteEnvironmentCoordinator {
 
   private sortPending(): void {
     this.pending.sort((left, right) => {
-      const priority =
-        priorityRank(left.priority) - priorityRank(right.priority)
+      const priority = priorityRank(left.priority) - priorityRank(right.priority)
       return priority || left.requestedAt.localeCompare(right.requestedAt)
     })
   }

@@ -11,12 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../ui/alert-dialog.tsx"
-import {
-  Sheet,
-  SheetCloseButton,
-  SheetContent,
-  SheetTitle,
-} from "../ui/sheet.tsx"
+import { Sheet, SheetCloseButton, SheetContent, SheetTitle } from "../ui/sheet.tsx"
 
 function MobileSheet({
   open,
@@ -24,7 +19,7 @@ function MobileSheet({
   children,
 }: {
   open: boolean
-  onOpenChange(open: boolean): void
+  onOpenChange: (open: boolean) => void
   children: React.ReactNode
 }): React.ReactElement {
   return (
@@ -49,13 +44,13 @@ function ConfirmDialog({
   onConfirm,
 }: {
   open: boolean
-  onOpenChange(open: boolean): void
+  onOpenChange: (open: boolean) => void
   title: string
   description: string
   confirmLabel: string
   busy?: boolean
   busyLabel?: string
-  onConfirm(): void
+  onConfirm: () => void
 }): React.ReactElement {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -68,9 +63,7 @@ function ConfirmDialog({
             <Icon icon="lucide:triangle-alert" width="18" />
           </span>
           <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription className="mt-1">
-            {description}
-          </AlertDialogDescription>
+          <AlertDialogDescription className="mt-1">{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
@@ -117,9 +110,7 @@ function EmptyState({
         <Icon icon={icon} width="24" aria-hidden="true" />
       </div>
       <h3 className="text-sm font-semibold">{title}</h3>
-      <p className="mt-2! max-w-sm text-sm leading-6 text-muted-foreground">
-        {description}
-      </p>
+      <p className="mt-2! max-w-sm text-sm leading-6 text-muted-foreground">{description}</p>
       {action ? <div className="mt-3">{action}</div> : null}
     </div>
   )
@@ -146,14 +137,10 @@ function PageHeader({
         ) : null}
         <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
         {description ? (
-          <p className="mt-1.5! max-w-2xl text-sm text-muted-foreground">
-            {description}
-          </p>
+          <p className="mt-1.5! max-w-2xl text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
-      {actions ? (
-        <div className="flex shrink-0 items-center gap-2">{actions}</div>
-      ) : null}
+      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   )
 }
@@ -173,15 +160,37 @@ function ErrorNotice({
       )}
       role="alert"
     >
-      <Icon
-        icon="lucide:circle-alert"
-        width="18"
-        className="mt-0.5 shrink-0"
-        aria-hidden="true"
-      />
+      <Icon icon="lucide:circle-alert" width="18" className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
   )
 }
 
-export { ConfirmDialog, EmptyState, ErrorNotice, MobileSheet, PageHeader }
+function SettingsSection({
+  title,
+  description,
+  meta,
+  children,
+  danger = false,
+}: {
+  title: string
+  description: string
+  meta?: React.ReactNode
+  children: React.ReactNode
+  danger?: boolean
+}): React.ReactElement {
+  return (
+    <section className="grid gap-4 border-t border-border py-6 first:border-t-0 first:pt-0 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+      <header className="min-w-0">
+        <h2 className={cn("text-sm font-semibold tracking-tight", danger && "text-danger")}>
+          {title}
+        </h2>
+        <p className="mt-1.5! text-xs leading-5 text-muted-foreground">{description}</p>
+        {meta ? <div className="mt-3">{meta}</div> : null}
+      </header>
+      <div className="min-w-0">{children}</div>
+    </section>
+  )
+}
+
+export { ConfirmDialog, EmptyState, ErrorNotice, MobileSheet, PageHeader, SettingsSection }

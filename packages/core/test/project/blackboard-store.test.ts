@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   BLACKBOARD_DESCRIPTION_MAX_LENGTH,
   BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE,
@@ -12,9 +12,7 @@ import {
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function storeFixture(): Promise<{ store: RunStore; path: string }> {
@@ -51,11 +49,7 @@ describe("RunStore blackboard", () => {
       attempt: 1,
     })
 
-    const e1 = store.recordEvidence(
-      "chal-1",
-      "run-1",
-      "发现 format string 漏洞",
-    )
+    const e1 = store.recordEvidence("chal-1", "run-1", "发现 format string 漏洞")
     expect(e1).toMatchObject({
       challengeId: "chal-1",
       runId: "run-1",
@@ -80,32 +74,19 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    const origin = store.recordEvidence(
-      "chal-1",
-      "run-1",
-      "已确认格式化字符串漏洞",
-    )
-    const e2 = store.recordEvidence(
-      "chal-1",
-      "run-1",
-      "format string 可泄露栈地址",
-    )
-    const opp = store.recordOpportunity(
-      "chal-1",
-      "run-1",
-      "利用 format string 读栈泄露 ASLR",
-      [origin.id, e2.id],
-    )
+    const origin = store.recordEvidence("chal-1", "run-1", "已确认格式化字符串漏洞")
+    const e2 = store.recordEvidence("chal-1", "run-1", "format string 可泄露栈地址")
+    const opp = store.recordOpportunity("chal-1", "run-1", "利用 format string 读栈泄露 ASLR", [
+      origin.id,
+      e2.id,
+    ])
     expect(opp.status).toBe("open")
     expect(opp.sourceEvidenceIds).toEqual([origin.id, e2.id])
     expect(opp.targetEvidenceId).toBeNull()
 
     const summary = store.getBlackboardSummary("chal-1")
     expect(summary.opportunities).toHaveLength(1)
-    expect(summary.opportunities[0]?.sourceEvidenceIds).toEqual([
-      origin.id,
-      e2.id,
-    ])
+    expect(summary.opportunities[0]?.sourceEvidenceIds).toEqual([origin.id, e2.id])
 
     store.close()
   })
@@ -126,19 +107,15 @@ describe("RunStore blackboard", () => {
     })
     const first = store.recordEvidence("chal-1", "run-1", "old evidence")
     const second = store.recordEvidence("chal-1", "run-1", "replacement")
-    const opportunity = store.recordOpportunity(
-      "chal-1",
-      "run-1",
-      "old opportunity",
-      [first.id],
-    )
+    const opportunity = store.recordOpportunity("chal-1", "run-1", "old opportunity", [first.id])
 
-    expect(
-      store.updateEvidence("chal-1", first.id, " corrected "),
-    ).toMatchObject({ id: first.id, description: "corrected" })
-    expect(() =>
-      store.updateEvidence("chal-2", first.id, "cross challenge"),
-    ).toThrow("not found for challenge chal-2")
+    expect(store.updateEvidence("chal-1", first.id, " corrected ")).toMatchObject({
+      id: first.id,
+      description: "corrected",
+    })
+    expect(() => store.updateEvidence("chal-2", first.id, "cross challenge")).toThrow(
+      "not found for challenge chal-2",
+    )
     expect(() => store.deleteEvidence("chal-1", first.id)).toThrow(
       `referenced by Opportunity ${opportunity.id}`,
     )
@@ -173,9 +150,9 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    expect(() =>
-      store.recordOpportunity("chal-1", "run-1", "test", []),
-    ).toThrow("sourceEvidenceIds must not be empty")
+    expect(() => store.recordOpportunity("chal-1", "run-1", "test", [])).toThrow(
+      "sourceEvidenceIds must not be empty",
+    )
     store.close()
   })
 
@@ -190,21 +167,14 @@ describe("RunStore blackboard", () => {
     const evidence = store.recordEvidence("chal-1", "run-1", "source")
 
     expect(() =>
-      store.recordEvidence(
-        "chal-1",
-        "run-1",
-        "A".repeat(BLACKBOARD_DESCRIPTION_MAX_LENGTH + 1),
-      ),
+      store.recordEvidence("chal-1", "run-1", "A".repeat(BLACKBOARD_DESCRIPTION_MAX_LENGTH + 1)),
     ).toThrow("must not exceed")
     expect(() =>
       store.recordOpportunity(
         "chal-1",
         "run-1",
         "too many sources",
-        Array.from(
-          { length: BLACKBOARD_SOURCE_MAX_ITEMS + 1 },
-          () => evidence.id,
-        ),
+        Array.from({ length: BLACKBOARD_SOURCE_MAX_ITEMS + 1 }, () => evidence.id),
       ),
     ).toThrow("must not contain more than")
     store.close()
@@ -218,11 +188,7 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    for (
-      let index = 0;
-      index < BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE;
-      index++
-    ) {
+    for (let index = 0; index < BLACKBOARD_MAX_EVIDENCE_PER_CHALLENGE; index++) {
       store.recordEvidence("chal-1", "run-1", `evidence-${index}`)
     }
     expect(() => store.recordEvidence("chal-1", "run-1", "overflow")).toThrow(
@@ -240,16 +206,9 @@ describe("RunStore blackboard", () => {
       attempt: 1,
     })
     const origin = store.recordEvidence("chal-1", "run-1", "已确认可控返回地址")
-    const opp = store.recordOpportunity("chal-1", "run-1", "测试探索", [
-      origin.id,
-    ])
+    const opp = store.recordOpportunity("chal-1", "run-1", "测试探索", [origin.id])
 
-    const result = store.concludeOpportunity(
-      "chal-1",
-      opp.id,
-      "探索成功，获得 shell",
-      "run-1",
-    )
+    const result = store.concludeOpportunity("chal-1", opp.id, "探索成功，获得 shell", "run-1")
     expect(result.evidence.description).toBe("探索成功，获得 shell")
     expect(result.opportunity.status).toBe("concluded")
     expect(result.opportunity.resolution).toBe("confirmed")
@@ -262,12 +221,7 @@ describe("RunStore blackboard", () => {
       resolution: "confirmed",
     })
 
-    const deadEnd = store.recordOpportunity(
-      "chal-1",
-      "run-1",
-      "测试另一条实验方向",
-      [origin.id],
-    )
+    const deadEnd = store.recordOpportunity("chal-1", "run-1", "测试另一条实验方向", [origin.id])
     const deadEndResult = store.concludeOpportunity(
       "chal-1",
       deadEnd.id,
@@ -296,9 +250,9 @@ describe("RunStore blackboard", () => {
     const opp = store.recordOpportunity("chal-1", "run-1", "test", [origin.id])
     store.concludeOpportunity("chal-1", opp.id, "done", "run-1")
 
-    expect(() =>
-      store.concludeOpportunity("chal-1", opp.id, "double", "run-1"),
-    ).toThrow("already concluded")
+    expect(() => store.concludeOpportunity("chal-1", opp.id, "double", "run-1")).toThrow(
+      "already concluded",
+    )
     store.close()
   })
 
@@ -317,24 +271,16 @@ describe("RunStore blackboard", () => {
       attempt: 1,
     })
     const evidence = store.recordEvidence("chal-1", "run-1", "chal-1 evidence")
-    const opportunity = store.recordOpportunity(
-      "chal-1",
-      "run-1",
-      "chal-1 opportunity",
-      [evidence.id],
-    )
+    const opportunity = store.recordOpportunity("chal-1", "run-1", "chal-1 opportunity", [
+      evidence.id,
+    ])
 
     expect(() =>
-      store.concludeOpportunity(
-        "chal-2",
-        opportunity.id,
-        "cross challenge",
-        "run-2",
-      ),
+      store.concludeOpportunity("chal-2", opportunity.id, "cross challenge", "run-2"),
     ).toThrow("not found for challenge chal-2")
-    expect(() =>
-      store.concludeOpportunity("chal-1", opportunity.id, "wrong run", "run-2"),
-    ).toThrow("does not belong to challenge chal-1")
+    expect(() => store.concludeOpportunity("chal-1", opportunity.id, "wrong run", "run-2")).toThrow(
+      "does not belong to challenge chal-1",
+    )
 
     const summary = store.getBlackboardSummary("chal-1")
     expect(summary.evidence).toHaveLength(1)
@@ -350,23 +296,14 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/legacy",
       attempt: 1,
     })
-    const evidence = store.recordEvidence(
-      "legacy-challenge",
-      "legacy-run",
-      "source",
-    )
+    const evidence = store.recordEvidence("legacy-challenge", "legacy-run", "source")
     const opportunity = store.recordOpportunity(
       "legacy-challenge",
       "legacy-run",
       "legacy direction",
       [evidence.id],
     )
-    store.concludeOpportunity(
-      "legacy-challenge",
-      opportunity.id,
-      "legacy result",
-      "legacy-run",
-    )
+    store.concludeOpportunity("legacy-challenge", opportunity.id, "legacy result", "legacy-run")
     store.close()
 
     const legacy = new DatabaseSync(path)
@@ -374,9 +311,10 @@ describe("RunStore blackboard", () => {
     legacy.close()
 
     const migrated = await RunStore.open(path)
-    expect(
-      migrated.getBlackboardSummary("legacy-challenge").opportunities[0],
-    ).toMatchObject({ status: "concluded", resolution: "confirmed" })
+    expect(migrated.getBlackboardSummary("legacy-challenge").opportunities[0]).toMatchObject({
+      status: "concluded",
+      resolution: "confirmed",
+    })
     migrated.close()
   })
 
@@ -393,9 +331,9 @@ describe("RunStore blackboard", () => {
       "does not belong to challenge chal-2",
     )
     const evidence = store.recordEvidence("chal-1", "run-1", "valid")
-    expect(() =>
-      store.recordOpportunity("chal-2", "run-1", "invalid", [evidence.id]),
-    ).toThrow("does not belong to challenge chal-2")
+    expect(() => store.recordOpportunity("chal-2", "run-1", "invalid", [evidence.id])).toThrow(
+      "does not belong to challenge chal-2",
+    )
     store.close()
   })
 
@@ -407,9 +345,7 @@ describe("RunStore blackboard", () => {
       workspace: "/tmp/a",
       attempt: 1,
     })
-    expect(() =>
-      store.recordOpportunity("chal-1", "run-1", "test", [99999]),
-    ).toThrow()
+    expect(() => store.recordOpportunity("chal-1", "run-1", "test", [99999])).toThrow()
     store.close()
   })
 

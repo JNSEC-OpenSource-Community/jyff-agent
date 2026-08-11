@@ -31,23 +31,17 @@ interface AppContextValue {
   projects: ProjectListItem[]
   selectedProjectId: string | null
   loading: boolean
-  refreshAuth(): Promise<AuthenticationState>
-  refreshProjects(): Promise<void>
-  logout(): Promise<void>
+  refreshAuth: () => Promise<AuthenticationState>
+  refreshProjects: () => Promise<void>
+  logout: () => Promise<void>
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
 
-export function AppProvider({
-  children,
-}: {
-  children: ReactNode
-}): React.ReactElement {
+export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
   const [auth, setAuth] = useState<AuthenticationState | null>(null)
   const [projects, setProjects] = useState<ProjectListItem[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null,
-  )
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refreshAuth = useCallback(async (): Promise<AuthenticationState> => {
@@ -92,15 +86,7 @@ export function AppProvider({
       refreshProjects,
       logout,
     }),
-    [
-      auth,
-      projects,
-      selectedProjectId,
-      loading,
-      refreshAuth,
-      refreshProjects,
-      logout,
-    ],
+    [auth, projects, selectedProjectId, loading, refreshAuth, refreshProjects, logout],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

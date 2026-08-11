@@ -84,8 +84,7 @@ export async function searchWithPerplexity(
     )
   }
   const numResults =
-    typeof options.numResults === "number" &&
-    Number.isFinite(options.numResults)
+    typeof options.numResults === "number" && Number.isFinite(options.numResults)
       ? Math.max(1, Math.min(Math.floor(options.numResults), 20))
       : 5
 
@@ -148,8 +147,7 @@ export async function searchWithPerplexity(
   }
 
   const answer =
-    (data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message
-      ?.content || ""
+    (data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content || ""
   const citations = Array.isArray(data.citations) ? data.citations : []
 
   const results: SearchResult[] = []
@@ -157,11 +155,7 @@ export async function searchWithPerplexity(
     const citation = citations[i]
     if (typeof citation === "string") {
       results.push({ title: `Source ${i + 1}`, url: citation, snippet: "" })
-    } else if (
-      citation &&
-      typeof citation === "object" &&
-      typeof citation.url === "string"
-    ) {
+    } else if (citation && typeof citation === "object" && typeof citation.url === "string") {
       results.push({
         title: citation.title || `Source ${i + 1}`,
         url: citation.url,

@@ -7,6 +7,14 @@ import { Label } from "../ui/label.tsx"
 export type PlatformSetupOption = ControlPlaneSetupSnapshot["platforms"][number]
 type SetupField = PlatformSetupOption["setup"]["fields"][number]
 
+function fieldValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value)
+  }
+  return ""
+}
+
 export function PlatformSetupForm({
   platform,
   strategyId,
@@ -22,9 +30,9 @@ export function PlatformSetupForm({
   config: Record<string, unknown>
   secrets: Record<string, string>
   configuredSecrets?: Record<string, { configured: boolean }>
-  onStrategyChange(id: string, defaults: Record<string, unknown>): void
-  onConfigChange(config: Record<string, unknown>): void
-  onSecretsChange(secrets: Record<string, string>): void
+  onStrategyChange: (id: string, defaults: Record<string, unknown>) => void
+  onConfigChange: (config: Record<string, unknown>) => void
+  onSecretsChange: (secrets: Record<string, string>) => void
 }) {
   const strategy =
     platform.setup.authStrategies.find((item) => item.id === strategyId) ??
@@ -38,9 +46,7 @@ export function PlatformSetupForm({
             key={field.key}
             field={field}
             value={config[field.key]}
-            onChange={(value) =>
-              onConfigChange({ ...config, [field.key]: value })
-            }
+            onChange={(value) => onConfigChange({ ...config, [field.key]: value })}
           />
         ))}
       </div>
@@ -50,9 +56,7 @@ export function PlatformSetupForm({
           <Combobox
             value={strategy?.id ?? ""}
             onChange={(id) => {
-              const next = platform.setup.authStrategies.find(
-                (item) => item.id === id,
-              )
+              const next = platform.setup.authStrategies.find((item) => item.id === id)
               if (next) onStrategyChange(next.id, next.config)
             }}
             options={platform.setup.authStrategies.map((item) => ({
@@ -75,9 +79,7 @@ export function PlatformSetupForm({
               required={field.required}
               value={secrets[field.name] ?? ""}
               configured={configuredSecrets[field.name]?.configured === true}
-              onChange={(value) =>
-                onSecretsChange({ ...secrets, [field.name]: value })
-              }
+              onChange={(value) => onSecretsChange({ ...secrets, [field.name]: value })}
             />
           ))}
         </div>
@@ -93,7 +95,7 @@ function PluginField({
 }: {
   field: SetupField
   value: unknown
-  onChange(value: string | number): void
+  onChange: (value: string | number) => void
 }) {
   const id = useId()
   return (
@@ -109,13 +111,9 @@ function PluginField({
         min={field.minimum}
         max={field.maximum}
         placeholder={field.placeholder}
-        value={String(value ?? "")}
+        value={fieldValue(value)}
         onChange={(event) =>
-          onChange(
-            field.type === "integer"
-              ? Number(event.target.value)
-              : event.target.value,
-          )
+          onChange(field.type === "integer" ? Number(event.target.value) : event.target.value)
         }
       />
     </div>
@@ -135,7 +133,7 @@ function SecretField({
   required: boolean
   value: string
   configured: boolean
-  onChange(value: string): void
+  onChange: (value: string) => void
 }) {
   const id = useId()
   return (

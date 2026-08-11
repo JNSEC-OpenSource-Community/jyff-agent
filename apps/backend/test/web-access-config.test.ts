@@ -2,16 +2,14 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { MemorySecretStore, webAccessSecretName } from "@ctf-agent/core"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { createFileWebAccessConfiguration } from "../src/domain/web-access-config.ts"
 
 describe("web-access 配置服务", () => {
   const roots: string[] = []
 
   afterEach(async () => {
-    await Promise.all(
-      roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-    )
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
   })
 
   async function open() {
@@ -44,9 +42,7 @@ describe("web-access 配置服务", () => {
     // 密钥值只应存在于 SecretStore，不在任何 HTTP 视图中。
     const serialized = JSON.stringify(snapshot)
     expect(serialized).not.toContain("super-secret-token")
-    expect(secretStore.get(webAccessSecretName("brave"))).toBe(
-      "super-secret-token",
-    )
+    expect(secretStore.get(webAccessSecretName("brave"))).toBe("super-secret-token")
   })
 
   it("setProviderKey 空值删除密钥", async () => {
@@ -69,9 +65,10 @@ describe("web-access 配置服务", () => {
     const snapshot = await configuration.snapshot()
     expect(snapshot.enabled).toBe(true)
     // providers 视图列出全部候选；enabled 子集即选中的 allowlist。
-    expect(
-      snapshot.providers.filter((p) => p.enabled).map((p) => p.id),
-    ).toEqual(["brave", "gemini"])
+    expect(snapshot.providers.filter((p) => p.enabled).map((p) => p.id)).toEqual([
+      "brave",
+      "gemini",
+    ])
     expect(snapshot.workflow).toBe("auto-summary")
     expect(snapshot.summaryModel).toEqual({
       provider: "anthropic",
@@ -85,12 +82,8 @@ describe("web-access 配置服务", () => {
 
   it("未知 provider 拒绝写入", async () => {
     const { configuration } = await open()
-    await expect(
-      configuration.setProviderKey("not-a-provider", "k"),
-    ).rejects.toThrow()
-    await expect(
-      configuration.update({ providers: ["not-a-provider"] }),
-    ).rejects.toThrow()
+    await expect(configuration.setProviderKey("not-a-provider", "k")).rejects.toThrow()
+    await expect(configuration.update({ providers: ["not-a-provider"] })).rejects.toThrow()
   })
 
   it("projectSnapshot 返回 Project 注入所需的完整配置", async () => {

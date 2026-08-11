@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { ctfdPlatform } from "../src/ctfd.ts"
 import { gzctfPlatform } from "../src/gzctf.ts"
 import type { PlatformPlugin } from "../src/index.ts"
@@ -82,9 +82,7 @@ describe("validatePlatformPlugin", () => {
     })
 
     expect(report.status).toBe("failed")
-    expect(
-      report.checks.find(({ id }) => id === "plugin.connect")?.message,
-    ).toContain("[redacted]")
+    expect(report.checks.find(({ id }) => id === "plugin.connect")?.message).toContain("[redacted]")
   })
 })
 

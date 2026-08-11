@@ -49,9 +49,7 @@ export interface FlagSubmission {
 
 export interface ChallengeCapability {
   getInfo(): Promise<ChallengeInfo>
-  downloadAttachment(
-    attachmentId: string,
-  ): Promise<{ attachment: Attachment; content: Uint8Array }>
+  downloadAttachment(attachmentId: string): Promise<{ attachment: Attachment; content: Uint8Array }>
   submitFlag(flag: string): Promise<FlagSubmission>
   instance?: {
     start(signal?: AbortSignal): Promise<RemoteEnvironment>

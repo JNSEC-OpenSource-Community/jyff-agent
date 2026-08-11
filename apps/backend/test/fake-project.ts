@@ -161,10 +161,8 @@ export class FakeDashboardProject implements DashboardProject {
     },
   ]
   sendMessageCalls: Array<{ challengeId: string; text: string }> = []
-  sendMessageResult:
-    | { runId: string }
-    | { error: "no_active_run" }
-    | { error: "invalid_message" } = { runId: "run-pwn-1" }
+  sendMessageResult: { runId: string } | { error: "no_active_run" } | { error: "invalid_message" } =
+    { runId: "run-pwn-1" }
   thinkingLevelCalls: Array<{ challengeId: string; level: string }> = []
   thinkingLevelResult: { runId: string } | { error: "no_active_run" } = {
     runId: "run-pwn-1",
@@ -187,10 +185,7 @@ export class FakeDashboardProject implements DashboardProject {
     return false
   }
 
-  async sendMessage(
-    challengeId: string,
-    text: string,
-  ): Promise<{ runId: string }> {
+  async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
     this.sendMessageCalls.push({ challengeId, text })
     if ("error" in this.sendMessageResult) {
       if (this.sendMessageResult.error === "no_active_run") {
@@ -205,10 +200,7 @@ export class FakeDashboardProject implements DashboardProject {
     return this.sendMessageResult
   }
 
-  async setThinkingLevel(
-    challengeId: string,
-    level: string,
-  ): Promise<{ runId: string }> {
+  async setThinkingLevel(challengeId: string, level: string): Promise<{ runId: string }> {
     this.thinkingLevelCalls.push({ challengeId, level })
     if ("error" in this.thinkingLevelResult) {
       throw Object.assign(new Error("该题当前没有运行中的 Agent"), {
@@ -255,8 +247,7 @@ export class FakeDashboardProject implements DashboardProject {
   ): Promise<ChallengeAnnouncementRecord> {
     this.announcementReviews.push({ challengeId, announcementKey, status })
     const candidate = this.announcementCandidateValues.find(
-      (item) =>
-        item.challengeId === challengeId && item.key === announcementKey,
+      (item) => item.challengeId === challengeId && item.key === announcementKey,
     )
     if (!candidate) {
       throw Object.assign(new Error("公告候选不存在"), {
@@ -278,12 +269,9 @@ export class FakeDashboardProject implements DashboardProject {
 
   runs(filter: RunFilter = {}): RunRecord[] {
     return this.runValues.filter((run) => {
-      if (filter.challengeId && run.challengeId !== filter.challengeId)
-        return false
+      if (filter.challengeId && run.challengeId !== filter.challengeId) return false
       if (!filter.status) return true
-      const statuses = Array.isArray(filter.status)
-        ? filter.status
-        : [filter.status]
+      const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
       return statuses.includes(run.status)
     })
   }
@@ -292,10 +280,7 @@ export class FakeDashboardProject implements DashboardProject {
     return `/sessions/${runId}/session.jsonl`
   }
 
-  subscribeAgentStream(
-    target: AgentStreamTarget,
-    listener: AgentStreamListener,
-  ): () => void {
+  subscribeAgentStream(target: AgentStreamTarget, listener: AgentStreamListener): () => void {
     const subscription = { target, listener }
     this.agentStreamSubscriptions.push(subscription)
     return () => {
@@ -332,25 +317,14 @@ export class FakeDashboardProject implements DashboardProject {
     return this.subagentValues.get(runId) ?? []
   }
 
-  async steerSubagent(
-    runId: string,
-    subagentId: string,
-    message: string,
-  ): Promise<SubagentRecord> {
-    const record = this.subagentValues
-      .get(runId)
-      ?.find((item) => item.id === subagentId)
+  async steerSubagent(runId: string, subagentId: string, message: string): Promise<SubagentRecord> {
+    const record = this.subagentValues.get(runId)?.find((item) => item.id === subagentId)
     if (!record) throw new Error("SubAgent not found")
     return { ...record, description: `${record.description}: ${message}` }
   }
 
-  async cancelSubagent(
-    runId: string,
-    subagentId: string,
-  ): Promise<SubagentRecord> {
-    const record = this.subagentValues
-      .get(runId)
-      ?.find((item) => item.id === subagentId)
+  async cancelSubagent(runId: string, subagentId: string): Promise<SubagentRecord> {
+    const record = this.subagentValues.get(runId)?.find((item) => item.id === subagentId)
     if (!record) throw new Error("SubAgent not found")
     record.status = "cancelled"
     return { ...record }
@@ -375,10 +349,7 @@ export class FakeDashboardProject implements DashboardProject {
   tldrValue: TldrRecord | undefined
   tldrAgentOptions?: AgentOptions
   tldrGenerationError?: Error
-  async refreshTldr(
-    _challengeId: string,
-    agent: AgentOptions,
-  ): Promise<TldrRecord> {
+  async refreshTldr(_challengeId: string, agent: AgentOptions): Promise<TldrRecord> {
     this.tldrRefreshCalls += 1
     this.tldrAgentOptions = agent
     if (this.tldrGenerationError) throw this.tldrGenerationError
@@ -422,9 +393,7 @@ export class FakeDashboardProject implements DashboardProject {
     }
     const content = this.workspaceFileValues.get(artifactPath)
     if (!content) {
-      const error = new Error(
-        `Workspace artifact does not exist: ${artifactPath}`,
-      )
+      const error = new Error(`Workspace artifact does not exist: ${artifactPath}`)
       Object.assign(error, { code: "ENOENT" })
       throw error
     }
@@ -432,9 +401,7 @@ export class FakeDashboardProject implements DashboardProject {
   }
   schedulerAttemptCount(challengeId: string): number {
     return this.runValues.filter(
-      (run) =>
-        run.challengeId === challengeId &&
-        ["auto", "manual", "retry"].includes(run.source),
+      (run) => run.challengeId === challengeId && ["auto", "manual", "retry"].includes(run.source),
     ).length
   }
   sessionInterruptionCount(challengeId: string): number {
@@ -488,9 +455,7 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     return this.snapshot()
   }
 
-  async setMaxConcurrent(
-    maxConcurrent: number,
-  ): Promise<ContestSchedulerSnapshot> {
+  async setMaxConcurrent(maxConcurrent: number): Promise<ContestSchedulerSnapshot> {
     this.value.maxConcurrent = maxConcurrent
     return this.snapshot()
   }
@@ -524,9 +489,7 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     challengeId: string,
     options: { position: number; expectedVersion: number },
   ): ContestSchedulerSnapshot {
-    const item = this.value.queued.find(
-      (candidate) => candidate.challengeId === challengeId,
-    )
+    const item = this.value.queued.find((candidate) => candidate.challengeId === challengeId)
     if (!item) return this.snapshot()
     item.position = options.position
     item.version += 1
@@ -578,9 +541,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     }
   }
 
-  async update(
-    configuration: ModelConfigurationUpdate,
-  ): Promise<ModelConfigurationView> {
+  async update(configuration: ModelConfigurationUpdate): Promise<ModelConfigurationView> {
     const models = configuration.models.map((model) => ({
       id: model.id,
       provider: model.provider,
@@ -591,13 +552,9 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       passthroughThinking: model.passthroughThinking,
       supportedThinkingLevels: ["low", "medium", "high", "max"],
       configured: Boolean(model.modelId),
-      ...(!model.modelId
-        ? { unavailableReason: "missing model configuration" }
-        : {}),
+      ...(!model.modelId ? { unavailableReason: "missing model configuration" } : {}),
     }))
-    const solver = models.find(
-      (model) => model.id === configuration.solverModelId,
-    )
+    const solver = models.find((model) => model.id === configuration.solverModelId)
     this.value = {
       models,
       customProviders: this.value.customProviders,
@@ -606,9 +563,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       subagentModels: { ...configuration.subagentModels },
       supportedThinkingLevels: solver?.supportedThinkingLevels ?? [],
       configured: solver?.configured === true,
-      ...(!solver?.configured
-        ? { unavailableReason: "missing model configuration" }
-        : {}),
+      ...(!solver?.configured ? { unavailableReason: "missing model configuration" } : {}),
     }
     return this.snapshot()
   }
@@ -630,9 +585,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
     providerId: string,
     provider: import("../src/types.ts").CustomModelProviderEdit,
   ): Promise<ModelConfigurationView> {
-    const index = this.value.customProviders.findIndex(
-      (candidate) => candidate.id === providerId,
-    )
+    const index = this.value.customProviders.findIndex((candidate) => candidate.id === providerId)
     if (index < 0) throw new Error(`自定义供应商不存在: ${providerId}`)
     this.value.customProviders[index] = {
       id: providerId,
@@ -640,15 +593,12 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       api: provider.api,
       baseUrl: provider.baseUrl,
       apiKeyConfigured:
-        Boolean(provider.apiKey) ||
-        this.value.customProviders[index]?.apiKeyConfigured === true,
+        Boolean(provider.apiKey) || this.value.customProviders[index]?.apiKeyConfigured === true,
     }
     return this.snapshot()
   }
 
-  async removeCustomProvider(
-    providerId: string,
-  ): Promise<ModelConfigurationView> {
+  async removeCustomProvider(providerId: string): Promise<ModelConfigurationView> {
     this.value.customProviders = this.value.customProviders.filter(
       (provider) => provider.id !== providerId,
     )
@@ -656,9 +606,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
   }
 
   async discoverCustomProviderModels(providerId: string): Promise<string[]> {
-    if (
-      !this.value.customProviders.some((provider) => provider.id === providerId)
-    ) {
+    if (!this.value.customProviders.some((provider) => provider.id === providerId)) {
       throw new Error(`自定义供应商不存在: ${providerId}`)
     }
     return ["custom-model-a", "custom-model-b"]

@@ -1,15 +1,13 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { createFileProjectRuntimeConfiguration } from "../src/domain/runtime.ts"
 
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function fixture() {
@@ -78,9 +76,9 @@ describe("ProjectRuntimeConfiguration", () => {
       solverModelId: "worker",
       maxConcurrent: 3,
     })
-    expect(
-      (await createFileProjectRuntimeConfiguration(options)).snapshot(),
-    ).toEqual(configuration.snapshot())
+    expect((await createFileProjectRuntimeConfiguration(options)).snapshot()).toEqual(
+      configuration.snapshot(),
+    )
   })
 
   it("拒绝不存在的模型和越界并发量且不污染当前值", async () => {

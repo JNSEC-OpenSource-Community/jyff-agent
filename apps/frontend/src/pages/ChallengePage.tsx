@@ -65,12 +65,7 @@ export function ChallengePage() {
   }
 
   const c = details.challenge
-  const active = [
-    "preparing",
-    "running",
-    "blocking",
-    "writing_writeup",
-  ].includes(c.status)
+  const active = ["preparing", "running", "blocking", "writing_writeup"].includes(c.status)
   const rid = selectedRun?.id ?? ""
   const convoUrl = selectedSubagent
     ? projectApi(
@@ -83,10 +78,7 @@ export function ChallengePage() {
         projectId,
         `/api/runs/${encodeURIComponent(rid)}/subagents/${encodeURIComponent(selectedSubagent.id)}/steer`,
       )
-    : projectApi(
-        projectId,
-        `/api/challenges/${encodeURIComponent(challengeId)}/message`,
-      )
+    : projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/message`)
   const streamUrl = selectedSubagent
     ? projectApi(
         projectId,
@@ -105,14 +97,9 @@ export function ChallengePage() {
       {/* ── Main content ── */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4 max-lg:p-3">
         <Card className="flex min-h-0 flex-1 flex-col border-border p-0">
-          {error ? (
-            <ErrorNotice message={error} className="m-3 shrink-0" />
-          ) : null}
+          {error ? <ErrorNotice message={error} className="m-3 shrink-0" /> : null}
 
-          <Tabs
-            defaultValue="conversation"
-            className="flex min-h-0 flex-1 flex-col"
-          >
+          <Tabs defaultValue="conversation" className="flex min-h-0 flex-1 flex-col">
             <div className="hidden shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2.5 lg:flex">
               <TabsList>
                 <TabsTrigger value="conversation">对话</TabsTrigger>
@@ -186,10 +173,7 @@ export function ChallengePage() {
               </TabsList>
             </div>
 
-            <TabsContent
-              value="conversation"
-              className="flex min-h-0 flex-1 flex-col"
-            >
+            <TabsContent value="conversation" className="flex min-h-0 flex-1 flex-col">
               {selectedRun ? (
                 <ConversationPanel
                   key={`${rid}:${selectedSubagent?.id ?? "solver"}`}
@@ -221,10 +205,7 @@ export function ChallengePage() {
               )}
             </TabsContent>
 
-            <TabsContent
-              value="intelligence"
-              className="flex-1 overflow-y-auto p-5"
-            >
+            <TabsContent value="intelligence" className="flex-1 overflow-y-auto p-5">
               <IntelligencePanel
                 projectId={projectId}
                 challengeId={challengeId}
@@ -234,22 +215,12 @@ export function ChallengePage() {
               />
             </TabsContent>
 
-            <TabsContent
-              value="attempts"
-              className="flex-1 overflow-y-auto p-5"
-            >
-              <AttemptHistory
-                projectId={projectId}
-                runs={details.runs}
-                onChanged={reload}
-              />
+            <TabsContent value="attempts" className="flex-1 overflow-y-auto p-5">
+              <AttemptHistory projectId={projectId} runs={details.runs} onChanged={reload} />
             </TabsContent>
 
             <TabsContent value="files" className="flex-1 overflow-y-auto p-5">
-              <WorkspaceFilesPanel
-                projectId={projectId}
-                challengeId={challengeId}
-              />
+              <WorkspaceFilesPanel projectId={projectId} challengeId={challengeId} />
             </TabsContent>
 
             <TabsContent value="writeup" className="flex-1 overflow-y-auto p-5">
@@ -261,10 +232,7 @@ export function ChallengePage() {
                 <EmptyState
                   icon="lucide:file-pen-line"
                   title="尚无 Writeup"
-                  description={
-                    details.writeup.validation.errors.join("；") ||
-                    "解出后生成。"
-                  }
+                  description={details.writeup.validation.errors.join("；") || "解出后生成。"}
                 />
               )}
             </TabsContent>
@@ -280,15 +248,11 @@ export function ChallengePage() {
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
               {c.category}
             </p>
-            <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
-              {c.title}
-            </h1>
+            <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">{c.title}</h1>
             <p className="mt-1! text-xs text-muted-foreground">{c.score} PTS</p>
           </div>
           <div className="flex items-center justify-between px-4 py-2.5">
-            <Badge tone={toneForStatus(c.status)} className="text-[10px]">
-              {STATUS_LABELS[c.status] ?? c.status}
-            </Badge>
+            <Badge tone={toneForStatus(c.status)}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
             <Button
               variant={active ? "danger" : "primary"}
               disabled={busy || (!active && !details.solverAvailable)}
@@ -297,15 +261,10 @@ export function ChallengePage() {
                   ? "平台故障或 Project 已归档，当前只能查看本地记录"
                   : undefined
               }
-              onClick={() =>
-                void challengeAction(active ? "cancel" : "dispatch")
-              }
+              onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
               size="sm"
             >
-              <Icon
-                icon={active ? "lucide:square" : "lucide:play"}
-                width="14"
-              />
+              <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
               {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
             </Button>
           </div>
@@ -329,17 +288,11 @@ export function ChallengePage() {
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
                   {c.category} · {c.score} PTS
                 </p>
-                <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">
-                  {c.title}
-                </h1>
-                <p className="mt-1! text-xs text-muted-foreground">
-                  {c.progress}
-                </p>
+                <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">{c.title}</h1>
+                <p className="mt-1! text-xs text-muted-foreground">{c.progress}</p>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <Badge tone={toneForStatus(c.status)} className="text-[10px]">
-                  {STATUS_LABELS[c.status] ?? c.status}
-                </Badge>
+                <Badge tone={toneForStatus(c.status)}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
                 <Button
                   variant={active ? "danger" : "primary"}
                   disabled={busy || (!active && !details.solverAvailable)}
@@ -348,20 +301,11 @@ export function ChallengePage() {
                       ? "平台故障或 Project 已归档，当前只能查看本地记录"
                       : undefined
                   }
-                  onClick={() =>
-                    void challengeAction(active ? "cancel" : "dispatch")
-                  }
+                  onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
                   size="sm"
                 >
-                  <Icon
-                    icon={active ? "lucide:square" : "lucide:play"}
-                    width="14"
-                  />
-                  {active
-                    ? "终止"
-                    : c.status === "blocked"
-                      ? "重新派发"
-                      : "派发"}
+                  <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
+                  {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
                 </Button>
               </div>
             </Card>

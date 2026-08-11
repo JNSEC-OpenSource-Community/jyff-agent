@@ -9,7 +9,7 @@ import type {
 } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
 import { Type } from "typebox"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   BaseAgent,
   type BaseAgentOptions,
@@ -20,9 +20,7 @@ import {
 
 const roots: string[] = []
 afterEach(async () =>
-  Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  ),
+  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
 )
 
 it("uses medium as the product default for Solver reasoning", () => {
@@ -133,9 +131,7 @@ describe("BaseAgent native session", () => {
       },
       models: modelsFromAgentOptions(legacy, model),
       model,
-      initialMessages: [
-        { role: "user", content: "short history", timestamp: 1 },
-      ],
+      initialMessages: [{ role: "user", content: "short history", timestamp: 1 }],
       compaction: false,
     })
 
@@ -148,9 +144,7 @@ describe("BaseAgent native session", () => {
       shouldCompact: false,
     })
     expect(pressure.tokens).toBeGreaterThan(0)
-    expect(pressure.usableContext).toBe(
-      pressure.contextWindow - pressure.reserveTokens,
-    )
+    expect(pressure.usableContext).toBe(pressure.contextWindow - pressure.reserveTokens)
     expect(entriesAfter).toEqual(entriesBefore)
   })
 
@@ -199,9 +193,7 @@ describe("BaseAgent native session", () => {
       },
       models: modelsFromAgentOptions(legacy, smallModel),
       model: smallModel,
-      initialMessages: [
-        { role: "user", content: "short history", timestamp: 1 },
-      ],
+      initialMessages: [{ role: "user", content: "short history", timestamp: 1 }],
     })
 
     const response = await agent.prompt("continue")

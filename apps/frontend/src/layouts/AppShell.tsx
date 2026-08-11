@@ -2,16 +2,13 @@ import { Icon } from "@iconify/react"
 import { useState } from "react"
 import { NavLink, Outlet, useParams } from "react-router-dom"
 import { useApp } from "../app/AppProvider.tsx"
+import { MobileSheet, Tooltip } from "../components/index.ts"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-  MobileSheet,
-  Tooltip,
-} from "../components/index.ts"
-import {
+  applyTheme,
   readSidebarCollapsed,
+  readTheme,
   writeSidebarCollapsed,
+  writeTheme,
 } from "../lib/preferences.ts"
 import { cn } from "../lib/utils.ts"
 
@@ -19,15 +16,13 @@ const iconBtn =
   "group flex size-9 items-center justify-center rounded-md text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 active:translate-y-px"
 const iconLink = cn(
   iconBtn,
-  "aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary aria-[current=page]:shadow-[0_0_0_1px_rgba(94,106,210,0.18)_inset]",
+  "aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary aria-[current=page]:ring-1 aria-[current=page]:ring-inset aria-[current=page]:ring-primary/20",
 )
 
 const navItem =
   "flex items-center gap-2.5 rounded-lg text-sm font-medium transition-all duration-200 px-2.5 py-2"
-const navItemActive =
-  "bg-primary/10 text-primary shadow-[0_0_0_1px_rgba(94,106,210,0.12)_inset]"
-const navItemIdle =
-  "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+const navItemActive = "bg-primary/10 text-primary ring-1 ring-inset ring-primary/15"
+const navItemIdle = "text-muted-foreground hover:text-foreground hover:bg-muted/50"
 
 function SidebarNavLink({
   to,
@@ -44,9 +39,7 @@ function SidebarNavLink({
     <NavLink
       to={to}
       end={end}
-      className={({ isActive }) =>
-        cn(navItem, isActive ? navItemActive : navItemIdle)
-      }
+      className={({ isActive }) => cn(navItem, isActive ? navItemActive : navItemIdle)}
     >
       <Icon icon={icon} width={16} className="shrink-0" />
       {children}
@@ -57,11 +50,20 @@ function SidebarNavLink({
 export function AppShell() {
   const { logout, auth } = useApp()
   const [collapsed, setCollapsed] = useState(readSidebarCollapsed)
+  const [theme, setTheme] = useState(readTheme)
   const [mobileOpen, setMobileOpen] = useState(false)
   const toggleSidebar = () => {
     setCollapsed((current) => {
       const next = !current
       writeSidebarCollapsed(next)
+      return next
+    })
+  }
+  const toggleTheme = () => {
+    setTheme((current) => {
+      const next = current === "dark" ? "light" : "dark"
+      applyTheme(next)
+      writeTheme(next)
       return next
     })
   }
@@ -80,6 +82,8 @@ export function AppShell() {
           onToggle={toggleSidebar}
           onLogout={() => void logout()}
           authEnabled={auth?.enabled ?? false}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       </aside>
 
@@ -90,6 +94,8 @@ export function AppShell() {
           onToggle={() => setMobileOpen(false)}
           onLogout={() => void logout()}
           authEnabled={auth?.enabled ?? false}
+          theme={theme}
+          onToggleTheme={toggleTheme}
           inMobile={true}
         />
       </MobileSheet>
@@ -115,12 +121,16 @@ function SidebarContent({
   onToggle,
   onLogout,
   authEnabled,
+  theme,
+  onToggleTheme,
   inMobile = false,
 }: {
   collapsed: boolean
-  onToggle(): void
-  onLogout(): void
+  onToggle: () => void
+  onLogout: () => void
   authEnabled: boolean
+  theme: "dark" | "light"
+  onToggleTheme: () => void
   inMobile?: boolean
 }) {
   const { projectId } = useParams()
@@ -167,11 +177,7 @@ function SidebarContent({
           <>
             <div className="my-2 h-px w-8 bg-border" />
             <Tooltip label="作战面板">
-              <NavLink
-                to={`/projects/${encodeURIComponent(projectId)}`}
-                end
-                className={iconLink}
-              >
+              <NavLink to={`/projects/${encodeURIComponent(projectId)}`} end className={iconLink}>
                 <Icon icon="lucide:layout-dashboard" width={18} />
               </NavLink>
             </Tooltip>
@@ -189,24 +195,26 @@ function SidebarContent({
         <div className="mt-auto flex flex-col items-center gap-1.5">
           {authEnabled ? (
             <Tooltip label="退出">
-              <button
-                type="button"
-                className={iconBtn}
-                onClick={onLogout}
-                aria-label="退出"
-              >
+              <button type="button" className={iconBtn} onClick={onLogout} aria-label="退出">
                 <Icon icon="lucide:log-out" width={17} />
               </button>
             </Tooltip>
           ) : null}
+          <Tooltip label={theme === "dark" ? "切换到亮色" : "切换到暗色"}>
+            <button
+              type="button"
+              className={iconBtn}
+              onClick={onToggleTheme}
+              aria-label={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
+            >
+              <Icon icon={theme === "dark" ? "lucide:sun" : "lucide:moon"} width={17} />
+            </button>
+          </Tooltip>
           {!inMobile ? (
             <Tooltip label="展开侧栏">
               <button
                 type="button"
-                className={cn(
-                  iconBtn,
-                  "text-muted-foreground/50 hover:text-muted-foreground",
-                )}
+                className={cn(iconBtn, "text-muted-foreground/50 hover:text-muted-foreground")}
                 onClick={onToggle}
                 aria-label="展开侧栏"
               >
@@ -240,7 +248,7 @@ function SidebarContent({
               )}
             />
             <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground truncate">
-              {project ? project.platformId : "Workspace"}
+              {project ? project.platformId : "比赛管理"}
             </span>
           </div>
           <h2 className="mt-0.5 truncate text-sm font-semibold tracking-tight">
@@ -273,7 +281,7 @@ function SidebarContent({
             end
             icon="lucide:layout-dashboard"
           >
-            作战面板
+            比赛概览
           </SidebarNavLink>
           <SidebarNavLink
             to={`/projects/${encodeURIComponent(projectId)}/settings`}
@@ -287,44 +295,37 @@ function SidebarContent({
       {/* Project list - fills remaining space, scrollable */}
       <div className="flex min-h-0 flex-1 flex-col">
         {projects.length > 0 ? (
-          <Collapsible defaultOpen className="flex min-h-0 flex-1 flex-col">
-            <CollapsibleTrigger className="group flex shrink-0 items-center justify-between px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
-              全部比赛
-              <span className="flex items-center gap-1.5">
-                <span className="font-mono tabular-nums text-[10px]">
-                  {projects.length}
-                </span>
-                <Icon
-                  icon="lucide:chevron-down"
-                  width={11}
-                  className="transition-transform duration-200 group-data-[state=open]:rotate-180"
-                />
+          <>
+            <div className="flex shrink-0 items-baseline justify-between px-5 pb-2 pt-3">
+              <span className="text-[11px] font-medium text-muted-foreground">快速切换</span>
+              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                {projects.length}
               </span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
-              <div className="flex flex-col gap-0.5">
+            </div>
+            <nav aria-label="切换比赛" className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
+              <div className="flex flex-col gap-1">
                 {projects.map((p) => (
                   <NavLink
                     key={p.id}
                     to={`/projects/${encodeURIComponent(p.id)}`}
                     className={({ isActive }) =>
                       cn(
-                        "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-200",
+                        "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring/30",
                         isActive
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                          ? "bg-foreground/[0.07] text-foreground ring-1 ring-inset ring-foreground/10"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                       )
                     }
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/50 text-[10px] font-semibold text-primary font-mono">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 font-mono text-[10px] font-medium text-muted-foreground transition-colors group-aria-[current=page]:border-foreground/15 group-aria-[current=page]:bg-foreground/[0.06] group-aria-[current=page]:text-foreground">
                       {p.name[0]?.toUpperCase()}
                     </span>
-                    <span className="truncate">{p.name}</span>
+                    <span className="truncate font-medium">{p.name}</span>
                   </NavLink>
                 ))}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </nav>
+          </>
         ) : (
           <div className="flex flex-1 items-center justify-center px-5 py-6">
             <p className="text-center text-xs text-muted-foreground">
@@ -349,6 +350,16 @@ function SidebarContent({
           <span />
         )}
         <div className="flex items-center gap-2">
+          <Tooltip label={theme === "dark" ? "切换到亮色" : "切换到暗色"}>
+            <button
+              type="button"
+              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              onClick={onToggleTheme}
+              aria-label={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
+            >
+              <Icon icon={theme === "dark" ? "lucide:sun" : "lucide:moon"} width={14} />
+            </button>
+          </Tooltip>
           {!inMobile ? (
             <button
               type="button"

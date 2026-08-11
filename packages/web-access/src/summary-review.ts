@@ -1,15 +1,7 @@
-import {
-  type Api,
-  complete,
-  type Message,
-  type Model,
-} from "@earendil-works/pi-ai/compat"
+import { type Api, complete, type Message, type Model } from "@earendil-works/pi-ai/compat"
 import type { ModelAuthResolver } from "./runtime.ts"
 import type { QueryResultData } from "./storage.ts"
-import {
-  findModelWithProviderRouting,
-  modelMatchesEnabledPatterns,
-} from "./summary-model-scope.ts"
+import { findModelWithProviderRouting, modelMatchesEnabledPatterns } from "./summary-model-scope.ts"
 
 type ProviderHeaders = Record<string, string | null>
 
@@ -66,10 +58,7 @@ function summarizeQueryResult(result: QueryResultData): string {
   return lines.join("\n")
 }
 
-export function buildSummaryPrompt(
-  results: QueryResultData[],
-  feedback?: string,
-): string {
+export function buildSummaryPrompt(results: QueryResultData[], feedback?: string): string {
   const sections = [
     "You are writing the final web search summary for a coding assistant.",
     "Write a concise, factual summary using only the provided search results.",
@@ -82,9 +71,7 @@ export function buildSummaryPrompt(
   ]
 
   if (feedback) {
-    sections.push(
-      "- Incorporate the user feedback provided below into the summary.",
-    )
+    sections.push("- Incorporate the user feedback provided below into the summary.")
   }
 
   sections.push("")
@@ -128,10 +115,7 @@ function buildDeterministicSummaryLines(results: QueryResultData[]): string[] {
     ]
   }
 
-  const lines: string[] = [
-    "Summary based on the currently selected search results.",
-    "",
-  ]
+  const lines: string[] = ["Summary based on the currently selected search results.", ""]
 
   const sourceUrls: string[] = []
   let successful = 0
@@ -230,10 +214,8 @@ async function resolveSummaryModelCandidates(
 }> {
   const specs: Array<{ provider: string; id: string }> = []
   if (ctx.summaryModel) specs.push(ctx.summaryModel)
-  const normalizedOverride =
-    typeof modelOverride === "string" ? modelOverride.trim() : ""
-  if (normalizedOverride.length > 0)
-    specs.push(parseModelSelector(normalizedOverride))
+  const normalizedOverride = typeof modelOverride === "string" ? modelOverride.trim() : ""
+  if (normalizedOverride.length > 0) specs.push(parseModelSelector(normalizedOverride))
   specs.push(...PREFERRED_SUMMARY_MODELS)
 
   const candidates: Array<{
@@ -248,11 +230,7 @@ async function resolveSummaryModelCandidates(
     if (seen.has(value)) continue
     seen.add(value)
 
-    const model = findModelWithProviderRouting(
-      ctx.modelAuth,
-      spec.provider,
-      spec.id,
-    )
+    const model = findModelWithProviderRouting(ctx.modelAuth, spec.provider, spec.id)
     if (!model) {
       errors.push(`Summary model not found: ${value}`)
       continue
@@ -346,8 +324,7 @@ export async function generateSummaryDraft(
     ? new Promise<never>((_, reject) => {
         callerAbortListener = () => reject(new Error("Aborted"))
         if (signal.aborted) callerAbortListener()
-        else
-          signal.addEventListener("abort", callerAbortListener, { once: true })
+        else signal.addEventListener("abort", callerAbortListener, { once: true })
       })
     : undefined
   const completionSignal = signal
@@ -376,9 +353,7 @@ export async function generateSummaryDraft(
     const prompt = buildSummaryPrompt(results, feedback)
     let resolved: Awaited<ReturnType<typeof resolveSummaryModelCandidates>>
     try {
-      resolved = await raceSummaryOperation(
-        resolveSummaryModelCandidates(ctx, modelOverride),
-      )
+      resolved = await raceSummaryOperation(resolveSummaryModelCandidates(ctx, modelOverride))
     } catch (err) {
       if (signal?.aborted) throw new Error("Aborted")
       if (err === deadlineMarker || deadlineController.signal.aborted) {
@@ -419,9 +394,7 @@ export async function generateSummaryDraft(
           throw new Error("Aborted")
         }
 
-        const contentParts = Array.isArray(response.content)
-          ? response.content
-          : []
+        const contentParts = Array.isArray(response.content) ? response.content : []
         const summary = contentParts
           .map((part) => getTextFromContentPart(part))
           .filter((text) => text.trim().length > 0)
@@ -430,11 +403,8 @@ export async function generateSummaryDraft(
 
         if (summary.length === 0) {
           const partTypes = contentParts.map((part) => getContentPartType(part))
-          const typesLabel =
-            partTypes.length > 0 ? partTypes.join(", ") : "none"
-          throw new Error(
-            `Summary model returned empty response (content parts: ${typesLabel})`,
-          )
+          const typesLabel = partTypes.length > 0 ? partTypes.join(", ") : "none"
+          throw new Error(`Summary model returned empty response (content parts: ${typesLabel})`)
         }
 
         return {
@@ -464,14 +434,11 @@ export async function generateSummaryDraft(
 
     return buildFallbackSummary(
       results,
-      lastError
-        ? `summary-model-unavailable: ${lastError}`
-        : "summary-model-unavailable",
+      lastError ? `summary-model-unavailable: ${lastError}` : "summary-model-unavailable",
       Date.now() - generationStartedAt,
     )
   } finally {
     if (deadlineTimer) clearTimeout(deadlineTimer)
-    if (signal && callerAbortListener)
-      signal.removeEventListener("abort", callerAbortListener)
+    if (signal && callerAbortListener) signal.removeEventListener("abort", callerAbortListener)
   }
 }

@@ -9,10 +9,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiRequest<T>(
-  url: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   const contentType = response.headers.get("content-type") ?? ""
   const data = contentType.includes("application/json")
@@ -50,8 +47,6 @@ export function projectApi(projectId: string, path: string): string {
     normalizedPath = normalizedPath.slice(3)
   }
   const suffix =
-    normalizedPath === "" || normalizedPath.startsWith("/")
-      ? normalizedPath
-      : `/${normalizedPath}`
+    normalizedPath === "" || normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`
   return `/api/projects/${encodeURIComponent(projectId)}${suffix}`
 }

@@ -1,5 +1,5 @@
 import type { CtfSolverAgent } from "@ctf-agent/agents"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { runSolverPrompt } from "../../src/orchestration/solver-attempt.ts"
 
 function solverFixture(stopReasons: string[]) {

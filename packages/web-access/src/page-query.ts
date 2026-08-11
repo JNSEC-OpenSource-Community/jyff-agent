@@ -1,9 +1,4 @@
-import {
-  type Api,
-  complete,
-  type Message,
-  type Model,
-} from "@earendil-works/pi-ai/compat"
+import { type Api, complete, type Message, type Model } from "@earendil-works/pi-ai/compat"
 import type { ModelAuthResolver } from "./runtime.ts"
 
 const OUTPUT_TOKENS = 2_000
@@ -79,12 +74,9 @@ export async function answerFromPage(
   const model = resolveModel(ctx, input.model)
   const auth = await ctx.modelAuth.getApiKeyAndHeaders(model)
   if (!auth.ok || !auth.apiKey)
-    throw new Error(
-      `No API key available for answer model ${model.provider}/${model.id}`,
-    )
+    throw new Error(`No API key available for answer model ${model.provider}/${model.id}`)
 
-  const contextTokens =
-    model.contextWindow > 0 ? model.contextWindow : FALLBACK_CONTEXT_TOKENS
+  const contextTokens = model.contextWindow > 0 ? model.contextWindow : FALLBACK_CONTEXT_TOKENS
   const maximumInputTokens = Math.max(
     1,
     Math.min(

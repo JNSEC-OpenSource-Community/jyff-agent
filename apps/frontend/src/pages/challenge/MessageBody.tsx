@@ -39,9 +39,7 @@ function parseXmlContent(text: string): {
 
   // 匹配 <tag>...</tag> 的内部内容
   const escaped = rootTag.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")
-  const innerMatch = trimmed.match(
-    new RegExp(`<${escaped}[^>]*>([\\s\\S]*)<\\/${escaped}>`),
-  )
+  const innerMatch = trimmed.match(new RegExp(`<${escaped}[^>]*>([\\s\\S]*)<\\/${escaped}>`))
   const inner = innerMatch?.[1] ?? trimmed
 
   // 提取子标签
@@ -86,49 +84,62 @@ function toolDetail(name: string, args: unknown): string | null {
     if (!a) return null
     switch (name) {
       case "bash": {
-        const cmd = String(a.command ?? a.cmd ?? "")
+        const cmd = displayValue(a.command ?? a.cmd)
         return cmd.length > 60 ? `${cmd.slice(0, 60)}…` : cmd || null
       }
       case "read":
       case "edit": {
-        const fp = String(a.path ?? a.file_path ?? a.filePath ?? "")
+        const fp = displayValue(a.path ?? a.file_path ?? a.filePath)
         if (!fp) return null
         // 只显示文件名
         const name = fp.split(/[/\\]/).pop() ?? fp
         return name.length > 40 ? `${name.slice(0, 40)}…` : name
       }
       case "write": {
-        const fp = String(a.path ?? a.file_path ?? a.filePath ?? "")
+        const fp = displayValue(a.path ?? a.file_path ?? a.filePath)
         if (!fp) return null
         const name = fp.split(/[/\\]/).pop() ?? fp
         return name.length > 40 ? `${name.slice(0, 40)}…` : name
       }
       case "list": {
-        const dir = String(a.path ?? a.directory ?? a.dir ?? "")
+        const dir = displayValue(a.path ?? a.directory ?? a.dir)
         return dir || null
       }
       case "ctf_submit_flag": {
-        const flag = String(a.flag ?? "")
+        const flag = displayValue(a.flag)
         return flag ? `🚩 ${flag.slice(0, 24)}…` : null
       }
       case "Agent": {
-        const role = String(a.subagent_type ?? a.role ?? a.subagent ?? "")
-        const description = String(a.description ?? "")
+        const role = displayValue(a.subagent_type ?? a.role ?? a.subagent)
+        const description = displayValue(a.description)
         return [role, description].filter(Boolean).join(" · ") || null
       }
       case "get_subagent_result": {
-        const id = String(a.agent_id ?? "")
+        const id = displayValue(a.agent_id)
         return a.wait === true ? `${shortId(id)} · 等待完成` : shortId(id)
       }
       case "steer_subagent":
       case "cancel_subagent": {
-        return shortId(String(a.agent_id ?? "")) || null
+        return shortId(displayValue(a.agent_id)) || null
       }
       default:
         return null
     }
   } catch {
     return null
+  }
+}
+
+function displayValue(value: unknown): string {
+  if (value === undefined || value === null) return ""
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value) ?? ""
+  } catch {
+    return ""
   }
 }
 
@@ -164,16 +175,11 @@ function parsedToolOutput(value: unknown): Record<string, unknown> | undefined {
   return recordOf(record?.details) ?? record
 }
 
-function subagentIdFromTool(
-  toolName: string,
-  args: unknown,
-  output: unknown,
-): string | undefined {
+function subagentIdFromTool(toolName: string, args: unknown, output: unknown): string | undefined {
   if (!SUBAGENT_TOOL_NAMES.has(toolName)) return undefined
   const input = recordOf(args)
   const result = parsedToolOutput(output)
-  const candidate =
-    input?.agent_id ?? input?.resume ?? result?.id ?? result?.agent_id
+  const candidate = input?.agent_id ?? input?.resume ?? result?.id ?? result?.agent_id
   return typeof candidate === "string" && candidate ? candidate : undefined
 }
 
@@ -197,7 +203,7 @@ function ToolBlock({
   ansi?: boolean
   subagent?: {
     id: string
-    onSelect(id: string): void
+    onSelect: (id: string) => void
   }
   subagentTool?: boolean
 }): React.ReactElement {
@@ -255,20 +261,14 @@ function ToolBlock({
           <span className="min-w-0 flex-1 truncate text-left">
             {label}
             {extra ? (
-              <span className="ml-1.5 font-normal text-muted-foreground/70">
-                {extra}
-              </span>
+              <span className="ml-1.5 font-normal text-muted-foreground/70">{extra}</span>
             ) : null}
           </span>
           {statusLabel ? (
             <span
               className={cn(
                 "shrink-0 font-mono text-[10px] tabular-nums",
-                failed
-                  ? "text-danger"
-                  : running
-                    ? "text-primary"
-                    : "text-muted-foreground",
+                failed ? "text-danger" : running ? "text-primary" : "text-muted-foreground",
               )}
               aria-live={running ? "polite" : undefined}
             >
@@ -289,9 +289,7 @@ function ToolBlock({
             className="group/link flex shrink-0 items-center gap-1.5 border-l border-border/80 px-3 text-xs font-medium text-primary outline-none transition-colors hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             aria-label={`打开 SubAgent ${subagent.id} 对话`}
           >
-            <span className="hidden font-mono text-[10px] sm:inline">
-              {shortId(subagent.id)}
-            </span>
+            <span className="hidden font-mono text-[10px] sm:inline">{shortId(subagent.id)}</span>
             <Icon
               icon="lucide:arrow-up-right"
               width="13"
@@ -353,13 +351,9 @@ function ThinkingBlock({
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t border-border/80 px-3 py-2.5">
         {redacted ? (
-          <p className="text-sm text-muted-foreground">
-            推理内容已由模型提供方隐藏。
-          </p>
+          <p className="text-sm text-muted-foreground">推理内容已由模型提供方隐藏。</p>
         ) : (
-          <MarkdownContent className="text-muted-foreground">
-            {content}
-          </MarkdownContent>
+          <MarkdownContent className="text-muted-foreground">{content}</MarkdownContent>
         )}
       </CollapsibleContent>
     </Collapsible>
@@ -377,19 +371,13 @@ export function MessageBody({
   streaming?: boolean
   latest?: boolean
   toolActivities?: Record<string, AgentToolActivity>
-  onSelectSubagent?(id: string): void
+  onSelectSubagent?: (id: string) => void
 }): React.ReactElement {
   if (message.role === "user") {
     const raw = textContent(message.content)
     const xml = classifyXml(raw)
     if (xml.isXml) {
-      return (
-        <XmlContent
-          tag={xml.tag}
-          content={xml.content}
-          onSelectSubagent={onSelectSubagent}
-        />
-      )
+      return <XmlContent tag={xml.tag} content={xml.content} onSelectSubagent={onSelectSubagent} />
     }
     return <MarkdownContent>{raw}</MarkdownContent>
   }
@@ -409,11 +397,7 @@ export function MessageBody({
                 />
               )
             }
-            return (
-              <MarkdownContent key={`text-${index}`}>
-                {part.text}
-              </MarkdownContent>
-            )
+            return <MarkdownContent key={`text-${index}`}>{part.text}</MarkdownContent>
           }
           if (part.type === "thinking")
             return (
@@ -427,11 +411,7 @@ export function MessageBody({
             )
           if (part.type === "toolCall") {
             const activity = toolActivities[part.id]
-            const subagentId = subagentIdFromTool(
-              part.name,
-              part.arguments,
-              activity?.result,
-            )
+            const subagentId = subagentIdFromTool(part.name, part.arguments, activity?.result)
             return (
               <ToolBlock
                 key={part.id}
@@ -481,8 +461,8 @@ export function MessageBody({
 
   const custom = message as unknown as Record<string, unknown>
   if (message.role === "bashExecution") {
-    const cmd = String(custom.command ?? "")
-    const detail = `$ ${cmd}\n${String(custom.output ?? "")}`
+    const cmd = displayValue(custom.command)
+    const detail = `$ ${cmd}\n${displayValue(custom.output)}`
     return (
       <ToolBlock
         label="终端命令"
@@ -496,7 +476,7 @@ export function MessageBody({
   }
   return (
     <MarkdownContent>
-      {textContent(custom.content) || String(custom.summary ?? "系统消息")}
+      {textContent(custom.content) || displayValue(custom.summary) || "系统消息"}
     </MarkdownContent>
   )
 }
@@ -518,15 +498,9 @@ function useElapsed(activity?: AgentToolActivity): string {
     return () => window.clearInterval(timer)
   }, [activity?.status])
   if (!activity) return ""
-  const end =
-    activity.status === "running" ? now : Date.parse(activity.updatedAt)
-  const seconds = Math.max(
-    0,
-    Math.floor((end - Date.parse(activity.startedAt)) / 1_000),
-  )
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  const end = activity.status === "running" ? now : Date.parse(activity.updatedAt)
+  const seconds = Math.max(0, Math.floor((end - Date.parse(activity.startedAt)) / 1_000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
 export function MessageMeta({
@@ -538,9 +512,7 @@ export function MessageMeta({
 }): React.ReactElement {
   return (
     <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-      <span className="font-bold tracking-wider uppercase">
-        {roleLabel(role)}
-      </span>
+      <span className="font-bold tracking-wider uppercase">{roleLabel(role)}</span>
       <time>{timestamp}</time>
     </div>
   )
@@ -554,7 +526,7 @@ function XmlContent({
 }: {
   tag: string | null
   content: string
-  onSelectSubagent?(id: string): void
+  onSelectSubagent?: (id: string) => void
 }): React.ReactElement {
   const parsed = parseXmlContent(content)
 
@@ -593,12 +565,7 @@ function XmlContent({
         />
       )
     case "subagent_notification":
-      return (
-        <SubagentNotificationCard
-          parsed={parsed}
-          onSelectSubagent={onSelectSubagent}
-        />
-      )
+      return <SubagentNotificationCard parsed={parsed} onSelectSubagent={onSelectSubagent} />
     default:
       return <GenericXmlCard tag={tag} content={content} />
   }
@@ -617,12 +584,7 @@ function BlockedFinalizationCard({
   return (
     <div className="overflow-hidden rounded-lg border border-warning/30 bg-warning/5">
       <div className="flex items-center gap-2 border-b border-warning/20 px-3 py-2">
-        <Icon
-          icon="lucide:circle-alert"
-          width="14"
-          className="text-warning"
-          aria-hidden="true"
-        />
+        <Icon icon="lucide:circle-alert" width="14" className="text-warning" aria-hidden="true" />
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Blocked Finalization
         </span>
@@ -647,7 +609,7 @@ function ChallengeContextCard({
   const files =
     c.attachments ??
     c.files ??
-    [...Object.entries(c)]
+    Object.entries(c)
       .filter(([k]) => k.toLowerCase().includes("file") || k === "attachment")
       .map(([, v]) => v)
       .join(", ")
@@ -655,23 +617,14 @@ function ChallengeContextCard({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2">
-        <Icon
-          icon="lucide:target"
-          width="14"
-          className="text-primary"
-          aria-hidden="true"
-        />
+        <Icon icon="lucide:target" width="14" className="text-primary" aria-hidden="true" />
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Challenge Context
         </span>
-        {category ? (
-          <Badge className="ml-auto text-[9px]">{category}</Badge>
-        ) : null}
+        {category ? <Badge className="ml-auto text-[9px]">{category}</Badge> : null}
       </div>
       <div className="space-y-2 p-3">
-        {title ? (
-          <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-        ) : null}
+        {title ? <h4 className="text-sm font-semibold text-foreground">{title}</h4> : null}
         {score ? (
           <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
             <Icon icon="lucide:star" width="11" aria-hidden="true" />
@@ -680,9 +633,7 @@ function ChallengeContextCard({
         ) : null}
         {description ? (
           <p className="text-xs leading-relaxed text-muted-foreground">
-            {description.length > 300
-              ? `${description.slice(0, 300)}…`
-              : description}
+            {description.length > 300 ? `${description.slice(0, 300)}…` : description}
           </p>
         ) : null}
         {files ? (
@@ -748,9 +699,7 @@ function AnnouncementsCard({
             Announcements
           </span>
         </div>
-        <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-          暂无公告
-        </p>
+        <p className="px-3 py-4 text-center text-xs text-muted-foreground">暂无公告</p>
       </div>
     )
   }
@@ -758,12 +707,7 @@ function AnnouncementsCard({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2">
-        <Icon
-          icon="lucide:megaphone"
-          width="14"
-          className="text-info"
-          aria-hidden="true"
-        />
+        <Icon icon="lucide:megaphone" width="14" className="text-info" aria-hidden="true" />
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Announcements
         </span>
@@ -774,9 +718,7 @@ function AnnouncementsCard({
           <div key={ann.key} className="space-y-1 px-3 py-2.5">
             <div className="flex items-center gap-2">
               <Badge className="text-[9px]">{ann.kind}</Badge>
-              <span className="text-xs font-medium text-foreground">
-                {ann.title}
-              </span>
+              <span className="text-xs font-medium text-foreground">{ann.title}</span>
               <time
                 dateTime={ann.publishedAt}
                 className="ml-auto text-[10px] text-muted-foreground"
@@ -785,9 +727,7 @@ function AnnouncementsCard({
               </time>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              {ann.content.length > 200
-                ? `${ann.content.slice(0, 200)}…`
-                : ann.content}
+              {ann.content.length > 200 ? `${ann.content.slice(0, 200)}…` : ann.content}
             </p>
           </div>
         ))}
@@ -823,12 +763,7 @@ function JsonCard({
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
         <Icon icon={icon} width="15" className={iconColor} aria-hidden="true" />
         <span className="min-w-0 flex-1 text-left">{title}</span>
-        <Icon
-          icon="lucide:chevron-down"
-          className="shrink-0"
-          width="14"
-          aria-hidden="true"
-        />
+        <Icon icon="lucide:chevron-down" className="shrink-0" width="14" aria-hidden="true" />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <pre className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
@@ -844,7 +779,7 @@ function SubagentNotificationCard({
   onSelectSubagent,
 }: {
   parsed: ReturnType<typeof parseXmlContent>
-  onSelectSubagent?(id: string): void
+  onSelectSubagent?: (id: string) => void
 }): React.ReactElement {
   const raw = parsed.children
   const {
@@ -852,9 +787,7 @@ function SubagentNotificationCard({
     role = "SubAgent",
     status = "",
     output = "",
-  } = Object.fromEntries(
-    Object.entries(raw).map(([key, value]) => [key, decodeXmlText(value)]),
-  )
+  } = Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, decodeXmlText(value)]))
   return (
     <div className="overflow-hidden rounded-lg border border-primary/25 bg-primary/[0.035]">
       <div className="flex items-center gap-2 border-b border-primary/15 px-3 py-2">
@@ -862,9 +795,7 @@ function SubagentNotificationCard({
           <Icon icon="lucide:radio-tower" width="13" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-xs font-semibold text-foreground">
-            SubAgent 已回报
-          </span>
+          <span className="block text-xs font-semibold text-foreground">SubAgent 已回报</span>
           <span className="block truncate font-mono text-[10px] text-muted-foreground">
             {role} · {shortId(id)} {status ? `· ${status}` : ""}
           </span>

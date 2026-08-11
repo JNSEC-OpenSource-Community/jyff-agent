@@ -4,7 +4,7 @@ import type {
   PlatformProject,
   RemoteEnvironment,
 } from "@ctf-agent/platform"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import {
   RemoteEnvironmentCoordinator,
   type RemoteEnvironmentLeaseRecord,
@@ -72,10 +72,7 @@ function capability(id: string, log: string[]): ChallengeCapability {
 
 describe("RemoteEnvironmentCoordinator", () => {
   it("包装实例型 capability 时保留原型上的附件下载方法", async () => {
-    const coordinator = new RemoteEnvironmentCoordinator(
-      1,
-      new MemoryLeaseStore(),
-    )
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
     class PrototypeCapability implements ChallengeCapability {
       readonly instance = capability("prototype", []).instance
 
@@ -112,10 +109,7 @@ describe("RemoteEnvironmentCoordinator", () => {
   it("无附件请求会抢占附件题验证租约", async () => {
     const log: string[] = []
     const revoked = vi.fn()
-    const coordinator = new RemoteEnvironmentCoordinator(
-      1,
-      new MemoryLeaseStore(),
-    )
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
     const verification = coordinator.manage({
       runId: "run-verification",
       challenge: challenge("with-file", 1),
@@ -131,21 +125,14 @@ describe("RemoteEnvironmentCoordinator", () => {
     await verification.instance?.start()
     await required.instance?.start()
 
-    expect(log).toEqual([
-      "start:with-file",
-      "destroy:with-file",
-      "start:without-file",
-    ])
+    expect(log).toEqual(["start:with-file", "destroy:with-file", "start:without-file"])
     expect(revoked).toHaveBeenCalledOnce()
     await coordinator.close()
   })
 
   it("附件题完成本地分析后进入 FIFO 等待并在租约释放后继续", async () => {
     const log: string[] = []
-    const coordinator = new RemoteEnvironmentCoordinator(
-      1,
-      new MemoryLeaseStore(),
-    )
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
     const first = coordinator.manage({
       runId: "run-first",
       challenge: challenge("first", 1),
@@ -192,10 +179,7 @@ describe("RemoteEnvironmentCoordinator", () => {
 
   it("等待中的工具调用可取消且不会占用后续配额", async () => {
     const log: string[] = []
-    const coordinator = new RemoteEnvironmentCoordinator(
-      1,
-      new MemoryLeaseStore(),
-    )
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
     const first = coordinator.manage({
       runId: "run-first",
       challenge: challenge("first", 0),

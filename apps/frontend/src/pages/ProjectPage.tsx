@@ -55,14 +55,10 @@ function QueueItem({
   challenge?: DashboardChallenge
   disabled?: boolean
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: entry.challengeId, disabled })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: entry.challengeId,
+    disabled,
+  })
   return (
     <div
       ref={setNodeRef}
@@ -74,22 +70,15 @@ function QueueItem({
         disabled
           ? "cursor-default opacity-75"
           : "cursor-grab hover:border-primary/30 hover:cursor-grab active:cursor-grabbing",
-        isDragging &&
-          "cursor-grabbing border-dashed border-primary/40 opacity-60 shadow-lg",
+        isDragging && "cursor-grabbing border-dashed border-primary/40 opacity-60 shadow-lg",
       )}
     >
-      <Icon
-        icon="lucide:grip-vertical"
-        width="14"
-        className="shrink-0 text-muted-foreground"
-      />
+      <Icon icon="lucide:grip-vertical" width="14" className="shrink-0 text-muted-foreground" />
       <span className="w-5 text-center font-mono text-[11px] text-muted-foreground tabular-nums">
         {entry.position}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">
-          {challenge?.title ?? entry.challengeId}
-        </p>
+        <p className="truncate font-medium">{challenge?.title ?? entry.challengeId}</p>
         <p className="truncate text-xs text-muted-foreground">
           {challenge?.category ?? entry.source} · {challenge?.score ?? 0} pts
         </p>
@@ -103,80 +92,75 @@ function QueueItem({
   )
 }
 
-/* ── Stat card ── */
+/* ── 解题进度 ── */
 
-const statColors: Record<string, { icon: string; tone: string; text: string }> =
-  {
-    green: {
-      icon: "text-green",
-      tone: "bg-green/10",
-      text: "text-green",
-    },
-    cyan: {
-      icon: "text-info",
-      tone: "bg-info/10",
-      text: "text-info",
-    },
-    amber: {
-      icon: "text-warning",
-      tone: "bg-warning/10",
-      text: "text-warning",
-    },
-    danger: {
-      icon: "text-danger",
-      tone: "bg-danger/10",
-      text: "text-danger",
-    },
-  }
-
-function StatCard({
-  label,
-  value,
-  icon,
-  color,
+function ProgressOverview({
+  solved,
+  total,
+  active,
+  queued,
+  failed,
 }: {
-  label: string
-  value: number | string
-  icon: string
-  color: string
+  solved: number
+  total: number
+  active: number
+  queued: number
+  failed: number
 }) {
-  const c =
-    statColors[color] ??
-    ({
-      icon: "text-green",
-      tone: "bg-green/10",
-      text: "text-green",
-    } as {
-      icon: string
-      tone: string
-      text: string
-    })
+  const progress = total > 0 ? Math.round((solved / total) * 100) : 0
   return (
-    <Card className="surface-hover relative overflow-hidden p-0">
-      <div className="flex items-center gap-4 p-5">
-        <div
-          className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-lg",
-            c.tone,
-          )}
-        >
-          <Icon icon={icon} width="21" className={c.icon} />
-        </div>
-        <div>
-          <p
-            className={cn(
-              "text-3xl font-bold tabular-nums tracking-tight font-mono",
-              c.text,
-            )}
+    <Card className="mb-6 p-0 shadow-none">
+      <div className="grid md:grid-cols-[minmax(18rem,1fr)_auto] md:items-stretch">
+        <div className="min-w-0 px-5 pt-4 pb-5 sm:px-6">
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-sm font-semibold tracking-tight">解题进度</h2>
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {solved} / {total}
+            </span>
+            <strong className="ml-auto font-mono text-sm font-semibold tabular-nums text-primary">
+              {progress}%
+            </strong>
+          </div>
+          <div
+            className="challenge-progress-track relative mt-3 h-2 overflow-hidden"
+            role="progressbar"
+            aria-label="解题进度"
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-valuenow={solved}
           >
-            {value}
-          </p>
-          <p className="mt-0.5! text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            {label}
+            <div
+              className="challenge-progress-fill absolute inset-0 origin-left transition-transform duration-300"
+              style={{ transform: `scaleX(${progress / 100})` }}
+            />
+          </div>
+          <p className="mt-2! text-[11px] text-muted-foreground">
+            已解出 {solved} 题，剩余 {Math.max(0, total - solved)} 题
           </p>
         </div>
+        <dl className="grid grid-cols-3 border-t border-border md:min-w-[27rem] md:border-t-0 md:border-l">
+          <ProgressMetric label="正在解题" value={active} />
+          <ProgressMetric label="等待处理" value={queued} />
+          <ProgressMetric label="需要处理" value={failed} tone="danger" />
+        </dl>
       </div>
     </Card>
+  )
+}
+
+function ProgressMetric({ label, value, tone }: { label: string; value: number; tone?: "danger" }) {
+  return (
+    <div className="flex min-w-0 flex-col justify-center border-l border-border px-4 py-3 first:border-l-0 md:px-5">
+      <dd
+        className={cn(
+          "font-mono text-lg font-semibold leading-none tabular-nums",
+          tone === "danger" ? "text-danger" : "text-foreground",
+        )}
+      >
+        {value}
+      </dd>
+      <dt className="mt-2 text-[11px] leading-none text-muted-foreground">{label}</dt>
+    </div>
   )
 }
 
@@ -201,41 +185,29 @@ export function ProjectPage() {
 
   const load = useCallback(async () => {
     setError("")
-    const s = await apiRequest<DashboardSnapshot>(
-      projectApi(projectId, "/api/snapshot"),
-    )
+    const s = await apiRequest<DashboardSnapshot>(projectApi(projectId, "/api/snapshot"))
     setSnapshot(s)
     setQueue(s.scheduler?.queued ?? [])
   }, [projectId])
 
   useEffect(() => {
-    void load().catch((e) =>
-      setError(String(e instanceof Error ? e.message : e)),
-    )
+    void load().catch((e) => setError(String(e instanceof Error ? e.message : e)))
     const es = new EventSource(projectApi(projectId, "/api/events"))
     es.addEventListener("snapshot", (ev) => {
-      const s = JSON.parse(
-        (ev as MessageEvent<string>).data,
-      ) as DashboardSnapshot
+      const s = JSON.parse((ev as MessageEvent<string>).data) as DashboardSnapshot
       setSnapshot(s)
       setQueue(s.scheduler?.queued ?? [])
     })
     return () => es.close()
   }, [load, projectId])
 
-  const byId = useMemo(
-    () => new Map(snapshot?.challenges.map((c) => [c.id, c]) ?? []),
-    [snapshot],
-  )
+  const byId = useMemo(() => new Map(snapshot?.challenges.map((c) => [c.id, c]) ?? []), [snapshot])
 
   async function action(path: string) {
     setBusy(true)
     setError("")
     try {
-      const s = await apiMutation<DashboardSnapshot>(
-        projectApi(projectId, path),
-        "POST",
-      )
+      const s = await apiMutation<DashboardSnapshot>(projectApi(projectId, path), "POST")
       setSnapshot(s)
       setQueue(s.scheduler?.queued ?? [])
     } catch (e) {
@@ -253,15 +225,10 @@ export function ProjectPage() {
     const m = queue[oi]
     if (!m) return
     // 先乐观更新本地顺序，避免拖拽后闪烁
-    setQueue(
-      arrayMove(queue, oi, ni).map((i, idx) => ({ ...i, position: idx + 1 })),
-    )
+    setQueue(arrayMove(queue, oi, ni).map((i, idx) => ({ ...i, position: idx + 1 })))
     try {
       const s = await apiMutation<DashboardSnapshot>(
-        projectApi(
-          projectId,
-          `/api/scheduler/queue/${encodeURIComponent(m.challengeId)}`,
-        ),
+        projectApi(projectId, `/api/scheduler/queue/${encodeURIComponent(m.challengeId)}`),
         "PATCH",
         {
           position: ni + 1,
@@ -292,15 +259,11 @@ export function ProjectPage() {
     try {
       await Promise.all(
         candidates.map((candidate) =>
-          apiMutation(
-            projectApi(projectId, "/api/announcements/review"),
-            "POST",
-            {
-              challengeId: candidate.challengeId,
-              announcementKey: candidate.key,
-              status,
-            },
-          ),
+          apiMutation(projectApi(projectId, "/api/announcements/review"), "POST", {
+            challengeId: candidate.challengeId,
+            announcementKey: candidate.key,
+            status,
+          }),
         ),
       )
       await load()
@@ -320,10 +283,7 @@ export function ProjectPage() {
     setError("")
     try {
       const next = await apiMutation<DashboardSnapshot>(
-        projectApi(
-          projectId,
-          `/api/challenges/${encodeURIComponent(challengeId)}/scheduling`,
-        ),
+        projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/scheduling`),
         "PATCH",
         { disposition },
       )
@@ -358,9 +318,7 @@ export function ProjectPage() {
     (!snapshot.controlPlane || snapshot.controlPlane.phase === "ready")
 
   const recent = recentChallenges(snapshot.challenges, 5)
-  const visible = sortChallenges(
-    filterChallenges(snapshot.challenges, { query, statusFilter }),
-  )
+  const visible = sortChallenges(filterChallenges(snapshot.challenges, { query, statusFilter }))
 
   return (
     <div className="page-container">
@@ -368,14 +326,13 @@ export function ProjectPage() {
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            {snapshot.overview.id} · {operationsAvailable ? "Live" : "只读"}
+            {snapshot.overview.id} · {operationsAvailable ? "可调度" : "只读"}
           </p>
           <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
             {snapshot.overview.name}
           </h1>
           <p className="hero-desc mt-3! text-sm text-muted-foreground">
-            {snapshot.overview.challenges} 题 ·{" "}
-            {relativeTime(snapshot.generatedAt)}
+            {snapshot.overview.challenges} 题 · {relativeTime(snapshot.generatedAt)}
           </p>
         </div>
         <div className="flex gap-2">
@@ -385,11 +342,7 @@ export function ProjectPage() {
             disabled={busy || !operationsAvailable}
             size="sm"
           >
-            <Icon
-              icon="lucide:refresh-cw"
-              className={busy ? "animate-spin" : ""}
-              width="14"
-            />
+            <Icon icon="lucide:refresh-cw" className={busy ? "animate-spin" : ""} width="14" />
             同步
           </Button>
           <Button
@@ -404,9 +357,7 @@ export function ProjectPage() {
             disabled={busy || !snapshot.scheduler?.available}
           >
             <Icon
-              icon={
-                snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"
-              }
+              icon={snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"}
               width="14"
             />
             {snapshot.scheduler?.autoEnabled ? "暂停调度" : "启动调度"}
@@ -416,33 +367,7 @@ export function ProjectPage() {
 
       {error ? <ErrorNotice message={error} className="mb-6" /> : null}
 
-      {/* ── Stat cards ── */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="解题情况"
-          value={`${snapshot.stats.solved}/${snapshot.stats.total}`}
-          icon="lucide:flag"
-          color="green"
-        />
-        <StatCard
-          label="执行中"
-          value={snapshot.stats.active}
-          icon="lucide:activity"
-          color="cyan"
-        />
-        <StatCard
-          label="队列中"
-          value={snapshot.stats.queued}
-          icon="lucide:list-ordered"
-          color="amber"
-        />
-        <StatCard
-          label="需处理"
-          value={snapshot.stats.failed}
-          icon="lucide:triangle-alert"
-          color="danger"
-        />
-      </div>
+      <ProgressOverview {...snapshot.stats} />
 
       {/* ── Announcement candidates ── */}
       {pendingAnnouncements.length > 0 ? (
@@ -450,7 +375,7 @@ export function ProjectPage() {
           <div className="flex items-center justify-between border-b border-border px-5 py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                Review
+                公告审核
               </p>
               <h2 className="mt-0.5 font-semibold">待审核公告</h2>
             </div>
@@ -458,9 +383,7 @@ export function ProjectPage() {
               <Button
                 size="sm"
                 disabled={busy || !operationsAvailable}
-                onClick={() =>
-                  void reviewAnnouncements(pendingAnnouncements, "approved")
-                }
+                onClick={() => void reviewAnnouncements(pendingAnnouncements, "approved")}
               >
                 <Icon icon="lucide:check-check" width="13" />
                 全部批准
@@ -469,9 +392,7 @@ export function ProjectPage() {
                 size="sm"
                 variant="secondary"
                 disabled={busy || !operationsAvailable}
-                onClick={() =>
-                  void reviewAnnouncements(pendingAnnouncements, "rejected")
-                }
+                onClick={() => void reviewAnnouncements(pendingAnnouncements, "rejected")}
               >
                 <Icon icon="lucide:x" width="13" />
                 全部拒绝
@@ -507,9 +428,7 @@ export function ProjectPage() {
                     size="sm"
                     variant="primary"
                     disabled={busy || !operationsAvailable}
-                    onClick={() =>
-                      void reviewAnnouncements([candidate], "approved")
-                    }
+                    onClick={() => void reviewAnnouncements([candidate], "approved")}
                   >
                     <Icon icon="lucide:check" width="14" />
                     批准
@@ -518,9 +437,7 @@ export function ProjectPage() {
                     size="sm"
                     variant="secondary"
                     disabled={busy || !operationsAvailable}
-                    onClick={() =>
-                      void reviewAnnouncements([candidate], "rejected")
-                    }
+                    onClick={() => void reviewAnnouncements([candidate], "rejected")}
                   >
                     <Icon icon="lucide:x" width="14" />
                     拒绝
@@ -539,23 +456,17 @@ export function ProjectPage() {
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                Scheduler
+                调度队列
               </p>
               <h2 className="mt-0.5 font-semibold">待执行队列</h2>
             </div>
-            <Badge
-              tone={snapshot.scheduler?.autoEnabled ? "positive" : "neutral"}
-              className="text-[10px]"
-            >
-              {snapshot.scheduler?.autoEnabled ? "AUTO" : "MANUAL"}
+            <Badge tone={snapshot.scheduler?.autoEnabled ? "positive" : "neutral"}>
+              {snapshot.scheduler?.autoEnabled ? "自动" : "手动"}
             </Badge>
           </div>
           <div className="flex flex-1 flex-col p-3">
             {queue.length > 0 ? (
-              <DndContext
-                sensors={sensors}
-                onDragEnd={(event) => void onDragEnd(event)}
-              >
+              <DndContext sensors={sensors} onDragEnd={(event) => void onDragEnd(event)}>
                 <SortableContext
                   items={queue.map((i) => i.challengeId)}
                   strategy={verticalListSortingStrategy}
@@ -575,29 +486,21 @@ export function ProjectPage() {
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
                 <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted/50">
-                  <Icon
-                    icon="lucide:list-checks"
-                    width="22"
-                    className="text-muted-foreground"
-                  />
+                  <Icon icon="lucide:list-checks" width="22" className="text-muted-foreground" />
                 </div>
-                <p className="mt-3! text-sm font-medium text-muted-foreground">
-                  队列为空
-                </p>
-                <p className="mt-1! text-xs text-muted-foreground">
-                  启动调度或手动派发题目
-                </p>
+                <p className="mt-3! text-sm font-medium text-muted-foreground">队列为空</p>
+                <p className="mt-1! text-xs text-muted-foreground">启动调度或手动派发题目</p>
               </div>
             )}
           </div>
         </Card>
 
-        {/* Recent */}
+        {/* 最近活动 */}
         <Card className="flex min-h-0 flex-col p-0">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                Recent
+                最近活动
               </p>
               <h2 className="mt-0.5 font-semibold">最近活跃</h2>
             </div>
@@ -617,9 +520,7 @@ export function ProjectPage() {
                   <span
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-md border border-border font-bold text-muted-foreground",
-                      categoryMark.chinese
-                        ? "font-sans text-sm"
-                        : "font-mono text-[10px]",
+                      categoryMark.chinese ? "font-sans text-sm" : "font-mono text-[10px]",
                     )}
                   >
                     {categoryMark.text}
@@ -635,10 +536,7 @@ export function ProjectPage() {
                         : ` · ${c.progress}`}
                     </p>
                   </div>
-                  <Badge
-                    tone={toneForStatus(c.status)}
-                    className="shrink-0 text-[10px]"
-                  >
+                  <Badge tone={toneForStatus(c.status)} className="shrink-0">
                     {STATUS_LABELS[c.status] ?? c.status}
                   </Badge>
                   <Icon
@@ -654,8 +552,7 @@ export function ProjectPage() {
                 href="#all"
                 className="flex items-center justify-center gap-1.5 px-5 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
-                全部 {snapshot.challenges.length} 题{" "}
-                <Icon icon="lucide:arrow-down" width="13" />
+                全部 {snapshot.challenges.length} 题 <Icon icon="lucide:arrow-down" width="13" />
               </a>
             )}
           </div>
@@ -667,17 +564,13 @@ export function ProjectPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              All Targets
+              题目列表
             </p>
             <h2 className="mt-0.5 font-semibold">全部题目</h2>
           </div>
           <div className="flex w-full items-center gap-1 rounded-lg border border-border bg-background/40 p-1 sm:w-auto">
             <div className="flex min-w-0 flex-1 items-center gap-2 px-2 sm:w-52">
-              <Icon
-                icon="lucide:search"
-                width="14"
-                className="text-muted-foreground"
-              />
+              <Icon icon="lucide:search" width="14" className="text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -703,11 +596,7 @@ export function ProjectPage() {
         </div>
         {visible.length === 0 ? (
           <div className="flex flex-col items-center py-16 text-center">
-            <Icon
-              icon="lucide:search-x"
-              width="28"
-              className="text-muted-foreground/40"
-            />
+            <Icon icon="lucide:search-x" width="28" className="text-muted-foreground/40" />
             <p className="mt-3! text-sm text-muted-foreground">无匹配题目</p>
           </div>
         ) : (
@@ -716,15 +605,9 @@ export function ProjectPage() {
               <thead>
                 <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
                   <th className="py-3 pl-5 pr-3 font-medium">题目</th>
-                  <th className="hidden py-3 px-3 font-medium md:table-cell">
-                    分类
-                  </th>
-                  <th className="hidden py-3 px-3 font-medium sm:table-cell">
-                    分值
-                  </th>
-                  <th className="hidden py-3 px-3 font-medium lg:table-cell">
-                    尝试
-                  </th>
+                  <th className="hidden py-3 px-3 font-medium md:table-cell">分类</th>
+                  <th className="hidden py-3 px-3 font-medium sm:table-cell">分值</th>
+                  <th className="hidden py-3 px-3 font-medium lg:table-cell">尝试</th>
                   <th className="py-3 px-3 font-medium">状态</th>
                   <th className="py-3 pr-5"></th>
                 </tr>
@@ -763,10 +646,7 @@ export function ProjectPage() {
                       {c.attempts}
                     </td>
                     <td className="py-3 px-3">
-                      <Badge
-                        tone={toneForStatus(c.status)}
-                        className="text-[10px]"
-                      >
+                      <Badge tone={toneForStatus(c.status)}>
                         {STATUS_LABELS[c.status] ?? c.status}
                       </Badge>
                     </td>
@@ -778,9 +658,7 @@ export function ProjectPage() {
                       <div className="flex items-center justify-end gap-1">
                         <Select
                           value={c.schedulingDisposition ?? "default"}
-                          disabled={
-                            schedulingBusy === c.id || !operationsAvailable
-                          }
+                          disabled={schedulingBusy === c.id || !operationsAvailable}
                           onValueChange={(value) =>
                             void setSchedulingDisposition(
                               c.id,
@@ -795,13 +673,9 @@ export function ProjectPage() {
                           >
                             <Icon
                               icon={
-                                schedulingBusy === c.id
-                                  ? "lucide:loader-circle"
-                                  : "lucide:ellipsis"
+                                schedulingBusy === c.id ? "lucide:loader-circle" : "lucide:ellipsis"
                               }
-                              className={
-                                schedulingBusy === c.id ? "animate-spin" : ""
-                              }
+                              className={schedulingBusy === c.id ? "animate-spin" : ""}
                               width="15"
                               aria-hidden="true"
                             />

@@ -1,20 +1,11 @@
 // @vitest-environment jsdom
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { modelPoolEntryId } from "../src/lib/model-pool.ts"
 import { ModelPoolEditor } from "../src/pages/settings/ModelPoolEditor.tsx"
-import type {
-  ModelAuthenticationView,
-  ModelConfigurationView,
-} from "../src/types.ts"
+import type { ModelAuthenticationView, ModelConfigurationView } from "../src/types.ts"
 
 const configuration: ModelConfigurationView = {
   models: [
@@ -80,16 +71,13 @@ describe("模型池自定义供应商模型选择", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByLabelText("模型 ID").getAttribute("role")).toBe(
-        "combobox",
-      )
+      expect(screen.getByLabelText("模型 ID").getAttribute("role")).toBe("combobox")
     })
   })
 
   it("模型发现失败时保留手工输入框", async () => {
     const fetchMock = vi.fn<typeof fetch>(
-      async () =>
-        new Response(JSON.stringify({ error: "unavailable" }), { status: 502 }),
+      async () => new Response(JSON.stringify({ error: "unavailable" }), { status: 502 }),
     )
     vi.stubGlobal("fetch", fetchMock)
 

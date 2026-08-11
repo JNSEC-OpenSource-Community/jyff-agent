@@ -49,10 +49,7 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function requestSignal(
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): AbortSignal {
+function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
@@ -68,9 +65,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -94,10 +89,7 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
   return { includeSites, excludeSites }
 }
 
-function buildSearchBody(
-  query: string,
-  options: Search1APISearchOptions,
-): Record<string, unknown> {
+function buildSearchBody(query: string, options: Search1APISearchOptions): Record<string, unknown> {
   const numResults = normalizeNumResults(options.numResults)
   const { includeSites, excludeSites } = mapDomainFilter(options.domainFilter)
   return {
@@ -147,9 +139,7 @@ async function search1APIJsonRequest<T>(
   try {
     return JSON.parse(raw) as T
   } catch (err) {
-    throw new Error(
-      `Search1API ${label} API returned invalid JSON: ${errorMessage(err)}`,
-    )
+    throw new Error(`Search1API ${label} API returned invalid JSON: ${errorMessage(err)}`)
   }
 }
 
@@ -157,39 +147,26 @@ function mapSearchResults(
   results: Search1APISearchResult[] | undefined,
 ): SearchResponse["results"] {
   if (!Array.isArray(results)) {
-    throw new Error(
-      "Search1API Search API returned an unexpected response shape",
-    )
+    throw new Error("Search1API Search API returned an unexpected response shape")
   }
   return results.flatMap((item) => {
-    if (!item || typeof item.link !== "string" || item.link.trim().length === 0)
-      return []
+    if (!item || typeof item.link !== "string" || item.link.trim().length === 0) return []
     const url = item.link.trim()
     return [
       {
-        title:
-          typeof item.title === "string" && item.title.trim()
-            ? item.title.trim()
-            : url,
+        title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : url,
         url,
-        snippet:
-          typeof item.snippet === "string"
-            ? item.snippet.replace(/\s+/g, " ").trim()
-            : "",
+        snippet: typeof item.snippet === "string" ? item.snippet.replace(/\s+/g, " ").trim() : "",
       },
     ]
   })
 }
 
-function mapInlineContent(
-  results: Search1APISearchResult[] | undefined,
-): ExtractedContent[] {
+function mapInlineContent(results: Search1APISearchResult[] | undefined): ExtractedContent[] {
   if (!Array.isArray(results)) return []
   return results.flatMap((item) => {
-    if (!item || typeof item.link !== "string" || item.link.trim().length === 0)
-      return []
-    if (typeof item.content !== "string" || item.content.trim().length === 0)
-      return []
+    if (!item || typeof item.link !== "string" || item.link.trim().length === 0) return []
+    if (typeof item.content !== "string" || item.content.trim().length === 0) return []
     return [
       {
         url: item.link.trim(),
@@ -204,8 +181,7 @@ function mapInlineContent(
 function buildAnswer(results: SearchResponse["results"]): string {
   return results
     .map((result) => {
-      if (result.snippet)
-        return `${result.snippet}\nSource: ${result.title} (${result.url})`
+      if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`
       return `Source: ${result.title} (${result.url})`
     })
     .join("\n\n")
@@ -242,8 +218,7 @@ export async function searchWithSearch1API(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -270,20 +245,16 @@ export async function extractWithSearch1API(
       SEARCH1API_CRAWL_URL,
       apiKey,
       { url },
-      typeof options.timeoutMs === "number" &&
-        Number.isFinite(options.timeoutMs)
+      typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
         ? Math.max(1, Math.floor(options.timeoutMs))
         : CRAWL_TIMEOUT_MS,
       signal,
     )
     const result = data.results
     if (!result || typeof result !== "object") {
-      throw new Error(
-        "Search1API Crawl API returned an unexpected response shape",
-      )
+      throw new Error("Search1API Crawl API returned an unexpected response shape")
     }
-    const content =
-      typeof result.content === "string" ? result.content.trim() : ""
+    const content = typeof result.content === "string" ? result.content.trim() : ""
     if (!content) {
       activityMonitor.logComplete(activityId, 200)
       return null
@@ -298,8 +269,7 @@ export async function extractWithSearch1API(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)

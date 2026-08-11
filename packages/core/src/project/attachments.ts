@@ -52,8 +52,7 @@ export async function downloadChallengeAttachments(options: {
     )
     usedPaths.add(path)
     const existing = await env.readBinaryFile(path)
-    const unchanged =
-      existing.ok && Buffer.from(existing.value).equals(payload.content)
+    const unchanged = existing.ok && Buffer.from(existing.value).equals(payload.content)
     const saved = unchanged
       ? ({ ok: true, value: undefined } as const)
       : await env.replaceFile(path, payload.content)
@@ -80,9 +79,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function challengeAttachmentPath(name: string): string {
-  const basename =
-    sanitizeSegment(posix.basename(name.replaceAll("\\", "/"))) ||
-    "download.bin"
+  const basename = sanitizeSegment(posix.basename(name.replaceAll("\\", "/"))) || "download.bin"
   return `/workspace/attachments/${basename}`
 }
 

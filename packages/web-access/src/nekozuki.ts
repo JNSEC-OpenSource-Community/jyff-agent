@@ -1,9 +1,5 @@
 import { activityMonitor } from "./activity.ts"
-import type {
-  SearchOptions,
-  SearchResponse,
-  SearchResult,
-} from "./perplexity.ts"
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts"
 import { providerOption } from "./runtime.ts"
 
 const DEFAULT_NEKOZUKI_URL = "http://localhost:8000"
@@ -31,27 +27,19 @@ export async function searchWithNekozuki(
   const activityId = activityMonitor.logStart({ type: "api", query })
 
   try {
-    const response = await fetch(
-      `${baseUrl.replace(/\/+$/, "")}/api/rag/query`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, top_k: numResults }),
-        signal: options.signal
-          ? AbortSignal.any([
-              AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-              options.signal,
-            ])
-          : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-      },
-    )
+    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/rag/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, top_k: numResults }),
+      signal: options.signal
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
+        : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    })
 
     if (!response.ok) {
       activityMonitor.logError(activityId, `HTTP ${response.status}`)
       const errorText = await response.text()
-      throw new Error(
-        `nekozuki RAG error ${response.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`nekozuki RAG error ${response.status}: ${errorText.slice(0, 300)}`)
     }
 
     const data = (await response.json()) as {
@@ -78,9 +66,7 @@ export async function searchWithNekozuki(
       if (results.length >= numResults) break
     }
 
-    const answer = results
-      .map((r) => `${r.snippet}\nSource: ${r.title} (${r.url})`)
-      .join("\n\n")
+    const answer = results.map((r) => `${r.snippet}\nSource: ${r.title} (${r.url})`).join("\n\n")
 
     return { answer, results }
   } catch (err) {

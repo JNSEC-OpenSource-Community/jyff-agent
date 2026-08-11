@@ -1,23 +1,9 @@
 import { randomUUID } from "node:crypto"
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises"
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import {
-  type AgentSkill,
-  CtfFatherAgent,
-  materializeSkills,
-} from "@ctf-agent/agents"
+import { type AgentSkill, CtfFatherAgent, materializeSkills } from "@ctf-agent/agents"
 import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
-import type {
-  AgentHarnessEvent,
-  AgentOptions,
-} from "@earendil-works/pi-agent-core"
+import type { AgentHarnessEvent, AgentOptions } from "@earendil-works/pi-agent-core"
 import type {
   AgentStreamEvent,
   AgentStreamListener,
@@ -39,13 +25,7 @@ export interface FatherSessionRecord {
   pluginName?: string
   task?: "create" | "repair"
   gate?: {
-    status:
-      | "requested"
-      | "configuring"
-      | "validating"
-      | "failed"
-      | "ready"
-      | "installed"
+    status: "requested" | "configuring" | "validating" | "failed" | "ready" | "installed"
     requestedAt: string
     report?: import("@ctf-agent/platform").PlatformValidationReport
   }
@@ -96,9 +76,7 @@ export class FatherSessionManager {
 
   private constructor(private readonly options: FatherSessionManagerOptions) {}
 
-  static async open(
-    options: FatherSessionManagerOptions,
-  ): Promise<FatherSessionManager> {
+  static async open(options: FatherSessionManagerOptions): Promise<FatherSessionManager> {
     const manager = new FatherSessionManager(options)
     await mkdir(manager.sessionsRoot(), { recursive: true })
     try {
@@ -152,9 +130,7 @@ export class FatherSessionManager {
       id,
       title: randomSessionName(),
       status: "draft",
-      ...(input.parentSessionId
-        ? { parentSessionId: input.parentSessionId }
-        : {}),
+      ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
       modelId: `${model.provider}/${model.id}`,
       skillRevision: this.options.skillRevision ?? "builtin",
       createdBy: requiredText(input.createdBy, "创建者", 160),
@@ -178,7 +154,7 @@ export class FatherSessionManager {
     await this.exclusive(async () => {
       const active = await this.ensureActive(id)
       if (active.agent.state.isStreaming || active.turn) {
-        active.agent.steer(text)
+        await active.agent.steer(text)
       } else {
         const turn = active.agent.prompt(text).then(
           () => undefined,
@@ -270,28 +246,28 @@ export class FatherSessionManager {
     const workspace = this.workspace(id)
     await this.materializePluginSdk(workspace)
     const skills = await materializeSkills(this.options.skills ?? [], workspace)
-    const sandbox = await (this.options.sandboxFactory ?? DockerSandbox.create)(
-      {
-        projectId: "father",
-        runId: id.slice("father-".length),
-        image: this.options.image,
-        workspace,
-        ...(this.options.workspaceMount
-          ? { workspaceMount: this.options.workspaceMount(id) }
-          : {}),
-        privileged: false,
-        networkMode: "bridge",
-        resources: {
-          cpus: 2,
-          memoryBytes: 4 * 1024 * 1024 * 1024,
-          memorySwapBytes: 4 * 1024 * 1024 * 1024,
-          pidsLimit: 512,
-          storageBytes: 20 * 1024 * 1024 * 1024,
-        },
+    const sandboxFactory =
+      this.options.sandboxFactory ?? ((sandboxOptions) => DockerSandbox.create(sandboxOptions))
+    const sandbox = await sandboxFactory({
+      projectId: "father",
+      runId: id.slice("father-".length),
+      image: this.options.image,
+      workspace,
+      ...(this.options.workspaceMount ? { workspaceMount: this.options.workspaceMount(id) } : {}),
+      privileged: false,
+      networkMode: "bridge",
+      resources: {
+        cpus: 2,
+        memoryBytes: 4 * 1024 * 1024 * 1024,
+        memorySwapBytes: 4 * 1024 * 1024 * 1024,
+        pidsLimit: 512,
+        storageBytes: 20 * 1024 * 1024 * 1024,
       },
-    )
+    })
     try {
-      const agent = await (this.options.agentFactory ?? CtfFatherAgent.create)({
+      const agentFactory =
+        this.options.agentFactory ?? ((agentOptions) => CtfFatherAgent.create(agentOptions))
+      const agent = await agentFactory({
         sessionId: id,
         sessionDirectory: this.sessionDirectory(id),
         sandbox,
@@ -335,9 +311,7 @@ export class FatherSessionManager {
    * Father 的 workspace 和 JSONL 会话可在宿主机上保留，Docker sandbox 仅服务于当前回合。
    * 下一条修复或验证反馈会通过 ensureActive 按需创建新的 sandbox。
    */
-  private async releaseAfterTurn(
-    active: NonNullable<typeof this.active>,
-  ): Promise<void> {
+  private async releaseAfterTurn(active: NonNullable<typeof this.active>): Promise<void> {
     await this.exclusive(async () => {
       if (this.active !== active || active.turn === undefined) return
       active.turn = undefined
@@ -358,10 +332,7 @@ export class FatherSessionManager {
     })
   }
 
-  async setGateStatus(
-    id: string,
-    gate: FatherSessionRecord["gate"],
-  ): Promise<FatherSessionRecord> {
+  async setGateStatus(id: string, gate: FatherSessionRecord["gate"]): Promise<FatherSessionRecord> {
     const record = this.requireRecord(id)
     record.gate = gate
     record.updatedAt = new Date().toISOString()
@@ -382,7 +353,7 @@ export class FatherSessionManager {
     record.updatedAt = new Date().toISOString()
     await this.persist()
     const active = await this.ensureActive(id)
-    active.agent.steer(
+    await active.agent.steer(
       `<plugin_validation_result>${escapeXml(JSON.stringify(report))}</plugin_validation_result>`,
     )
   }
@@ -459,8 +430,7 @@ export class FatherSessionManager {
     } else if (event.type === "queue_update") {
       payload = {
         type: "queue_updated",
-        queued:
-          event.steer.length + event.followUp.length + event.nextTurn.length,
+        queued: event.steer.length + event.followUp.length + event.nextTurn.length,
       }
     } else if (event.type === "session_before_compact") {
       payload = { type: "status_changed", status: "compacting" }
@@ -505,16 +475,9 @@ export class FatherSessionManager {
   }
 
   private async materializePluginSdk(workspace: string): Promise<void> {
-    const skill = this.options.skills?.find(
-      ({ name }) => name === "extension-authoring",
-    )
+    const skill = this.options.skills?.find(({ name }) => name === "extension-authoring")
     if (!skill) return
-    const moduleDirectory = join(
-      workspace,
-      "node_modules",
-      "@ctf-agent",
-      "platform",
-    )
+    const moduleDirectory = join(workspace, "node_modules", "@ctf-agent", "platform")
     await mkdir(moduleDirectory, { recursive: true })
     await Promise.all([
       copyFile(
@@ -608,27 +571,15 @@ function parseRecord(value: unknown): FatherSessionRecord | undefined {
   return record as FatherSessionRecord
 }
 
-const SESSION_ADJECTIVES = [
-  "amber",
-  "quiet",
-  "silver",
-  "brisk",
-  "hidden",
-  "lucky",
-]
+const SESSION_ADJECTIVES = ["amber", "quiet", "silver", "brisk", "hidden", "lucky"]
 const SESSION_NOUNS = ["otter", "badger", "raven", "fox", "moth", "yak"]
 function randomSessionName(): string {
-  const index = Math.floor(
-    Math.random() * SESSION_ADJECTIVES.length * SESSION_NOUNS.length,
-  )
+  const index = Math.floor(Math.random() * SESSION_ADJECTIVES.length * SESSION_NOUNS.length)
   return `${SESSION_ADJECTIVES[index % SESSION_ADJECTIVES.length]}-${SESSION_NOUNS[Math.floor(index / SESSION_ADJECTIVES.length)]}`
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 }
 
 function requiredText(value: string, label: string, maximum: number): string {

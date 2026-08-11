@@ -1,9 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
-import {
-  listWorkspaceArtifacts,
-  readWorkspaceArtifact,
-} from "./challenge-workspace.ts"
+import { listWorkspaceArtifacts, readWorkspaceArtifact } from "./challenge-workspace.ts"
 
 export const TLDR_WORKSPACE_READ_MAX_BYTES = 64 * 1_024
 
@@ -45,15 +42,9 @@ export function createTldrWorkspaceTools(workspace: string): AgentTool[] {
       async execute(_id, params) {
         const path = (params as { path: string }).path.replaceAll("\\", "/")
         if (path === "tldr" || path.startsWith("tldr/")) {
-          throw new Error(
-            "TLDR session files are not readable workspace artifacts",
-          )
+          throw new Error("TLDR session files are not readable workspace artifacts")
         }
-        const bytes = await readWorkspaceArtifact(
-          workspace,
-          path,
-          TLDR_WORKSPACE_READ_MAX_BYTES,
-        )
+        const bytes = await readWorkspaceArtifact(workspace, path, TLDR_WORKSPACE_READ_MAX_BYTES)
         let content: string
         try {
           content = new TextDecoder("utf-8", { fatal: true }).decode(bytes)

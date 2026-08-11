@@ -73,13 +73,7 @@ for (const [name, language] of Object.entries(languages)) {
   hljs.registerLanguage(name, language)
 }
 
-export function SyntaxHighlightedCode({
-  code,
-  language,
-}: {
-  code: string
-  language?: string
-}) {
+export function SyntaxHighlightedCode({ code, language }: { code: string; language?: string }) {
   const normalized = normalizeLanguage(language)
   const highlighted = normalized
     ? hljs.highlight(code, { language: normalized, ignoreIllegals: true }).value
@@ -88,7 +82,6 @@ export function SyntaxHighlightedCode({
     <code
       className={`hljs${normalized ? ` language-${normalized}` : ""}`}
       // highlight.js 会先转义源代码，再生成受控 span 标记。
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: 输入已经由 highlight.js 转义，保留其高亮 span。
       dangerouslySetInnerHTML={{ __html: highlighted }}
     />
   )

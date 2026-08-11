@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { absoluteTime, relativeTime } from "../src/lib/time.ts"
 
 describe("time formatters", () => {

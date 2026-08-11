@@ -1,16 +1,8 @@
 import { join } from "node:path"
 import type { ChallengeInfo } from "@ctf-agent/platform"
-import {
-  CTF_COMPACTION_PROMPT,
-  subagentTaskContextPrompt,
-} from "@ctf-agent/prompts"
+import { CTF_COMPACTION_PROMPT, subagentTaskContextPrompt } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
-import type {
-  AgentMessage,
-  AgentOptions,
-  AgentTool,
-  Skill,
-} from "@earendil-works/pi-agent-core"
+import type { AgentMessage, AgentOptions, AgentTool, Skill } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
 import {
   type AgentSkill,
@@ -54,10 +46,7 @@ export class CtfSubagent extends BaseAgent {
   readonly role: SubagentRole
   readonly containerCwd: string
 
-  private constructor(
-    options: CreateCtfSubagentOptions,
-    prepared: PreparedBaseAgent,
-  ) {
+  private constructor(options: CreateCtfSubagentOptions, prepared: PreparedBaseAgent) {
     super(prepared, {
       compaction: options.compaction !== false,
       compactionInstructions: CTF_COMPACTION_PROMPT,
@@ -80,29 +69,18 @@ export class CtfSubagent extends BaseAgent {
         cwd: options.containerCwd,
       }),
     ]
-    const enabledTools = options.role.tools
-      ? new Set(options.role.tools)
-      : undefined
-    const tools = enabledTools
-      ? allTools.filter((tool) => enabledTools.has(tool.name))
-      : allTools
+    const enabledTools = options.role.tools ? new Set(options.role.tools) : undefined
+    const tools = enabledTools ? allTools.filter((tool) => enabledTools.has(tool.name)) : allTools
     if (enabledTools) {
       const known = new Set(allTools.map((tool) => tool.name))
       const unknown = [...enabledTools].filter((name) => !known.has(name))
       if (unknown.length > 0) {
-        throw new Error(
-          `SubAgent ${options.role.name} 配置了未知工具: ${unknown.join(", ")}`,
-        )
+        throw new Error(`SubAgent ${options.role.name} 配置了未知工具: ${unknown.join(", ")}`)
       }
     }
     const prepared = await prepareBaseAgent({
       session: {
-        path: join(
-          options.runDirectory,
-          "subagents",
-          options.subagentId,
-          "session.jsonl",
-        ),
+        path: join(options.runDirectory, "subagents", options.subagentId, "session.jsonl"),
         id: options.subagentId,
         cwd: options.runDirectory,
         metadata: {
@@ -152,9 +130,7 @@ function resolveRoleModel(
   if (!configured) return fallback
   const separator = configured.indexOf("/")
   if (separator < 1 || separator === configured.length - 1) {
-    throw new Error(
-      `SubAgent model 必须使用 provider/model 格式: ${configured}`,
-    )
+    throw new Error(`SubAgent model 必须使用 provider/model 格式: ${configured}`)
   }
   const provider = configured.slice(0, separator)
   const id = configured.slice(separator + 1)

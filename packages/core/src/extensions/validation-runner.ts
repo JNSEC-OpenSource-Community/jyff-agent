@@ -1,8 +1,5 @@
 import { pathToFileURL } from "node:url"
-import type {
-  PlatformPlugin,
-  PlatformValidationProfile,
-} from "@ctf-agent/platform"
+import type { PlatformPlugin, PlatformValidationProfile } from "@ctf-agent/platform"
 import { validatePlatformPlugin } from "./platform-validation.ts"
 
 interface RunnerInput {
@@ -18,16 +15,13 @@ interface RunnerInput {
 let serializedInput = ""
 for await (const chunk of process.stdin) serializedInput += String(chunk)
 const input = JSON.parse(serializedInput) as RunnerInput
-const imported = (await import(
-  `${pathToFileURL(input.entry).href}?validation=${Date.now()}`
-)) as {
+const imported = (await import(`${pathToFileURL(input.entry).href}?validation=${Date.now()}`)) as {
   default?: unknown
   platformPlugin?: unknown
 }
 const plugin = imported.platformPlugin ?? imported.default
 if (!isPlatformPlugin(plugin)) throw new Error("入口未导出有效 PlatformPlugin")
-if (plugin.id !== input.pluginId)
-  throw new Error("manifest ID 与插件导出 ID 不一致")
+if (plugin.id !== input.pluginId) throw new Error("manifest ID 与插件导出 ID 不一致")
 if (stableJson(plugin.setup) !== stableJson(input.manifestSetup)) {
   throw new Error("manifest setup 与插件导出的 setup 不一致")
 }

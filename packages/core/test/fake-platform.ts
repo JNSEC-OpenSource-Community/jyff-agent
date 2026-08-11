@@ -21,14 +21,9 @@ export interface TestChallenge {
   attachments: Array<{ id: string; name: string; content: string }>
   flag: string
   remote?: boolean
-  failures?: Partial<
-    Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", number>
-  >
+  failures?: Partial<Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", number>>
   retryableFailures?: Partial<
-    Record<
-      "bind" | "getInfo" | "download" | "submit" | "instanceStart",
-      boolean
-    >
+    Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", boolean>
   >
 }
 
@@ -56,9 +51,7 @@ const defaultChallenges: TestChallenge[] = [
     category: "misc",
     score: 100,
     description: "Read the attachment and submit its flag.",
-    attachments: [
-      { id: "flag.txt", name: "flag.txt", content: "TEST{fixture}" },
-    ],
+    attachments: [{ id: "flag.txt", name: "flag.txt", content: "TEST{fixture}" }],
     flag: "TEST{fixture}",
   },
 ]
@@ -68,10 +61,7 @@ class TestPlatformProject implements PlatformProject {
   private readonly announcements: Announcement[]
   private readonly solved = new Set<string>()
   private readonly environments = new Map<string, RemoteEnvironment>()
-  private readonly remainingFailures = new Map<
-    string,
-    Record<FailureKind, number>
-  >()
+  private readonly remainingFailures = new Map<string, Record<FailureKind, number>>()
   private readonly bindAttempts = new Map<string, number>()
   private readonly submissions = new Map<string, number>()
   private instanceStarts = 0
@@ -138,14 +128,9 @@ class TestPlatformProject implements PlatformProject {
   }
 
   async bindChallenge(challengeId: string): Promise<ChallengeCapability> {
-    const challenge = this.challenges.find(
-      (candidate) => candidate.id === challengeId,
-    )
+    const challenge = this.challenges.find((candidate) => candidate.id === challengeId)
     if (!challenge) throw new Error(`测试平台不存在题目: ${challengeId}`)
-    this.bindAttempts.set(
-      challengeId,
-      (this.bindAttempts.get(challengeId) ?? 0) + 1,
-    )
+    this.bindAttempts.set(challengeId, (this.bindAttempts.get(challengeId) ?? 0) + 1)
     this.fail(challenge, "bind")
 
     const capability: ChallengeCapability = {
@@ -155,9 +140,7 @@ class TestPlatformProject implements PlatformProject {
       },
       downloadAttachment: async (attachmentId) => {
         this.fail(challenge, "download")
-        const attachment = challenge.attachments.find(
-          (candidate) => candidate.id === attachmentId,
-        )
+        const attachment = challenge.attachments.find((candidate) => candidate.id === attachmentId)
         if (!attachment) throw new Error(`当前题不存在附件: ${attachmentId}`)
         const content = new TextEncoder().encode(attachment.content)
         return {
@@ -170,15 +153,11 @@ class TestPlatformProject implements PlatformProject {
         }
       },
       submitFlag: async (flag): Promise<FlagSubmission> => {
-        this.submissions.set(
-          challenge.id,
-          (this.submissions.get(challenge.id) ?? 0) + 1,
-        )
+        this.submissions.set(challenge.id, (this.submissions.get(challenge.id) ?? 0) + 1)
         this.fail(challenge, "submit")
         if (this.solved.has(challenge.id))
           return { status: "already_solved", message: "Already solved" }
-        if (flag.trim() !== challenge.flag)
-          return { status: "rejected", message: "Incorrect" }
+        if (flag.trim() !== challenge.flag) return { status: "rejected", message: "Incorrect" }
         this.solved.add(challenge.id)
         return { status: "accepted", message: "Accepted" }
       },
@@ -198,10 +177,7 @@ class TestPlatformProject implements PlatformProject {
           }
           this.environments.set(environment.id, environment)
           this.instanceStarts++
-          this.maxActiveEnvironments = Math.max(
-            this.maxActiveEnvironments,
-            this.activeCount(),
-          )
+          this.maxActiveEnvironments = Math.max(this.maxActiveEnvironments, this.activeCount())
           return environment
         },
         status: async () => this.running(challenge.id) ?? null,
@@ -231,16 +207,13 @@ class TestPlatformProject implements PlatformProject {
 
   private running(challengeId: string): RemoteEnvironment | undefined {
     return [...this.environments.values()].find(
-      (environment) =>
-        environment.challengeId === challengeId &&
-        environment.status === "running",
+      (environment) => environment.challengeId === challengeId && environment.status === "running",
     )
   }
 
   private activeCount(): number {
-    return [...this.environments.values()].filter(
-      (environment) => environment.status === "running",
-    ).length
+    return [...this.environments.values()].filter((environment) => environment.status === "running")
+      .length
   }
 
   private fail(challenge: TestChallenge, kind: FailureKind): void {
@@ -284,10 +257,7 @@ function parseConfig(value: unknown): TestPlatformConfig {
   return value as TestPlatformConfig
 }
 
-function challengeInfo(
-  challenge: TestChallenge,
-  solved: boolean,
-): ChallengeInfo {
+function challengeInfo(challenge: TestChallenge, solved: boolean): ChallengeInfo {
   const attachments: Attachment[] = challenge.attachments.map((attachment) => ({
     id: attachment.id,
     name: attachment.name,

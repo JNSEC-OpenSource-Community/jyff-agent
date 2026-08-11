@@ -86,9 +86,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -107,9 +105,7 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
   for (const raw of domainFilter) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? exclude_domains
-      : include_domains
+    const target = raw.trim().startsWith("-") ? exclude_domains : include_domains
     if (!target.includes(domain)) target.push(domain)
   }
   return {
@@ -122,39 +118,27 @@ function buildSearchRequestBody(
   query: string,
   options: ParallelSearchOptions = {},
 ): Record<string, unknown> {
-  const numResults = Math.max(
-    1,
-    Math.min(Math.floor(options.numResults ?? 5), 20),
-  )
+  const numResults = Math.max(1, Math.min(Math.floor(options.numResults ?? 5), 20))
   const sourcePolicy = {
     ...mapDomainFilter(options.domainFilter),
-    ...(options.recencyFilter
-      ? { after_date: recencyToAfterDate(options.recencyFilter) }
-      : {}),
+    ...(options.recencyFilter ? { after_date: recencyToAfterDate(options.recencyFilter) } : {}),
   }
   return {
     objective: query,
     search_queries: [query],
     advanced_settings: {
       max_results: numResults,
-      ...(Object.keys(sourcePolicy).length > 0
-        ? { source_policy: sourcePolicy }
-        : {}),
+      ...(Object.keys(sourcePolicy).length > 0 ? { source_policy: sourcePolicy } : {}),
     },
   }
 }
 
 function normalizeExcerpts(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.filter(
-    (item): item is string =>
-      typeof item === "string" && item.trim().length > 0,
-  )
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
 }
 
-function mapSearchResults(
-  results: V1WebSearchResult[] | undefined,
-): SearchResponse["results"] {
+function mapSearchResults(results: V1WebSearchResult[] | undefined): SearchResponse["results"] {
   if (!Array.isArray(results)) return []
   const mapped: SearchResponse["results"] = []
   for (let i = 0; i < results.length; i++) {
@@ -164,18 +148,13 @@ function mapSearchResults(
     mapped.push({
       title: item.title || `Source ${i + 1}`,
       url: item.url,
-      snippet:
-        excerpts.length > 0
-          ? excerpts[0]!.replace(/\s+/g, " ").trim().slice(0, 200)
-          : "",
+      snippet: excerpts.length > 0 ? excerpts[0]!.replace(/\s+/g, " ").trim().slice(0, 200) : "",
     })
   }
   return mapped
 }
 
-function buildAnswerFromExcerpts(
-  results: V1WebSearchResult[] | undefined,
-): string {
+function buildAnswerFromExcerpts(results: V1WebSearchResult[] | undefined): string {
   if (!Array.isArray(results)) return ""
   const parts: string[] = []
   for (let i = 0; i < results.length; i++) {
@@ -183,16 +162,12 @@ function buildAnswerFromExcerpts(
     if (!item?.url) continue
     const excerpts = normalizeExcerpts(item.excerpts)
     if (excerpts.length === 0) continue
-    parts.push(
-      `${excerpts.join(" ")}\nSource: ${item.title || `Source ${i + 1}`} (${item.url})`,
-    )
+    parts.push(`${excerpts.join(" ")}\nSource: ${item.title || `Source ${i + 1}`} (${item.url})`)
   }
   return parts.join("\n\n")
 }
 
-function mapInlineContent(
-  results: V1WebSearchResult[] | undefined,
-): ExtractedContent[] {
+function mapInlineContent(results: V1WebSearchResult[] | undefined): ExtractedContent[] {
   if (!Array.isArray(results)) return []
   return results.flatMap((result) => {
     if (!result?.url) return []
@@ -210,16 +185,11 @@ function mapInlineContent(
 }
 
 function resolveExtractContent(result: V1ExtractResult): string {
-  const fullContent =
-    typeof result.full_content === "string" ? result.full_content.trim() : ""
-  return fullContent.length > 0
-    ? fullContent
-    : normalizeExcerpts(result.excerpts).join("\n\n")
+  const fullContent = typeof result.full_content === "string" ? result.full_content.trim() : ""
+  return fullContent.length > 0 ? fullContent : normalizeExcerpts(result.excerpts).join("\n\n")
 }
 
-function mapExtractResult(
-  result: V1ExtractResult | undefined | null,
-): ExtractedContent | null {
+function mapExtractResult(result: V1ExtractResult | undefined | null): ExtractedContent | null {
   if (!result?.url) return null
   const content = resolveExtractContent(result)
   if (content.length < MIN_USEFUL_CONTENT) return null
@@ -255,11 +225,7 @@ function hasExtractUrlError(errors: unknown, url: string): boolean {
   if (!Array.isArray(errors)) return false
   return errors.some((entry) => {
     if (typeof entry === "string") return entry === url
-    return (
-      typeof entry === "object" &&
-      entry !== null &&
-      (entry as { url?: unknown }).url === url
-    )
+    return typeof entry === "object" && entry !== null && (entry as { url?: unknown }).url === url
   })
 }
 
@@ -272,12 +238,8 @@ async function fetchAndMapExtractResult(
   result: V1ExtractResult | undefined
 }> {
   const data = await parallelFetch(PARALLEL_EXTRACT_URL, body, signal)
-  if (hasExtractUrlError(data.errors, url))
-    return { mapped: null, result: undefined }
-  const result = findExtractResult(
-    data.results as V1ExtractResult[] | undefined,
-    url,
-  )
+  if (hasExtractUrlError(data.errors, url)) return { mapped: null, result: undefined }
+  const result = findExtractResult(data.results as V1ExtractResult[] | undefined, url)
   return { mapped: mapExtractResult(result), result }
 }
 
@@ -307,16 +269,9 @@ export async function extractWithParallel(
   signal?: AbortSignal,
   options: ExtractOptions = {},
 ): Promise<ExtractedContent | null> {
-  const initial = await fetchAndMapExtractResult(
-    url,
-    buildExtractRequestBody(url, options),
-    signal,
-  )
+  const initial = await fetchAndMapExtractResult(url, buildExtractRequestBody(url, options), signal)
   if (initial.mapped) return initial.mapped
-  if (
-    !initial.result ||
-    resolveExtractContent(initial.result).length >= MIN_USEFUL_CONTENT
-  )
+  if (!initial.result || resolveExtractContent(initial.result).length >= MIN_USEFUL_CONTENT)
     return null
 
   const retry = await fetchAndMapExtractResult(
@@ -353,8 +308,7 @@ async function parallelFetch(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -365,9 +319,7 @@ async function parallelFetch(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `Parallel API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Parallel API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
 
   try {

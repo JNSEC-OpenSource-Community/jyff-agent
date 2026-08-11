@@ -42,14 +42,9 @@ export function discoverDeclaredWebLinks(
   }
 
   if (links.size < MAX_DECLARED_LINKS) {
-    const declaredBase = document
-      .querySelector("base[href]")
-      ?.getAttribute("href")
-    const documentBase =
-      resolveHttpUrl(declaredBase, responseUrl) ?? responseUrl
-    for (const element of document.querySelectorAll(
-      "link[rel][href], a[rel][href]",
-    )) {
+    const declaredBase = document.querySelector("base[href]")?.getAttribute("href")
+    const documentBase = resolveHttpUrl(declaredBase, responseUrl) ?? responseUrl
+    for (const element of document.querySelectorAll("link[rel][href], a[rel][href]")) {
       addDeclaredLink(links, {
         url: resolveHttpUrl(element.getAttribute("href"), documentBase),
         relations: declaredRelations(element.getAttribute("rel")),
@@ -62,16 +57,9 @@ export function discoverDeclaredWebLinks(
   return [...links.values()]
 }
 
-export function appendDeclaredWebLinks(
-  content: string,
-  links: DeclaredWebLink[],
-): string {
+export function appendDeclaredWebLinks(content: string, links: DeclaredWebLink[]): string {
   if (links.length === 0) return content
-  const section = [
-    "## Declared links",
-    "",
-    ...links.map(formatDeclaredLink),
-  ].join("\n")
+  const section = ["## Declared links", "", ...links.map(formatDeclaredLink)].join("\n")
   return content.trim() ? `${content.trim()}\n\n${section}` : section
 }
 
@@ -83,8 +71,7 @@ function addDeclaredLink(
   const existing = links.get(candidate.url)
   if (existing) {
     for (const relation of candidate.relations) {
-      if (!existing.relations.includes(relation))
-        existing.relations.push(relation)
+      if (!existing.relations.includes(relation)) existing.relations.push(relation)
     }
     if (!existing.type) existing.type = normalizeMetadata(candidate.type)
     return
@@ -111,17 +98,12 @@ function declaredRelations(value: string | null | undefined): string[] {
   ]
 }
 
-function resolveHttpUrl(
-  value: string | null | undefined,
-  baseUrl: string,
-): string | null {
+function resolveHttpUrl(value: string | null | undefined, baseUrl: string): string | null {
   if (!value || value.length > MAX_DECLARED_URL_LENGTH) return null
   try {
     const url = new URL(value, baseUrl)
     if (url.href.length > MAX_DECLARED_URL_LENGTH) return null
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.href
-      : null
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null
   } catch {
     return null
   }
@@ -159,9 +141,7 @@ function splitOutsideSyntax(
 }
 
 function splitLinkHeader(header: string): string[] {
-  return (splitOutsideSyntax(header, ",", true) ?? [])
-    .map((value) => value.trim())
-    .filter(Boolean)
+  return (splitOutsideSyntax(header, ",", true) ?? []).map((value) => value.trim()).filter(Boolean)
 }
 
 function parseLinkParameters(input: string): Map<string, string> | null {
@@ -171,23 +151,16 @@ function parseLinkParameters(input: string): Map<string, string> | null {
   const parameters = new Map<string, string>()
   for (const part of parts) {
     const match =
-      /^\s*([!#$%&'*+\-.^_`|~A-Za-z0-9]+)(?:\s*=\s*(?:"((?:\\.|[^"])*)"|(\S+)))?\s*$/.exec(
-        part,
-      )
+      /^\s*([!#$%&'*+\-.^_`|~A-Za-z0-9]+)(?:\s*=\s*(?:"((?:\\.|[^"])*)"|(\S+)))?\s*$/.exec(part)
     if (!match) return null
     const name = match[1]!.toLowerCase()
-    const value =
-      match[2] === undefined
-        ? (match[3] ?? "")
-        : match[2].replace(/\\(.)/g, "$1")
+    const value = match[2] === undefined ? (match[3] ?? "") : match[2].replace(/\\(.)/g, "$1")
     if (!parameters.has(name)) parameters.set(name, value)
   }
   return parameters
 }
 
-function normalizeMetadata(
-  value: string | null | undefined,
-): string | undefined {
+function normalizeMetadata(value: string | null | undefined): string | undefined {
   if (!value) return undefined
   const normalized = value.replace(/\s+/g, " ").trim().slice(0, 160)
   return normalized || undefined

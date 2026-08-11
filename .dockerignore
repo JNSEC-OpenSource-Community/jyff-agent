@@ -1,9 +1,28 @@
+# 版本控制与本地 Agent 状态不参与镜像构建上下文
 .git
-.gitignore
-.env
+.github
+.agents
+.ctf-agent
+.trellis
+**/.pi
+
+# 依赖、缓存和可再生构建产物由容器内 vp 生成
 node_modules
 **/node_modules
-**/.ctf-agent
+.pnpm-store
+.vite
+.vite-temp
+.vite-hooks
+.vp
+apps/frontend/dist
 coverage
-dist
+*.tsbuildinfo
+
+# 不需要在生产镜像内构建的本地文件
+.env
+.env.*
+*.env
 *.log
+dev-log.md
+**/test
+**/*.test.*

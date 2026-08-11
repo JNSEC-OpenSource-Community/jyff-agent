@@ -54,9 +54,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -76,9 +74,7 @@ function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
   for (const raw of domainFilter) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? filters.exclude
-      : filters.include
+    const target = raw.trim().startsWith("-") ? filters.exclude : filters.include
     if (!target.includes(domain)) target.push(domain)
   }
   return filters
@@ -96,8 +92,7 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
   } catch {
     return false
   }
-  if (filters.exclude.some((domain) => domainMatches(hostname, domain)))
-    return false
+  if (filters.exclude.some((domain) => domainMatches(hostname, domain))) return false
   if (filters.include.length === 0) return true
   return filters.include.some((domain) => domainMatches(hostname, domain))
 }
@@ -106,9 +101,7 @@ function buildQuery(query: string, filters: DomainFilters): string {
   const parts = [query]
   if (filters.include.length === 1) parts.push(`site:${filters.include[0]}`)
   if (filters.include.length > 1)
-    parts.push(
-      `(${filters.include.map((domain) => `site:${domain}`).join(" OR ")})`,
-    )
+    parts.push(`(${filters.include.map((domain) => `site:${domain}`).join(" OR ")})`)
   for (const domain of filters.exclude) parts.push(`-site:${domain}`)
   return parts.join(" ")
 }
@@ -132,10 +125,8 @@ function parseResponse(value: unknown): SerpBaseResponse {
         : ""
     throw invalidResponse(`${envelope.error}${suffix}`)
   }
-  const organic =
-    envelope.organic_results ?? envelope.organic ?? envelope.results
-  if (!Array.isArray(organic))
-    throw invalidResponse("expected organic_results array")
+  const organic = envelope.organic_results ?? envelope.organic ?? envelope.results
+  if (!Array.isArray(organic)) throw invalidResponse("expected organic_results array")
   return { ...envelope, organic_results: organic }
 }
 
@@ -173,17 +164,13 @@ export async function searchWithSerpBase(
     response = await fetch(url, {
       headers: { Accept: "application/json" },
       signal: options.signal
-        ? AbortSignal.any([
-            AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-            options.signal,
-          ])
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
         : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     })
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -193,9 +180,7 @@ export async function searchWithSerpBase(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `SerpBase API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`SerpBase API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
   let rawData: unknown
   try {
@@ -209,11 +194,7 @@ export async function searchWithSerpBase(
   const results: SearchResponse["results"] = []
   for (const item of data.organic_results ?? []) {
     const url =
-      typeof item.link === "string"
-        ? item.link
-        : typeof item.url === "string"
-          ? item.url
-          : ""
+      typeof item.link === "string" ? item.link : typeof item.url === "string" ? item.url : ""
     if (!url || !passesDomainFilters(url, filters)) continue
     results.push({
       title:

@@ -78,10 +78,7 @@ export interface SubagentManagerOptions {
   /** 可选注入 web-access 工具，SubAgent 通过 role.tools 白名单决定是否启用。 */
   webAccessTools?: AgentTool[]
   maxConcurrent?: number
-  onRecord?: (
-    record: SubagentRecord,
-    event: SubagentLifecycleEvent,
-  ) => Promise<void> | void
+  onRecord?: (record: SubagentRecord, event: SubagentLifecycleEvent) => Promise<void> | void
   /** 将 Pi 的细粒度运行事件转发给控制面，不参与 Agent 生命周期结算。 */
   onAgentEvent?: (record: SubagentRecord, event: AgentHarnessEvent) => void
 }
@@ -134,8 +131,7 @@ export class CtfSubagentManager {
   /** Reattach persisted terminal workers so their JSONL sessions can be resumed. */
   restore(records: readonly SubagentRecord[]): void {
     for (const record of records) {
-      if (record.runId !== this.options.runId || this.records.has(record.id))
-        continue
+      if (record.runId !== this.options.runId || this.records.has(record.id)) continue
       if (!TERMINAL.has(record.status)) continue
       const role = resolveSubagentRole(this.options.roles, record.role)
       if (!role) continue
@@ -184,12 +180,7 @@ export class CtfSubagentManager {
       status: input.background ? "queued" : "running",
       background: input.background,
       prompt,
-      sessionPath: join(
-        this.options.runDirectory,
-        "subagents",
-        id,
-        "session.jsonl",
-      ),
+      sessionPath: join(this.options.runDirectory, "subagents", id, "session.jsonl"),
       containerCwd: `/workspace/subagents/${id}`,
       turns: 0,
       toolUses: 0,
@@ -222,11 +213,7 @@ export class CtfSubagentManager {
     return snapshot(record)
   }
 
-  async resume(
-    id: string,
-    prompt: string,
-    background: boolean,
-  ): Promise<SubagentRecord> {
+  async resume(id: string, prompt: string, background: boolean): Promise<SubagentRecord> {
     if (this.closing || this.finalizing) {
       throw new Error("SubAgent manager 正在收尾或关闭")
     }
@@ -259,11 +246,7 @@ export class CtfSubagentManager {
     })
     managed.resolve = resolve
     this.emit(managed, "created")
-    if (
-      !bypassQueue &&
-      background &&
-      this.runningBackground >= this.maxConcurrent
-    ) {
+    if (!bypassQueue && background && this.runningBackground >= this.maxConcurrent) {
       this.queue.push({ managed, prompt: nextPrompt })
     } else {
       this.launch(managed, nextPrompt, !managed.agent)
@@ -308,9 +291,7 @@ export class CtfSubagentManager {
     }
 
     const completed = new AbortController()
-    const combined = signal
-      ? AbortSignal.any([signal, completed.signal])
-      : completed.signal
+    const combined = signal ? AbortSignal.any([signal, completed.signal]) : completed.signal
     try {
       return await Promise.race([
         this.wait(id, combined).then((record) => ({
@@ -369,10 +350,7 @@ export class CtfSubagentManager {
    * session 启动一个明确的最终报告 turn。
    * 超时 worker 会先抓取最新回复再中止，返回时所有子任务都已进入终态。
    */
-  async finalize(
-    reportPrompt: string,
-    graceMs: number,
-  ): Promise<SubagentRecord[]> {
+  async finalize(reportPrompt: string, graceMs: number): Promise<SubagentRecord[]> {
     if (!Number.isFinite(graceMs) || graceMs < 0) {
       throw new Error("SubAgent finalization graceMs must be non-negative")
     }
@@ -390,9 +368,7 @@ export class CtfSubagentManager {
       }),
     )
     await Promise.allSettled(
-      running.map((record) =>
-        this.restart(record.id, reportPrompt, true, true),
-      ),
+      running.map((record) => this.restart(record.id, reportPrompt, true, true)),
     )
     if (running.length > 0 && graceMs > 0) {
       await settleWithin(
@@ -412,8 +388,8 @@ export class CtfSubagentManager {
       }),
     )
     await Promise.allSettled(
-      unfinished.map((record) =>
-        this.records.get(record.id)?.agent?.waitForIdle(),
+      unfinished.map(
+        (record) => this.records.get(record.id)?.agent?.waitForIdle() ?? Promise.resolve(),
       ),
     )
     return this.list()
@@ -425,16 +401,12 @@ export class CtfSubagentManager {
     const pending = this.list().filter((record) => !TERMINAL.has(record.status))
     await Promise.allSettled(pending.map((record) => this.cancel(record.id)))
     await Promise.allSettled(
-      [...this.records.values()].map(({ agent }) => agent?.waitForIdle()),
+      [...this.records.values()].map(({ agent }) => agent?.waitForIdle() ?? Promise.resolve()),
     )
   }
 
   /** Reserve a background slot synchronously, before any async session setup. */
-  private launch(
-    managed: ManagedSubagent,
-    prompt: string,
-    initialize: boolean,
-  ): void {
+  private launch(managed: ManagedSubagent, prompt: string, initialize: boolean): void {
     const background = managed.record.background
     if (background) this.runningBackground++
     void this.executeLaunch(managed, prompt, initialize).finally(() => {
@@ -516,10 +488,7 @@ export class CtfSubagentManager {
     })
   }
 
-  private captureProgress(
-    managed: ManagedSubagent,
-    event: AgentHarnessEvent,
-  ): void {
+  private captureProgress(managed: ManagedSubagent, event: AgentHarnessEvent): void {
     let changed = false
     if (event.type === "turn_end") {
       managed.record.turns++
@@ -534,14 +503,9 @@ export class CtfSubagentManager {
       managed.record.activeTool = undefined
       changed = true
     }
-    if (
-      event.type === "message_end" &&
-      event.message.role === "assistant" &&
-      event.message.usage
-    ) {
+    if (event.type === "message_end" && event.message.role === "assistant" && event.message.usage) {
       managed.record.totalTokens += event.message.usage.totalTokens
-      managed.record.inputTokens =
-        (managed.record.inputTokens ?? 0) + event.message.usage.input
+      managed.record.inputTokens = (managed.record.inputTokens ?? 0) + event.message.usage.input
       managed.record.cacheReadTokens =
         (managed.record.cacheReadTokens ?? 0) + event.message.usage.cacheRead
       managed.record.cacheWriteTokens =
@@ -588,9 +552,9 @@ export class CtfSubagentManager {
   }
 
   private emit(managed: ManagedSubagent, event: SubagentLifecycleEvent): void {
-    void Promise.resolve(
-      this.options.onRecord?.(snapshot(managed.record), event),
-    ).catch(() => undefined)
+    void Promise.resolve(this.options.onRecord?.(snapshot(managed.record), event)).catch(
+      () => undefined,
+    )
   }
 
   private async notifyParent(record: SubagentRecord): Promise<void> {
@@ -617,9 +581,7 @@ function settleWithin(promises: Promise<unknown>[], milliseconds: number) {
 }
 
 /** Main-Agent tools use pi-subagents-compatible names and argument conventions. */
-export function createSubagentManagerTools(
-  manager: CtfSubagentManager,
-): AgentTool[] {
+export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTool[] {
   const types = manager
     .availableRoles()
     .map((role) => role.name)
@@ -646,11 +608,7 @@ export function createSubagentManagerTools(
         }
         const background = params.run_in_background === true
         if (params.resume) {
-          const record = await manager.resume(
-            params.resume,
-            params.prompt,
-            background,
-          )
+          const record = await manager.resume(params.resume, params.prompt, background)
           return toolResult(record)
         }
         const record = manager.spawn({
@@ -659,9 +617,7 @@ export function createSubagentManagerTools(
           description: params.description,
           background,
         })
-        return toolResult(
-          background ? record : await manager.wait(record.id, signal),
-        )
+        return toolResult(background ? record : await manager.wait(record.id, signal))
       },
     },
     {
@@ -689,9 +645,7 @@ export function createSubagentManagerTools(
           return toolResult({
             ...waited.record,
             waitInterrupted: waited.waitInterrupted,
-            ...(waited.waitInterrupted
-              ? { waitInterruptedReason: "parent_steer_queued" }
-              : {}),
+            ...(waited.waitInterrupted ? { waitInterruptedReason: "parent_steer_queued" } : {}),
           })
         }
         const record = manager.get(params.agent_id)
@@ -719,9 +673,7 @@ export function createSubagentManagerTools(
       description: "Cancel a queued or running SubAgent.",
       parameters: Type.Object({ agent_id: Type.String() }),
       async execute(_id, raw) {
-        return toolResult(
-          await manager.cancel((raw as { agent_id: string }).agent_id),
-        )
+        return toolResult(await manager.cancel((raw as { agent_id: string }).agent_id))
       },
     },
     {
@@ -793,10 +745,7 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   })
 }
 
-function waitForParentSteer(
-  parent: CtfSolverAgent,
-  signal: AbortSignal,
-): Promise<void> {
+function waitForParentSteer(parent: CtfSolverAgent, signal: AbortSignal): Promise<void> {
   if (parent.hasQueuedSteerMessages()) return Promise.resolve()
   return new Promise<void>((resolve, reject) => {
     let settled = false

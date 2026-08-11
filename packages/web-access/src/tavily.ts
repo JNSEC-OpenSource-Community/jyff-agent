@@ -30,9 +30,7 @@ function getApiKey(_signal?: AbortSignal): string | undefined {
 function requireApiKey(_signal?: AbortSignal): string {
   const apiKey = getApiKey(_signal)
   if (!apiKey) {
-    throw new Error(
-      "Tavily Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Tavily Search API key not configured. Set it via the WebUI plugins settings.")
   }
   return apiKey
 }
@@ -48,9 +46,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -69,9 +65,7 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
   for (const raw of domainFilter) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? exclude_domains
-      : include_domains
+    const target = raw.trim().startsWith("-") ? exclude_domains : include_domains
     if (!target.includes(domain)) target.push(domain)
   }
   return {
@@ -100,26 +94,17 @@ function mapResults(
     mapped.push({
       title: item.title || `Source ${mapped.length + 1}`,
       url: item.url,
-      snippet:
-        typeof item.content === "string"
-          ? item.content.replace(/\s+/g, " ").trim()
-          : "",
+      snippet: typeof item.content === "string" ? item.content.replace(/\s+/g, " ").trim() : "",
     })
     if (mapped.length >= numResults) break
   }
   return mapped
 }
 
-function mapInlineContent(
-  results: TavilyResult[] | undefined,
-): ExtractedContent[] {
+function mapInlineContent(results: TavilyResult[] | undefined): ExtractedContent[] {
   if (!Array.isArray(results)) return []
   return results.flatMap((item) => {
-    if (
-      !item?.url ||
-      typeof item.raw_content !== "string" ||
-      item.raw_content.trim().length === 0
-    )
+    if (!item?.url || typeof item.raw_content !== "string" || item.raw_content.trim().length === 0)
       return []
     return [
       {
@@ -167,8 +152,7 @@ export async function searchWithTavily(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -179,9 +163,7 @@ export async function searchWithTavily(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `Tavily API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Tavily API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
 
   let data: TavilyResponse

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { projectApi } from "../src/lib/api.ts"
 
 describe("projectApi", () => {
@@ -13,8 +13,6 @@ describe("projectApi", () => {
   })
 
   it("编码 Project ID，避免生成歧义路由", () => {
-    expect(projectApi("event/2026", "/api/events")).toBe(
-      "/api/projects/event%2F2026/events",
-    )
+    expect(projectApi("event/2026", "/api/events")).toBe("/api/projects/event%2F2026/events")
   })
 })

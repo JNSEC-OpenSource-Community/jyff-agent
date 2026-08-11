@@ -48,9 +48,7 @@ export class ProjectConfigStore {
     const ids = new Set<string>()
     for (const entry of registry.projects) {
       const stateDirectory = this.resolveStateDirectory(entry.directory)
-      const config = await readConfig(
-        join(stateDirectory, "project-config.json"),
-      )
+      const config = await readConfig(join(stateDirectory, "project-config.json"))
       if (!config) {
         throw new Error(`Project 注册项缺少配置: ${entry.id}`)
       }
@@ -80,9 +78,7 @@ export class ProjectConfigStore {
     return record ? structuredClone(record.config) : undefined
   }
 
-  async loadProject(
-    projectId: string,
-  ): Promise<StoredProjectConfig | undefined> {
+  async loadProject(projectId: string): Promise<StoredProjectConfig | undefined> {
     const record = (await this.list()).find(
       (candidate) => candidate.config.project.id === projectId,
     )
@@ -101,9 +97,7 @@ export class ProjectConfigStore {
       (candidate) => candidate.config.project.id === validated.project.id,
     )
     const now = new Date().toISOString()
-    let entry = registry.projects.find(
-      (candidate) => candidate.id === validated.project.id,
-    )
+    let entry = registry.projects.find((candidate) => candidate.id === validated.project.id)
     if (!entry) {
       entry = {
         id: validated.project.id,
@@ -121,10 +115,7 @@ export class ProjectConfigStore {
     }
 
     const stateDirectory = this.resolveStateDirectory(entry.directory)
-    await writeJsonAtomic(
-      join(stateDirectory, "project-config.json"),
-      validated,
-    )
+    await writeJsonAtomic(join(stateDirectory, "project-config.json"), validated)
     await writeJsonAtomic(this.registryPath, registry)
     return {
       config: validated,
@@ -136,9 +127,7 @@ export class ProjectConfigStore {
     }
   }
 
-  async deleteProject(
-    projectId: string,
-  ): Promise<StoredProjectConfig | undefined> {
+  async deleteProject(projectId: string): Promise<StoredProjectConfig | undefined> {
     const registry = await this.readRegistry()
     const record = (await this.list()).find(
       (candidate) => candidate.config.project.id === projectId,
@@ -173,11 +162,7 @@ export class ProjectConfigStore {
       join(this.stateDirectory, "runs"),
       join(this.stateDirectory, "challenges"),
     ]
-    await Promise.all(
-      projectArtifacts.map((path) =>
-        rm(path, { recursive: true, force: true }),
-      ),
-    )
+    await Promise.all(projectArtifacts.map((path) => rm(path, { recursive: true, force: true })))
     return cloneRecord(record)
   }
 
@@ -207,31 +192,22 @@ export class ProjectConfigStore {
       join(record.stateDirectory, "runs"),
       join(record.stateDirectory, "challenges"),
     ]
-    await Promise.all(
-      solverArtifacts.map((path) => rm(path, { recursive: true, force: true })),
-    )
+    await Promise.all(solverArtifacts.map((path) => rm(path, { recursive: true, force: true })))
     return cloneRecord(record)
   }
 
-  async setArchived(
-    projectId: string,
-    archived: boolean,
-  ): Promise<StoredProjectConfig> {
+  async setArchived(projectId: string, archived: boolean): Promise<StoredProjectConfig> {
     const registry = await this.readRegistry()
     const record = (await this.list()).find(
       (candidate) => candidate.config.project.id === projectId,
     )
     if (!record) throw new Error(`Project 不存在: ${projectId}`)
     const now = new Date().toISOString()
-    let entry = registry.projects.find(
-      (candidate) => candidate.id === projectId,
-    )
+    let entry = registry.projects.find((candidate) => candidate.id === projectId)
     if (!entry) {
       entry = {
         id: projectId,
-        directory: record.rootProject
-          ? "."
-          : `projects/${projectStorageKey(projectId)}`,
+        directory: record.rootProject ? "." : `projects/${projectStorageKey(projectId)}`,
         createdAt: record.createdAt,
         updatedAt: now,
         archived,
@@ -271,18 +247,11 @@ export class ProjectConfigStore {
 }
 
 export function projectStorageKey(projectId: string): string {
-  return createHash("sha256")
-    .update(projectId, "utf8")
-    .digest("hex")
-    .slice(0, 32)
+  return createHash("sha256").update(projectId, "utf8").digest("hex").slice(0, 32)
 }
 
 function parseRegistry(value: unknown): ProjectRegistryFile {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    !Array.isArray(value.projects)
-  ) {
+  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.projects)) {
     throw new Error("Project 注册表格式无效")
   }
   const ids = new Set<string>()
@@ -292,18 +261,9 @@ function parseRegistry(value: unknown): ProjectRegistryFile {
       throw new Error(`Project 注册项 ${index} 格式无效`)
     }
     const id = requiredText(candidate.id, `projects[${index}].id`)
-    const directory = requiredText(
-      candidate.directory,
-      `projects[${index}].directory`,
-    )
-    const createdAt = requiredText(
-      candidate.createdAt,
-      `projects[${index}].createdAt`,
-    )
-    const updatedAt = requiredText(
-      candidate.updatedAt,
-      `projects[${index}].updatedAt`,
-    )
+    const directory = requiredText(candidate.directory, `projects[${index}].directory`)
+    const createdAt = requiredText(candidate.createdAt, `projects[${index}].createdAt`)
+    const updatedAt = requiredText(candidate.updatedAt, `projects[${index}].updatedAt`)
     if (ids.has(id)) throw new Error(`Project ID 重复: ${id}`)
     if (directories.has(directory)) {
       throw new Error(`Project 状态目录重复: ${directory}`)

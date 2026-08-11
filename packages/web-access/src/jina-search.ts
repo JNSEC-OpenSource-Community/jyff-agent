@@ -30,9 +30,7 @@ function getApiKey(_signal?: AbortSignal): string | undefined {
 function requireApiKey(_signal?: AbortSignal): string {
   const apiKey = getApiKey(_signal)
   if (!apiKey) {
-    throw new Error(
-      "Jina Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Jina Search API key not configured. Set it via the WebUI plugins settings.")
   }
   return apiKey
 }
@@ -47,9 +45,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -79,17 +75,10 @@ function buildSearchRequest(
   numResults: number,
 ): { url: string; filters: ReturnType<typeof mapDomainFilter> } {
   const filters = mapDomainFilter(options.domainFilter)
-  const recency = options.recencyFilter
-    ? ` published in the past ${options.recencyFilter}`
-    : ""
-  const exclusions = filters.excludes
-    .map((domain) => ` -site:${domain}`)
-    .join("")
+  const recency = options.recencyFilter ? ` published in the past ${options.recencyFilter}` : ""
+  const exclusions = filters.excludes.map((domain) => ` -site:${domain}`).join("")
   const constrainedQuery = `${query.trim()}${exclusions}${recency}`.trim()
-  const url = new URL(
-    encodeURIComponent(constrainedQuery),
-    JINA_SEARCH_BASE_URL,
-  )
+  const url = new URL(encodeURIComponent(constrainedQuery), JINA_SEARCH_BASE_URL)
   url.searchParams.set("count", String(numResults))
   for (const domain of filters.includes) url.searchParams.append("site", domain)
   return { url: url.toString(), filters }
@@ -113,28 +102,19 @@ function errorMessage(err: unknown): string {
 function parseItems(value: unknown): JinaSearchItem[] {
   if (Array.isArray(value)) return value as JinaSearchItem[]
   if (!value || typeof value !== "object") {
-    throw new Error(
-      "Jina Search API returned invalid response: expected an object or array",
-    )
+    throw new Error("Jina Search API returned invalid response: expected an object or array")
   }
   const envelope = value as JinaSearchEnvelope
   if (typeof envelope.code === "number" && envelope.code !== 200) {
-    throw new Error(
-      `Jina Search API error ${envelope.code}: response envelope reported failure`,
-    )
+    throw new Error(`Jina Search API error ${envelope.code}: response envelope reported failure`)
   }
   if (!Array.isArray(envelope.data)) {
-    throw new Error(
-      "Jina Search API returned invalid response: expected data array",
-    )
+    throw new Error("Jina Search API returned invalid response: expected data array")
   }
   return envelope.data as JinaSearchItem[]
 }
 
-function passesDomainFilter(
-  url: string,
-  filters: ReturnType<typeof mapDomainFilter>,
-): boolean {
+function passesDomainFilter(url: string, filters: ReturnType<typeof mapDomainFilter>): boolean {
   let hostname: string
   try {
     hostname = new URL(url).hostname.toLowerCase()
@@ -143,8 +123,7 @@ function passesDomainFilter(
   }
   const matches = (domain: string): boolean =>
     hostname === domain || hostname.endsWith(`.${domain}`)
-  if (filters.includes.length > 0 && !filters.includes.some(matches))
-    return false
+  if (filters.includes.length > 0 && !filters.includes.some(matches)) return false
   return !filters.excludes.some(matches)
 }
 
@@ -168,9 +147,7 @@ function mapItems(
         ? item.title.trim()
         : `Source ${results.length + 1}`
     const snippet =
-      typeof item.description === "string"
-        ? item.description.replace(/\s+/g, " ").trim()
-        : ""
+      typeof item.description === "string" ? item.description.replace(/\s+/g, " ").trim() : ""
     results.push({ title, url, snippet })
     if (typeof item.content === "string" && item.content.trim()) {
       content.push({ url, title, content: item.content.trim(), error: null })
@@ -203,8 +180,7 @@ function rethrowRequestError(
   }
   const message = errorMessage(err)
   const redactedMessage = redactCredential(message, apiKey)
-  if (redactedMessage.toLowerCase().includes("abort"))
-    activityMonitor.logComplete(activityId, 0)
+  if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
   else activityMonitor.logError(activityId, redactedMessage)
   if (redactedMessage === message) throw err
   const redactedError = new Error(redactedMessage)
@@ -249,9 +225,7 @@ export async function searchWithJina(
       rethrowRequestError(err, apiKey, activityId, request, options.signal)
     }
     activityMonitor.logComplete(activityId, response.status)
-    throw new Error(
-      `Jina Search API error ${response.status}: ${body.slice(0, 300)}`,
-    )
+    throw new Error(`Jina Search API error ${response.status}: ${body.slice(0, 300)}`)
   }
 
   let raw: unknown
@@ -282,7 +256,6 @@ export async function searchWithJina(
     answer: buildAnswer(mapped.results),
     results: mapped.results,
   }
-  if (options.includeContent && mapped.content.length > 0)
-    result.inlineContent = mapped.content
+  if (options.includeContent && mapped.content.length > 0) result.inlineContent = mapped.content
   return result
 }

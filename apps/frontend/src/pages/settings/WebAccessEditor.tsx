@@ -3,7 +3,6 @@ import { useState } from "react"
 import {
   Badge,
   Button,
-  Card,
   Combobox,
   ErrorNotice,
   Input,
@@ -85,38 +84,28 @@ export function WebAccessEditor({
 }: {
   config: WebAccessConfigurationView
   modelConfiguration: ModelConfigurationView | null
-  onSaved(): void
+  onSaved: () => void
 }) {
   const [enabled, setEnabled] = useState(config.enabled)
   const [selected, setSelected] = useState<string[]>(
     config.providers.filter((p) => p.enabled).map((p) => p.id),
   )
-  const [workflow, setWorkflow] = useState<"none" | "auto-summary">(
-    config.workflow,
-  )
+  const [workflow, setWorkflow] = useState<"none" | "auto-summary">(config.workflow)
   const [summaryModel, setSummaryModel] = useState<string>(
-    config.summaryModel
-      ? `${config.summaryModel.provider}/${config.summaryModel.id}`
-      : "",
+    config.summaryModel ? `${config.summaryModel.provider}/${config.summaryModel.id}` : "",
   )
-  const [allowRanges, setAllowRanges] = useState<string>(
-    config.ssrf.allowRanges.join("\n"),
-  )
+  const [allowRanges, setAllowRanges] = useState<string>(config.ssrf.allowRanges.join("\n"))
   const [trustEnvProxy, setTrustEnvProxy] = useState(config.ssrf.trustEnvProxy)
-  const [providerConfig, setProviderConfig] = useState<
-    Record<string, Record<string, string>>
-  >(config.providerConfig ?? {})
+  const [providerConfig, setProviderConfig] = useState<Record<string, Record<string, string>>>(
+    config.providerConfig ?? {},
+  )
   const [keys, setKeys] = useState<Record<string, string>>({})
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
 
-  const configured = new Set(
-    config.providers.filter((p) => p.configured).map((p) => p.id),
-  )
+  const configured = new Set(config.providers.filter((p) => p.configured).map((p) => p.id))
 
-  const providerOptions = WEB_ACCESS_PROVIDERS.filter(
-    (p) => !selected.includes(p),
-  ).map((p) => ({
+  const providerOptions = WEB_ACCESS_PROVIDERS.filter((p) => !selected.includes(p)).map((p) => ({
     value: p,
     label: providerLabel(p),
     description: configured.has(p) ? "已配置" : undefined,
@@ -192,30 +181,23 @@ export function WebAccessEditor({
   }
 
   return (
-    <div className="space-y-5">
+    <div>
       {err ? <ErrorNotice message={err} /> : null}
 
-      <Card className="flex items-center gap-3 p-5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
-          <Icon icon="lucide:globe" width="16" />
-        </span>
+      <section className="flex items-center gap-3 pb-5">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">web-access</p>
-          <p className="mt-1! truncate text-[11px] text-muted-foreground">
-            为 Agent 提供联网搜索功能
+          <h3 className="text-sm font-semibold">Web Access</h3>
+          <p className="mt-1! text-xs text-muted-foreground">
+            为 Agent 提供网页搜索、内容抓取与摘要能力。
           </p>
         </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={setEnabled}
-          aria-label="启用 web-access 插件"
-        />
-      </Card>
+        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="启用 web-access 插件" />
+      </section>
 
       {enabled ? (
         <>
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
+          <section className="border-t border-border py-5">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Providers</h3>
               <span className="text-xs text-muted-foreground">
                 {selected.length} / {WEB_ACCESS_PROVIDERS.length} 个
@@ -234,39 +216,37 @@ export function WebAccessEditor({
               emptyText="已全部添加"
             />
             {selected.length > 0 ? (
-              <div className="mt-4 space-y-3">
+              <ul className="mt-3 overflow-hidden rounded-lg border border-border">
                 {selected.map((provider) => {
                   const hasKey = configured.has(provider)
                   return (
-                    <Card key={provider} className="flex flex-col p-5">
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
-                          <Icon icon="lucide:key-round" width="16" />
-                        </span>
+                    <li
+                      key={provider}
+                      className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(10rem,0.55fr)_minmax(16rem,1fr)_auto] lg:items-center"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Icon
+                          icon="lucide:key-round"
+                          width="15"
+                          className="shrink-0 text-muted-foreground"
+                        />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium">
-                            {providerLabel(provider)}
-                          </p>
+                          <p className="text-sm font-medium">{providerLabel(provider)}</p>
                           <p className="truncate text-[11px] text-muted-foreground">
                             {provider === "searxng"
                               ? "自托管聚合搜索（需配置 baseUrl）"
                               : provider === "nekozuki"
                                 ? "本地 CTF 知识库 RAG（需配置 baseUrl）"
-                                : provider === "brightdata" ||
-                                    provider === "brightdata-unlocker"
+                                : provider === "brightdata" || provider === "brightdata-unlocker"
                                   ? "付费代理（需配置 zone）"
                                   : "搜索 / 抓取 provider"}
                           </p>
                         </div>
-                        <Badge
-                          tone={hasKey ? "positive" : "neutral"}
-                          className="shrink-0 text-[10px]"
-                        >
+                        <Badge tone={hasKey ? "positive" : "neutral"} className="shrink-0">
                           {hasKey ? "已配置" : "未配置"}
                         </Badge>
                       </div>
-
-                      <div className="mt-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
                         {provider === "nekozuki" ? (
                           <Input
                             type="text"
@@ -281,7 +261,7 @@ export function WebAccessEditor({
                               }))
                             }
                             placeholder="http://localhost:8000"
-                            className="h-8 flex-1 text-xs font-mono"
+                            className="h-8 w-full font-mono text-xs"
                           />
                         ) : (
                           <Input
@@ -307,12 +287,12 @@ export function WebAccessEditor({
                                 })
                                 .catch((e) => setErr(errorMessage(e)))
                             }}
-                            placeholder={
-                              hasKey ? "已配置（留空不改）" : "API Key"
-                            }
-                            className="h-8 flex-1 text-xs"
+                            placeholder={hasKey ? "已配置（留空不改）" : "API Key"}
+                            className="h-8 w-full text-xs"
                           />
                         )}
+                      </div>
+                      <div className="flex items-center justify-end gap-1">
                         {hasKey ? (
                           <Button
                             size="sm"
@@ -327,33 +307,29 @@ export function WebAccessEditor({
                           size="sm"
                           variant="ghost"
                           onClick={() =>
-                            setSelected((c) =>
-                              c.filter((entry) => entry !== provider),
-                            )
+                            setSelected((c) => c.filter((entry) => entry !== provider))
                           }
                         >
                           移除
                         </Button>
                       </div>
-                    </Card>
+                    </li>
                   )
                 })}
-              </div>
+              </ul>
             ) : null}
-          </Card>
+          </section>
 
-          <Card className="p-5">
-            <div className="mb-4">
+          <section className="border-t border-border py-5">
+            <div className="mb-3">
               <h3 className="text-sm font-semibold">搜索工作流</h3>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>摘要模式</Label>
                 <Select
                   value={workflow}
-                  onValueChange={(value) =>
-                    setWorkflow(value as "none" | "auto-summary")
-                  }
+                  onValueChange={(value) => setWorkflow(value as "none" | "auto-summary")}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -390,10 +366,10 @@ export function WebAccessEditor({
                 </Select>
               </div>
             </div>
-          </Card>
+          </section>
 
-          <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
+          <section className="border-t border-border py-5">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">SSRF / 网络策略</h3>
               <div className="flex items-center gap-2">
                 <Label className="text-xs">信任环境代理</Label>
@@ -404,10 +380,8 @@ export function WebAccessEditor({
                 />
               </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                allowRanges（每行一个 CIDR，默认拦截私网地址）
-              </Label>
+            <div className="max-w-3xl space-y-2!">
+              <Label className="text-xs">allowRanges（每行一个 CIDR，默认拦截私网地址）</Label>
               <Textarea
                 value={allowRanges}
                 onChange={(e) => setAllowRanges(e.target.value)}
@@ -415,16 +389,12 @@ export function WebAccessEditor({
                 className="min-h-20 font-mono text-xs"
               />
             </div>
-          </Card>
+          </section>
         </>
       ) : null}
 
-      <div className="flex justify-end">
-        <Button
-          variant="primary"
-          onClick={() => void saveConfiguration()}
-          disabled={busy}
-        >
+      <div className="flex justify-end border-t border-border pt-4">
+        <Button variant="primary" onClick={() => void saveConfiguration()} disabled={busy}>
           {busy ? <Spinner className="size-4" /> : null}
           保存
         </Button>

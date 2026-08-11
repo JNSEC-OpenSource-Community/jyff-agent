@@ -8,7 +8,6 @@ import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type ProjectListItem, useApp } from "../app/AppProvider.tsx"
 import {
-  Badge,
   Button,
   Card,
   Combobox,
@@ -28,28 +27,21 @@ import { cn } from "../lib/utils.ts"
 
 export function ProjectsPage() {
   const { projects, loading, refreshProjects } = useApp()
-  const [deleting, setDeleting] = useState<(typeof projects)[number] | null>(
-    null,
-  )
+  const [deleting, setDeleting] = useState<(typeof projects)[number] | null>(null)
   const [busy, setBusy] = useState(false)
   const [archivingId, setArchivingId] = useState<string | null>(null)
   const [err, setErr] = useState("")
 
   const running = useMemo(() => projects.filter((p) => !p.archived), [projects])
-  const archivedList = useMemo(
-    () => projects.filter((p) => p.archived),
-    [projects],
-  )
+  const archivedList = useMemo(() => projects.filter((p) => p.archived), [projects])
 
   async function toggleArchived(project: ProjectListItem) {
     setArchivingId(project.id)
     setErr("")
     try {
-      await apiMutation(
-        `/api/projects/${encodeURIComponent(project.id)}/archive`,
-        "POST",
-        { archived: !project.archived },
-      )
+      await apiMutation(`/api/projects/${encodeURIComponent(project.id)}/archive`, "POST", {
+        archived: !project.archived,
+      })
       await refreshProjects()
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e))
@@ -63,10 +55,7 @@ export function ProjectsPage() {
     setBusy(true)
     setErr("")
     try {
-      await apiMutation(
-        `/api/projects/${encodeURIComponent(deleting.id)}`,
-        "DELETE",
-      )
+      await apiMutation(`/api/projects/${encodeURIComponent(deleting.id)}`, "DELETE")
       await refreshProjects()
       setDeleting(null)
     } catch (e) {
@@ -85,9 +74,7 @@ export function ProjectsPage() {
           <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
             Workspaces
           </p>
-          <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
-            比赛列表
-          </h1>
+          <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">比赛列表</h1>
           <p className="hero-desc mt-3! max-w-xl text-sm text-muted-foreground">
             CTFs to be slopped or already slopped.
           </p>
@@ -108,7 +95,7 @@ export function ProjectsPage() {
           <EmptyState
             icon="lucide:radar"
             title="暂无比赛"
-            description="连接 CTFd 或 GZCTF 后，Agent 自动同步题目并开始调度。"
+            description="连接 CTFd 或 GZCTF 后即可同步题目；准备好模型后再启动调度。"
             action={
               <Button asChild>
                 <Link to="/projects/new">连接平台</Link>
@@ -125,7 +112,7 @@ export function ProjectsPage() {
                   <Icon icon="lucide:play" width="13" />
                 </span>
                 <h2 className="text-sm font-semibold text-muted-foreground">
-                  Running · {running.length}
+                  进行中的比赛 · {running.length}
                 </h2>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -152,7 +139,7 @@ export function ProjectsPage() {
                   <Icon icon="lucide:archive" width="13" />
                 </span>
                 <h2 className="text-sm font-semibold text-muted-foreground">
-                  Archived · {archivedList.length}
+                  已归档 · {archivedList.length}
                 </h2>
               </div>
               <div className="grid grid-cols-1 gap-5 opacity-60 md:grid-cols-2 xl:grid-cols-3">
@@ -200,28 +187,20 @@ function ProjectCard({
   project: ProjectListItem
   isArchived?: boolean
   archiveBusy?: boolean
-  onDelete(): void
-  onToggleArchived(): void
+  onDelete: () => void
+  onToggleArchived: () => void
 }) {
-  const ready = project.phase === "ready" && !project.lastError
+  const ready = !isArchived && project.phase === "ready" && !project.lastError
   return (
     <Card className="surface-hover group relative flex flex-col overflow-hidden p-0">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-      <Link
-        to={`/projects/${encodeURIComponent(project.id)}`}
-        className="block flex-1 p-5"
-      >
+      <Link to={`/projects/${encodeURIComponent(project.id)}`} className="block flex-1 p-5">
         <div className="flex items-start justify-between gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
             {project.platformId}
           </span>
-          <Badge tone={ready ? "positive" : "warning"} className="text-[10px]">
-            {ready ? "已连接" : "待恢复"}
-          </Badge>
         </div>
-        <h3 className="mt-5 truncate text-[17px] font-semibold tracking-tight">
-          {project.name}
-        </h3>
+        <h3 className="mt-5 truncate text-[17px] font-semibold tracking-tight">{project.name}</h3>
         <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 border-t border-border/70 pt-3 text-xs">
           <span className="text-muted-foreground">解题进度</span>
           <strong className="text-right font-mono tabular-nums">
@@ -239,10 +218,7 @@ function ProjectCard({
       <div className="flex items-center justify-between border-t border-border bg-muted px-5 py-3">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span
-            className={cn(
-              "size-1.5 rounded-full",
-              ready ? "bg-green animate-pulse" : "bg-amber",
-            )}
+            className={cn("size-1.5 rounded-full", ready ? "bg-green animate-pulse" : "bg-amber")}
           />
           {ready ? "运行正常" : isArchived ? "已归档" : "平台故障"}
         </span>
@@ -312,7 +288,7 @@ export function NewProjectPage() {
           const fs = f.setup.authStrategies[0]
           setPlatId(f.id)
           setStratId(fs?.id ?? "")
-          setCfg({ ...f.setup.defaultConfig, ...(fs?.config ?? {}) })
+          setCfg({ ...f.setup.defaultConfig, ...fs?.config })
         }
       })
       .catch((e) => setErr(String(e instanceof Error ? e.message : e)))
@@ -320,12 +296,21 @@ export function NewProjectPage() {
 
   const plats = setup?.platforms ?? []
   const plat = plats.find((c) => c.id === platId)
-  const pid = useMemo(() => contestIdFromName(pname), [pname])
+  const [pid, setPid] = useState("")
+  useEffect(() => {
+    let active = true
+    void contestIdFromName(pname).then((next) => {
+      if (active) setPid(next)
+    })
+    return () => {
+      active = false
+    }
+  }, [pname])
   function pickPlat(p: SP) {
     setPlatId(p.id)
     const s = p.setup.authStrategies[0]
     setStratId(s?.id ?? "")
-    setCfg({ ...p.setup.defaultConfig, ...(s?.config ?? {}) })
+    setCfg({ ...p.setup.defaultConfig, ...s?.config })
     setSecrets({})
     setTestR(null)
   }
@@ -351,11 +336,7 @@ export function NewProjectPage() {
     setBusy("test")
     setErr("")
     try {
-      const r = await apiMutation<PlatformConnectionTest>(
-        "/api/projects/test",
-        "POST",
-        payload,
-      )
+      const r = await apiMutation<PlatformConnectionTest>("/api/projects/test", "POST", payload)
       setTestR(r)
     } catch (e) {
       setTestR(null)
@@ -375,11 +356,7 @@ export function NewProjectPage() {
         payload,
       )
       await refreshProjects()
-      nav(
-        `/projects/${encodeURIComponent(
-          r.project.projectId ?? payload.config.project.id,
-        )}`,
-      )
+      void nav(`/projects/${encodeURIComponent(r.project.projectId ?? payload.config.project.id)}`)
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e))
     } finally {
@@ -395,9 +372,7 @@ export function NewProjectPage() {
         <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
           New Workspace
         </p>
-        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
-          连接比赛平台
-        </h1>
+        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">连接比赛平台</h1>
         <p className="hero-desc mt-3! max-w-xl text-sm text-muted-foreground">
           Show your token power.
         </p>
@@ -412,9 +387,7 @@ export function NewProjectPage() {
               <StepBadge n={1} active={true} />
               <h2 className="font-semibold">平台类型</h2>
             </div>
-            <p className="mt-1! pl-10 text-sm text-muted-foreground">
-              选择要接入的比赛平台插件。
-            </p>
+            <p className="mt-1! pl-10 text-sm text-muted-foreground">选择要接入的比赛平台插件。</p>
           </div>
           <div className="p-6">
             <Combobox
@@ -474,15 +447,9 @@ export function NewProjectPage() {
               />
             ) : null}
 
-            <Button
-              variant="secondary"
-              onClick={() => void testConn()}
-              disabled={busy !== null}
-            >
+            <Button variant="secondary" onClick={() => void testConn()} disabled={busy !== null}>
               <Icon
-                icon={
-                  busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"
-                }
+                icon={busy === "test" ? "lucide:loader-circle" : "lucide:plug-zap"}
                 className={busy === "test" ? "animate-spin" : ""}
                 width="14"
               />
@@ -493,8 +460,7 @@ export function NewProjectPage() {
               <div className="flex items-center gap-3 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm text-green">
                 <Icon icon="lucide:circle-check" width="17" />
                 <span>
-                  <strong>{testR.overview.name}</strong> ·{" "}
-                  {testR.overview.challenges} 题 ·{" "}
+                  <strong>{testR.overview.name}</strong> · {testR.overview.challenges} 题 ·{" "}
                   {testR.overview.announcements} 公告
                 </span>
               </div>
@@ -535,12 +501,7 @@ export function NewProjectPage() {
                 >
                   比赛 ID
                 </label>
-                <Input
-                  id="project-id"
-                  value={pid}
-                  placeholder="自动生成"
-                  disabled
-                />
+                <Input id="project-id" value={pid} placeholder="自动生成" disabled />
               </div>
             </div>
           </section>
@@ -551,11 +512,7 @@ export function NewProjectPage() {
               disabled={!testR || !pid.trim() || !pname.trim() || busy !== null}
             >
               {busy === "create" ? (
-                <Icon
-                  icon="lucide:loader-circle"
-                  className="animate-spin"
-                  width="14"
-                />
+                <Icon icon="lucide:loader-circle" className="animate-spin" width="14" />
               ) : null}
               创建比赛
             </Button>
@@ -571,9 +528,7 @@ function StepBadge({ n, active }: { n: number; active: boolean }) {
     <span
       className={cn(
         "flex size-7 items-center justify-center rounded-full text-xs font-bold",
-        active
-          ? "bg-primary/10 text-primary"
-          : "bg-muted/70 text-muted-foreground",
+        active ? "bg-primary/10 text-primary" : "bg-muted/70 text-muted-foreground",
       )}
     >
       {n}

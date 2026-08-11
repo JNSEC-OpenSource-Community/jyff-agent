@@ -3,12 +3,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileSecretStore, modelsFromAgentOptions } from "@ctf-agent/core"
 import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
-import {
-  createFileModelConfiguration,
-  omitOutputTokenLimit,
-} from "../src/domain/model-pool.ts"
+import { createFileModelConfiguration, omitOutputTokenLimit } from "../src/domain/model-pool.ts"
 
 const roots: string[] = []
 
@@ -37,9 +34,7 @@ function modelEntry(
 
 afterEach(async () => {
   vi.restoreAllMocks()
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("file model configuration", () => {
@@ -67,14 +62,13 @@ describe("file model configuration", () => {
       apiKey: "provider-secret",
     })
 
-    await expect(
-      configuration.discoverCustomProviderModels("custom-gateway"),
-    ).resolves.toEqual(["model-a", "model-b"])
+    await expect(configuration.discoverCustomProviderModels("custom-gateway")).resolves.toEqual([
+      "model-a",
+      "model-b",
+    ])
     const [url, init] = fetchMock.mock.calls[0] ?? []
     expect(url).toBe("https://models.example.test/v1/models")
-    expect(new Headers(init?.headers).get("authorization")).toBe(
-      "Bearer provider-secret",
-    )
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer provider-secret")
   })
 
   it("只把 API Key 写入 Secret Store", async () => {
@@ -125,9 +119,7 @@ describe("file model configuration", () => {
       tldrModelId: "solver",
       subagentModels: {},
     })
-    expect(disabledThinking.models[0]?.supportedThinkingLevels).toContain(
-      "high",
-    )
+    expect(disabledThinking.models[0]?.supportedThinkingLevels).toContain("high")
   })
 
   it("编辑自定义供应商时保留 id 与未替换的 API Key", async () => {
@@ -146,14 +138,11 @@ describe("file model configuration", () => {
       apiKey: "original-secret",
     })
 
-    const edited = await configuration.updateCustomProvider(
-      "custom-internal-gateway",
-      {
-        name: "Internal Responses",
-        api: "openai-responses",
-        baseUrl: "https://responses.example.test/v1/",
-      },
-    )
+    const edited = await configuration.updateCustomProvider("custom-internal-gateway", {
+      name: "Internal Responses",
+      api: "openai-responses",
+      baseUrl: "https://responses.example.test/v1/",
+    })
 
     expect(edited.customProviders).toEqual([
       expect.objectContaining({
@@ -221,9 +210,7 @@ describe("file model configuration", () => {
     const authentication = await createFileModelAuthentication({
       storagePath: join(root, "auth.json"),
     })
-    await authentication.importJson(
-      JSON.stringify({ OPENAI_API_KEY: "openai-test-key" }),
-    )
+    await authentication.importJson(JSON.stringify({ OPENAI_API_KEY: "openai-test-key" }))
     const openAi = (await authentication.snapshot()).providers.find(
       (provider) => provider.id === "openai",
     )
@@ -321,15 +308,11 @@ describe("file model configuration", () => {
     const solverModel = solver.initialState?.model
     if (!solverModel) throw new Error("missing solver model")
     const registry = modelsFromAgentOptions(solver, solverModel)
-    expect(
-      registry.getModel("custom-worker-provider", "worker-model"),
-    ).toBeDefined()
-    expect(
-      registry.getModel("custom-anthropic-proxy", "claude-compatible"),
-    ).toMatchObject({ api: "anthropic-messages" })
-    expect(configuration.modelForSubagent("explorer")).toBe(
-      "custom-worker-provider/worker-model",
-    )
+    expect(registry.getModel("custom-worker-provider", "worker-model")).toBeDefined()
+    expect(registry.getModel("custom-anthropic-proxy", "claude-compatible")).toMatchObject({
+      api: "anthropic-messages",
+    })
+    expect(configuration.modelForSubagent("explorer")).toBe("custom-worker-provider/worker-model")
 
     const projectBindings = {
       solverModelId: "worker",
@@ -337,8 +320,7 @@ describe("file model configuration", () => {
       subagentModels: { explorer: "solver" },
     }
     expect(
-      configuration.createAgentOptions("solver", projectBindings).initialState
-        ?.model,
+      configuration.createAgentOptions("solver", projectBindings).initialState?.model,
     ).toMatchObject({ provider: "custom-worker-provider", id: "worker-model" })
     expect(configuration.modelForSubagent("explorer", projectBindings)).toBe(
       "custom-openai/solver-model",
@@ -375,8 +357,9 @@ describe("file model configuration", () => {
 
     expect(view.solverModelId).toBe("m-1")
     expect(view.tldrModelId).toBe("m-1")
-    expect(
-      configuration.createAgentOptions("solver").initialState?.model,
-    ).toMatchObject({ provider: "custom-deepseek", id: "deepseek-v4-flash" })
+    expect(configuration.createAgentOptions("solver").initialState?.model).toMatchObject({
+      provider: "custom-deepseek",
+      id: "deepseek-v4-flash",
+    })
   })
 })

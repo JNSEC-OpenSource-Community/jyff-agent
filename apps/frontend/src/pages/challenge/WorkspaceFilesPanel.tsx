@@ -1,11 +1,6 @@
 import { Icon } from "@iconify/react"
 import { useCallback, useEffect, useState } from "react"
-import {
-  Button,
-  EmptyState,
-  ErrorNotice,
-  Spinner,
-} from "../../components/index.ts"
+import { Button, EmptyState, ErrorNotice, Spinner } from "../../components/index.ts"
 import { apiRequest, projectApi } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import { absoluteTime } from "../../lib/time.ts"
@@ -26,19 +21,12 @@ export function WorkspaceFilesPanel({
   projectId: string
   challengeId: string
 }) {
-  const baseUrl = projectApi(
-    projectId,
-    `/api/challenges/${encodeURIComponent(challengeId)}/files`,
-  )
+  const baseUrl = projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/files`)
   return (
     <WorkspaceFilesBrowser
       listUrl={baseUrl}
-      previewUrl={(path) =>
-        `${baseUrl}/preview?path=${encodeURIComponent(path)}`
-      }
-      downloadUrl={(path) =>
-        `${baseUrl}/download?path=${encodeURIComponent(path)}`
-      }
+      previewUrl={(path) => `${baseUrl}/preview?path=${encodeURIComponent(path)}`}
+      downloadUrl={(path) => `${baseUrl}/download?path=${encodeURIComponent(path)}`}
       emptyDescription="派发 Solver 后，附件与生成的分析文件会显示在这里。"
     />
   )
@@ -51,13 +39,12 @@ export function WorkspaceFilesBrowser({
   emptyDescription,
 }: {
   listUrl: string
-  previewUrl(path: string): string
-  downloadUrl(path: string): string
+  previewUrl: (path: string) => string
+  downloadUrl: (path: string) => string
   emptyDescription: string
 }) {
   const [listing, setListing] = useState<WorkspaceFileListing | null>(null)
-  const [previewFile, setPreviewFile] =
-    useState<PreviewableWorkspaceFile | null>(null)
+  const [previewFile, setPreviewFile] = useState<PreviewableWorkspaceFile | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
 
@@ -123,8 +110,8 @@ function WorkspaceFileTree({
   onPreview,
 }: {
   files: PreviewableWorkspaceFile[]
-  downloadUrl(path: string): string
-  onPreview(file: PreviewableWorkspaceFile): void
+  downloadUrl: (path: string) => string
+  onPreview: (file: PreviewableWorkspaceFile) => void
 }) {
   const root = buildWorkspaceTree(files)
   return (
@@ -155,8 +142,8 @@ function WorkspaceDirectoryNode({
   onPreview,
 }: {
   directory: WorkspaceTreeDirectory
-  downloadUrl(path: string): string
-  onPreview(file: PreviewableWorkspaceFile): void
+  downloadUrl: (path: string) => string
+  onPreview: (file: PreviewableWorkspaceFile) => void
 }) {
   const fileCount = countDirectoryFiles(directory)
   const [open, setOpen] = useState(() => fileCount < 8)
@@ -172,9 +159,7 @@ function WorkspaceDirectoryNode({
         <Icon
           icon="lucide:chevron-right"
           width="14"
-          className={
-            open ? "rotate-90 transition-transform" : "transition-transform"
-          }
+          className={open ? "rotate-90 transition-transform" : "transition-transform"}
         />
         <Icon
           icon={open ? "lucide:folder-open" : "lucide:folder"}
@@ -217,7 +202,7 @@ function WorkspaceFileRow({
 }: {
   file: PreviewableWorkspaceFile
   downloadUrl: string
-  onPreview(file: PreviewableWorkspaceFile): void
+  onPreview: (file: PreviewableWorkspaceFile) => void
 }) {
   const name = file.path.split("/").pop() ?? file.path
   return (
@@ -235,9 +220,7 @@ function WorkspaceFileRow({
           {name}
         </button>
       ) : (
-        <p className="min-w-0 truncate font-mono text-xs font-medium text-foreground">
-          {name}
-        </p>
+        <p className="min-w-0 truncate font-mono text-xs font-medium text-foreground">{name}</p>
       )}
       <div className="hidden shrink-0 text-right text-[11px] text-muted-foreground sm:block">
         <p className="font-mono tabular-nums">{formatFileSize(file.size)}</p>
@@ -256,11 +239,7 @@ function WorkspaceFileRow({
           </Button>
         ) : null}
         <Button size="icon" variant="ghost" className="size-8" asChild>
-          <a
-            href={downloadUrl}
-            download={name}
-            aria-label={`下载 ${file.path}`}
-          >
+          <a href={downloadUrl} download={name} aria-label={`下载 ${file.path}`}>
             <Icon icon="lucide:download" width="15" />
           </a>
         </Button>
@@ -269,9 +248,7 @@ function WorkspaceFileRow({
   )
 }
 
-function buildWorkspaceTree(
-  files: PreviewableWorkspaceFile[],
-): WorkspaceTreeDirectory {
+function buildWorkspaceTree(files: PreviewableWorkspaceFile[]): WorkspaceTreeDirectory {
   const root: WorkspaceTreeDirectory = {
     name: "",
     path: "",
@@ -297,17 +274,13 @@ function buildWorkspaceTree(
   return root
 }
 
-function sortedDirectories(
-  directory: WorkspaceTreeDirectory,
-): WorkspaceTreeDirectory[] {
+function sortedDirectories(directory: WorkspaceTreeDirectory): WorkspaceTreeDirectory[] {
   return [...directory.directories.values()].sort((left, right) =>
     left.name.localeCompare(right.name),
   )
 }
 
-function sortedFiles(
-  files: PreviewableWorkspaceFile[],
-): PreviewableWorkspaceFile[] {
+function sortedFiles(files: PreviewableWorkspaceFile[]): PreviewableWorkspaceFile[] {
   return [...files].sort((left, right) => left.path.localeCompare(right.path))
 }
 
@@ -332,15 +305,10 @@ function fileIcon(name: string): string {
   const extension = name.split(".").pop()?.toLowerCase()
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension ?? ""))
     return "lucide:file-image"
-  if (["zip", "tar", "gz", "7z", "rar"].includes(extension ?? ""))
-    return "lucide:file-archive"
-  if (
-    ["js", "ts", "py", "c", "cpp", "rs", "go", "sh"].includes(extension ?? "")
-  )
+  if (["zip", "tar", "gz", "7z", "rar"].includes(extension ?? "")) return "lucide:file-archive"
+  if (["js", "ts", "py", "c", "cpp", "rs", "go", "sh"].includes(extension ?? ""))
     return "lucide:file-code-2"
-  if (
-    ["md", "txt", "log", "json", "yaml", "yml", "xml"].includes(extension ?? "")
-  )
+  if (["md", "txt", "log", "json", "yaml", "yml", "xml"].includes(extension ?? ""))
     return "lucide:file-text"
   return "lucide:file"
 }

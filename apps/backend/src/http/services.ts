@@ -41,10 +41,7 @@ export interface ServicesOptions {
   ) => DashboardProjectRuntimeConfiguration | undefined
   onProjectDeleted?: (projectId: string) => void | Promise<void>
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
-  exportSessionHtml?: (
-    sessionPath: string,
-    metadata?: RunSessionExportMetadata,
-  ) => Promise<Buffer>
+  exportSessionHtml?: (sessionPath: string, metadata?: RunSessionExportMetadata) => Promise<Buffer>
   /** 测试可替换原生 Pi session 的对话可用性检查。 */
   sessionHasConversation?: (sessionPath: string) => Promise<boolean>
   /** 测试可替换原生 Pi session 的结构化对话读取器。 */
@@ -56,10 +53,7 @@ export class Services {
   readonly sse = new SseHub()
   readonly sync: SnapshotSync
   readonly exporters: {
-    exportSessionHtml: (
-      sessionPath: string,
-      metadata?: RunSessionExportMetadata,
-    ) => Promise<Buffer>
+    exportSessionHtml: (sessionPath: string, metadata?: RunSessionExportMetadata) => Promise<Buffer>
     sessionHasConversation: (sessionPath: string) => Promise<boolean>
     readSessionConversation: (sessionPath: string) => DashboardConversation
   }
@@ -69,10 +63,8 @@ export class Services {
     this.options = options
     this.exporters = {
       exportSessionHtml: options.exportSessionHtml ?? exportPiSessionHtml,
-      sessionHasConversation:
-        options.sessionHasConversation ?? piSessionHasConversation,
-      readSessionConversation:
-        options.readSessionConversation ?? readPiSessionConversation,
+      sessionHasConversation: options.sessionHasConversation ?? piSessionHasConversation,
+      readSessionConversation: options.readSessionConversation ?? readPiSessionConversation,
     }
     this.sync = new SnapshotSync({
       project: options.project,
@@ -147,23 +139,15 @@ export class Services {
       : this.options.scheduler
   }
 
-  runtime(
-    projectId?: string,
-  ): DashboardProjectRuntimeConfiguration | undefined {
-    return projectId
-      ? this.options.projectRuntimeConfiguration?.(projectId)
-      : undefined
+  runtime(projectId?: string): DashboardProjectRuntimeConfiguration | undefined {
+    return projectId ? this.options.projectRuntimeConfiguration?.(projectId) : undefined
   }
 
   /** 旧版 GlobalRouter 的 currentProject 语义：单 project 模式下忽略 projectId。 */
   requireProject(projectId?: string): DashboardProject {
     const project = this.currentProject(projectId)
     if (!project) {
-      throw new HttpError(
-        503,
-        "project_unavailable",
-        "比赛尚未配置或平台当前未连接",
-      )
+      throw new HttpError(503, "project_unavailable", "比赛尚未配置或平台当前未连接")
     }
     return project
   }
@@ -212,11 +196,7 @@ export class Services {
   requireControlPlane(): DashboardControlPlane {
     const controlPlane = this.options.controlPlane
     if (!controlPlane) {
-      throw new HttpError(
-        404,
-        "control_plane_unavailable",
-        "当前 WebUI 未启用动态控制面",
-      )
+      throw new HttpError(404, "control_plane_unavailable", "当前 WebUI 未启用动态控制面")
     }
     return controlPlane
   }
@@ -234,11 +214,7 @@ export class Services {
   requireModelConfiguration(): DashboardModelConfiguration {
     const configuration = this.options.modelConfiguration
     if (!configuration) {
-      throw new HttpError(
-        404,
-        "model_configuration_unavailable",
-        "当前控制面不支持模型配置",
-      )
+      throw new HttpError(404, "model_configuration_unavailable", "当前控制面不支持模型配置")
     }
     return configuration
   }
@@ -246,11 +222,7 @@ export class Services {
   requireModelAuthentication(): DashboardModelAuthentication {
     const authentication = this.options.modelAuthentication
     if (!authentication) {
-      throw new HttpError(
-        404,
-        "model_authentication_unavailable",
-        "当前控制面不支持模型凭据管理",
-      )
+      throw new HttpError(404, "model_authentication_unavailable", "当前控制面不支持模型凭据管理")
     }
     return authentication
   }
@@ -258,11 +230,7 @@ export class Services {
   requireWebAccess(): WebAccessConfiguration {
     const configuration = this.options.webAccessConfiguration
     if (!configuration) {
-      throw new HttpError(
-        404,
-        "web_access_unavailable",
-        "当前控制面不支持 web-access 插件配置",
-      )
+      throw new HttpError(404, "web_access_unavailable", "当前控制面不支持 web-access 插件配置")
     }
     return configuration
   }

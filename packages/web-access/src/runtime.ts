@@ -11,17 +11,11 @@ export type Lookup = (hostname: string) => Promise<LookupAddress[]>
  * 以及 auto-summary 的模型调用。
  */
 export interface ModelAuthResolver {
-  find(
-    provider: string,
-    modelId: string,
-  ): { provider: string; id: string } | undefined
+  find(provider: string, modelId: string): { provider: string; id: string } | undefined
   getApiKeyAndHeaders(model: {
     provider: string
     id: string
-  }): Promise<
-    | { ok: true; apiKey: string; headers?: Record<string, string> }
-    | { ok: false }
-  >
+  }): Promise<{ ok: true; apiKey: string; headers?: Record<string, string> } | { ok: false }>
   getAvailable(): readonly { provider: string; id: string }[]
 }
 
@@ -74,9 +68,7 @@ export function withRuntime<T>(r: WebAccessRuntime, fn: () => T): T {
 export function getRuntime(): WebAccessRuntime {
   const current = runtimeContext.getStore() ?? fallbackRuntime
   if (!current) {
-    throw new Error(
-      "web-access runtime 未初始化：必须先调用 createWebAccessTools(config)",
-    )
+    throw new Error("web-access runtime 未初始化：必须先调用 createWebAccessTools(config)")
   }
   return current
 }
@@ -95,10 +87,7 @@ export function providerKeyConfigured(provider: string): boolean {
 }
 
 /** 读取某 provider 的非密钥配置项（zone/baseUrl/model 等）。 */
-export function providerOption(
-  provider: string,
-  key: string,
-): string | undefined {
+export function providerOption(provider: string, key: string): string | undefined {
   const opts = getRuntime().providerConfig[provider]
   return opts?.[key]
 }

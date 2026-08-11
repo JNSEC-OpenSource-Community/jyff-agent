@@ -18,8 +18,7 @@ export class RtkRewriter {
       return this.status
     }
     const result = await this.env.exec("rtk --version", { timeout: 2 })
-    this.status =
-      result.ok && result.value.exitCode === 0 ? "enabled" : "unavailable"
+    this.status = result.ok && result.value.exitCode === 0 ? "enabled" : "unavailable"
     return this.status
   }
 
@@ -32,13 +31,10 @@ export class RtkRewriter {
     ) {
       return command
     }
-    const result = await this.env.exec(
-      `rtk rewrite ${shellArgument(command)}`,
-      {
-        abortSignal: signal,
-        timeout: 2,
-      },
-    )
+    const result = await this.env.exec(`rtk rewrite ${shellArgument(command)}`, {
+      abortSignal: signal,
+      timeout: 2,
+    })
     return result.ok && result.value.exitCode === 0
       ? result.value.stdout.trim() || command
       : command

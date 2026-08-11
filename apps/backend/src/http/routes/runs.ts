@@ -2,11 +2,7 @@ import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import type { App, AppContext, AppEnv } from "../context.ts"
 import { errorText, HttpError, hasCode } from "../errors.ts"
-import {
-  parseJsonBody,
-  retryAttemptSchema,
-  subagentMessageSchema,
-} from "../schema.ts"
+import { parseJsonBody, retryAttemptSchema, subagentMessageSchema } from "../schema.ts"
 import type { Services } from "../services.ts"
 
 /** Run/SubAgent 会话端点（全局 + 项目级复用，projectId 可选）。 */
@@ -25,11 +21,7 @@ export function runRoutes(services: Services): App {
     })
     try {
       return c.json(
-        await project.steerSubagent(
-          c.req.param("runId"),
-          c.req.param("subagentId"),
-          body.message,
-        ),
+        await project.steerSubagent(c.req.param("runId"), c.req.param("subagentId"), body.message),
       )
     } catch (error) {
       if (hasCode(error, "subagent_unavailable")) {
@@ -42,12 +34,7 @@ export function runRoutes(services: Services): App {
   app.post("/runs/:runId/subagents/:subagentId/cancel", async (c) => {
     const project = services.requireProject(projectIdOf(c))
     try {
-      return c.json(
-        await project.cancelSubagent(
-          c.req.param("runId"),
-          c.req.param("subagentId"),
-        ),
-      )
+      return c.json(await project.cancelSubagent(c.req.param("runId"), c.req.param("subagentId")))
     } catch (error) {
       if (hasCode(error, "subagent_unavailable")) {
         throw new HttpError(409, "subagent_unavailable", errorText(error))
@@ -62,9 +49,7 @@ export function runRoutes(services: Services): App {
       code: "invalid_retry_prompt",
       maximumSize: 40_000,
     })
-    await scheduler.retryAttempt(c.req.param("runId"), {
-      ...(body.prompt ? { prompt: body.prompt } : {}),
-    })
+    await scheduler.retryAttempt(c.req.param("runId"), body.prompt ? { prompt: body.prompt } : {})
     return c.json(await scopedSnapshot(services, projectIdOf(c)))
   })
 
@@ -73,21 +58,11 @@ export function runRoutes(services: Services): App {
     const runId = c.req.param("runId")
     const subagentId = c.req.param("subagentId")
     requireRunAndSubagent(project, runId, subagentId)
-    const subagent = project
-      .subagents(runId)
-      .find(({ id }) => id === subagentId)
+    const subagent = project.subagents(runId).find(({ id }) => id === subagentId)
     if (!subagent) {
-      throw new HttpError(
-        404,
-        "subagent_not_found",
-        `SubAgent 不存在: ${subagentId}`,
-      )
+      throw new HttpError(404, "subagent_not_found", `SubAgent 不存在: ${subagentId}`)
     }
-    const body = await exportConversationHtml(
-      subagent.sessionPath,
-      undefined,
-      services.exporters,
-    )
+    const body = await exportConversationHtml(subagent.sessionPath, undefined, services.exporters)
     return htmlResponse(body)
   })
 
@@ -96,15 +71,9 @@ export function runRoutes(services: Services): App {
     const runId = c.req.param("runId")
     const subagentId = c.req.param("subagentId")
     requireRunAndSubagent(project, runId, subagentId)
-    const subagent = project
-      .subagents(runId)
-      .find(({ id }) => id === subagentId)
+    const subagent = project.subagents(runId).find(({ id }) => id === subagentId)
     if (!subagent) {
-      throw new HttpError(
-        404,
-        "subagent_not_found",
-        `SubAgent 不存在: ${subagentId}`,
-      )
+      throw new HttpError(404, "subagent_not_found", `SubAgent 不存在: ${subagentId}`)
     }
     return c.json(readConversation(subagent.sessionPath, services.exporters))
   })
@@ -139,9 +108,7 @@ export function runRoutes(services: Services): App {
     if (!run) {
       throw new HttpError(404, "run_not_found", `Run 不存在: ${runId}`)
     }
-    return c.json(
-      readConversation(project.runSessionPath(run.id), services.exporters),
-    )
+    return c.json(readConversation(project.runSessionPath(run.id), services.exporters))
   })
 
   app.get("/runs/:runId/events", (c) => {
@@ -166,9 +133,7 @@ function agentEventStream(
   c.header("Connection", "keep-alive")
   c.header("X-Accel-Buffering", "no")
   return streamSSE(c, async (stream) => {
-    type QueueItem =
-      | import("@ctf-agent/core").AgentStreamEvent
-      | { heartbeat: true }
+    type QueueItem = import("@ctf-agent/core").AgentStreamEvent | { heartbeat: true }
     const queue = new AsyncEventQueue<QueueItem>()
     const heartbeat = setInterval(() => queue.push({ heartbeat: true }), 15_000)
     const unsubscribe = project.subscribeAgentStream(target, (event) => {
@@ -235,9 +200,7 @@ function scopedSnapshot(
   services: Services,
   projectId: string,
 ): Promise<import("../../types.ts").DashboardSnapshot> {
-  return projectId
-    ? services.sync.refreshProject(projectId)
-    : services.sync.refresh()
+  return projectId ? services.sync.refreshProject(projectId) : services.sync.refresh()
 }
 
 function requireRunAndSubagent(
@@ -248,14 +211,8 @@ function requireRunAndSubagent(
   if (!project.runs().some((candidate) => candidate.id === runId)) {
     throw new HttpError(404, "run_not_found", `Run 不存在: ${runId}`)
   }
-  if (
-    !project.subagents(runId).some((candidate) => candidate.id === subagentId)
-  ) {
-    throw new HttpError(
-      404,
-      "subagent_not_found",
-      `SubAgent 不存在: ${subagentId}`,
-    )
+  if (!project.subagents(runId).some((candidate) => candidate.id === subagentId)) {
+    throw new HttpError(404, "subagent_not_found", `SubAgent 不存在: ${subagentId}`)
   }
 }
 
@@ -278,11 +235,7 @@ async function exportConversationHtml(
     return await exporters.exportSessionHtml(sessionPath, metadata)
   } catch (error) {
     if (error instanceof HttpError) throw error
-    throw new HttpError(
-      409,
-      "session_export_failed",
-      `无法导出 Pi 会话: ${errorText(error)}`,
-    )
+    throw new HttpError(409, "session_export_failed", `无法导出 Pi 会话: ${errorText(error)}`)
   }
 }
 
@@ -290,26 +243,18 @@ async function exportConversationHtml(
 function readConversation(
   sessionPath: string,
   exporters: {
-    readSessionConversation: (
-      sessionPath: string,
-    ) => import("../../types.ts").DashboardConversation
+    readSessionConversation: (sessionPath: string) => import("../../types.ts").DashboardConversation
   },
 ): import("../../types.ts").DashboardConversation {
   try {
     const conversation = exporters.readSessionConversation(sessionPath)
-    if (
-      !conversation.messages.some(({ message }) => message.role === "assistant")
-    ) {
+    if (!conversation.messages.some(({ message }) => message.role === "assistant")) {
       throw new HttpError(409, "session_not_ready", "该会话尚未产生 Agent 对话")
     }
     return conversation
   } catch (error) {
     if (error instanceof HttpError) throw error
-    throw new HttpError(
-      409,
-      "session_read_failed",
-      `无法读取 Pi 会话: ${errorText(error)}`,
-    )
+    throw new HttpError(409, "session_read_failed", `无法读取 Pi 会话: ${errorText(error)}`)
   }
 }
 

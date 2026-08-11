@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import {
   ACTIVE_STATUSES,
   challengeCategoryMark,
@@ -40,8 +40,7 @@ describe("toneForStatus", () => {
   })
 
   it("运行链路 → info", () => {
-    for (const status of ACTIVE_STATUSES)
-      expect(toneForStatus(status)).toBe("info")
+    for (const status of ACTIVE_STATUSES) expect(toneForStatus(status)).toBe("info")
   })
 
   it("失败/超时/中断/需介入 → danger", () => {
@@ -81,27 +80,17 @@ describe("filterChallenges", () => {
   })
 
   it("按 active / attention 分组过滤", () => {
-    expect(
-      filterChallenges(list, { statusFilter: "active" }).map((c) => c.id),
-    ).toEqual(["a"])
-    expect(
-      filterChallenges(list, { statusFilter: "attention" }).map((c) => c.id),
-    ).toEqual(["b"])
+    expect(filterChallenges(list, { statusFilter: "active" }).map((c) => c.id)).toEqual(["a"])
+    expect(filterChallenges(list, { statusFilter: "attention" }).map((c) => c.id)).toEqual(["b"])
   })
 
   it("按具体状态过滤", () => {
-    expect(
-      filterChallenges(list, { statusFilter: "solved" }).map((c) => c.id),
-    ).toEqual(["d"])
+    expect(filterChallenges(list, { statusFilter: "solved" }).map((c) => c.id)).toEqual(["d"])
   })
 
   it("关键词匹配标题与分类（忽略大小写与首尾空白）", () => {
-    expect(
-      filterChallenges(list, { query: "  sql  " }).map((c) => c.id),
-    ).toEqual(["a"])
-    expect(
-      filterChallenges(list, { query: "REVERSE" }).map((c) => c.id),
-    ).toEqual(["c"])
+    expect(filterChallenges(list, { query: "  sql  " }).map((c) => c.id)).toEqual(["a"])
+    expect(filterChallenges(list, { query: "REVERSE" }).map((c) => c.id)).toEqual(["c"])
   })
 
   it("无匹配返回空数组", () => {
@@ -109,9 +98,7 @@ describe("filterChallenges", () => {
   })
 
   it("空关键词与 all 状态组合返回全部", () => {
-    expect(
-      filterChallenges(list, { query: " ", statusFilter: "all" }),
-    ).toHaveLength(4)
+    expect(filterChallenges(list, { query: " ", statusFilter: "all" })).toHaveLength(4)
   })
 })
 
@@ -122,11 +109,7 @@ describe("sortChallenges", () => {
       challenge({ id: "high", title: "B 题", score: 200, status: "running" }),
       challenge({ id: "mid", title: "C 题", score: 100 }),
     ]
-    expect(sortChallenges(list).map((c) => c.id)).toEqual([
-      "high",
-      "mid",
-      "low",
-    ])
+    expect(sortChallenges(list).map((c) => c.id)).toEqual(["high", "mid", "low"])
   })
 
   it("同分值按中文标题升序", () => {
@@ -138,10 +121,7 @@ describe("sortChallenges", () => {
   })
 
   it("不修改原数组", () => {
-    const list = [
-      challenge({ id: "a", score: 10 }),
-      challenge({ id: "b", score: 20 }),
-    ]
+    const list = [challenge({ id: "a", score: 10 }), challenge({ id: "b", score: 20 })]
     sortChallenges(list)
     expect(list.map((c) => c.id)).toEqual(["a", "b"])
   })
@@ -154,11 +134,7 @@ describe("recentChallenges", () => {
       challenge({ id: "new", lastActivityAt: "2024-06-01T00:00:00Z" }),
       challenge({ id: "none", lastActivityAt: null }),
     ]
-    expect(recentChallenges(list).map((c) => c.id)).toEqual([
-      "new",
-      "old",
-      "none",
-    ])
+    expect(recentChallenges(list).map((c) => c.id)).toEqual(["new", "old", "none"])
   })
 
   it("无活动时间的排在最后，且 limit 生效", () => {

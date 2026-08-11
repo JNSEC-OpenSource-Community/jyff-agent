@@ -1,26 +1,14 @@
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
-import {
-  ProjectConfigStore,
-  projectStorageKey,
-} from "../../src/control-plane/config-store.ts"
+import { afterEach, describe, expect, it } from "vite-plus/test"
+import { ProjectConfigStore, projectStorageKey } from "../../src/control-plane/config-store.ts"
 import type { ProjectConfig } from "../../src/project/config.ts"
 
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function fixture(): Promise<string> {
@@ -58,9 +46,7 @@ describe("ProjectConfigStore", () => {
     await expect(
       access(join(second.stateDirectory, "project-config.json")),
     ).resolves.toBeUndefined()
-    expect(await readFile(store.registryPath, "utf8")).not.toContain(
-      "../unsafe/",
-    )
+    expect(await readFile(store.registryPath, "utf8")).not.toContain("../unsafe/")
   })
 
   it("保留注册表根 Project 的状态目录", async () => {
@@ -97,9 +83,7 @@ describe("ProjectConfigStore", () => {
 
     const updated = await store.saveProject(config("legacy", "Renamed"))
     expect(updated.stateDirectory).toBe(join(root, ".ctf-agent"))
-    expect(
-      await readFile(join(root, ".ctf-agent", "runs.sqlite"), "utf8"),
-    ).toBe("legacy-state")
+    expect(await readFile(join(root, ".ctf-agent", "runs.sqlite"), "utf8")).toBe("legacy-state")
     expect((await store.load("legacy"))?.project.name).toBe("Renamed")
   })
 
@@ -116,9 +100,7 @@ describe("ProjectConfigStore", () => {
     await expect(access(second.stateDirectory)).rejects.toMatchObject({
       code: "ENOENT",
     })
-    expect((await store.list()).map((item) => item.config.project.id)).toEqual([
-      "first",
-    ])
+    expect((await store.list()).map((item) => item.config.project.id)).toEqual(["first"])
     await expect(store.deleteProject("missing")).resolves.toBeUndefined()
   })
 
@@ -134,30 +116,20 @@ describe("ProjectConfigStore", () => {
       recursive: true,
     })
     await writeFile(join(second.stateDirectory, "runs.sqlite"), "state")
-    await writeFile(
-      join(second.stateDirectory, "runtime-config.json"),
-      "runtime",
-    )
+    await writeFile(join(second.stateDirectory, "runtime-config.json"), "runtime")
 
     await store.resetProjectData("second")
 
-    expect((await store.loadProject("second"))?.config.project.id).toBe(
-      "second",
+    expect((await store.loadProject("second"))?.config.project.id).toBe("second")
+    expect(await readFile(join(second.stateDirectory, "runtime-config.json"), "utf8")).toBe(
+      "runtime",
     )
-    expect(
-      await readFile(
-        join(second.stateDirectory, "runtime-config.json"),
-        "utf8",
-      ),
-    ).toBe("runtime")
     for (const artifact of ["runs.sqlite", "runs", "challenges"]) {
-      await expect(
-        access(join(second.stateDirectory, artifact)),
-      ).rejects.toMatchObject({ code: "ENOENT" })
+      await expect(access(join(second.stateDirectory, artifact))).rejects.toMatchObject({
+        code: "ENOENT",
+      })
     }
-    await expect(store.resetProjectData("missing")).rejects.toThrow(
-      "Project 不存在",
-    )
+    await expect(store.resetProjectData("missing")).rejects.toThrow("Project 不存在")
   })
 
   it("在服务端注册表持久化归档状态并兼容旧字段缺失", async () => {
@@ -175,9 +147,7 @@ describe("ProjectConfigStore", () => {
     delete persisted.projects[0].archived
     await writeFile(store.registryPath, JSON.stringify(persisted))
     expect((await new ProjectConfigStore(root).list())[0]?.archived).toBe(false)
-    await expect(store.setArchived("missing", true)).rejects.toThrow(
-      "Project 不存在",
-    )
+    await expect(store.setArchived("missing", true)).rejects.toThrow("Project 不存在")
   })
 
   it("删除根 Project 时只清理项目状态并保留全局配置", async () => {
@@ -185,10 +155,7 @@ describe("ProjectConfigStore", () => {
     const stateDirectory = join(root, ".ctf-agent")
     await mkdir(join(stateDirectory, "runs"), { recursive: true })
     await mkdir(join(stateDirectory, "challenges"), { recursive: true })
-    await writeFile(
-      join(stateDirectory, "project-config.json"),
-      JSON.stringify(config("legacy")),
-    )
+    await writeFile(join(stateDirectory, "project-config.json"), JSON.stringify(config("legacy")))
     await writeFile(
       join(stateDirectory, "project-registry.json"),
       JSON.stringify({
@@ -213,17 +180,13 @@ describe("ProjectConfigStore", () => {
     await store.deleteProject("legacy")
 
     expect(await store.list()).toEqual([])
-    await expect(
-      access(join(stateDirectory, "project-config.json")),
-    ).rejects.toMatchObject({ code: "ENOENT" })
-    await expect(
-      access(join(stateDirectory, "runs.sqlite")),
-    ).rejects.toMatchObject({ code: "ENOENT" })
-    expect(
-      await readFile(join(stateDirectory, "global-config.json"), "utf8"),
-    ).toBe("global")
-    expect(await readFile(join(stateDirectory, "secrets.json"), "utf8")).toBe(
-      "secrets",
-    )
+    await expect(access(join(stateDirectory, "project-config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    })
+    await expect(access(join(stateDirectory, "runs.sqlite"))).rejects.toMatchObject({
+      code: "ENOENT",
+    })
+    expect(await readFile(join(stateDirectory, "global-config.json"), "utf8")).toBe("global")
+    expect(await readFile(join(stateDirectory, "secrets.json"), "utf8")).toBe("secrets")
   })
 })

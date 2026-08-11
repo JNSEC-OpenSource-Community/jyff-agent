@@ -1,24 +1,12 @@
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
-import {
-  discoverProjectSkillsWithDiagnostics,
-  materializeSkills,
-} from "../../src/index.ts"
+import { afterEach, describe, expect, it } from "vite-plus/test"
+import { discoverProjectSkillsWithDiagnostics, materializeSkills } from "../../src/index.ts"
 
 const roots: string[] = []
 afterEach(async () =>
-  Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  ),
+  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
 )
 
 async function fixture(): Promise<string> {
@@ -27,13 +15,7 @@ async function fixture(): Promise<string> {
   await mkdir(join(root, ".pi", "skills", "reverse"), { recursive: true })
   await writeFile(
     join(root, ".pi", "skills", "reverse", "SKILL.md"),
-    [
-      "---",
-      "name: reverse",
-      "description: Analyze binaries safely",
-      "---",
-      "# Reverse",
-    ].join("\n"),
+    ["---", "name: reverse", "description: Analyze binaries safely", "---", "# Reverse"].join("\n"),
   )
   return root
 }
@@ -49,16 +31,10 @@ describe("shared Pi skills", () => {
       description: "Analyze binaries safely",
     })
 
-    const [skill] = await materializeSkills(
-      discovered.skills,
-      join(root, "workspace"),
-    )
+    const [skill] = await materializeSkills(discovered.skills, join(root, "workspace"))
     expect(skill?.filePath).toBe("/workspace/.skills/skill-1/SKILL.md")
     expect(
-      await readFile(
-        join(root, "workspace", ".skills", "skill-1", "SKILL.md"),
-        "utf8",
-      ),
+      await readFile(join(root, "workspace", ".skills", "skill-1", "SKILL.md"), "utf8"),
     ).toContain("# Reverse")
   })
 
@@ -66,10 +42,7 @@ describe("shared Pi skills", () => {
     const root = await fixture()
     await writeFile(join(root, "outside.txt"), "secret")
     try {
-      await symlink(
-        join(root, "outside.txt"),
-        join(root, ".pi", "skills", "reverse", "linked.txt"),
-      )
+      await symlink(join(root, "outside.txt"), join(root, ".pi", "skills", "reverse", "linked.txt"))
     } catch (error) {
       if (
         process.platform === "win32" &&
@@ -84,8 +57,6 @@ describe("shared Pi skills", () => {
       throw error
     }
     const { skills } = await discoverProjectSkillsWithDiagnostics(root)
-    await expect(
-      materializeSkills(skills, join(root, "workspace")),
-    ).rejects.toThrow("符号链接")
+    await expect(materializeSkills(skills, join(root, "workspace"))).rejects.toThrow("符号链接")
   })
 })

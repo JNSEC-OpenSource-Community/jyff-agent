@@ -3,7 +3,7 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { WorkspaceFilesPanel } from "../src/pages/challenge/WorkspaceFilesPanel.tsx"
 
 function jsonResponse(data: unknown): Response {
@@ -43,7 +43,7 @@ describe("Workspace 文件面板", () => {
       truncated: false,
     }
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
-      const url = String(input)
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       if (url.includes("/files/preview?path=artifacts")) {
         return jsonResponse({
           path: "artifacts/scripts/exploit.py",
@@ -103,15 +103,11 @@ describe("Workspace 文件面板", () => {
         name: "预览 artifacts/scripts/exploit.py",
       }),
     )
-    expect(
-      await screen.findByRole("heading", { name: "exploit.py" }),
-    ).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "exploit.py" })).toBeTruthy()
     expect(await screen.findByText("print")).toBeTruthy()
     expect(document.querySelector(".hljs-built_in")).toBeTruthy()
     await user.click(screen.getByRole("button", { name: "关闭预览" }))
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "exploit.py" })).toBeNull(),
-    )
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "exploit.py" })).toBeNull())
 
     await user.click(screen.getByRole("button", { name: "预览 notes.md" }))
     expect(await screen.findByRole("heading", { name: "Report" })).toBeTruthy()

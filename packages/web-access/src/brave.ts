@@ -1,10 +1,6 @@
 import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
-import type {
-  SearchOptions,
-  SearchResponse,
-  SearchResult,
-} from "./perplexity.ts"
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts"
 import { providerKeyConfigured, resolveProviderKey } from "./runtime.ts"
 
 const BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search"
@@ -30,9 +26,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -41,28 +35,21 @@ function normalizeDomain(value: string): string | null {
   return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null
 }
 
-function normalizeDomainFilters(
-  domainFilter: string[] | undefined,
-): NormalizedDomainFilters {
+function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
   const filters: NormalizedDomainFilters = { allowed: [], blocked: [] }
   if (!domainFilter?.length) return filters
 
   for (const raw of domainFilter) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? filters.blocked
-      : filters.allowed
+    const target = raw.trim().startsWith("-") ? filters.blocked : filters.allowed
     if (!target.includes(domain)) target.push(domain)
   }
 
   return filters
 }
 
-function buildBraveQuery(
-  query: string,
-  domainFilter: string[] | undefined,
-): string {
+function buildBraveQuery(query: string, domainFilter: string[] | undefined): string {
   const filters = normalizeDomainFilters(domainFilter)
   const parts = [query]
 
@@ -83,10 +70,7 @@ function hostMatchesDomain(hostname: string, domain: string): boolean {
   return hostname === domain || hostname.endsWith(`.${domain}`)
 }
 
-function matchesDomainFilters(
-  url: string,
-  filters: NormalizedDomainFilters,
-): boolean {
+function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): boolean {
   if (filters.allowed.length === 0 && filters.blocked.length === 0) return true
 
   let hostname = ""
@@ -116,9 +100,7 @@ export async function searchWithBrave(
 ): Promise<SearchResponse> {
   const apiKey = getApiKey(options.signal)
   if (!apiKey) {
-    throw new Error(
-      "Brave Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Brave Search API key not configured. Set it via the WebUI plugins settings.")
   }
 
   const numResults = normalizeCount(options.numResults)
@@ -153,19 +135,14 @@ export async function searchWithBrave(
         "Accept-Encoding": "gzip",
       },
       signal: options.signal
-        ? AbortSignal.any([
-            AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-            options.signal,
-          ])
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
         : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     })
 
     if (!response.ok) {
       activityMonitor.logError(activityId, `HTTP ${response.status}`)
       const errorText = redactCredential(await response.text(), apiKey)
-      throw new Error(
-        `Brave Search API error ${response.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`Brave Search API error ${response.status}: ${errorText.slice(0, 300)}`)
     }
 
     const data = (await response.json()) as {
@@ -188,8 +165,7 @@ export async function searchWithBrave(
 
     const answer = results
       .map((result) => {
-        if (result.snippet)
-          return `${result.snippet}\nSource: ${result.title} (${result.url})`
+        if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`
         return `Source: ${result.title} (${result.url})`
       })
       .join("\n\n")

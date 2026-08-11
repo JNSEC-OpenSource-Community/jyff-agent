@@ -1,7 +1,4 @@
-import {
-  buildDashboardSnapshot,
-  buildEmptyDashboardSnapshot,
-} from "../domain/view.ts"
+import { buildDashboardSnapshot, buildEmptyDashboardSnapshot } from "../domain/view.ts"
 import type {
   DashboardControlPlane,
   DashboardProject,
@@ -150,12 +147,7 @@ export class SnapshotSync {
     const nextFingerprint = fingerprint(snapshot)
     if (this.scopedFingerprints.get(projectId) === nextFingerprint) return
     this.scopedFingerprints.set(projectId, nextFingerprint)
-    this.sse.broadcast(
-      "snapshot",
-      JSON.stringify(snapshot),
-      snapshot.generatedAt,
-      projectId,
-    )
+    this.sse.broadcast("snapshot", JSON.stringify(snapshot), snapshot.generatedAt, projectId)
   }
 
   /** 轮询退避：正常时固定间隔，degraded 时指数退避，30s 封顶。 */
@@ -203,10 +195,7 @@ export class SnapshotSync {
     }
     if (recovered) {
       console.info("[webui] 平台同步已恢复")
-      this.sse.broadcast(
-        "dashboard_recovered",
-        JSON.stringify(this.healthState),
-      )
+      this.sse.broadcast("dashboard_recovered", JSON.stringify(this.healthState))
     }
   }
 

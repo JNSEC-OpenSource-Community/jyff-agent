@@ -2,18 +2,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { INCOMPLETE_CONTINUATION_PROMPT } from "@ctf-agent/prompts"
-import type {
-  CommandResult,
-  DockerSandboxOptions,
-  Sandbox,
-} from "@ctf-agent/sandbox"
+import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import {
   createFauxCore,
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   ContestScheduler,
   type ContestSchedulerError,
@@ -25,9 +21,7 @@ import { type TestChallenge, TestPlatformPlugin } from "../fake-platform.ts"
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 class SandboxTracker {
@@ -69,10 +63,7 @@ class SandboxTracker {
           }
         }
         if (payload.op === "replace") {
-          this.files.set(
-            payload.path,
-            Buffer.from(payload.base64 ?? "", "base64"),
-          )
+          this.files.set(payload.path, Buffer.from(payload.base64 ?? "", "base64"))
         }
         return {
           code: 0,
@@ -90,10 +81,7 @@ class SandboxTracker {
   }
 }
 
-function challenge(
-  index: number,
-  options: Partial<TestChallenge> = {},
-): TestChallenge {
+function challenge(index: number, options: Partial<TestChallenge> = {}): TestChallenge {
   return {
     id: `challenge-${index}`,
     title: `Challenge ${index}`,
@@ -145,11 +133,7 @@ function solvingAgent(item: TestChallenge, delayMs = 0): AgentOptions {
             { command: `printf '%s' '${item.flag}'` },
             { id: `bash-${item.id}` },
           ),
-          fauxToolCall(
-            "ctf_submit_flag",
-            { flag: item.flag },
-            { id: `submit-${item.id}` },
-          ),
+          fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: `submit-${item.id}` }),
         ],
         { stopReason: "toolUse" },
       )
@@ -185,12 +169,12 @@ describe("ContestScheduler", () => {
       expect(project.schedulerQueue()).toEqual([])
       expect(project.runs()).toEqual([])
       expect(project.isChallengeSolved(solved.id)).toBe(true)
-      await expect(
-        scheduler.dispatch(skipped.id, { force: true }),
-      ).rejects.toMatchObject({ code: "excluded" })
-      await expect(
-        scheduler.dispatch(solved.id, { force: true }),
-      ).rejects.toMatchObject({ code: "excluded" })
+      await expect(scheduler.dispatch(skipped.id, { force: true })).rejects.toMatchObject({
+        code: "excluded",
+      })
+      await expect(scheduler.dispatch(solved.id, { force: true })).rejects.toMatchObject({
+        code: "excluded",
+      })
     } finally {
       await scheduler.shutdown()
       await project.close()
@@ -226,9 +210,7 @@ describe("ContestScheduler", () => {
     try {
       await scheduler.retryAttempt(original.runId, { prompt })
       await waitUntil(
-        () =>
-          project.isChallengeSolved(item.id) &&
-          scheduler.snapshot().active.length === 0,
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
       )
 
       expect(project.runs({ challengeId: item.id })).toEqual([
@@ -239,13 +221,9 @@ describe("ContestScheduler", () => {
           status: "solved",
         }),
       ])
+      expect(await readFile(project.runSessionPath(original.runId), "utf8")).toContain(expected)
       expect(
-        await readFile(project.runSessionPath(original.runId), "utf8"),
-      ).toContain(expected)
-      expect(
-        project
-          .runEvents(original.runId)
-          .filter((event) => event.type === "run_resumed"),
+        project.runEvents(original.runId).filter((event) => event.type === "run_resumed"),
       ).toHaveLength(1)
     } finally {
       await scheduler.shutdown()
@@ -263,19 +241,17 @@ describe("ContestScheduler", () => {
     })
 
     try {
-      await expect(scheduler.retryAttempt("missing-run")).rejects.toMatchObject(
-        {
-          code: "run_not_found",
-        },
-      )
+      await expect(scheduler.retryAttempt("missing-run")).rejects.toMatchObject({
+        code: "run_not_found",
+      })
       const running = await project.createSolver(item.id, {
         agent: solvingAgent(item, 0),
         attempt: 1,
         source: "manual",
       })
-      await expect(scheduler.retryAttempt(running.runId)).rejects.toMatchObject(
-        { code: "run_not_retryable" },
-      )
+      await expect(scheduler.retryAttempt(running.runId)).rejects.toMatchObject({
+        code: "run_not_retryable",
+      })
       await running.close("manual")
     } finally {
       await scheduler.shutdown()
@@ -291,90 +267,83 @@ describe("ContestScheduler", () => {
       stopReason: "error" as const,
       errorMessage: "websocket disconnected",
     },
-  ])(
-    "$label 时按分类在同一 Run 内 continuation",
-    async ({ stopReason, errorMessage }) => {
-      const item = challenge(99)
-      const tracker = new SandboxTracker()
-      const project = await fixture([item], tracker)
-      let sessions = 0
-      const scheduler = new ContestScheduler(project, {
-        maxConcurrent: 1,
-        maxAttempts: 1,
-        retryDelayMs: 0,
-        infrastructureRetryDelayMs: 0,
-        transientRetryDelaysMs: [0, 0, 0],
-        createAgentOptions: () => {
-          sessions++
-          const faux = createFauxCore({
-            provider: `continuation-${stopReason}`,
-          })
-          faux.setResponses([
-            fauxAssistantMessage("分析尚未完成。", {
-              stopReason,
-              ...(errorMessage ? { errorMessage } : {}),
-            }),
-            fauxAssistantMessage(
-              fauxToolCall(
-                "ctf_submit_flag",
-                { flag: item.flag },
-                { id: `continued-submit-${stopReason}` },
-              ),
-              { stopReason: "toolUse" },
-            ),
-            fauxAssistantMessage("已提交。"),
-          ])
-          return {
-            streamFn: faux.streamSimple as AgentOptions["streamFn"],
-            initialState: { model: faux.getModel(), thinkingLevel: "off" },
-          }
-        },
-      })
-
-      try {
-        await scheduler.dispatch(item.id)
-        await waitUntil(
-          () =>
-            project.isChallengeSolved(item.id) &&
-            scheduler.snapshot().active.length === 0,
-        )
-
-        const runs = project.runs({ challengeId: item.id })
-        expect(runs).toEqual([
-          expect.objectContaining({
-            attempt: 1,
-            status: "solved",
-            closeReason: "submitted",
+  ])("$label 时按分类在同一 Run 内 continuation", async ({ stopReason, errorMessage }) => {
+    const item = challenge(99)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    let sessions = 0
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      retryDelayMs: 0,
+      infrastructureRetryDelayMs: 0,
+      transientRetryDelaysMs: [0, 0, 0],
+      createAgentOptions: () => {
+        sessions++
+        const faux = createFauxCore({
+          provider: `continuation-${stopReason}`,
+        })
+        faux.setResponses([
+          fauxAssistantMessage("分析尚未完成。", {
+            stopReason,
+            ...(errorMessage ? { errorMessage } : {}),
           }),
-        ])
-        expect(sessions).toBe(1)
-        const continuedRun = runs[0]
-        const continuedSession = await readFile(
-          join(
-            dirname(dirname(dirname(continuedRun?.workspace ?? ""))),
-            "runs",
-            continuedRun?.id ?? "missing",
-            "session.jsonl",
+          fauxAssistantMessage(
+            fauxToolCall(
+              "ctf_submit_flag",
+              { flag: item.flag },
+              { id: `continued-submit-${stopReason}` },
+            ),
+            { stopReason: "toolUse" },
           ),
-          "utf8",
-        )
-        expect(continuedSession).toContain(INCOMPLETE_CONTINUATION_PROMPT)
-        expect(project.sessionInterruptionCount(item.id)).toBe(0)
-        expect(project.challengeBlockEvents(item.id)).toHaveLength(
-          stopReason === "error" ? 0 : 1,
-        )
-        expect(
-          project
-            .runEvents(continuedRun?.id ?? "")
-            .filter((event) => event.type === "run_transient_failure"),
-        ).toHaveLength(stopReason === "error" ? 1 : 0)
-        expect(project.schedulerAttemptCount(item.id)).toBe(1)
-      } finally {
-        await scheduler.shutdown()
-        await project.close()
-      }
-    },
-  )
+          fauxAssistantMessage("已提交。"),
+        ])
+        return {
+          streamFn: faux.streamSimple as AgentOptions["streamFn"],
+          initialState: { model: faux.getModel(), thinkingLevel: "off" },
+        }
+      },
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+      )
+
+      const runs = project.runs({ challengeId: item.id })
+      expect(runs).toEqual([
+        expect.objectContaining({
+          attempt: 1,
+          status: "solved",
+          closeReason: "submitted",
+        }),
+      ])
+      expect(sessions).toBe(1)
+      const continuedRun = runs[0]
+      const continuedSession = await readFile(
+        join(
+          dirname(dirname(dirname(continuedRun?.workspace ?? ""))),
+          "runs",
+          continuedRun?.id ?? "missing",
+          "session.jsonl",
+        ),
+        "utf8",
+      )
+      expect(continuedSession).toContain(INCOMPLETE_CONTINUATION_PROMPT)
+      expect(project.sessionInterruptionCount(item.id)).toBe(0)
+      expect(project.challengeBlockEvents(item.id)).toHaveLength(stopReason === "error" ? 0 : 1)
+      expect(
+        project
+          .runEvents(continuedRun?.id ?? "")
+          .filter((event) => event.type === "run_transient_failure"),
+      ).toHaveLength(stopReason === "error" ? 1 : 0)
+      expect(project.schedulerAttemptCount(item.id)).toBe(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
 
   it("同一 attempt 对连续 fetch failed 仅提供三次退避重试", async () => {
     expect(DEFAULT_TRANSIENT_RETRY_DELAYS_MS).toEqual([10_000, 60_000, 300_000])
@@ -444,11 +413,7 @@ describe("ContestScheduler", () => {
       fauxAssistantMessage("开始分析。"),
       fauxAssistantMessage("compact summary"),
       fauxAssistantMessage(
-        fauxToolCall(
-          "ctf_submit_flag",
-          { flag: item.flag },
-          { id: "compact-submit" },
-        ),
+        fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: "compact-submit" }),
         { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("已提交。"),
@@ -460,9 +425,7 @@ describe("ContestScheduler", () => {
         initialState: {
           model: faux.getModel(),
           thinkingLevel: "off",
-          messages: [
-            { role: "user", content: "x".repeat(20_000), timestamp: 1 },
-          ],
+          messages: [{ role: "user", content: "x".repeat(20_000), timestamp: 1 }],
         },
       }),
     })
@@ -470,9 +433,7 @@ describe("ContestScheduler", () => {
     try {
       await scheduler.dispatch(item.id)
       await waitUntil(
-        () =>
-          project.isChallengeSolved(item.id) &&
-          scheduler.snapshot().active.length === 0,
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
       )
       const [run] = project.runs({ challengeId: item.id })
       expect(run).toBeDefined()
@@ -485,12 +446,8 @@ describe("ContestScheduler", () => {
         ),
         "utf8",
       )
-      expect(session).not.toContain(
-        '<challenge_blackboard encoding=\\"json\\">',
-      )
-      expect(
-        session.match(/<challenge_context>\\n/g)?.length,
-      ).toBeGreaterThanOrEqual(2)
+      expect(session).not.toContain('<challenge_blackboard encoding=\\"json\\">')
+      expect(session.match(/<challenge_context>\\n/g)?.length).toBeGreaterThanOrEqual(2)
       expect(session).toContain("compact summary")
       expect(session).toContain('<active_subagents encoding=\\"json\\">')
       expect(session).toContain("<challenge_announcements>")
@@ -553,9 +510,7 @@ describe("ContestScheduler", () => {
       expect(project.sessionInterruptionCount(item.id)).toBe(0)
       expect(project.challengeBlockEvents(item.id)).toHaveLength(2)
       const blockedRun = project.runs({ challengeId: item.id })[0]
-      expect(
-        project.runEvents(blockedRun?.id ?? "").map((event) => event.type),
-      ).toEqual(
+      expect(project.runEvents(blockedRun?.id ?? "").map((event) => event.type)).toEqual(
         expect.arrayContaining(["run_blocking", "block_finalization_failed"]),
       )
       expect(project.isChallengeBlocked(item.id)).toBe(true)
@@ -568,9 +523,7 @@ describe("ContestScheduler", () => {
       solveAfterIntervention = true
       await scheduler.dispatch(item.id, { force: true })
       await waitUntil(
-        () =>
-          project.isChallengeSolved(item.id) &&
-          scheduler.snapshot().active.length === 0,
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
       )
       expect(project.sessionInterruptionCount(item.id)).toBe(0)
       expect(project.challengeRuntimeState(item.id)).toMatchObject({
@@ -601,8 +554,8 @@ describe("ContestScheduler", () => {
       await scheduler.startAuto()
       await waitUntil(
         () =>
-          project.runs().filter((run) => run.status === "solved").length ===
-            4 && scheduler.snapshot().active.length === 0,
+          project.runs().filter((run) => run.status === "solved").length === 4 &&
+          scheduler.snapshot().active.length === 0,
       )
 
       expect(scheduler.snapshot()).toMatchObject({
@@ -683,18 +636,13 @@ describe("ContestScheduler", () => {
       maxConcurrent: 1,
       maxAttempts: 1,
       createAgentOptions: ({ challenge: summary }) =>
-        solvingAgent(
-          requiredChallenge(challenges.find((item) => item.id === summary.id)),
-          500,
-        ),
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id)), 500),
     })
 
     try {
       await scheduler.startAuto()
       await waitUntil(
-        () =>
-          scheduler.snapshot().active.length === 1 &&
-          scheduler.snapshot().queued.length === 1,
+        () => scheduler.snapshot().active.length === 1 && scheduler.snapshot().queued.length === 1,
       )
       const activeId = scheduler.snapshot().active[0]?.challengeId
       const queuedId = scheduler.snapshot().queued[0]?.challengeId
@@ -724,10 +672,7 @@ describe("ContestScheduler", () => {
       maxConcurrent: 1,
       maxAttempts: 1,
       createAgentOptions: ({ challenge: summary }) =>
-        solvingAgent(
-          requiredChallenge(challenges.find((item) => item.id === summary.id)),
-          500,
-        ),
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id)), 500),
     })
 
     try {
@@ -738,10 +683,7 @@ describe("ContestScheduler", () => {
       await waitUntil(() => scheduler.snapshot().active.length === 1)
       await scheduler.dispatch(second.id)
       await scheduler.dispatch(third.id)
-      expect(scheduler.snapshot().queued.map((item) => item.source)).toEqual([
-        "manual",
-        "manual",
-      ])
+      expect(scheduler.snapshot().queued.map((item) => item.source)).toEqual(["manual", "manual"])
 
       scheduler.pauseAuto()
       expect(scheduler.snapshot().queued).toEqual([])
@@ -761,10 +703,7 @@ describe("ContestScheduler", () => {
       maxConcurrent: 1,
       maxAttempts: 1,
       createAgentOptions: ({ challenge: summary }) =>
-        solvingAgent(
-          requiredChallenge(challenges.find((item) => item.id === summary.id)),
-          500,
-        ),
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id)), 500),
     })
 
     try {
@@ -784,9 +723,7 @@ describe("ContestScheduler", () => {
         position: 1,
         expectedVersion: moved.version,
       }).queued
-      const displaced = afterFirstMove.find(
-        (item) => item.challengeId === before[0]?.challengeId,
-      )
+      const displaced = afterFirstMove.find((item) => item.challengeId === before[0]?.challengeId)
       if (!displaced) throw new Error("重排后缺少被挤动的题目")
       expect(displaced.version).toBeGreaterThan(before[0]?.version ?? 0)
 
@@ -814,27 +751,20 @@ describe("ContestScheduler", () => {
         persisted.push(value)
       },
       createAgentOptions: ({ challenge: summary }) =>
-        solvingAgent(
-          requiredChallenge(challenges.find((item) => item.id === summary.id)),
-          300,
-        ),
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id)), 300),
     })
 
     try {
       await scheduler.startAuto()
       await waitUntil(
-        () =>
-          scheduler.snapshot().active.length === 1 &&
-          scheduler.snapshot().queued.length === 2,
+        () => scheduler.snapshot().active.length === 1 && scheduler.snapshot().queued.length === 2,
       )
       await scheduler.setMaxConcurrent(2)
       await waitUntil(() => scheduler.snapshot().active.length === 2)
       expect(scheduler.snapshot().maxConcurrent).toBe(2)
       expect(persisted).toEqual([2])
       await expect(scheduler.setMaxConcurrent(0)).rejects.toThrow("正整数")
-      await expect(scheduler.setMaxConcurrent(65)).rejects.toThrow(
-        "不能超过 64",
-      )
+      await expect(scheduler.setMaxConcurrent(65)).rejects.toThrow("不能超过 64")
     } finally {
       await scheduler.shutdown()
       await project.close()
@@ -872,9 +802,7 @@ describe("ContestScheduler", () => {
       maxConcurrent: 1,
       createAgentOptions: ({ challenge: summary }) =>
         solvingAgent(
-          requiredChallenge(
-            challenges.find((challenge) => challenge.id === summary.id),
-          ),
+          requiredChallenge(challenges.find((challenge) => challenge.id === summary.id)),
           500,
         ),
     })
@@ -890,9 +818,7 @@ describe("ContestScheduler", () => {
         queued: [{ challengeId: queued.id }],
       })
       expect(project.schedulerQueue()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ challengeId: queued.id }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ challengeId: queued.id })]),
       )
     } finally {
       await scheduler.shutdown()
@@ -956,9 +882,7 @@ describe("ContestScheduler", () => {
     try {
       await scheduler.startAuto()
       await waitUntil(
-        () =>
-          project.isChallengeSolved(item.id) &&
-          scheduler.snapshot().active.length === 0,
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
       )
 
       expect(project.runs({ challengeId: item.id })).toEqual([
@@ -993,18 +917,14 @@ describe("ContestScheduler", () => {
     try {
       await scheduler.dispatch(item.id)
       await waitUntil(
-        () =>
-          project.isChallengeBlocked(item.id) &&
-          scheduler.snapshot().active.length === 0,
+        () => project.isChallengeBlocked(item.id) && scheduler.snapshot().active.length === 0,
       )
 
       const runs = project.runs({ challengeId: item.id })
-      expect(runs).toEqual([
-        expect.objectContaining({ attempt: 1, status: "blocked" }),
-      ])
-      expect(
-        project.runEvents(runs[0]?.id ?? "").map((event) => event.type),
-      ).toContain("run_creation_blocked")
+      expect(runs).toEqual([expect.objectContaining({ attempt: 1, status: "blocked" })])
+      expect(project.runEvents(runs[0]?.id ?? "").map((event) => event.type)).toContain(
+        "run_creation_blocked",
+      )
     } finally {
       await scheduler.shutdown()
       await project.close()
@@ -1012,10 +932,7 @@ describe("ContestScheduler", () => {
   })
 })
 
-async function waitUntil(
-  predicate: () => boolean,
-  timeoutMs = 2_000,
-): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待调度状态超时")

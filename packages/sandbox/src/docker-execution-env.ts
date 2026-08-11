@@ -12,11 +12,7 @@ import {
   type Result,
   type ShellExecOptions,
 } from "@earendil-works/pi-agent-core"
-import {
-  type CommandResult,
-  type Sandbox,
-  SandboxCommandError,
-} from "./docker-sandbox.ts"
+import { type CommandResult, type Sandbox, SandboxCommandError } from "./docker-sandbox.ts"
 
 const WORKSPACE = "/workspace"
 const MAX_TIMER_MS = 2_147_483_647
@@ -184,9 +180,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
         ),
       )
     }
-    const environment = Object.entries(options.env ?? {}).map(
-      ([key, value]) => `${key}=${value}`,
-    )
+    const environment = Object.entries(options.env ?? {}).map(([key, value]) => `${key}=${value}`)
     const args = [
       ...(options.inheritEnv === false
         ? ["env", "-i", ...environment]
@@ -214,10 +208,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
       })
       if (result.stderr.includes(COMMAND_TIMEOUT_MARKER)) {
         return err(
-          new ExecutionError(
-            "timeout",
-            `Command timed out after ${timeoutSeconds} seconds`,
-          ),
+          new ExecutionError("timeout", `Command timed out after ${timeoutSeconds} seconds`),
         )
       }
       return ok({
@@ -230,10 +221,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     }
   }
 
-  async readTextFile(
-    path: string,
-    abortSignal?: AbortSignal,
-  ): Promise<Result<string, FileError>> {
+  async readTextFile(path: string, abortSignal?: AbortSignal): Promise<Result<string, FileError>> {
     return this.fileOperation<string>({ op: "read_text", path }, abortSignal)
   }
 
@@ -254,21 +242,13 @@ export class DockerExecutionEnv implements ExecutionEnv {
     path: string,
     abortSignal?: AbortSignal,
   ): Promise<Result<Uint8Array, FileError>> {
-    const response = await this.fileOperation<string>(
-      { op: "read_binary", path },
-      abortSignal,
-    )
+    const response = await this.fileOperation<string>({ op: "read_binary", path }, abortSignal)
     if (!response.ok) return response
     try {
       return ok(Buffer.from(response.value, "base64"))
     } catch (cause) {
       return err(
-        new FileError(
-          "unknown",
-          `Invalid binary response for ${path}`,
-          path,
-          toError(cause),
-        ),
+        new FileError("unknown", `Invalid binary response for ${path}`, path, toError(cause)),
       )
     }
   }
@@ -278,10 +258,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
-    return this.fileOperation<void>(
-      { op: "write", path, base64: encoded(content) },
-      abortSignal,
-    )
+    return this.fileOperation<void>({ op: "write", path, base64: encoded(content) }, abortSignal)
   }
 
   /**
@@ -293,10 +270,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
-    return this.fileOperation<void>(
-      { op: "replace", path, base64: encoded(content) },
-      abortSignal,
-    )
+    return this.fileOperation<void>({ op: "replace", path, base64: encoded(content) }, abortSignal)
   }
 
   appendFile(
@@ -304,37 +278,22 @@ export class DockerExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
-    return this.fileOperation<void>(
-      { op: "append", path, base64: encoded(content) },
-      abortSignal,
-    )
+    return this.fileOperation<void>({ op: "append", path, base64: encoded(content) }, abortSignal)
   }
 
-  fileInfo(
-    path: string,
-    abortSignal?: AbortSignal,
-  ): Promise<Result<FileInfo, FileError>> {
+  fileInfo(path: string, abortSignal?: AbortSignal): Promise<Result<FileInfo, FileError>> {
     return this.fileOperation<FileInfo>({ op: "info", path }, abortSignal)
   }
 
-  listDir(
-    path: string,
-    abortSignal?: AbortSignal,
-  ): Promise<Result<FileInfo[], FileError>> {
+  listDir(path: string, abortSignal?: AbortSignal): Promise<Result<FileInfo[], FileError>> {
     return this.fileOperation<FileInfo[]>({ op: "list", path }, abortSignal)
   }
 
-  canonicalPath(
-    path: string,
-    abortSignal?: AbortSignal,
-  ): Promise<Result<string, FileError>> {
+  canonicalPath(path: string, abortSignal?: AbortSignal): Promise<Result<string, FileError>> {
     return this.fileOperation<string>({ op: "canonical", path }, abortSignal)
   }
 
-  async exists(
-    path: string,
-    abortSignal?: AbortSignal,
-  ): Promise<Result<boolean, FileError>> {
+  async exists(path: string, abortSignal?: AbortSignal): Promise<Result<boolean, FileError>> {
     return this.fileOperation<boolean>({ op: "exists", path }, abortSignal)
   }
 
@@ -395,11 +354,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     })
     if (!directory.ok) return directory
     const path = `${WORKSPACE}/.ctf-agent-tmp/${safePrefix(options.prefix ?? "")}${randomUUID()}${safePrefix(options.suffix ?? "")}`
-    const created = await this.writeFile(
-      path,
-      new Uint8Array(),
-      options.abortSignal,
-    )
+    const created = await this.writeFile(path, new Uint8Array(), options.abortSignal)
     return created.ok ? ok(path) : created
   }
 
@@ -411,14 +366,8 @@ export class DockerExecutionEnv implements ExecutionEnv {
   }
 
   private address(path: string): Result<string, FileError> {
-    if (
-      typeof path !== "string" ||
-      path.includes("\\") ||
-      path.includes("\0")
-    ) {
-      return err(
-        new FileError("invalid", "Path must be a valid POSIX path", path),
-      )
+    if (typeof path !== "string" || path.includes("\\") || path.includes("\0")) {
+      return err(new FileError("invalid", "Path must be a valid POSIX path", path))
     }
     const absolute = posix.resolve(this.cwd, path)
     return ok(absolute)
@@ -428,12 +377,10 @@ export class DockerExecutionEnv implements ExecutionEnv {
     payload: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Result<T, FileError>> {
-    const address = this.address(String(payload.path ?? ""))
+    const address = this.address(typeof payload.path === "string" ? payload.path : "")
     if (!address.ok) return address
     if (signal?.aborted)
-      return err(
-        new FileError("aborted", "File operation aborted", address.value),
-      )
+      return err(new FileError("aborted", "File operation aborted", address.value))
     try {
       const input = JSON.stringify({ ...payload, path: address.value })
       let execution: CommandResult | undefined
@@ -454,8 +401,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
       if (!execution) {
         throw new Error("Container file helper did not start")
       }
-      if (execution.code !== 0)
-        return err(fileCommandError(address.value, execution))
+      if (execution.code !== 0) return err(fileCommandError(address.value, execution))
       if (execution.stdoutTruncated) {
         return err(
           new FileError(
@@ -476,9 +422,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
       )
     } catch (cause) {
       if (cause instanceof SandboxCommandError && cause.code === "aborted") {
-        return err(
-          new FileError("aborted", cause.message, address.value, cause),
-        )
+        return err(new FileError("aborted", cause.message, address.value, cause))
       }
       return err(
         new FileError(
@@ -515,11 +459,7 @@ export class DockerBashExecutionEnv extends DockerExecutionEnv {
     } = {},
   ): Promise<Result<string, FileError>> {
     const operation = super.createTempFile(options).then((created) => {
-      if (
-        created.ok &&
-        options.prefix === "bash-" &&
-        options.suffix === ".log"
-      ) {
+      if (created.ok && options.prefix === "bash-" && options.suffix === ".log") {
         this.captures.set(created.value, { chunks: [], size: 0 })
       }
       return created
@@ -541,9 +481,7 @@ export class DockerBashExecutionEnv extends DockerExecutionEnv {
   override async exec(
     command: string,
     options: ShellExecOptions = {},
-  ): Promise<
-    Result<{ stdout: string; stderr: string; exitCode: number }, ExecutionError>
-  > {
+  ): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, ExecutionError>> {
     const result = await super.exec(command, options)
     await this.drainPendingOperations()
     for (const path of this.captures.keys()) {
@@ -553,13 +491,7 @@ export class DockerBashExecutionEnv extends DockerExecutionEnv {
       if (!flushed.ok) break
     }
     if (this.captureFailure) {
-      return err(
-        new ExecutionError(
-          "unknown",
-          this.captureFailure.message,
-          this.captureFailure,
-        ),
-      )
+      return err(new ExecutionError("unknown", this.captureFailure.message, this.captureFailure))
     }
     return result
   }
@@ -597,16 +529,14 @@ export class DockerBashExecutionEnv extends DockerExecutionEnv {
 
   private track<T>(operation: Promise<T>): Promise<T> {
     this.pendingOperations.add(operation)
-    void operation
-      .finally(() => this.pendingOperations.delete(operation))
-      .catch(() => undefined)
+    void operation.finally(() => this.pendingOperations.delete(operation)).catch(() => undefined)
     return operation
   }
 
   private async drainPendingOperations(): Promise<void> {
     do {
       await Promise.resolve()
-      await Promise.allSettled([...this.pendingOperations])
+      await Promise.allSettled(this.pendingOperations)
     } while (this.pendingOperations.size > 0)
   }
 }
@@ -629,9 +559,7 @@ function safePrefix(value: string): string {
 }
 
 function fileCommandError(path: string, result: CommandResult): FileError {
-  const message = [result.stderr.trim(), result.stdout.trim()]
-    .filter(Boolean)
-    .join("\n")
+  const message = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n")
   return new FileError(
     "unknown",
     message || `Container file helper exited with ${result.code}`,

@@ -1,3 +1,5 @@
+import { xml } from "./utils.ts"
+
 export const SUBAGENT_SHARED_SYSTEM_PROMPT = [
   "You are a specialist SubAgent delegated by the primary CTF Solver.",
   "Work only on the single bounded investigation you receive. Independently verify supplied claims.",
@@ -24,13 +26,4 @@ export function subagentTaskContextPrompt(options: {
     "  <shared_attachments>/workspace/attachments</shared_attachments>",
     "</subagent_context>",
   ].join("\n")
-}
-
-function xml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;")
 }

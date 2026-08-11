@@ -169,17 +169,10 @@ function normalizeHostname(hostname: string): string {
 function assertDomainPolicy(hostname: string, policy?: DomainPolicy): void {
   if (!policy) return
   if (policy.deny.some((entry) => domainMatches(hostname, entry))) {
-    throw new Error(
-      `Blocked hostname by fetch_content domain policy: ${hostname}`,
-    )
+    throw new Error(`Blocked hostname by fetch_content domain policy: ${hostname}`)
   }
-  if (
-    policy.allow.length > 0 &&
-    !policy.allow.some((entry) => domainMatches(hostname, entry))
-  ) {
-    throw new Error(
-      `Hostname not allowed by fetch_content domain policy: ${hostname}`,
-    )
+  if (policy.allow.length > 0 && !policy.allow.some((entry) => domainMatches(hostname, entry))) {
+    throw new Error(`Hostname not allowed by fetch_content domain policy: ${hostname}`)
   }
 }
 
@@ -211,10 +204,7 @@ function getProxyForProtocol(protocol: string): string {
     if (!value) continue
     try {
       const proxyUrl = new URL(value)
-      if (
-        (proxyUrl.protocol === "http:" || proxyUrl.protocol === "https:") &&
-        proxyUrl.hostname
-      )
+      if ((proxyUrl.protocol === "http:" || proxyUrl.protocol === "https:") && proxyUrl.hostname)
         return value
     } catch {
       // Invalid proxy env vars should not weaken local DNS SSRF checks.
@@ -223,11 +213,7 @@ function getProxyForProtocol(protocol: string): string {
   return ""
 }
 
-function hostnameMatchesNoProxy(
-  hostname: string,
-  port: string,
-  entry: string,
-): boolean {
+function hostnameMatchesNoProxy(hostname: string, port: string, entry: string): boolean {
   const trimmed = entry.trim()
   if (!trimmed) return false
   if (trimmed === "*") return true
@@ -268,9 +254,7 @@ function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
   const hostname = normalizeHostname(url.hostname)
   const port = url.port || (url.protocol === "https:" ? "443" : "80")
   const noProxy = process.env.NO_PROXY || process.env.no_proxy || ""
-  return !noProxy
-    .split(",")
-    .some((entry) => hostnameMatchesNoProxy(hostname, port, entry))
+  return !noProxy.split(",").some((entry) => hostnameMatchesNoProxy(hostname, port, entry))
 }
 
 function assertPublicAddress(
@@ -280,8 +264,7 @@ function assertPublicAddress(
 ): void {
   const normalized = normalizeHostname(address)
   const ipVersion = net.isIP(normalized)
-  if (ipVersion === 0)
-    throw new Error(`Resolved non-IP address for ${hostname}: ${address}`)
+  if (ipVersion === 0) throw new Error(`Resolved non-IP address for ${hostname}: ${address}`)
   // Explicitly-allowed ranges bypass the private/reserved checks below. This lets
   // users exempt synthetic ranges produced by TUN/fake-IP proxies (e.g. 198.18/15).
   if (isInAllowedRange(normalized, ipVersion, allowRanges)) return
@@ -289,9 +272,7 @@ function assertPublicAddress(
     const hint = isFakeIpProxyAddress(normalized)
       ? ". This address is in 198.18.0.0/15, commonly used by TUN/fake-IP proxies. If that matches your setup, configure ssrf.allowRanges in the WebUI plugins settings."
       : ""
-    throw new Error(
-      `Blocked internal address for ${hostname}: ${normalized}${hint}`,
-    )
+    throw new Error(`Blocked internal address for ${hostname}: ${normalized}${hint}`)
   }
   if (ipVersion === 6 && isBlockedIPv6(normalized)) {
     throw new Error(`Blocked internal address for ${hostname}: ${normalized}`)
@@ -305,10 +286,7 @@ function isFakeIpProxyAddress(address: string): boolean {
 
 function isBlockedIPv4(address: string): boolean {
   const parts = address.split(".").map((part) => Number(part))
-  if (
-    parts.length !== 4 ||
-    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  )
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
     return true
   const a = parts[0]!
   const b = parts[1]!
@@ -331,20 +309,13 @@ function isBlockedIPv6(address: string): boolean {
 
   const first = groups[0]!
   if (groups.every((group) => group === 0)) return true
-  if (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1)
-    return true
+  if (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1) return true
   if ((first & 0xfe00) === 0xfc00) return true
   if ((first & 0xffc0) === 0xfe80) return true
 
-  const isMappedIPv4 =
-    groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff
+  const isMappedIPv4 = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff
   if (isMappedIPv4) {
-    const ipv4 = [
-      groups[6]! >> 8,
-      groups[6]! & 0xff,
-      groups[7]! >> 8,
-      groups[7]! & 0xff,
-    ].join(".")
+    const ipv4 = [groups[6]! >> 8, groups[6]! & 0xff, groups[7]! >> 8, groups[7]! & 0xff].join(".")
     return isBlockedIPv4(ipv4)
   }
 
@@ -369,14 +340,11 @@ function parseIPv6(address: string): number[] | null {
   if (pieces.length === 1 && missing !== 0) return null
   if (pieces.length === 2 && missing < 0) return null
 
-  const groups = [...left, ...Array(missing).fill("0"), ...right].map(
-    (part) => {
-      if (!/^[0-9a-f]{1,4}$/i.test(part)) return -1
-      return parseInt(part, 16)
-    },
-  )
-  return groups.length === 8 &&
-    groups.every((group) => group >= 0 && group <= 0xffff)
+  const groups = [...left, ...Array(missing).fill("0"), ...right].map((part) => {
+    if (!/^[0-9a-f]{1,4}$/i.test(part)) return -1
+    return parseInt(part, 16)
+  })
+  return groups.length === 8 && groups.every((group) => group >= 0 && group <= 0xffff)
     ? groups
     : null
 }
@@ -390,9 +358,7 @@ function parseAllowRanges(input: unknown): ParsedCidr[] {
   const rules: ParsedCidr[] = []
   for (const entry of input) {
     if (typeof entry !== "string") {
-      throw new Error(
-        `ssrf.allowRanges entries must be strings, got ${typeof entry}`,
-      )
+      throw new Error(`ssrf.allowRanges entries must be strings, got ${typeof entry}`)
     }
     const rule = parseCidr(entry.trim())
     if (!rule) {
@@ -462,11 +428,7 @@ function ipToBytes(address: string, version: number): Uint8Array | null {
 }
 
 /** True if `address` (already validated as `ipVersion`) falls within any allowed CIDR. */
-function isInAllowedRange(
-  address: string,
-  ipVersion: number,
-  allowRanges: ParsedCidr[],
-): boolean {
+function isInAllowedRange(address: string, ipVersion: number, allowRanges: ParsedCidr[]): boolean {
   if (allowRanges.length === 0) return false
   const addrBytes = ipToBytes(address, ipVersion)
   if (!addrBytes) return false
@@ -479,11 +441,7 @@ function isInAllowedRange(
 }
 
 /** Compare the leading `prefix` bits of two equal-length byte arrays. */
-function bytesMatchPrefix(
-  addr: Uint8Array,
-  network: Uint8Array,
-  prefix: number,
-): boolean {
+function bytesMatchPrefix(addr: Uint8Array, network: Uint8Array, prefix: number): boolean {
   const fullBytes = prefix >> 3
   const remBits = prefix & 7
   for (let i = 0; i < fullBytes; i++) {

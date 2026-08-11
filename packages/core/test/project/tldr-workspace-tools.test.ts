@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   createTldrWorkspaceTools,
   TLDR_WORKSPACE_READ_MAX_BYTES,
@@ -10,9 +10,7 @@ import {
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function fixture() {
@@ -58,20 +56,13 @@ describe("TLDR host workspace tools", () => {
     const { root, workspace, read } = await fixture()
     await writeFile(join(root, "secret.txt"), "host secret")
     await writeFile(join(workspace, "binary.bin"), Buffer.from([0xff, 0xfe]))
-    await writeFile(
-      join(workspace, "large.txt"),
-      "x".repeat(TLDR_WORKSPACE_READ_MAX_BYTES + 1),
-    )
+    await writeFile(join(workspace, "large.txt"), "x".repeat(TLDR_WORKSPACE_READ_MAX_BYTES + 1))
 
-    await expect(
-      read.execute("traversal", { path: "../secret.txt" }),
-    ).rejects.toThrow("escapes")
-    await expect(
-      read.execute("session", { path: "tldr/session.jsonl" }),
-    ).rejects.toThrow("not readable")
-    await expect(
-      read.execute("binary", { path: "binary.bin" }),
-    ).rejects.toThrow("valid UTF-8")
+    await expect(read.execute("traversal", { path: "../secret.txt" })).rejects.toThrow("escapes")
+    await expect(read.execute("session", { path: "tldr/session.jsonl" })).rejects.toThrow(
+      "not readable",
+    )
+    await expect(read.execute("binary", { path: "binary.bin" })).rejects.toThrow("valid UTF-8")
     await expect(read.execute("large", { path: "large.txt" })).rejects.toThrow(
       `exceeds ${TLDR_WORKSPACE_READ_MAX_BYTES} bytes`,
     )
@@ -88,8 +79,8 @@ describe("TLDR host workspace tools", () => {
       process.platform === "win32" ? "junction" : "dir",
     )
 
-    await expect(
-      read.execute("symlink", { path: "escape/secret.txt" }),
-    ).rejects.toThrow("symlink escapes")
+    await expect(read.execute("symlink", { path: "escape/secret.txt" })).rejects.toThrow(
+      "symlink escapes",
+    )
   })
 })

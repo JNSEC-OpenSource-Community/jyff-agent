@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { createWebUiApp } from "../src/server.ts"
 import type { DashboardControlPlane } from "../src/types.ts"
 import { FakeDashboardProject, FakeModelConfiguration } from "./fake-project.ts"
@@ -205,12 +205,9 @@ describe("动态控制面与项目管理", () => {
       ],
     })
 
-    const archived = await jsonRequest(
-      app,
-      "/api/projects/demo/archive",
-      "POST",
-      { archived: true },
-    )
+    const archived = await jsonRequest(app, "/api/projects/demo/archive", "POST", {
+      archived: true,
+    })
     expect(archived.status).toBe(200)
     expect(await jsonOf(archived)).toMatchObject({
       controlPlane: { projects: [{ id: "demo", archived: true }] },
@@ -227,43 +224,33 @@ describe("动态控制面与项目管理", () => {
 
     // 不存在的项目：root 404，snapshot 为空快照
     expect((await app.request("/api/projects/nope")).status).toBe(404)
-    expect(
-      await jsonOf(await app.request("/api/projects/nope/snapshot")),
-    ).toMatchObject({ overview: { name: "尚未配置比赛" } })
+    expect(await jsonOf(await app.request("/api/projects/nope/snapshot"))).toMatchObject({
+      overview: { name: "尚未配置比赛" },
+    })
 
     const runtimeView = await app.request("/api/projects/demo/runtime-config")
     expect(await jsonOf(runtimeView)).toMatchObject({
       runtime: { maxConcurrent: 8 },
     })
 
-    const runtimeUpdated = await jsonRequest(
-      app,
-      "/api/projects/demo/runtime-config",
-      "POST",
-      {
-        solverModelId: "",
-        tldrModelId: "",
-        subagentModels: {},
-        maxConcurrent: 3,
-        maxRemoteEnvironments: 2,
-      },
-    )
+    const runtimeUpdated = await jsonRequest(app, "/api/projects/demo/runtime-config", "POST", {
+      solverModelId: "",
+      tldrModelId: "",
+      subagentModels: {},
+      maxConcurrent: 3,
+      maxRemoteEnvironments: 2,
+    })
     expect(runtimeUpdated.status).toBe(200)
     expect(runtime().maxConcurrent).toBe(3)
 
     // 非法并发量被拒
-    const invalid = await jsonRequest(
-      app,
-      "/api/projects/demo/runtime-config",
-      "POST",
-      {
-        solverModelId: "",
-        tldrModelId: "",
-        subagentModels: {},
-        maxConcurrent: 0,
-        maxRemoteEnvironments: 1,
-      },
-    )
+    const invalid = await jsonRequest(app, "/api/projects/demo/runtime-config", "POST", {
+      solverModelId: "",
+      tldrModelId: "",
+      subagentModels: {},
+      maxConcurrent: 0,
+      maxRemoteEnvironments: 1,
+    })
     expect(invalid.status).toBe(400)
     expect(await jsonOf(invalid)).toMatchObject({
       error: "invalid_project_runtime_configuration",
@@ -283,12 +270,7 @@ describe("动态控制面与项目管理", () => {
     )
     expect(invalidRemoteEnvironments.status).toBe(400)
 
-    const reset = await jsonRequest(
-      app,
-      "/api/projects/demo/reset-solvers",
-      "POST",
-      {},
-    )
+    const reset = await jsonRequest(app, "/api/projects/demo/reset-solvers", "POST", {})
     expect(reset.status).toBe(200)
     expect(plane.resetProjects).toEqual(["demo"])
     expect(await jsonOf(reset)).toMatchObject({
@@ -317,11 +299,9 @@ describe("动态控制面与项目管理", () => {
         error: "control_plane_unavailable",
       })
     }
-    expect(await jsonOf(await app.request("/api/control-plane"))).toMatchObject(
-      {
-        error: "control_plane_unavailable",
-      },
-    )
+    expect(await jsonOf(await app.request("/api/control-plane"))).toMatchObject({
+      error: "control_plane_unavailable",
+    })
   })
 
   it("控制面 apply/connect 失败时映射为 422/503", async () => {
@@ -346,12 +326,7 @@ describe("动态控制面与项目管理", () => {
       error: "platform_setup_failed",
     })
 
-    const connected = await jsonRequest(
-      app,
-      "/api/control-plane/connect",
-      "POST",
-      {},
-    )
+    const connected = await jsonRequest(app, "/api/control-plane/connect", "POST", {})
     expect(connected.status).toBe(503)
     expect(await jsonOf(connected)).toMatchObject({
       error: "platform_connection_failed",
@@ -364,12 +339,7 @@ describe("动态控制面与项目管理", () => {
       { config: "not-an-object" },
       { config: DEMO_CONFIG, secrets: { TOKEN: 42 } },
     ]) {
-      const response = await jsonRequest(
-        app,
-        "/api/projects/test",
-        "POST",
-        body,
-      )
+      const response = await jsonRequest(app, "/api/projects/test", "POST", body)
       expect(response.status).toBe(400)
     }
   })

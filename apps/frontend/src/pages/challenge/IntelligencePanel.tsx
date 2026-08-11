@@ -15,7 +15,7 @@ export function IntelligencePanel({
   challengeId: string
   tldr: TldrRecord | null
   blackboard: BlackboardSummary
-  onChanged(): Promise<void>
+  onChanged: () => Promise<void>
 }) {
   return (
     <div className="space-y-6">
@@ -43,13 +43,9 @@ export function IntelligencePanel({
             },
           ] as const
         ).map(({ kind, title, icon, tone }) => {
-          const items =
-            kind === "evidence" ? blackboard.evidence : blackboard.opportunities
+          const items = kind === "evidence" ? blackboard.evidence : blackboard.opportunities
           return (
-            <section
-              key={kind}
-              className="overflow-hidden rounded-xl border border-border bg-card"
-            >
+            <section key={kind} className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
                 <span
                   className={cn(
@@ -72,9 +68,7 @@ export function IntelligencePanel({
                       <span className="shrink-0 font-mono font-semibold text-primary">
                         {kind === "evidence" ? "E" : "O"}-{item.id}
                       </span>
-                      <p className="flex-1 text-muted-foreground">
-                        {item.description}
-                      </p>
+                      <p className="flex-1 text-muted-foreground">{item.description}</p>
                       {"status" in item ? (
                         <Badge
                           tone={item.status === "open" ? "warning" : "neutral"}
@@ -87,9 +81,7 @@ export function IntelligencePanel({
                   ))}
                 </div>
               ) : (
-                <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-                  暂无数据
-                </p>
+                <p className="px-4 py-6 text-center text-xs text-muted-foreground">暂无数据</p>
               )}
             </section>
           )

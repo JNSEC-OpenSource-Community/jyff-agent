@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { readStreamUntil } from "./helpers.ts"
 
 describe("readStreamUntil", () => {
@@ -13,9 +13,7 @@ describe("readStreamUntil", () => {
 
     try {
       const pending = readStreamUntil(stream, "event: snapshot", 50)
-      const timedOut = expect(pending).rejects.toThrow(
-        "SSE 超时：未等到 event: snapshot",
-      )
+      const timedOut = expect(pending).rejects.toThrow("SSE 超时：未等到 event: snapshot")
       await vi.advanceTimersByTimeAsync(50)
       await timedOut
       expect(cancelled).toBe(true)
@@ -35,9 +33,7 @@ describe("readStreamUntil", () => {
       },
     })
 
-    await expect(readStreamUntil(stream, "event: snapshot")).resolves.toContain(
-      "event: snapshot",
-    )
+    await expect(readStreamUntil(stream, "event: snapshot")).resolves.toContain("event: snapshot")
     expect(cancelled).toBe(false)
   })
 })

@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { apiMutation, apiRequest, projectApi } from "../lib/api.ts"
 import { errorMessage } from "../lib/format.ts"
-import type {
-  ChallengeDetails,
-  DashboardRun,
-  DashboardSubagent,
-} from "../types.ts"
+import type { ChallengeDetails, DashboardRun, DashboardSubagent } from "../types.ts"
 import { useSse } from "./useSse.ts"
 
 export type ConversationTarget =
@@ -29,31 +25,24 @@ export function useChallengeDetails(
   selectedRun: DashboardRun | undefined
   selectedSubagent: DashboardSubagent | undefined
   target: ConversationTarget
-  selectRun(runId: string): void
-  selectSubagent(subagentId: string | null): void
-  challengeAction(action: "dispatch" | "cancel"): Promise<void>
-  reload(): Promise<void>
+  selectRun: (runId: string) => void
+  selectSubagent: (subagentId: string | null) => void
+  challengeAction: (action: "dispatch" | "cancel") => Promise<void>
+  reload: () => Promise<void>
 } {
   const [details, setDetails] = useState<ChallengeDetails | null>(null)
   const [selectedRunId, setSelectedRunId] = useState("")
-  const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(
-    null,
-  )
+  const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async (): Promise<void> => {
     const next = await apiRequest<ChallengeDetails>(
-      projectApi(
-        projectId,
-        `/api/challenges/${encodeURIComponent(challengeId)}`,
-      ),
+      projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}`),
     )
     setDetails(next)
     setSelectedRunId((current) =>
-      next.runs.some((run) => run.id === current)
-        ? current
-        : (next.runs[0]?.id ?? ""),
+      next.runs.some((run) => run.id === current) ? current : (next.runs[0]?.id ?? ""),
     )
   }, [challengeId, projectId])
 
@@ -80,15 +69,11 @@ export function useChallengeDetails(
   )
 
   const selectedRun = useMemo(
-    () =>
-      details?.runs.find((run) => run.id === selectedRunId) ?? details?.runs[0],
+    () => details?.runs.find((run) => run.id === selectedRunId) ?? details?.runs[0],
     [details, selectedRunId],
   )
   const selectedSubagent = useMemo(
-    () =>
-      selectedRun?.subagents.find(
-        (subagent) => subagent.id === selectedSubagentId,
-      ),
+    () => selectedRun?.subagents.find((subagent) => subagent.id === selectedSubagentId),
     [selectedRun, selectedSubagentId],
   )
   const target: ConversationTarget = selectedSubagent
@@ -101,14 +86,9 @@ export function useChallengeDetails(
       setError("")
       try {
         await apiMutation(
-          projectApi(
-            projectId,
-            `/api/challenges/${encodeURIComponent(challengeId)}/${action}`,
-          ),
+          projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/${action}`),
           "POST",
-          action === "dispatch" && details?.challenge.status === "blocked"
-            ? { force: true }
-            : {},
+          action === "dispatch" && details?.challenge.status === "blocked" ? { force: true } : {},
         )
         await load()
       } catch (cause) {

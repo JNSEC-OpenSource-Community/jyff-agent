@@ -26,13 +26,7 @@ export type RunStatus =
   | "blocked"
   | "writing_writeup"
 
-export type RunSource =
-  | "direct"
-  | "auto"
-  | "manual"
-  | "retry"
-  | "revival"
-  | "test"
+export type RunSource = "direct" | "auto" | "manual" | "retry" | "revival" | "test"
 
 export type RunCloseReason =
   | "submitted"
@@ -495,10 +489,7 @@ interface RemoteEnvironmentLeaseRow {
   acquired_at: string
 }
 
-function opportunityFromRow(
-  row: OpportunityRow,
-  sourceEvidenceIds: number[],
-): OpportunityRecord {
+function opportunityFromRow(row: OpportunityRow, sourceEvidenceIds: number[]): OpportunityRecord {
   return {
     id: row.id,
     challengeId: row.challenge_id,
@@ -523,9 +514,7 @@ function evidenceRecordFromRow(row: EvidenceRow): EvidenceRecord {
   }
 }
 
-function evidenceToSummary(
-  row: EvidenceRow,
-): BlackboardSummary["evidence"][number] {
+function evidenceToSummary(row: EvidenceRow): BlackboardSummary["evidence"][number] {
   return { id: row.id, description: row.description, runId: row.run_id }
 }
 
@@ -543,9 +532,7 @@ function tldrFromRow(row: TldrRow): TldrRecord {
   }
 }
 
-function announcementDeliveryFromRow(
-  row: AnnouncementDeliveryRow,
-): AnnouncementDeliveryRecord {
+function announcementDeliveryFromRow(row: AnnouncementDeliveryRow): AnnouncementDeliveryRecord {
   return {
     challengeId: row.challenge_id,
     announcementKey: row.announcement_key,
@@ -558,9 +545,7 @@ function announcementDeliveryFromRow(
   }
 }
 
-function contestAnnouncementFromRow(
-  row: ContestAnnouncementRow,
-): ContestAnnouncementRecord {
+function contestAnnouncementFromRow(row: ContestAnnouncementRow): ContestAnnouncementRecord {
   return {
     key: row.announcement_key,
     platformAnnouncementId: row.platform_announcement_id,
@@ -576,9 +561,7 @@ function contestAnnouncementFromRow(
   }
 }
 
-function challengeAnnouncementFromRow(
-  row: ChallengeAnnouncementRow,
-): ChallengeAnnouncementRecord {
+function challengeAnnouncementFromRow(row: ChallengeAnnouncementRow): ChallengeAnnouncementRecord {
   const parsedKeywords = JSON.parse(row.matched_keywords_json) as unknown
   return {
     ...contestAnnouncementFromRow(row),
@@ -586,9 +569,7 @@ function challengeAnnouncementFromRow(
     matchType: row.match_type,
     matchedValue: row.matched_value,
     matchedKeywords: Array.isArray(parsedKeywords)
-      ? parsedKeywords.filter(
-          (keyword): keyword is string => typeof keyword === "string",
-        )
+      ? parsedKeywords.filter((keyword): keyword is string => typeof keyword === "string")
       : [],
     approvalStatus: row.approval_status,
     reviewedAt: row.reviewed_at,
@@ -608,17 +589,14 @@ function schedulerQueueFromRow(row: SchedulerQueueRow): SchedulerQueueRecord {
   }
 }
 
-function challengeRuntimeStateFromRow(
-  row: ChallengeRuntimeStateRow,
-): ChallengeRuntimeState {
+function challengeRuntimeStateFromRow(row: ChallengeRuntimeStateRow): ChallengeRuntimeState {
   return {
     challengeId: row.challenge_id,
     blockScore: row.block_score,
     baseBlockThreshold: row.base_block_threshold,
     revivalCount: row.revival_count,
     effectiveBlockThreshold:
-      row.base_block_threshold +
-      row.revival_count * BLOCK_THRESHOLD_REVIVAL_INCREMENT,
+      row.base_block_threshold + row.revival_count * BLOCK_THRESHOLD_REVIVAL_INCREMENT,
     blocked: row.blocked === 1,
     blockedAt: row.blocked_at,
     blockedRunId: row.blocked_run_id,
@@ -628,9 +606,7 @@ function challengeRuntimeStateFromRow(
   }
 }
 
-function challengeBlockEventFromRow(
-  row: ChallengeBlockEventRow,
-): ChallengeBlockEvent {
+function challengeBlockEventFromRow(row: ChallengeBlockEventRow): ChallengeBlockEvent {
   return {
     id: row.id,
     challengeId: row.challenge_id,
@@ -641,8 +617,7 @@ function challengeBlockEventFromRow(
     scoreBefore: row.score_before,
     scoreAfter: row.score_after,
     threshold: row.threshold,
-    compactPerformed:
-      row.compact_performed === null ? null : row.compact_performed === 1,
+    compactPerformed: row.compact_performed === null ? null : row.compact_performed === 1,
     createdAt: row.created_at,
   }
 }
@@ -651,9 +626,7 @@ function normalizedDescription(value: string, field: string): string {
   const normalized = value.trim()
   if (!normalized) throw new Error(`${field} must not be empty`)
   if (normalized.length > BLACKBOARD_DESCRIPTION_MAX_LENGTH) {
-    throw new Error(
-      `${field} must not exceed ${BLACKBOARD_DESCRIPTION_MAX_LENGTH} characters`,
-    )
+    throw new Error(`${field} must not exceed ${BLACKBOARD_DESCRIPTION_MAX_LENGTH} characters`)
   }
   return normalized
 }
@@ -957,20 +930,16 @@ export class RunStore {
         PRIMARY KEY (challenge_id, announcement_key, run_id)
       ) STRICT;
     `)
-    const runColumns = database
-      .prepare("PRAGMA table_info(runs)")
-      .all() as unknown as Array<{ name: string }>
+    const runColumns = database.prepare("PRAGMA table_info(runs)").all() as unknown as Array<{
+      name: string
+    }>
     if (!runColumns.some((column) => column.name === "source")) {
-      database.exec(
-        "ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT 'direct'",
-      )
+      database.exec("ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT 'direct'")
     }
 
     const subagentColumns = new Set(
       (
-        database
-          .prepare("PRAGMA table_info(run_subagents)")
-          .all() as unknown as Array<{
+        database.prepare("PRAGMA table_info(run_subagents)").all() as unknown as Array<{
           name: string
         }>
       ).map((column) => column.name),
@@ -995,9 +964,7 @@ export class RunStore {
 
     const tldrColumns = new Set(
       (
-        database
-          .prepare("PRAGMA table_info(challenge_tldr)")
-          .all() as unknown as Array<{
+        database.prepare("PRAGMA table_info(challenge_tldr)").all() as unknown as Array<{
           name: string
         }>
       ).map((column) => column.name),
@@ -1022,9 +989,9 @@ export class RunStore {
 
     const challengeAnnouncementColumns = new Set(
       (
-        database
-          .prepare("PRAGMA table_info(challenge_announcements)")
-          .all() as unknown as Array<{ name: string }>
+        database.prepare("PRAGMA table_info(challenge_announcements)").all() as unknown as Array<{
+          name: string
+        }>
       ).map((column) => column.name),
     )
     const announcementApprovalMigrations = [
@@ -1036,10 +1003,7 @@ export class RunStore {
         "approval_status",
         "ALTER TABLE challenge_announcements ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'pending'",
       ],
-      [
-        "reviewed_at",
-        "ALTER TABLE challenge_announcements ADD COLUMN reviewed_at TEXT",
-      ],
+      ["reviewed_at", "ALTER TABLE challenge_announcements ADD COLUMN reviewed_at TEXT"],
     ] as const
     for (const [name, sql] of announcementApprovalMigrations) {
       if (!challengeAnnouncementColumns.has(name)) database.exec(sql)
@@ -1062,9 +1026,7 @@ export class RunStore {
     const runtimeColumns = database
       .prepare("PRAGMA table_info(challenge_runtime_state)")
       .all() as unknown as Array<{ name: string }>
-    const hadBlockScore = runtimeColumns.some(
-      (column) => column.name === "block_score",
-    )
+    const hadBlockScore = runtimeColumns.some((column) => column.name === "block_score")
     const hadBaseBlockThreshold = runtimeColumns.some(
       (column) => column.name === "base_block_threshold",
     )
@@ -1081,22 +1043,14 @@ export class RunStore {
         "revival_count",
         "ALTER TABLE challenge_runtime_state ADD COLUMN revival_count INTEGER NOT NULL DEFAULT 0 CHECK (revival_count >= 0)",
       ],
-      [
-        "blocked_at",
-        "ALTER TABLE challenge_runtime_state ADD COLUMN blocked_at TEXT",
-      ],
-      [
-        "blocked_run_id",
-        "ALTER TABLE challenge_runtime_state ADD COLUMN blocked_run_id TEXT",
-      ],
+      ["blocked_at", "ALTER TABLE challenge_runtime_state ADD COLUMN blocked_at TEXT"],
+      ["blocked_run_id", "ALTER TABLE challenge_runtime_state ADD COLUMN blocked_run_id TEXT"],
       [
         "lifecycle_generation",
         "ALTER TABLE challenge_runtime_state ADD COLUMN lifecycle_generation INTEGER NOT NULL DEFAULT 0 CHECK (lifecycle_generation >= 0)",
       ],
     ] as const
-    const existingRuntimeColumns = new Set(
-      runtimeColumns.map((column) => column.name),
-    )
+    const existingRuntimeColumns = new Set(runtimeColumns.map((column) => column.name))
     database.exec("BEGIN IMMEDIATE")
     try {
       for (const [name, sql] of runtimeMigrations) {
@@ -1166,12 +1120,7 @@ export class RunStore {
           continue
         }
         const message = "数据库迁移修复了同题重复 active Run"
-        interruptDuplicate.run(
-          message,
-          migrationTimestamp,
-          migrationTimestamp,
-          row.id,
-        )
+        interruptDuplicate.run(message, migrationTimestamp, migrationTimestamp, row.id)
         recordDuplicate.run(
           row.id,
           JSON.stringify({ reason: "duplicate_active_run_migration" }),
@@ -1218,11 +1167,7 @@ export class RunStore {
     }>
     const cache: PlatformViewCache = {}
     for (const row of rows) {
-      if (
-        !["overview", "challenges", "announcements", "environments"].includes(
-          row.cache_key,
-        )
-      ) {
+      if (!["overview", "challenges", "announcements", "environments"].includes(row.cache_key)) {
         continue
       }
       try {
@@ -1273,9 +1218,9 @@ export class RunStore {
 
   getRun(id: string): RunRecord | undefined {
     this.assertOpen()
-    const row = this.database
-      .prepare("SELECT * FROM runs WHERE id = ?")
-      .get(id) as RunRow | undefined
+    const row = this.database.prepare("SELECT * FROM runs WHERE id = ?").get(id) as
+      | RunRow
+      | undefined
     return row ? runFromRow(row) : undefined
   }
 
@@ -1288,9 +1233,7 @@ export class RunStore {
       parameters.push(filter.challengeId)
     }
     if (filter.status) {
-      const statuses = Array.isArray(filter.status)
-        ? filter.status
-        : [filter.status]
+      const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
       if (statuses.length === 0) return []
       clauses.push(`status IN (${statuses.map(() => "?").join(", ")})`)
       parameters.push(...statuses)
@@ -1315,23 +1258,13 @@ export class RunStore {
     const current = this.getRunOrThrow(id)
     const timestamp = new Date().toISOString()
     const closeReason =
-      patch.closeReason === undefined
-        ? (current.closeReason ?? null)
-        : patch.closeReason
-    const error =
-      patch.error === undefined ? (current.error ?? null) : patch.error
+      patch.closeReason === undefined ? (current.closeReason ?? null) : patch.closeReason
+    const error = patch.error === undefined ? (current.error ?? null) : patch.error
     const cleanupError =
-      patch.cleanupError === undefined
-        ? (current.cleanupError ?? null)
-        : patch.cleanupError
-    const startedAt =
-      patch.startedAt === undefined
-        ? (current.startedAt ?? null)
-        : patch.startedAt
+      patch.cleanupError === undefined ? (current.cleanupError ?? null) : patch.cleanupError
+    const startedAt = patch.startedAt === undefined ? (current.startedAt ?? null) : patch.startedAt
     const finishedAt =
-      patch.finishedAt === undefined
-        ? (current.finishedAt ?? null)
-        : patch.finishedAt
+      patch.finishedAt === undefined ? (current.finishedAt ?? null) : patch.finishedAt
     const status = patch.status ?? current.status
 
     const hasBlockLedger = this.database
@@ -1351,16 +1284,7 @@ export class RunStore {
             updated_at = ?, started_at = ?, finished_at = ?
         WHERE id = ?
       `)
-        .run(
-          status,
-          closeReason,
-          error,
-          cleanupError,
-          timestamp,
-          startedAt,
-          finishedAt,
-          id,
-        )
+        .run(status, closeReason, error, cleanupError, timestamp, startedAt, finishedAt, id)
       if (recordsSessionInterruption) {
         this.database
           .prepare(`
@@ -1593,17 +1517,13 @@ export class RunStore {
     return rows.map(announcementDeliveryFromRow)
   }
 
-  persistContestAnnouncement(
-    input: PersistContestAnnouncement,
-  ): ContestAnnouncementRecord {
+  persistContestAnnouncement(input: PersistContestAnnouncement): ContestAnnouncementRecord {
     this.assertOpen()
     const seenAt = input.seenAt ?? new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
       const existing = this.database
-        .prepare(
-          "SELECT * FROM contest_announcements WHERE announcement_key = ?",
-        )
+        .prepare("SELECT * FROM contest_announcements WHERE announcement_key = ?")
         .get(input.key) as unknown as ContestAnnouncementRow | undefined
       if (existing) {
         if (
@@ -1642,9 +1562,7 @@ export class RunStore {
           )
       }
       const row = this.database
-        .prepare(
-          "SELECT * FROM contest_announcements WHERE announcement_key = ?",
-        )
+        .prepare("SELECT * FROM contest_announcements WHERE announcement_key = ?")
         .get(input.key) as unknown as ContestAnnouncementRow
       this.database.exec("COMMIT")
       return contestAnnouncementFromRow(row)
@@ -1753,16 +1671,11 @@ export class RunStore {
           ON a.announcement_key = ca.announcement_key
         WHERE ca.challenge_id = ? AND ca.announcement_key = ?
       `)
-      .get(
-        input.challengeId,
-        input.announcementKey,
-      ) as unknown as ChallengeAnnouncementRow
+      .get(input.challengeId, input.announcementKey) as unknown as ChallengeAnnouncementRow
     return challengeAnnouncementFromRow(row)
   }
 
-  enqueueSchedulerChallenge(
-    input: EnqueueSchedulerChallenge,
-  ): SchedulerQueueRecord {
+  enqueueSchedulerChallenge(input: EnqueueSchedulerChallenge): SchedulerQueueRecord {
     this.assertOpen()
     const lane = input.lane ?? "normal"
     const timestamp = input.enqueuedAt ?? new Date().toISOString()
@@ -1820,18 +1733,14 @@ export class RunStore {
     return rows.map(schedulerQueueFromRow)
   }
 
-  challengeSchedulingDisposition(
-    challengeId: string,
-  ): ChallengeSchedulingDisposition | null {
+  challengeSchedulingDisposition(challengeId: string): ChallengeSchedulingDisposition | null {
     this.assertOpen()
     const row = this.database
       .prepare(`
         SELECT disposition FROM challenge_scheduling_overrides
         WHERE challenge_id = ?
       `)
-      .get(challengeId) as
-      | { disposition: ChallengeSchedulingDisposition }
-      | undefined
+      .get(challengeId) as { disposition: ChallengeSchedulingDisposition } | undefined
     return row?.disposition ?? null
   }
 
@@ -1867,9 +1776,7 @@ export class RunStore {
       throw new Error("challengeId must contain 1 to 512 characters")
     if (disposition === null) {
       this.database
-        .prepare(
-          "DELETE FROM challenge_scheduling_overrides WHERE challenge_id = ?",
-        )
+        .prepare("DELETE FROM challenge_scheduling_overrides WHERE challenge_id = ?")
         .run(challengeId)
       return null
     }
@@ -1951,18 +1858,12 @@ export class RunStore {
   removeSchedulerChallenge(challengeId: string): boolean {
     this.assertOpen()
     const row = this.database
-      .prepare(
-        "SELECT lane, position FROM scheduler_queue WHERE challenge_id = ?",
-      )
-      .get(challengeId) as
-      | { lane: SchedulerQueueLane; position: number }
-      | undefined
+      .prepare("SELECT lane, position FROM scheduler_queue WHERE challenge_id = ?")
+      .get(challengeId) as { lane: SchedulerQueueLane; position: number } | undefined
     if (!row) return false
     this.database.exec("BEGIN IMMEDIATE")
     try {
-      this.database
-        .prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?")
-        .run(challengeId)
+      this.database.prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?").run(challengeId)
       this.database
         .prepare(`
           UPDATE scheduler_queue
@@ -2034,9 +1935,7 @@ export class RunStore {
     }
   }
 
-  recordChallengeBlockEvent(
-    input: RecordChallengeBlockEvent,
-  ): ChallengeBlockEvent {
+  recordChallengeBlockEvent(input: RecordChallengeBlockEvent): ChallengeBlockEvent {
     this.assertOpen()
     const eventKey = input.eventKey.trim()
     const reason = input.reason.trim()
@@ -2059,13 +1958,8 @@ export class RunStore {
         `)
         .get(eventKey) as unknown as ChallengeBlockEventRow | undefined
       if (existing) {
-        if (
-          existing.challenge_id !== input.challengeId ||
-          existing.run_id !== input.runId
-        ) {
-          throw new Error(
-            `Block event key already belongs to another Run: ${eventKey}`,
-          )
+        if (existing.challenge_id !== input.challengeId || existing.run_id !== input.runId) {
+          throw new Error(`Block event key already belongs to another Run: ${eventKey}`)
         }
         this.database.exec("COMMIT")
         return challengeBlockEventFromRow(existing)
@@ -2086,17 +1980,12 @@ export class RunStore {
         `)
         .get(input.challengeId) as unknown as ChallengeRuntimeStateRow
       const threshold =
-        state.base_block_threshold +
-        state.revival_count * BLOCK_THRESHOLD_REVIVAL_INCREMENT
+        state.base_block_threshold + state.revival_count * BLOCK_THRESHOLD_REVIVAL_INCREMENT
       const scoreBefore = state.block_score
       const scoreAfter = scoreBefore + input.delta
       const blocked = state.blocked === 1 || scoreAfter > threshold
-      const blockedAt = blocked
-        ? (state.blocked_at ?? timestamp)
-        : state.blocked_at
-      const blockedRunId = blocked
-        ? (state.blocked_run_id ?? input.runId)
-        : null
+      const blockedAt = blocked ? (state.blocked_at ?? timestamp) : state.blocked_at
+      const blockedRunId = blocked ? (state.blocked_run_id ?? input.runId) : null
 
       const result = this.database
         .prepare(`
@@ -2114,11 +2003,7 @@ export class RunStore {
           scoreBefore,
           scoreAfter,
           threshold,
-          input.compactPerformed === undefined
-            ? null
-            : input.compactPerformed
-              ? 1
-              : 0,
+          input.compactPerformed === undefined ? null : input.compactPerformed ? 1 : 0,
           timestamp,
         )
       this.database
@@ -2128,14 +2013,7 @@ export class RunStore {
               updated_at = ?
           WHERE challenge_id = ?
         `)
-        .run(
-          scoreAfter,
-          blocked ? 1 : 0,
-          blockedAt,
-          blockedRunId,
-          timestamp,
-          input.challengeId,
-        )
+        .run(scoreAfter, blocked ? 1 : 0, blockedAt, blockedRunId, timestamp, input.challengeId)
       const event = this.database
         .prepare("SELECT * FROM challenge_block_events WHERE id = ?")
         .get(result.lastInsertRowid) as unknown as ChallengeBlockEventRow
@@ -2159,11 +2037,7 @@ export class RunStore {
     return rows.map(challengeBlockEventFromRow)
   }
 
-  forceChallengeBlocked(input: {
-    challengeId: string
-    runId: string
-    blockedAt?: string
-  }): void {
+  forceChallengeBlocked(input: { challengeId: string; runId: string; blockedAt?: string }): void {
     this.assertOpen()
     const timestamp = input.blockedAt ?? new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
@@ -2230,12 +2104,7 @@ export class RunStore {
         `)
         .get(challengeId) as { id: string } | undefined
       if (latest) {
-        this.insertEvent(
-          latest.id,
-          "session_interruptions_reset",
-          { challengeId },
-          timestamp,
-        )
+        this.insertEvent(latest.id, "session_interruptions_reset", { challengeId }, timestamp)
       }
       this.database.exec("COMMIT")
     } catch (error) {
@@ -2357,9 +2226,7 @@ export class RunStore {
 
   deleteEnvironmentLease(runId: string): void {
     this.assertOpen()
-    this.database
-      .prepare("DELETE FROM remote_environment_leases WHERE run_id = ?")
-      .run(runId)
+    this.database.prepare("DELETE FROM remote_environment_leases WHERE run_id = ?").run(runId)
   }
 
   /** Persist one worker snapshot; lifecycle events remain in run_events for replay. */
@@ -2436,9 +2303,7 @@ export class RunStore {
     return rows.map(subagentFromRow)
   }
 
-  markInterruptedSubagents(
-    message = "进程退出时 SubAgent 未进入终态",
-  ): SubagentRecord[] {
+  markInterruptedSubagents(message = "进程退出时 SubAgent 未进入终态"): SubagentRecord[] {
     this.assertOpen()
     const timestamp = new Date().toISOString()
     this.database
@@ -2454,11 +2319,7 @@ export class RunStore {
     return rows.map(subagentFromRow)
   }
 
-  recordEvidence(
-    challengeId: string,
-    runId: string,
-    description: string,
-  ): EvidenceRecord {
+  recordEvidence(challengeId: string, runId: string, description: string): EvidenceRecord {
     this.assertOpen()
     const normalized = normalizedDescription(description, "description")
     const timestamp = new Date().toISOString()
@@ -2490,11 +2351,7 @@ export class RunStore {
     }
   }
 
-  updateEvidence(
-    challengeId: string,
-    evidenceId: number,
-    description: string,
-  ): EvidenceRecord {
+  updateEvidence(challengeId: string, evidenceId: number, description: string): EvidenceRecord {
     this.assertOpen()
     const normalized = normalizedDescription(description, "description")
     const row = this.database
@@ -2504,9 +2361,7 @@ export class RunStore {
       `)
       .get(evidenceId, challengeId) as unknown as EvidenceRow | undefined
     if (!row) {
-      throw new Error(
-        `Evidence ${evidenceId} not found for challenge ${challengeId}`,
-      )
+      throw new Error(`Evidence ${evidenceId} not found for challenge ${challengeId}`)
     }
     this.database
       .prepare(`
@@ -2528,9 +2383,7 @@ export class RunStore {
         `)
         .get(evidenceId, challengeId) as unknown as EvidenceRow | undefined
       if (!row) {
-        throw new Error(
-          `Evidence ${evidenceId} not found for challenge ${challengeId}`,
-        )
+        throw new Error(`Evidence ${evidenceId} not found for challenge ${challengeId}`)
       }
       const reference = this.database
         .prepare(`
@@ -2548,9 +2401,7 @@ export class RunStore {
         )
       }
       this.database
-        .prepare(
-          "DELETE FROM challenge_evidence WHERE id = ? AND challenge_id = ?",
-        )
+        .prepare("DELETE FROM challenge_evidence WHERE id = ? AND challenge_id = ?")
         .run(evidenceId, challengeId)
       this.database.exec("COMMIT")
       return evidenceRecordFromRow(row)
@@ -2619,10 +2470,7 @@ export class RunStore {
     input: { description?: string; sourceEvidenceIds?: number[] },
   ): OpportunityRecord {
     this.assertOpen()
-    if (
-      input.description === undefined &&
-      input.sourceEvidenceIds === undefined
-    ) {
+    if (input.description === undefined && input.sourceEvidenceIds === undefined) {
       throw new Error("description or sourceEvidenceIds is required")
     }
     const normalized =
@@ -2640,13 +2488,9 @@ export class RunStore {
           SELECT * FROM challenge_opportunities
           WHERE id = ? AND challenge_id = ?
         `)
-        .get(opportunityId, challengeId) as unknown as
-        | OpportunityRow
-        | undefined
+        .get(opportunityId, challengeId) as unknown as OpportunityRow | undefined
       if (!row) {
-        throw new Error(
-          `Opportunity ${opportunityId} not found for challenge ${challengeId}`,
-        )
+        throw new Error(`Opportunity ${opportunityId} not found for challenge ${challengeId}`)
       }
       if (sources) this.assertEvidenceBelongsToChallenge(challengeId, sources)
       this.database
@@ -2657,9 +2501,7 @@ export class RunStore {
         .run(normalized ?? row.description, opportunityId, challengeId)
       if (sources) {
         this.database
-          .prepare(
-            "DELETE FROM challenge_opportunity_sources WHERE opportunity_id = ?",
-          )
+          .prepare("DELETE FROM challenge_opportunity_sources WHERE opportunity_id = ?")
           .run(opportunityId)
         const insertSource = this.database.prepare(`
           INSERT INTO challenge_opportunity_sources (opportunity_id, evidence_id)
@@ -2689,10 +2531,7 @@ export class RunStore {
     }
   }
 
-  deleteOpportunity(
-    challengeId: string,
-    opportunityId: number,
-  ): OpportunityRecord {
+  deleteOpportunity(challengeId: string, opportunityId: number): OpportunityRecord {
     this.assertOpen()
     this.database.exec("BEGIN IMMEDIATE")
     try {
@@ -2701,13 +2540,9 @@ export class RunStore {
           SELECT * FROM challenge_opportunities
           WHERE id = ? AND challenge_id = ?
         `)
-        .get(opportunityId, challengeId) as unknown as
-        | OpportunityRow
-        | undefined
+        .get(opportunityId, challengeId) as unknown as OpportunityRow | undefined
       if (!row) {
-        throw new Error(
-          `Opportunity ${opportunityId} not found for challenge ${challengeId}`,
-        )
+        throw new Error(`Opportunity ${opportunityId} not found for challenge ${challengeId}`)
       }
       const sourceRows = this.database
         .prepare(`
@@ -2716,9 +2551,7 @@ export class RunStore {
         `)
         .all(opportunityId) as unknown as OpportunitySourceRow[]
       this.database
-        .prepare(
-          "DELETE FROM challenge_opportunities WHERE id = ? AND challenge_id = ?",
-        )
+        .prepare("DELETE FROM challenge_opportunities WHERE id = ? AND challenge_id = ?")
         .run(opportunityId, challengeId)
       this.database.exec("COMMIT")
       return opportunityFromRow(
@@ -2740,12 +2573,9 @@ export class RunStore {
   ): { evidence: EvidenceRecord; opportunity: OpportunityRecord } {
     this.assertOpen()
     if (resolution !== "confirmed" && resolution !== "dead_end") {
-      throw new Error(`Unsupported opportunity resolution: ${resolution}`)
+      throw new Error("Unsupported opportunity resolution")
     }
-    const normalized = normalizedDescription(
-      resultDescription,
-      "resultDescription",
-    )
+    const normalized = normalizedDescription(resultDescription, "resultDescription")
     const timestamp = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
@@ -2755,13 +2585,9 @@ export class RunStore {
         SELECT * FROM challenge_opportunities
         WHERE id = ? AND challenge_id = ?
       `)
-        .get(opportunityId, challengeId) as unknown as
-        | OpportunityRow
-        | undefined
+        .get(opportunityId, challengeId) as unknown as OpportunityRow | undefined
       if (!row)
-        throw new Error(
-          `Opportunity ${opportunityId} not found for challenge ${challengeId}`,
-        )
+        throw new Error(`Opportunity ${opportunityId} not found for challenge ${challengeId}`)
       if (row.status !== "open")
         throw new Error(`Opportunity ${opportunityId} is already ${row.status}`)
       this.assertChallengeEntryCapacity(
@@ -2904,23 +2730,13 @@ export class RunStore {
     return run
   }
 
-  private insertEvent(
-    runId: string,
-    type: string,
-    data: unknown,
-    timestamp: string,
-  ): number {
+  private insertEvent(runId: string, type: string, data: unknown, timestamp: string): number {
     const result = this.database
       .prepare(`
       INSERT INTO run_events (run_id, type, data_json, created_at)
       VALUES (?, ?, ?, ?)
     `)
-      .run(
-        runId,
-        type,
-        data === undefined ? null : JSON.stringify(data),
-        timestamp,
-      )
+      .run(runId, type, data === undefined ? null : JSON.stringify(data), timestamp)
     return Number(result.lastInsertRowid)
   }
 
@@ -2928,10 +2744,7 @@ export class RunStore {
     if (this.closed) throw new Error("RunStore 已关闭")
   }
 
-  private assertRunBelongsToChallenge(
-    runId: string,
-    challengeId: string,
-  ): void {
+  private assertRunBelongsToChallenge(runId: string, challengeId: string): void {
     const row = this.database
       .prepare(`
       SELECT challenge_id FROM runs WHERE id = ?
@@ -2939,16 +2752,11 @@ export class RunStore {
       .get(runId) as { challenge_id: string } | undefined
     if (!row) throw new Error(`RunStore 中不存在 Run: ${runId}`)
     if (row.challenge_id !== challengeId) {
-      throw new Error(
-        `Run ${runId} does not belong to challenge ${challengeId}`,
-      )
+      throw new Error(`Run ${runId} does not belong to challenge ${challengeId}`)
     }
   }
 
-  private assertEvidenceBelongsToChallenge(
-    challengeId: string,
-    evidenceIds: number[],
-  ): void {
+  private assertEvidenceBelongsToChallenge(challengeId: string, evidenceIds: number[]): void {
     const placeholders = evidenceIds.map(() => "?").join(", ")
     const rows = this.database
       .prepare(`
@@ -2957,9 +2765,7 @@ export class RunStore {
       `)
       .all(...evidenceIds, challengeId) as unknown as { id: number }[]
     if (rows.length !== evidenceIds.length) {
-      throw new Error(
-        "One or more source evidence IDs do not belong to this challenge",
-      )
+      throw new Error("One or more source evidence IDs do not belong to this challenge")
     }
   }
 
@@ -2974,9 +2780,7 @@ export class RunStore {
     `)
       .get(challengeId) as { count: number }
     if (row.count >= maximum) {
-      throw new Error(
-        `${table} has reached the per-challenge limit of ${maximum}`,
-      )
+      throw new Error(`${table} has reached the per-challenge limit of ${maximum}`)
     }
   }
 }

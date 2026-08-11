@@ -27,10 +27,7 @@ import {
 import { isQueritAvailable, searchWithQuerit } from "./querit.ts"
 import { getRuntime, type ModelAuthResolver } from "./runtime.ts"
 import { isSearch1APIAvailable, searchWithSearch1API } from "./search1api.ts"
-import {
-  isSearchinfinityAvailable,
-  searchWithSearchinfinity,
-} from "./searchinfinity.ts"
+import { isSearchinfinityAvailable, searchWithSearchinfinity } from "./searchinfinity.ts"
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.ts"
 import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts"
 import { isSerpdiveAvailable, searchWithSerpdive } from "./serpdive.ts"
@@ -60,11 +57,7 @@ export const RESOLVED_SEARCH_PROVIDERS = [
   "brightdata",
   "serpbase",
 ] as const
-export const SEARCH_PROVIDERS = [
-  "auto",
-  "all",
-  ...RESOLVED_SEARCH_PROVIDERS,
-] as const
+export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const
 
 export type ResolvedSearchProvider = (typeof RESOLVED_SEARCH_PROVIDERS)[number]
 export type SearchProvider = (typeof SEARCH_PROVIDERS)[number]
@@ -83,9 +76,7 @@ export type SearchProviderErrorKind =
 
 export interface SearchRoutingConfig {
   providers: ResolvedSearchProvider[]
-  fallbackOn: Array<
-    Extract<SearchProviderErrorKind, "transient" | "quota" | "network">
-  >
+  fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network">>
 }
 
 export class SearchProviderError extends Error {
@@ -169,23 +160,15 @@ export function getConfiguredSearchRouting(): SearchRoutingConfig | undefined {
   return config.searchProviderConfigured ? undefined : config.searchRouting
 }
 
-function normalizeResolvedProviderList(
-  value: unknown,
-  label: string,
-): ResolvedSearchProvider[] {
+function normalizeResolvedProviderList(value: unknown, label: string): ResolvedSearchProvider[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`${label} must be a non-empty array`)
   }
   const providers: ResolvedSearchProvider[] = []
   for (const provider of value) {
-    const normalized =
-      typeof provider === "string" ? provider.trim().toLowerCase() : ""
-    if (
-      !RESOLVED_SEARCH_PROVIDERS.includes(normalized as ResolvedSearchProvider)
-    ) {
-      throw new Error(
-        `${label} contains an invalid provider: ${String(provider)}`,
-      )
+    const normalized = typeof provider === "string" ? provider.trim().toLowerCase() : ""
+    if (!RESOLVED_SEARCH_PROVIDERS.includes(normalized as ResolvedSearchProvider)) {
+      throw new Error(`${label} contains an invalid provider: ${String(provider)}`)
     }
     if (providers.includes(normalized as ResolvedSearchProvider)) {
       throw new Error(`${label} must not contain duplicates: ${normalized}`)
@@ -290,10 +273,7 @@ function classifyProviderError(
     kind = "invalid-request"
   } else if (status === 402 || status === 429) {
     kind = "quota"
-  } else if (
-    status !== undefined &&
-    (status === 408 || status === 425 || status >= 500)
-  ) {
+  } else if (status !== undefined && (status === 408 || status === 425 || status >= 500)) {
     kind = "transient"
   } else if (/rate limit|quota|too many requests/.test(lower)) {
     kind = "quota"
@@ -311,15 +291,11 @@ function classifyProviderError(
     kind = "transient"
   } else if (
     err instanceof TypeError ||
-    /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(
-      lower,
-    )
+    /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(lower)
   ) {
     kind = "network"
   } else if (
-    /invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(
-      lower,
-    )
+    /invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(lower)
   ) {
     kind = "config"
   }
@@ -335,30 +311,20 @@ async function searchWithResolvedProvider(
     const result = await searchWithOpenAI(query, options, options.modelAuth)
     return { ...result, provider }
   }
-  if (provider === "brave")
-    return { ...(await searchWithBrave(query, options)), provider }
-  if (provider === "parallel")
-    return { ...(await searchWithParallel(query, options)), provider }
-  if (provider === "tinyfish")
-    return { ...(await searchWithTinyFish(query, options)), provider }
+  if (provider === "brave") return { ...(await searchWithBrave(query, options)), provider }
+  if (provider === "parallel") return { ...(await searchWithParallel(query, options)), provider }
+  if (provider === "tinyfish") return { ...(await searchWithTinyFish(query, options)), provider }
   if (provider === "search1api")
     return { ...(await searchWithSearch1API(query, options)), provider }
   if (provider === "searchinfinity")
     return { ...(await searchWithSearchinfinity(query, options)), provider }
-  if (provider === "querit")
-    return { ...(await searchWithQuerit(query, options)), provider }
-  if (provider === "tavily")
-    return { ...(await searchWithTavily(query, options)), provider }
-  if (provider === "jina")
-    return { ...(await searchWithJina(query, options)), provider }
-  if (provider === "serpdive")
-    return { ...(await searchWithSerpdive(query, options)), provider }
-  if (provider === "kagi")
-    return { ...(await searchWithKagi(query, options)), provider }
-  if (provider === "ollama")
-    return { ...(await searchWithOllama(query, options)), provider }
-  if (provider === "anysearch")
-    return { ...(await searchWithAnySearch(query, options)), provider }
+  if (provider === "querit") return { ...(await searchWithQuerit(query, options)), provider }
+  if (provider === "tavily") return { ...(await searchWithTavily(query, options)), provider }
+  if (provider === "jina") return { ...(await searchWithJina(query, options)), provider }
+  if (provider === "serpdive") return { ...(await searchWithSerpdive(query, options)), provider }
+  if (provider === "kagi") return { ...(await searchWithKagi(query, options)), provider }
+  if (provider === "ollama") return { ...(await searchWithOllama(query, options)), provider }
+  if (provider === "anysearch") return { ...(await searchWithAnySearch(query, options)), provider }
   if (provider === "xai")
     return {
       ...(await searchWithXai(query, options, options.modelAuth)),
@@ -366,12 +332,10 @@ async function searchWithResolvedProvider(
     }
   if (provider === "brightdata")
     return { ...(await searchWithBrightData(query, options)), provider }
-  if (provider === "serpbase")
-    return { ...(await searchWithSerpBase(query, options)), provider }
+  if (provider === "serpbase") return { ...(await searchWithSerpBase(query, options)), provider }
   if (provider === "perplexity")
     return { ...(await searchWithPerplexity(query, options)), provider }
-  if (provider === "searxng")
-    return { ...(await searchWithSearXNG(query, options)), provider }
+  if (provider === "searxng") return { ...(await searchWithSearXNG(query, options)), provider }
   if (provider === "gemini") {
     const result = await searchWithGemini(query, options, true)
     if (result) return { ...result, provider }
@@ -432,8 +396,7 @@ async function searchWithAllProvider(
   query: string,
   options: FullSearchOptions,
 ): Promise<AttributedSearchResponse> {
-  if (provider !== "gemini")
-    return searchWithResolvedProvider(provider, query, options)
+  if (provider !== "gemini") return searchWithResolvedProvider(provider, query, options)
   const result = await searchWithGeminiApi(query, options)
   if (result) return { ...result, provider }
   throw new Error("Gemini API search returned no results.")
@@ -448,15 +411,13 @@ async function searchWithProviders(
     ? selectedProviders.filter(isProviderEnabled)
     : (
         await Promise.all(
-          ALL_SEARCH_PROVIDERS.filter(isProviderEnabled).map(
-            async (provider) => ({
-              provider,
-              available:
-                provider === "gemini"
-                  ? isGeminiApiAvailable()
-                  : await isResolvedProviderAvailable(provider, options),
-            }),
-          ),
+          ALL_SEARCH_PROVIDERS.filter(isProviderEnabled).map(async (provider) => ({
+            provider,
+            available:
+              provider === "gemini"
+                ? isGeminiApiAvailable()
+                : await isResolvedProviderAvailable(provider, options),
+          })),
         )
       )
         .filter((entry) => entry.available)
@@ -477,8 +438,7 @@ async function searchWithProviders(
   if (options.signal?.aborted) throw new Error("Aborted")
 
   const successes: AttributedSearchResponse[] = []
-  const failures: Array<{ provider: ResolvedSearchProvider; error: string }> =
-    []
+  const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = []
   for (const [index, outcome] of settled.entries()) {
     const provider = providers[index]
     if (!provider) continue
@@ -549,17 +509,13 @@ async function searchWithConfiguredRouting(
       const classified = classifyProviderError(provider, err)
       diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(err)}`)
       if (
-        !routing.fallbackOn.includes(
-          classified.kind as SearchRoutingConfig["fallbackOn"][number],
-        )
+        !routing.fallbackOn.includes(classified.kind as SearchRoutingConfig["fallbackOn"][number])
       ) {
         throw classified
       }
     }
   }
-  throw new Error(
-    `Configured search routing exhausted:\n  - ${diagnostics.join("\n  - ")}`,
-  )
+  throw new Error(`Configured search routing exhausted:\n  - ${diagnostics.join("\n  - ")}`)
 }
 
 export async function search(
@@ -572,15 +528,10 @@ export async function search(
       ? config.searchProvider
       : options.provider
   if (Array.isArray(provider)) {
-    return searchWithProviders(
-      query,
-      options,
-      normalizeResolvedProviderList(provider, "provider"),
-    )
+    return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"))
   }
   if (provider === "all") return searchWithProviders(query, options)
-  if (provider !== "auto")
-    return searchWithResolvedProvider(provider, query, options)
+  if (provider !== "auto") return searchWithResolvedProvider(provider, query, options)
   if (!config.searchProviderConfigured && config.searchRouting) {
     return searchWithConfiguredRouting(query, options, config.searchRouting)
   }
@@ -614,8 +565,7 @@ export async function search(
       const result = await searchWithExa(query, options)
       if (result) return { ...result, provider: "exa" }
     } catch (err) {
-      if (err instanceof CredentialResolutionError || isAbortError(err))
-        throw err
+      if (err instanceof CredentialResolutionError || isAbortError(err)) throw err
       fallbackErrors.push(`Exa: ${errorMessage(err)}`)
     }
   }
@@ -751,9 +701,7 @@ export async function search(
   }
 
   if (fallbackErrors.length > 0) {
-    throw new Error(
-      `Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`,
-    )
+    throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`)
   }
 
   throw new Error(
@@ -794,9 +742,7 @@ async function searchWithGeminiApi(
 
     if (!res.ok) {
       const errorText = redactGeminiApiResponse(res, await res.text(), apiKey)
-      throw new Error(
-        `Gemini API error ${res.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`)
     }
 
     const data = (await res.json()) as GeminiSearchResponse
@@ -809,10 +755,7 @@ async function searchWithGeminiApi(
         .join("\n") ?? ""
 
     const metadata = data.candidates?.[0]?.groundingMetadata
-    const results = await resolveGroundingChunks(
-      metadata?.groundingChunks,
-      options.signal,
-    )
+    const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal)
 
     if (!answer && results.length === 0) return null
     return { answer, results }
@@ -839,9 +782,7 @@ async function resolveGroundingChunks(
     const title = chunk.web.title || ""
     let url = chunk.web.uri || ""
 
-    if (
-      url.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")
-    ) {
+    if (url.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
       const resolved = await resolveRedirect(url, signal)
       if (resolved) url = resolved
     }
@@ -851,18 +792,12 @@ async function resolveGroundingChunks(
   return results
 }
 
-async function resolveRedirect(
-  proxyUrl: string,
-  signal?: AbortSignal,
-): Promise<string | null> {
+async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<string | null> {
   try {
     const res = await fetch(proxyUrl, {
       method: "HEAD",
       redirect: "manual",
-      signal: AbortSignal.any([
-        AbortSignal.timeout(5000),
-        ...(signal ? [signal] : []),
-      ]),
+      signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
     })
     return res.headers.get("location") || null
   } catch {

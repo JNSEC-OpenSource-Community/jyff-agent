@@ -1,12 +1,7 @@
 import { join } from "node:path"
 import { FATHER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
-import type {
-  AgentMessage,
-  AgentOptions,
-  AgentTool,
-  Skill,
-} from "@earendil-works/pi-agent-core"
+import type { AgentMessage, AgentOptions, AgentTool, Skill } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
 import {
   BaseAgent,
@@ -36,18 +31,13 @@ export class CtfFatherAgent extends BaseAgent {
   private readonly sandbox: Sandbox
   private closed = false
 
-  private constructor(
-    options: CreateCtfFatherAgentOptions,
-    prepared: PreparedBaseAgent,
-  ) {
+  private constructor(options: CreateCtfFatherAgentOptions, prepared: PreparedBaseAgent) {
     super(prepared, { compaction: true })
     this.id = options.sessionId
     this.sandbox = options.sandbox
   }
 
-  static async create(
-    options: CreateCtfFatherAgentOptions,
-  ): Promise<CtfFatherAgent> {
+  static async create(options: CreateCtfFatherAgentOptions): Promise<CtfFatherAgent> {
     const model = options.agent.initialState?.model
     if (!model) throw new Error("Clanker Father 缺少可用模型")
     const prepared = await prepareBaseAgent({
@@ -61,10 +51,7 @@ export class CtfFatherAgent extends BaseAgent {
       model,
       systemPrompt: FATHER_SYSTEM_PROMPT,
       thinkingLevel: options.agent.initialState?.thinkingLevel,
-      tools: [
-        ...createSandboxTools({ sandbox: options.sandbox }),
-        ...fatherTools(options),
-      ],
+      tools: [...createSandboxTools({ sandbox: options.sandbox }), ...fatherTools(options)],
       skills: options.skills,
       compaction: true,
     })
@@ -89,8 +76,7 @@ function fatherTools(options: CreateCtfFatherAgentOptions): AgentTool[] {
     {
       name: "father_identify_plugin",
       label: "Identify Platform Plugin",
-      description:
-        "Set the plugin identity once the target platform and task are understood.",
+      description: "Set the plugin identity once the target platform and task are understood.",
       parameters: Type.Object({
         pluginId: Type.String({ minLength: 3, maxLength: 64 }),
         displayName: Type.String({ minLength: 1, maxLength: 120 }),
@@ -105,9 +91,7 @@ function fatherTools(options: CreateCtfFatherAgentOptions): AgentTool[] {
         }
         await options.onIdentifyPlugin?.(input)
         return {
-          content: [
-            { type: "text", text: JSON.stringify({ updated: true, ...input }) },
-          ],
+          content: [{ type: "text", text: JSON.stringify({ updated: true, ...input }) }],
           details: input,
         }
       },

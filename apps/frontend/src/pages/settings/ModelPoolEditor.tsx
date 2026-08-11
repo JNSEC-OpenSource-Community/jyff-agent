@@ -1,15 +1,7 @@
 import { Icon } from "@iconify/react"
-import {
-  cloneElement,
-  type ReactNode,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-} from "react"
+import { cloneElement, type ReactNode, useEffect, useId, useMemo, useState } from "react"
 import {
   Button,
-  Card,
   Checkbox,
   Combobox,
   ErrorNotice,
@@ -56,7 +48,7 @@ export function ModelPoolEditor({
 }: {
   configuration: ModelConfigurationView
   authentication: ModelAuthenticationView
-  onSaved(n: ModelConfigurationView): void
+  onSaved: (n: ModelConfigurationView) => void
 }) {
   const [models, setModels] = useState<EM[]>(configuration.models.map(ed))
   const [err, setErr] = useState("")
@@ -64,9 +56,7 @@ export function ModelPoolEditor({
   const [fatherModelId, setFatherModelId] = useState(
     configuration.fatherModelId ?? configuration.solverModelId,
   )
-  const [customModelIds, setCustomModelIds] = useState<
-    Record<string, string[] | null>
-  >({})
+  const [customModelIds, setCustomModelIds] = useState<Record<string, string[] | null>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -140,8 +130,7 @@ export function ModelPoolEditor({
     try {
       const payload: ModelConfigurationUpdate = {
         models: models.map(
-          ({ uiKey: _, automaticId: __, supportedThinkingLevels: ___, ...m }) =>
-            m,
+          ({ uiKey: _, automaticId: __, supportedThinkingLevels: ___, ...m }) => m,
         ),
         solverModelId: configuration.solverModelId,
         tldrModelId: configuration.tldrModelId,
@@ -163,17 +152,17 @@ export function ModelPoolEditor({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {err ? <ErrorNotice message={err} /> : null}
-      <Card className="flex flex-wrap items-center justify-between gap-4 p-4">
-        <div>
-          <p className="text-sm font-medium">Clanker Father 模型</p>
-          <p className="text-xs text-muted-foreground">
-            全局插件工坊使用，不跟随 Project。
+      <section>
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold">Clanker Father</h3>
+          <p className="mt-1! text-xs text-muted-foreground">
+            指定插件工坊使用的全局模型，不跟随比赛配置。
           </p>
         </div>
         <Combobox
-          className="w-72"
+          className="w-full max-w-sm"
           value={fatherModelId}
           onChange={setFatherModelId}
           options={models.map((model) => ({
@@ -182,190 +171,179 @@ export function ModelPoolEditor({
           }))}
           placeholder="选择 Father 模型"
         />
-      </Card>
-      {models.map((m, i) => {
-        const prov = authentication.providers.find((p) => p.id === m.provider)
-        const customProvider = configuration.customProviders.find(
-          (p) => p.id === m.provider,
-        )
-        const discoveredModels = customProvider
-          ? customModelIds[customProvider.id]
-          : undefined
-        return (
-          <Card key={m.uiKey} className="overflow-hidden p-0">
-            <div className="flex items-center gap-3 border-b border-border bg-muted px-4 py-2.5">
-              <span className="flex size-6 items-center justify-center rounded-md bg-muted font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <Input
-                aria-label="模型配置 ID"
-                value={m.id}
-                readOnly={m.automaticId}
-                onChange={(e) =>
-                  up(i, { id: e.target.value, automaticId: false })
-                }
-                className="h-7 flex-1 border-0 bg-transparent text-sm font-medium shadow-none focus-visible:ring-0"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-7 text-muted-foreground hover:text-danger"
-                onClick={() => setModels((c) => c.filter((_, j) => j !== i))}
-              >
-                <Icon icon="lucide:trash-2" width="13" />
-              </Button>
-            </div>
-            <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="供应商">
-                <Combobox
-                  value={m.provider}
-                  onChange={(v) => {
-                    const newProv = authentication.providers.find(
-                      (p) => p.id === v,
-                    )
-                    const s = newProv?.models[0]
-                    up(i, {
-                      provider: v,
-                      modelId: s?.id ?? "",
-                      ...(s
-                        ? {
-                            contextWindow: s.contextWindow,
-                            thinkingEnabled: s.reasoning,
-                            reasoningEffort: s.reasoning ? "medium" : "off",
-                          }
-                        : {}),
-                    })
-                  }}
-                  options={providerOptions}
-                  placeholder="选择 Provider"
-                  searchPlaceholder="搜索…"
-                  emptyText="无匹配"
-                />
-              </Field>
-              <Field label="模型 ID">
-                {customProvider && discoveredModels?.length ? (
-                  <Combobox
-                    value={m.modelId}
-                    onChange={(modelId) => up(i, { modelId })}
-                    options={discoveredModels.map((modelId) => ({
-                      value: modelId,
-                      label: modelId,
-                    }))}
-                    placeholder="选择模型"
-                    searchPlaceholder="搜索…"
-                    emptyText="无匹配"
-                  />
-                ) : customProvider ? (
+      </section>
+      <section className="border-t border-border pt-5">
+        <div className="mb-3 flex items-end justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold">模型池</h3>
+            <p className="mt-1! text-xs text-muted-foreground">
+              这些模型可供各比赛绑定 Solver、TLDR 与 SubAgent。
+            </p>
+          </div>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {models.length} 个
+          </span>
+        </div>
+        <div className="space-y-3">
+          {models.map((m, i) => {
+            const prov = authentication.providers.find((p) => p.id === m.provider)
+            const customProvider = configuration.customProviders.find((p) => p.id === m.provider)
+            const discoveredModels = customProvider ? customModelIds[customProvider.id] : undefined
+            return (
+              <article key={m.uiKey} className="overflow-hidden rounded-lg border border-border">
+                <div className="flex items-center gap-3 border-b border-border bg-muted px-4 py-2.5">
+                  <span className="flex size-6 items-center justify-center rounded-md bg-muted font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
                   <Input
-                    value={m.modelId}
-                    onChange={(e) => up(i, { modelId: e.target.value })}
-                    placeholder="输入兼容端点的模型 ID"
+                    aria-label="模型配置 ID"
+                    value={m.id}
+                    readOnly={m.automaticId}
+                    onChange={(e) => up(i, { id: e.target.value, automaticId: false })}
+                    className="h-7 flex-1 border-0 bg-transparent text-sm font-medium shadow-none focus-visible:ring-0"
                   />
-                ) : (
-                  <Combobox
-                    value={m.modelId}
-                    onChange={(v) => {
-                      const s = prov?.models.find((x) => x.id === v)
-                      up(i, {
-                        modelId: v,
-                        ...(s
-                          ? {
-                              contextWindow: s.contextWindow,
-                              thinkingEnabled: s.reasoning,
-                              reasoningEffort: s.reasoning ? "medium" : "off",
-                            }
-                          : {}),
-                      })
-                    }}
-                    options={modelOptions(m.provider)}
-                    placeholder="选择模型"
-                    searchPlaceholder="搜索…"
-                    emptyText="无匹配"
-                  />
-                )}
-              </Field>
-              <Field
-                label="上下文窗口"
-                description="模型可接收的最大 token 数。"
-              >
-                <Input
-                  type="number"
-                  min="1"
-                  value={m.contextWindow}
-                  onChange={(e) =>
-                    up(i, { contextWindow: Number(e.target.value) })
-                  }
-                  className="h-8 text-xs"
-                />
-              </Field>
-              <Field
-                label="默认推理强度"
-                description="新建 Agent 时使用；关闭推理后该值不会发送。"
-              >
-                <Select
-                  value={m.reasoningEffort}
-                  onValueChange={(v) => up(i, { reasoningEffort: v })}
-                >
-                  <SelectTrigger className="h-8 w-full text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[
-                      "off",
-                      "minimal",
-                      "low",
-                      "medium",
-                      "high",
-                      "xhigh",
-                      "max",
-                    ].map((l) => (
-                      <SelectItem value={l} key={l}>
-                        {l}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-            <div className="flex flex-wrap gap-4 border-t border-border bg-muted/30 px-4 py-2.5">
-              <label
-                htmlFor={`${m.uiKey}-thinking`}
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-              >
-                <Checkbox
-                  id={`${m.uiKey}-thinking`}
-                  checked={m.thinkingEnabled}
-                  onCheckedChange={(c) =>
-                    up(i, { thinkingEnabled: c === true })
-                  }
-                />
-                启用推理输出
-              </label>
-              <label
-                htmlFor={`${m.uiKey}-passthrough`}
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-              >
-                <Checkbox
-                  id={`${m.uiKey}-passthrough`}
-                  checked={m.passthroughThinking}
-                  onCheckedChange={(c) =>
-                    up(i, { passthroughThinking: c === true })
-                  }
-                />
-                向自定义端点透传推理档位
-              </label>
-            </div>
-          </Card>
-        )
-      })}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:text-danger"
+                    onClick={() => setModels((c) => c.filter((_, j) => j !== i))}
+                  >
+                    <Icon icon="lucide:trash-2" width="13" />
+                  </Button>
+                </div>
+                <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label="供应商">
+                    <Combobox
+                      value={m.provider}
+                      onChange={(v) => {
+                        const newProv = authentication.providers.find((p) => p.id === v)
+                        const s = newProv?.models[0]
+                        up(i, {
+                          provider: v,
+                          modelId: s?.id ?? "",
+                          ...(s
+                            ? {
+                                contextWindow: s.contextWindow,
+                                thinkingEnabled: s.reasoning,
+                                reasoningEffort: s.reasoning ? "medium" : "off",
+                              }
+                            : {}),
+                        })
+                      }}
+                      options={providerOptions}
+                      placeholder="选择 Provider"
+                      searchPlaceholder="搜索…"
+                      emptyText="无匹配"
+                    />
+                  </Field>
+                  <Field label="模型 ID">
+                    {customProvider && discoveredModels?.length ? (
+                      <Combobox
+                        value={m.modelId}
+                        onChange={(modelId) => up(i, { modelId })}
+                        options={discoveredModels.map((modelId) => ({
+                          value: modelId,
+                          label: modelId,
+                        }))}
+                        placeholder="选择模型"
+                        searchPlaceholder="搜索…"
+                        emptyText="无匹配"
+                      />
+                    ) : customProvider ? (
+                      <Input
+                        value={m.modelId}
+                        onChange={(e) => up(i, { modelId: e.target.value })}
+                        placeholder="输入兼容端点的模型 ID"
+                      />
+                    ) : (
+                      <Combobox
+                        value={m.modelId}
+                        onChange={(v) => {
+                          const s = prov?.models.find((x) => x.id === v)
+                          up(i, {
+                            modelId: v,
+                            ...(s
+                              ? {
+                                  contextWindow: s.contextWindow,
+                                  thinkingEnabled: s.reasoning,
+                                  reasoningEffort: s.reasoning ? "medium" : "off",
+                                }
+                              : {}),
+                          })
+                        }}
+                        options={modelOptions(m.provider)}
+                        placeholder="选择模型"
+                        searchPlaceholder="搜索…"
+                        emptyText="无匹配"
+                      />
+                    )}
+                  </Field>
+                  <Field label="上下文窗口" description="模型可接收的最大 token 数。">
+                    <Input
+                      type="number"
+                      min="1"
+                      value={m.contextWindow}
+                      onChange={(e) => up(i, { contextWindow: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </Field>
+                  <Field
+                    label="默认推理强度"
+                    description="新建 Agent 时使用；关闭推理后该值不会发送。"
+                  >
+                    <Select
+                      value={m.reasoningEffort}
+                      onValueChange={(v) => up(i, { reasoningEffort: v })}
+                    >
+                      <SelectTrigger className="h-8 w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((l) => (
+                          <SelectItem value={l} key={l}>
+                            {l}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+                <div className="flex flex-wrap gap-4 border-t border-border bg-muted/30 px-4 py-2.5">
+                  <label
+                    htmlFor={`${m.uiKey}-thinking`}
+                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    <Checkbox
+                      id={`${m.uiKey}-thinking`}
+                      checked={m.thinkingEnabled}
+                      onCheckedChange={(c) => up(i, { thinkingEnabled: c === true })}
+                    />
+                    启用推理输出
+                  </label>
+                  <label
+                    htmlFor={`${m.uiKey}-passthrough`}
+                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    <Checkbox
+                      id={`${m.uiKey}-passthrough`}
+                      checked={m.passthroughThinking}
+                      onCheckedChange={(c) => up(i, { passthroughThinking: c === true })}
+                    />
+                    向自定义端点透传推理档位
+                  </label>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
       <div className="flex justify-end gap-3">
         <Button
           variant="secondary"
           onClick={() => {
             const p =
-              authentication.providers.find(
-                (x) => x.configured && x.id === "openai",
-              ) ?? authentication.providers.find((x) => x.configured)
+              authentication.providers.find((x) => x.configured && x.id === "openai") ??
+              authentication.providers.find((x) => x.configured)
             const cp = configuration.customProviders[0]
             const s = p?.models[0]
             const entry = {
@@ -383,9 +361,7 @@ export function ModelPoolEditor({
                 automaticId: true,
                 id: modelPoolEntryId(entry),
                 ...entry,
-                supportedThinkingLevels: s?.reasoning
-                  ? ["off", "low", "medium", "high"]
-                  : ["off"],
+                supportedThinkingLevels: s?.reasoning ? ["off", "low", "medium", "high"] : ["off"],
               } as EM,
             ])
           }}
@@ -393,10 +369,7 @@ export function ModelPoolEditor({
           <Icon icon="lucide:plus" width="13" />
           添加
         </Button>
-        <Button
-          onClick={() => void save()}
-          disabled={busy || models.length === 0}
-        >
+        <Button onClick={() => void save()} disabled={busy || models.length === 0}>
           <Icon
             icon={busy ? "lucide:loader-circle" : "lucide:save"}
             className={busy ? "animate-spin" : ""}
@@ -421,17 +394,12 @@ function Field({
   const id = useId()
   return (
     <div className="space-y-1">
-      <label
-        htmlFor={id}
-        className="block text-[11px] font-medium text-muted-foreground"
-      >
+      <label htmlFor={id} className="block text-[11px] font-medium text-muted-foreground">
         {label}
       </label>
       {cloneElement(children as React.ReactElement<{ id?: string }>, { id })}
       {description ? (
-        <p className="text-[10px] leading-4 text-muted-foreground/80">
-          {description}
-        </p>
+        <p className="text-[10px] leading-4 text-muted-foreground/80">{description}</p>
       ) : null}
     </div>
   )

@@ -2,11 +2,7 @@ import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
 import type { ExtractedContent } from "./extract.ts"
 import type { SearchOptions, SearchResponse } from "./perplexity.ts"
-import {
-  providerKeyConfigured,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import { providerKeyConfigured, providerOption, resolveProviderKey } from "./runtime.ts"
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search"
 const SEARCH_TIMEOUT_MS = 60_000
@@ -60,9 +56,7 @@ function resolveModel(): SerpdiveModel {
   const raw = providerOption("serpdive", "model")
   if (typeof raw !== "string") return DEFAULT_MODEL
   const value = raw.trim().toLowerCase()
-  return (MODELS as readonly string[]).includes(value)
-    ? (value as SerpdiveModel)
-    : DEFAULT_MODEL
+  return (MODELS as readonly string[]).includes(value) ? (value as SerpdiveModel) : DEFAULT_MODEL
 }
 
 function normalizeCount(value: number | undefined): number {
@@ -76,9 +70,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -98,9 +90,7 @@ function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
   for (const raw of domainFilter) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? filters.exclude
-      : filters.include
+    const target = raw.trim().startsWith("-") ? filters.exclude : filters.include
     if (!target.includes(domain)) target.push(domain)
   }
   return filters
@@ -121,8 +111,7 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
   } catch {
     return false
   }
-  if (filters.exclude.some((domain) => domainMatches(hostname, domain)))
-    return false
+  if (filters.exclude.some((domain) => domainMatches(hostname, domain))) return false
   if (filters.include.length === 0) return true
   return filters.include.some((domain) => domainMatches(hostname, domain))
 }
@@ -131,10 +120,7 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
 // and read by the engine, which biases ranking toward recent pages — it is a
 // hint, never a guaranteed freshness filter, and results outside the window can
 // still come back.
-function applyRecencyHint(
-  query: string,
-  recencyFilter: SearchOptions["recencyFilter"],
-): string {
+function applyRecencyHint(query: string, recencyFilter: SearchOptions["recencyFilter"]): string {
   if (!recencyFilter) return query
   const hints: Record<string, string> = {
     day: "past 24 hours",
@@ -167,10 +153,7 @@ function mapResults(
     mapped.push({
       title: item.title || `Source ${mapped.length + 1}`,
       url: item.url,
-      snippet:
-        typeof item.content === "string"
-          ? item.content.replace(/\s+/g, " ").trim()
-          : "",
+      snippet: typeof item.content === "string" ? item.content.replace(/\s+/g, " ").trim() : "",
     })
     if (mapped.length >= numResults) break
   }
@@ -184,8 +167,7 @@ function mapInlineContent(
   if (!Array.isArray(results)) return []
   return results.flatMap((item) => {
     if (!item?.url || !passesDomainFilters(item.url, filters)) return []
-    if (typeof item.content !== "string" || item.content.trim().length === 0)
-      return []
+    if (typeof item.content !== "string" || item.content.trim().length === 0) return []
     return [
       {
         url: item.url,
@@ -205,12 +187,10 @@ function buildAnswer(
   apiAnswer: string | null | undefined,
   results: SearchResponse["results"],
 ): string {
-  if (typeof apiAnswer === "string" && apiAnswer.trim().length > 0)
-    return apiAnswer
+  if (typeof apiAnswer === "string" && apiAnswer.trim().length > 0) return apiAnswer
   return results
     .map((result) => {
-      if (result.snippet)
-        return `${result.snippet}\nSource: ${result.title} (${result.url})`
+      if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`
       return `Source: ${result.title} (${result.url})`
     })
     .join("\n\n")
@@ -254,8 +234,7 @@ export async function searchWithSerpdive(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -266,9 +245,7 @@ export async function searchWithSerpdive(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `SERPdive API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`SERPdive API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
 
   let data: SerpdiveResponse

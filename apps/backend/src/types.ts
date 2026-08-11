@@ -46,19 +46,13 @@ export interface DashboardFather {
   get(id: string): FatherSessionRecord | undefined
   sessionPath(id: string): string
   workspace(id: string): string
-  create(input: {
-    createdBy: string
-    parentSessionId?: string
-  }): Promise<FatherSessionRecord>
+  create(input: { createdBy: string; parentSessionId?: string }): Promise<FatherSessionRecord>
   send(id: string, message: string): Promise<FatherSessionRecord>
   stop(id: string): Promise<FatherSessionRecord>
   complete(id: string): Promise<FatherSessionRecord>
   delete(id: string): Promise<void>
   subscribe(id: string, listener: AgentStreamListener): () => void
-  setGateStatus(
-    id: string,
-    gate: FatherSessionRecord["gate"],
-  ): Promise<FatherSessionRecord>
+  setGateStatus(id: string, gate: FatherSessionRecord["gate"]): Promise<FatherSessionRecord>
   notifyValidation(id: string, report: PlatformValidationReport): Promise<void>
   close(): Promise<void>
 }
@@ -225,13 +219,8 @@ export interface DashboardProject {
   /** 返回已持久化的原生 Pi session，供 HTML 导出读取。 */
   runSessionPath(runId: string): string
   /** 返回 Pi HTML 导出所需的 system prompt 和工具元数据。 */
-  runSessionExportMetadata(
-    runId: string,
-  ): Promise<RunSessionExportMetadata | undefined>
-  subscribeAgentStream(
-    target: AgentStreamTarget,
-    listener: AgentStreamListener,
-  ): () => void
+  runSessionExportMetadata(runId: string): Promise<RunSessionExportMetadata | undefined>
+  subscribeAgentStream(target: AgentStreamTarget, listener: AgentStreamListener): () => void
   runEvents(runId: string): RunEvent[]
   latestRunEvent(runId: string): RunEvent | undefined
   subagents(runId: string): SubagentRecord[]
@@ -243,20 +232,13 @@ export interface DashboardProject {
   blackboard(challengeId: string): BlackboardSummary
   blackboardStats(): BlackboardStats[]
   challengeWriteup(challengeId: string): Promise<ChallengeWriteup>
-  challengeWorkspaceFiles(
-    challengeId: string,
-  ): Promise<WorkspaceArtifactListing>
-  challengeWorkspaceFile(
-    challengeId: string,
-    artifactPath: string,
-  ): Promise<Uint8Array>
+  challengeWorkspaceFiles(challengeId: string): Promise<WorkspaceArtifactListing>
+  challengeWorkspaceFile(challengeId: string, artifactPath: string): Promise<Uint8Array>
   tldr(challengeId: string): TldrRecord | undefined
   refreshTldr(challengeId: string, agent: AgentOptions): Promise<TldrRecord>
   schedulerAttemptCount(challengeId: string): number
   sessionInterruptionCount(challengeId: string): number
-  challengeSchedulingDisposition(
-    challengeId: string,
-  ): "excluded" | "solved" | null
+  challengeSchedulingDisposition(challengeId: string): "excluded" | "solved" | null
   setChallengeSchedulingDisposition(
     challengeId: string,
     disposition: "excluded" | "solved" | null,
@@ -271,15 +253,8 @@ export interface DashboardProject {
    * 切换某题当前活跃 solver 的思考强度(当前 run 下一 turn 边界生效)。
    * 无活跃 solver → code:"no_active_run";非法档位 → code:"invalid_level"。
    */
-  setThinkingLevel(
-    challengeId: string,
-    level: string,
-  ): Promise<{ runId: string }>
-  steerSubagent(
-    runId: string,
-    subagentId: string,
-    message: string,
-  ): Promise<SubagentRecord>
+  setThinkingLevel(challengeId: string, level: string): Promise<{ runId: string }>
+  steerSubagent(runId: string, subagentId: string, message: string): Promise<SubagentRecord>
   cancelSubagent(runId: string, subagentId: string): Promise<SubagentRecord>
 }
 
@@ -289,14 +264,8 @@ export interface DashboardScheduler {
   startAuto(): Promise<ContestSchedulerSnapshot>
   pauseAuto(): ContestSchedulerSnapshot
   setMaxConcurrent(maxConcurrent: number): Promise<ContestSchedulerSnapshot>
-  dispatch(
-    challengeId: string,
-    options?: { force?: boolean },
-  ): Promise<ContestSchedulerSnapshot>
-  retryAttempt(
-    runId: string,
-    options?: { prompt?: string },
-  ): Promise<ContestSchedulerSnapshot>
+  dispatch(challengeId: string, options?: { force?: boolean }): Promise<ContestSchedulerSnapshot>
+  retryAttempt(runId: string, options?: { prompt?: string }): Promise<ContestSchedulerSnapshot>
   reorderQueue(
     challengeId: string,
     options: {
@@ -330,10 +299,7 @@ export interface DashboardControlPlane {
   connect(projectId?: string): Promise<ControlPlaneSnapshot>
   deleteProject(projectId: string): Promise<ControlPlaneSnapshot>
   resetProject(projectId: string): Promise<ControlPlaneSnapshot>
-  archiveProject(
-    projectId: string,
-    archived: boolean,
-  ): Promise<ControlPlaneSnapshot>
+  archiveProject(projectId: string, archived: boolean): Promise<ControlPlaneSnapshot>
   disconnectArchivedIdleProjects?(): Promise<ControlPlaneSnapshot>
 }
 
@@ -419,9 +385,7 @@ export interface ProjectRuntimeConfigurationView extends AgentModelBindings {
 
 export interface DashboardProjectRuntimeConfiguration {
   snapshot(): ProjectRuntimeConfigurationView
-  update(
-    configuration: ProjectRuntimeConfigurationView,
-  ): Promise<ProjectRuntimeConfigurationView>
+  update(configuration: ProjectRuntimeConfigurationView): Promise<ProjectRuntimeConfigurationView>
 }
 
 export interface ModelConfigurationUpdate {
@@ -434,20 +398,10 @@ export interface ModelConfigurationUpdate {
 
 export interface DashboardModelConfiguration {
   snapshot(bindings?: AgentModelBindings): ModelConfigurationView
-  createAgentOptions(
-    target?: "solver" | "tldr",
-    bindings?: AgentModelBindings,
-  ): AgentOptions
-  modelForSubagent(
-    role: string,
-    bindings?: AgentModelBindings,
-  ): string | undefined
-  update(
-    configuration: ModelConfigurationUpdate,
-  ): Promise<ModelConfigurationView>
-  addCustomProvider(
-    provider: CustomModelProviderUpdate,
-  ): Promise<ModelConfigurationView>
+  createAgentOptions(target?: "solver" | "tldr", bindings?: AgentModelBindings): AgentOptions
+  modelForSubagent(role: string, bindings?: AgentModelBindings): string | undefined
+  update(configuration: ModelConfigurationUpdate): Promise<ModelConfigurationView>
+  addCustomProvider(provider: CustomModelProviderUpdate): Promise<ModelConfigurationView>
   updateCustomProvider(
     providerId: string,
     provider: CustomModelProviderEdit,
@@ -463,17 +417,11 @@ export interface DashboardModelConfiguration {
 
 /** 与 @ctf-agent/web-access 的 ModelAuthResolver 结构一致（避免后端→包反向依赖）。 */
 export interface WebAccessModelAuth {
-  find(
-    provider: string,
-    modelId: string,
-  ): { provider: string; id: string } | undefined
+  find(provider: string, modelId: string): { provider: string; id: string } | undefined
   getApiKeyAndHeaders(model: {
     provider: string
     id: string
-  }): Promise<
-    | { ok: true; apiKey: string; headers?: Record<string, string> }
-    | { ok: false }
-  >
+  }): Promise<{ ok: true; apiKey: string; headers?: Record<string, string> } | { ok: false }>
   getAvailable(): readonly { provider: string; id: string }[]
 }
 
@@ -502,11 +450,7 @@ export type ModelAuthProviderId =
   | "opencode-go"
   | "zai"
   | "minimax"
-export type ModelAuthMethodId =
-  | "oauth_browser"
-  | "oauth_device"
-  | "oauth_token"
-  | "api_key"
+export type ModelAuthMethodId = "oauth_browser" | "oauth_device" | "oauth_token" | "api_key"
 export type ModelAuthCredentialType = "oauth" | "api_key"
 
 export interface ModelAuthMethodView {
@@ -539,12 +483,7 @@ export interface ModelAuthenticationView {
   importFileAvailable: boolean
 }
 
-export type ModelAuthLoginStatus =
-  | "running"
-  | "awaiting_input"
-  | "success"
-  | "error"
-  | "cancelled"
+export type ModelAuthLoginStatus = "running" | "awaiting_input" | "success" | "error" | "cancelled"
 
 export interface ModelAuthPromptView {
   type: "text" | "secret" | "select" | "manual_code"

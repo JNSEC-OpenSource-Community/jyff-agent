@@ -1,25 +1,16 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type {
-  PlatformConnectOptions,
-  PlatformPlugin,
-  PlatformProject,
-} from "@ctf-agent/platform"
-import { afterEach, describe, expect, it } from "vitest"
-import {
-  ControlPlane,
-  projectSecretName,
-} from "../../src/control-plane/control-plane.ts"
+import type { PlatformConnectOptions, PlatformPlugin, PlatformProject } from "@ctf-agent/platform"
+import { afterEach, describe, expect, it } from "vite-plus/test"
+import { ControlPlane, projectSecretName } from "../../src/control-plane/control-plane.ts"
 import { FileSecretStore } from "../../src/control-plane/secret-store.ts"
 import type { ProjectConfig } from "../../src/project/config.ts"
 
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 class CredentialPlatform implements PlatformPlugin {
@@ -183,9 +174,9 @@ describe("ControlPlane", () => {
     ).toMatchObject({ phase: "ready", platformId: "credential-test" })
     expect(control.currentProject()).toBeDefined()
     expect(await readFile(secretPath, "utf8")).toContain("secret-token")
-    expect(
-      await readFile(join(root, ".ctf-agent", "project-config.json"), "utf8"),
-    ).not.toContain("secret-token")
+    expect(await readFile(join(root, ".ctf-agent", "project-config.json"), "utf8")).not.toContain(
+      "secret-token",
+    )
 
     await control.close()
     expect(plugin.closes).toBe(3)
@@ -324,9 +315,7 @@ describe("ControlPlane", () => {
   it("删除 Project 时关闭其运行时、凭据和隔离状态", async () => {
     const root = await rootFixture()
     const plugin = new CredentialPlatform()
-    const secretStore = await FileSecretStore.open(
-      join(root, ".ctf-agent", "secrets.json"),
-    )
+    const secretStore = await FileSecretStore.open(join(root, ".ctf-agent", "secrets.json"))
     const control = await ControlPlane.create({
       root,
       platforms: [plugin],
@@ -350,18 +339,14 @@ describe("ControlPlane", () => {
       projects: [expect.objectContaining({ id: "first" })],
     })
     expect(control.currentProject("second")).toBeUndefined()
-    expect(secretStore.has(projectSecretName("second", "TEST_TOKEN"))).toBe(
-      false,
-    )
+    expect(secretStore.has(projectSecretName("second", "TEST_TOKEN"))).toBe(false)
     expect(control.setupSnapshot("first").secrets.TEST_TOKEN).toEqual({
       configured: true,
       source: "store",
     })
     expect(secondDirectory).toBeDefined()
     await expect(accessPath(secondDirectory as string)).resolves.toBe(false)
-    await expect(control.deleteProject("missing")).rejects.toThrow(
-      "Project 不存在",
-    )
+    await expect(control.deleteProject("missing")).rejects.toThrow("Project 不存在")
     await control.close()
   })
 
@@ -389,21 +374,15 @@ describe("ControlPlane", () => {
     expect(plugin.connections).toBe(connectionsBeforeReset + 1)
     expect(control.currentProject("reset")).toBeDefined()
     await expect(accessPath(join(stateDirectory, "runs"))).resolves.toBe(false)
-    expect(
-      await readFile(join(stateDirectory, "runtime-config.json"), "utf8"),
-    ).toBe("runtime")
-    await expect(control.resetProject("missing")).rejects.toThrow(
-      "Project 不存在",
-    )
+    expect(await readFile(join(stateDirectory, "runtime-config.json"), "utf8")).toBe("runtime")
+    await expect(control.resetProject("missing")).rejects.toThrow("Project 不存在")
     await control.close()
   })
 
   it("未命名空间 Secret 不会被读取", async () => {
     const root = await rootFixture()
     await writeConfig(root, config())
-    const secretStore = await FileSecretStore.open(
-      join(root, ".ctf-agent", "secrets.json"),
-    )
+    const secretStore = await FileSecretStore.open(join(root, ".ctf-agent", "secrets.json"))
     await secretStore.set({ TEST_TOKEN: "legacy-token" })
     const plugin = new CredentialPlatform()
     const control = await ControlPlane.create({
@@ -444,12 +423,7 @@ async function accessPath(path: string): Promise<boolean> {
     await readFile(join(path, "project-config.json"))
     return true
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
       return false
     }
     throw error

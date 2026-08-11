@@ -5,11 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ── Theme tokens ──
-   采用经过 Linear / Vercel 等产品验证的深色配色方案：
-   - 背景层级：#08090a / #0f1011 / #191a1b / #28282c
-   - 文本：#f7f8f8 / #d0d6e0 / #8a8f98
-   - 强调：靛蓝 #5e6ad2（品牌） / #7170ff（hover）
-   功能色仅用于状态语义，并保持低饱和、高可读性。
+   黑白中性色承担交互层级，仅为成功、警告和错误保留语义色。
 */
 @theme inline {
   --font-sans: "Geist", system-ui, sans-serif;
@@ -51,24 +47,69 @@
 }
 
 :root {
-  --bg: #08090a;
-  --fg: #f7f8f8;
-  --card: #0f1011;
-  --popover: #131316;
-  --sidebar: #0a0b0c;
-  --rail: #08090a;
-  --muted: #191a1b;
-  --muted-fg: #8a8f98;
-  --border: #28282c;
-  --accent: #5e6ad2;
+  --bg: #f6f8fa;
+  --fg: #1f2328;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --sidebar: #f6f8fa;
+  --rail: #eaeef2;
+  --muted: #eaeef2;
+  --muted-fg: #59636e;
+  --border: #d0d7de;
+  --accent: #1f2328;
   --accent-fg: #ffffff;
-  --danger: #f87171;
-  --green: #22c55e;
-  --amber: #f59e0b;
-  --info: #60a5fa;
-  --quiet: #4f5156;
-  --scrollbar-thumb: #424456;
-  --scrollbar-thumb-hover: #595d78;
+  --danger: #cf222e;
+  --green: #1a7f37;
+  --amber: #9a6700;
+  --info: #59636e;
+  --cyan: #59636e;
+  --quiet: #8c959f;
+  --scrollbar-thumb: #afb8c1;
+  --scrollbar-thumb-hover: #8c959f;
+  --shadow-color: rgba(31, 35, 40, 0.12);
+  --selection: rgba(31, 35, 40, 0.16);
+  --syntax-comment: #6e7781;
+  --syntax-keyword: #cf222e;
+  --syntax-string: #0a3069;
+  --syntax-number: #953800;
+  --syntax-variable: #8250df;
+  --syntax-fg: #24292f;
+  --surface-highlight: rgba(255, 255, 255, 0.72);
+  --hover-border: #afb8c1;
+  --grid-line: rgba(31, 35, 40, 0.08);
+}
+
+:root.dark {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --card: #161b22;
+  --popover: #1c2128;
+  --sidebar: #010409;
+  --rail: #010409;
+  --muted: #21262d;
+  --muted-fg: #8b949e;
+  --border: #30363d;
+  --accent: #f0f6fc;
+  --accent-fg: #0d1117;
+  --danger: #f85149;
+  --green: #3fb950;
+  --amber: #d29922;
+  --info: #8b949e;
+  --cyan: #8b949e;
+  --quiet: #484f58;
+  --scrollbar-thumb: #30363d;
+  --scrollbar-thumb-hover: #484f58;
+  --shadow-color: rgba(1, 4, 9, 0.62);
+  --selection: rgba(240, 246, 252, 0.2);
+  --syntax-comment: #8b949e;
+  --syntax-keyword: #ff7b72;
+  --syntax-string: #a5d6ff;
+  --syntax-number: #ffa657;
+  --syntax-variable: #d2a8ff;
+  --syntax-fg: #c9d1d9;
+  --surface-highlight: rgba(255, 255, 255, 0.035);
+  --hover-border: #484f58;
+  --grid-line: rgba(240, 246, 252, 0.055);
 }
 
 * {
@@ -85,9 +126,13 @@ body,
 
 html {
   overflow: hidden;
-  color-scheme: dark;
+  color-scheme: light;
   scroll-behavior: smooth;
   scrollbar-width: none;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 html::-webkit-scrollbar,
@@ -175,8 +220,8 @@ p {
 }
 
 ::selection {
-  background: rgba(94, 106, 210, 0.25);
-  color: #fff;
+  background: var(--selection);
+  color: var(--fg);
 }
 
 ::-webkit-scrollbar {
@@ -194,14 +239,14 @@ p {
   background: var(--scrollbar-thumb-hover);
 }
 
-/* Workspace 代码预览：与控制台冷灰紫色系保持一致。 */
+/* Workspace 代码预览：跟随 Primer 的亮暗语法色。 */
 .hljs {
-  color: #d8dee9;
+  color: var(--syntax-fg);
   background: transparent;
 }
 .hljs-comment,
 .hljs-quote {
-  color: #69707d;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 .hljs-keyword,
@@ -209,7 +254,7 @@ p {
 .hljs-literal,
 .hljs-section,
 .hljs-link {
-  color: #9da7f2;
+  color: var(--syntax-keyword);
 }
 .hljs-string,
 .hljs-title,
@@ -219,21 +264,21 @@ p {
 .hljs-symbol,
 .hljs-bullet,
 .hljs-addition {
-  color: #8ec7a2;
+  color: var(--syntax-string);
 }
 .hljs-number,
 .hljs-meta,
 .hljs-built_in,
 .hljs-builtin-name,
 .hljs-params {
-  color: #d5ad7c;
+  color: var(--syntax-number);
 }
 .hljs-variable,
 .hljs-template-variable,
 .hljs-selector-id,
 .hljs-selector-class,
 .hljs-deletion {
-  color: #d98b91;
+  color: var(--syntax-variable);
 }
 .hljs-emphasis {
   font-style: italic;
@@ -282,8 +327,8 @@ p {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow:
-    0 1px 0 0 rgba(255, 255, 255, 0.03) inset,
-    0 4px 12px -2px rgba(0, 0, 0, 0.35);
+    0 1px 0 0 var(--surface-highlight) inset,
+    0 4px 12px -2px var(--shadow-color);
 }
 
 .surface-hover {
@@ -294,9 +339,35 @@ p {
 }
 
 .surface-hover:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.45);
+  border-color: var(--hover-border);
+  box-shadow: 0 4px 16px -4px var(--shadow-color);
   transform: translateY(-1px);
+}
+
+.login-grid {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 2.75rem 2.75rem;
+  mask-image: linear-gradient(to bottom right, black, transparent 70%);
+}
+
+/* CTF 计分条：离散刻度对应题目槽位，比普通渐变进度条更贴合场景。 */
+.challenge-progress-track,
+.challenge-progress-fill {
+  background-image: repeating-linear-gradient(
+    90deg,
+    currentColor 0 0.42rem,
+    transparent 0.42rem 0.58rem
+  );
+}
+
+.challenge-progress-track {
+  color: var(--border);
+}
+
+.challenge-progress-fill {
+  color: var(--accent);
 }
 
 /* ── 动画 ── */

@@ -21,12 +21,7 @@ export interface ChallengeInfo extends ChallengeSummary {
   environmentGuide?: string
 }
 
-export type AnnouncementKind =
-  | "normal"
-  | "hint"
-  | "new_challenge"
-  | "solve_broadcast"
-  | "unknown"
+export type AnnouncementKind = "normal" | "hint" | "new_challenge" | "solve_broadcast" | "unknown"
 
 export interface Announcement {
   id: string
@@ -59,9 +54,7 @@ export interface FlagSubmission {
 /** A challenge-scoped capability. Methods intentionally take no challenge id. */
 export interface ChallengeCapability {
   getInfo(): Promise<ChallengeInfo>
-  downloadAttachment(
-    attachmentId: string,
-  ): Promise<{ attachment: Attachment; content: Uint8Array }>
+  downloadAttachment(attachmentId: string): Promise<{ attachment: Attachment; content: Uint8Array }>
   submitFlag(flag: string): Promise<FlagSubmission>
   instance?: {
     start(signal?: AbortSignal): Promise<RemoteEnvironment>
@@ -122,7 +115,7 @@ export interface PlatformSetupDescriptor {
 export interface PlatformConnectOptions<T = unknown> {
   project: { id: string; name: string }
   config: T
-  resolveSecret(name: string): string | undefined
+  resolveSecret: (name: string) => string | undefined
 }
 
 /**
@@ -137,9 +130,7 @@ export interface PlatformPlugin {
 }
 
 /** Validate an extension-owned setup descriptor without executing plugin code. */
-export function parsePlatformSetupDescriptor(
-  value: unknown,
-): PlatformSetupDescriptor {
+export function parsePlatformSetupDescriptor(value: unknown): PlatformSetupDescriptor {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("platform setup 无效")
   }
@@ -160,8 +151,7 @@ export function parsePlatformSetupDescriptor(
   )
   if (typeof setup.label !== "string" || !setup.label.trim())
     throw new Error("platform setup label 无效")
-  if (typeof setup.description !== "string")
-    throw new Error("platform setup description 无效")
+  if (typeof setup.description !== "string") throw new Error("platform setup description 无效")
   if (
     !setup.defaultConfig ||
     typeof setup.defaultConfig !== "object" ||
@@ -194,12 +184,8 @@ export function parsePlatformSetupDescriptor(
       throw new Error("platform setup field label 无效")
     if (!(["text", "url", "integer"] as const).includes(field.type as never))
       throw new Error("platform setup field type 无效")
-    if (typeof field.required !== "boolean")
-      throw new Error("platform setup field required 无效")
-    if (
-      field.placeholder !== undefined &&
-      typeof field.placeholder !== "string"
-    )
+    if (typeof field.required !== "boolean") throw new Error("platform setup field required 无效")
+    if (field.placeholder !== undefined && typeof field.placeholder !== "string")
       throw new Error("platform setup field placeholder 无效")
     for (const key of ["minimum", "maximum"] as const) {
       if (field[key] !== undefined && typeof field[key] !== "number")
@@ -212,11 +198,7 @@ export function parsePlatformSetupDescriptor(
     if (!item || typeof item !== "object" || Array.isArray(item))
       throw new Error("platform auth strategy 无效")
     const strategy = item as Record<string, unknown>
-    exactKeys(
-      strategy,
-      ["id", "label", "config", "secrets"],
-      "platform auth strategy",
-    )
+    exactKeys(strategy, ["id", "label", "config", "secrets"], "platform auth strategy")
     if (
       typeof strategy.id !== "string" ||
       !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(strategy.id) ||
@@ -227,28 +209,15 @@ export function parsePlatformSetupDescriptor(
     strategyIds.add(strategy.id)
     if (typeof strategy.label !== "string" || !strategy.label.trim())
       throw new Error("platform auth strategy label 无效")
-    if (
-      !strategy.config ||
-      typeof strategy.config !== "object" ||
-      Array.isArray(strategy.config)
-    )
+    if (!strategy.config || typeof strategy.config !== "object" || Array.isArray(strategy.config))
       throw new Error("platform auth strategy config 无效")
-    if (!Array.isArray(strategy.secrets))
-      throw new Error("platform auth strategy secrets 无效")
+    if (!Array.isArray(strategy.secrets)) throw new Error("platform auth strategy secrets 无效")
     const secretNames = new Set<string>()
     const secrets = strategy.secrets.map((secretValue) => {
-      if (
-        !secretValue ||
-        typeof secretValue !== "object" ||
-        Array.isArray(secretValue)
-      )
+      if (!secretValue || typeof secretValue !== "object" || Array.isArray(secretValue))
         throw new Error("platform secret field 无效")
       const secret = secretValue as Record<string, unknown>
-      exactKeys(
-        secret,
-        ["name", "label", "type", "required"],
-        "platform secret field",
-      )
+      exactKeys(secret, ["name", "label", "type", "required"], "platform secret field")
       if (
         typeof secret.name !== "string" ||
         !/^[A-Z][A-Z0-9_]{0,79}$/.test(secret.name) ||
@@ -259,14 +228,9 @@ export function parsePlatformSetupDescriptor(
       secretNames.add(secret.name)
       if (typeof secret.label !== "string" || !secret.label.trim())
         throw new Error("platform secret label 无效")
-      if (
-        !(["text", "password", "token", "cookie"] as const).includes(
-          secret.type as never,
-        )
-      )
+      if (!(["text", "password", "token", "cookie"] as const).includes(secret.type as never))
         throw new Error("platform secret type 无效")
-      if (typeof secret.required !== "boolean")
-        throw new Error("platform secret required 无效")
+      if (typeof secret.required !== "boolean") throw new Error("platform secret required 无效")
       return secret as unknown as PlatformSecretField
     })
     return { ...strategy, secrets } as unknown as PlatformAuthStrategy
@@ -286,18 +250,11 @@ export function parsePlatformSetupDescriptor(
  * concrete platform error class.
  */
 export function isRetryablePlatformError(error: unknown): boolean {
-  if (
-    error &&
-    typeof error === "object" &&
-    (error as { retryable?: unknown }).retryable === true
-  ) {
+  if (error && typeof error === "object" && (error as { retryable?: unknown }).retryable === true) {
     return true
   }
   if (error instanceof AggregateError) {
-    return (
-      error.errors.length > 0 &&
-      error.errors.every((item) => isRetryablePlatformError(item))
-    )
+    return error.errors.length > 0 && error.errors.every((item) => isRetryablePlatformError(item))
   }
   if (!error || typeof error !== "object") return false
   const cause = (error as { cause?: unknown }).cause

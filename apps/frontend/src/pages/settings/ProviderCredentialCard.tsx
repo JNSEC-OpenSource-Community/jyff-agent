@@ -14,10 +14,7 @@ import {
 import { apiMutation, apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import { cn } from "../../lib/utils.ts"
-import type {
-  ModelAuthLoginSessionView,
-  ModelAuthProviderView,
-} from "../../types.ts"
+import type { ModelAuthLoginSessionView, ModelAuthProviderView } from "../../types.ts"
 
 export function ProviderCredentialCard({
   provider,
@@ -27,16 +24,14 @@ export function ProviderCredentialCard({
   editingConfigured = false,
 }: {
   provider: ModelAuthProviderView
-  onRefresh(): Promise<void>
+  onRefresh: () => Promise<void>
   initialMethod?: string
-  onCancel?(): void
+  onCancel?: () => void
   editingConfigured?: boolean
 }) {
   const methodId = useId()
   const secretId = useId()
-  const [method, setMethod] = useState(
-    initialMethod ?? provider.methods[0]?.id ?? "",
-  )
+  const [method, setMethod] = useState(initialMethod ?? provider.methods[0]?.id ?? "")
   const [secret, setSecret] = useState("")
   const [session, setSession] = useState<ModelAuthLoginSessionView | null>(null)
   const [promptValue, setPromptValue] = useState("")
@@ -45,8 +40,7 @@ export function ProviderCredentialCard({
   const sm = provider.methods.find((c) => c.id === method)
 
   useEffect(() => {
-    if (!session || !["running", "awaiting_input"].includes(session.status))
-      return
+    if (!session || !["running", "awaiting_input"].includes(session.status)) return
     const t = setInterval(() => {
       void apiRequest<ModelAuthLoginSessionView>(
         `/api/model-auth/login/${encodeURIComponent(session.id)}`,
@@ -61,32 +55,27 @@ export function ProviderCredentialCard({
   }, [onRefresh, session])
 
   return (
-    <div className="rounded-xl border border-border bg-muted/20 p-5">
-      <div className="flex items-center gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
-          <Icon icon="lucide:key-round" width="16" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{provider.name}</p>
-          <p className="truncate text-[11px] text-muted-foreground">
-            {provider.description}
-          </p>
+    <div className={cn("min-w-0", !editingConfigured && "py-1")}>
+      {!editingConfigured ? (
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
+            <Icon icon="lucide:key-round" width="16" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{provider.name}</p>
+            <p className="truncate text-[11px] text-muted-foreground">{provider.description}</p>
+          </div>
+          <Badge tone={provider.configured ? "positive" : "neutral"} className="shrink-0">
+            {provider.configured ? "已认证" : "未连接"}
+          </Badge>
         </div>
-        <Badge
-          tone={provider.configured ? "positive" : "neutral"}
-          className="shrink-0 text-[10px]"
-        >
-          {provider.configured ? "已认证" : "未连接"}
-        </Badge>
-      </div>
+      ) : null}
 
       {error ? <ErrorNotice message={error} className="mt-3" /> : null}
 
       {provider.configured && !editingConfigured ? (
         <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {provider.credentialType === "oauth" ? "OAuth" : "API Key"} 已保存
-          </span>
+          <span>{provider.credentialType === "oauth" ? "OAuth" : "API Key"} 已保存</span>
           <Button
             size="sm"
             variant="danger"
@@ -189,15 +178,11 @@ export function ProviderCredentialCard({
                 setError("")
                 try {
                   setSession(
-                    await apiMutation<ModelAuthLoginSessionView>(
-                      "/api/model-auth/login",
-                      "POST",
-                      {
-                        provider: provider.id,
-                        method,
-                        ...(secret && { secret }),
-                      },
-                    ),
+                    await apiMutation<ModelAuthLoginSessionView>("/api/model-auth/login", "POST", {
+                      provider: provider.id,
+                      method,
+                      ...(secret && { secret }),
+                    }),
                   )
                 } catch (e) {
                   setError(errorMessage(e))
@@ -216,18 +201,11 @@ export function ProviderCredentialCard({
         <div className="mt-4 space-y-3 border-t border-border pt-4">
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <Icon
-              icon={
-                session.status === "error"
-                  ? "lucide:circle-x"
-                  : "lucide:loader-circle"
-              }
+              icon={session.status === "error" ? "lucide:circle-x" : "lucide:loader-circle"}
               className={cn(session.status === "running" && "animate-spin")}
               width="14"
             />
-            {session.progress ??
-              session.instructions ??
-              session.error ??
-              "等待认证"}
+            {session.progress ?? session.instructions ?? session.error ?? "等待认证"}
           </div>
           {session.authUrl ? (
             <a
@@ -241,9 +219,7 @@ export function ProviderCredentialCard({
           ) : null}
           {session.deviceCode ? (
             <div className="rounded-lg border border-dashed border-border px-3 py-2 font-mono text-xs">
-              <p className="text-muted-foreground">
-                {session.deviceCode.verificationUri}
-              </p>
+              <p className="text-muted-foreground">{session.deviceCode.verificationUri}</p>
               <p className="text-lg font-bold tracking-wider text-primary">
                 {session.deviceCode.userCode}
               </p>
@@ -260,10 +236,7 @@ export function ProviderCredentialCard({
                 </label>
                 {session.prompt.options ? (
                   <Select value={promptValue} onValueChange={setPromptValue}>
-                    <SelectTrigger
-                      id={`prompt-${session.id}`}
-                      className="w-full text-xs"
-                    >
+                    <SelectTrigger id={`prompt-${session.id}`} className="w-full text-xs">
                       <SelectValue placeholder="选择" />
                     </SelectTrigger>
                     <SelectContent>
@@ -277,9 +250,7 @@ export function ProviderCredentialCard({
                 ) : (
                   <Input
                     id={`prompt-${session.id}`}
-                    type={
-                      session.prompt.type === "secret" ? "password" : "text"
-                    }
+                    type={session.prompt.type === "secret" ? "password" : "text"}
                     value={promptValue}
                     placeholder={session.prompt.placeholder}
                     onChange={(e) => setPromptValue(e.target.value)}

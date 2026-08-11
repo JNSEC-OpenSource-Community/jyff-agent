@@ -35,8 +35,7 @@ interface OllamaSearchOptions extends SearchOptions {
   includeContent?: boolean
 }
 
-export interface OllamaExtractOptions
-  extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
+export interface OllamaExtractOptions extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
   ssrf?: SsrfConfig
 }
 
@@ -47,9 +46,7 @@ function getApiKey(_signal?: AbortSignal): string | undefined {
 function requireApiKey(signal?: AbortSignal): string {
   const apiKey = getApiKey(signal)
   if (!apiKey) {
-    throw new Error(
-      "Ollama Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Ollama Search API key not configured. Set it via the WebUI plugins settings.")
   }
   return apiKey
 }
@@ -71,8 +68,7 @@ function parseSearchResponse(value: unknown): OllamaSearchResponse {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw invalidResponse("expected an object envelope")
   const envelope = value as Record<string, unknown>
-  if (!Array.isArray(envelope.results))
-    throw invalidResponse("expected results array")
+  if (!Array.isArray(envelope.results)) throw invalidResponse("expected results array")
   const results: OllamaSearchResult[] = []
   for (const [index, value] of envelope.results.entries()) {
     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -93,10 +89,8 @@ function parseFetchResponse(value: unknown): OllamaFetchResponse {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw invalidResponse("expected fetch object envelope")
   const envelope = value as Record<string, unknown>
-  if (typeof envelope.title !== "string")
-    throw invalidResponse("expected title string")
-  if (typeof envelope.content !== "string")
-    throw invalidResponse("expected content string")
+  if (typeof envelope.title !== "string") throw invalidResponse("expected title string")
+  if (typeof envelope.content !== "string") throw invalidResponse("expected content string")
   return {
     title: envelope.title,
     content: envelope.content,
@@ -135,17 +129,13 @@ export async function searchWithOllama(
       },
       body: JSON.stringify({ query, max_results: numResults }),
       signal: options.signal
-        ? AbortSignal.any([
-            AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-            options.signal,
-          ])
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
         : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     })
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -156,9 +146,7 @@ export async function searchWithOllama(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `Ollama API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Ollama API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
 
   let rawData: unknown
@@ -226,10 +214,7 @@ export async function extractWithOllama(
         },
         body: JSON.stringify({ url }),
         signal: signal
-          ? AbortSignal.any([
-              AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
-              signal,
-            ])
+          ? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal])
           : AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
       },
       {
@@ -245,8 +230,7 @@ export async function extractWithOllama(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -257,18 +241,14 @@ export async function extractWithOllama(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `Ollama Web Fetch error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Ollama Web Fetch error ${response.status}: ${errorText.slice(0, 300)}`)
   }
   let rawData: unknown
   try {
     rawData = await response.json()
   } catch (err) {
     activityMonitor.logComplete(activityId, response.status)
-    throw new Error(
-      `Ollama Web Fetch returned invalid JSON: ${errorMessage(err)}`,
-    )
+    throw new Error(`Ollama Web Fetch returned invalid JSON: ${errorMessage(err)}`)
   }
   const data = parseFetchResponse(rawData)
   activityMonitor.logComplete(activityId, response.status)

@@ -2,14 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { RunStore } from "../../src/persistence/run-store.js"
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function storeFixture(): Promise<{
@@ -69,9 +67,7 @@ describe("RunStore", () => {
 
     const reopened = await RunStore.open(path)
     expect(reopened.challengeSchedulingDisposition("web-skip")).toBe("excluded")
-    expect(reopened.challengeSchedulingDisposition("crypto-solved")).toBe(
-      "solved",
-    )
+    expect(reopened.challengeSchedulingDisposition("crypto-solved")).toBe("solved")
     expect(reopened.challengeSchedulingOverrides()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -183,9 +179,7 @@ describe("RunStore", () => {
     })
     expect(appended.createdAt).toBeTruthy()
 
-    const persisted = store
-      .events("run-1")
-      .find((event) => event.type === "agent_thinking")
+    const persisted = store.events("run-1").find((event) => event.type === "agent_thinking")
     expect(persisted).toEqual(
       expect.objectContaining({
         runId: "run-1",
@@ -196,9 +190,7 @@ describe("RunStore", () => {
     store.close()
 
     const reopened = await RunStore.open(path)
-    const afterReopen = reopened
-      .events("run-1")
-      .find((event) => event.type === "agent_thinking")
+    const afterReopen = reopened.events("run-1").find((event) => event.type === "agent_thinking")
     expect(afterReopen).toEqual(
       expect.objectContaining({
         type: "agent_thinking",
@@ -280,9 +272,7 @@ describe("RunStore", () => {
     })
     expect(appended.createdAt).toBeTruthy()
 
-    const persisted = store
-      .events("run-1")
-      .find((event) => event.type === "agent_usage")
+    const persisted = store.events("run-1").find((event) => event.type === "agent_usage")
     expect(persisted).toEqual(
       expect.objectContaining({
         runId: "run-1",
@@ -293,9 +283,7 @@ describe("RunStore", () => {
     store.close()
 
     const reopened = await RunStore.open(path)
-    const afterReopen = reopened
-      .events("run-1")
-      .find((event) => event.type === "agent_usage")
+    const afterReopen = reopened.events("run-1").find((event) => event.type === "agent_usage")
     expect(afterReopen).toEqual(
       expect.objectContaining({
         type: "agent_usage",
@@ -323,17 +311,11 @@ describe("RunStore", () => {
 
     const interrupted = store.markInterruptedRuns("测试恢复")
     expect(interrupted).toHaveLength(2)
-    expect(store.listRuns().map((run) => run.status)).toEqual([
-      "interrupted",
-      "interrupted",
-    ])
+    expect(store.listRuns().map((run) => run.status)).toEqual(["interrupted", "interrupted"])
     expect(
       store
         .listRuns()
-        .every(
-          (run) =>
-            run.closeReason === "interrupted" && run.error === "测试恢复",
-        ),
+        .every((run) => run.closeReason === "interrupted" && run.error === "测试恢复"),
     ).toBe(true)
     store.close()
   })
@@ -463,9 +445,7 @@ describe("RunStore", () => {
       blockedRunId: null,
     })
     expect(store.isChallengeBlocked("web-blocked")).toBe(false)
-    expect(store.events("blocked").at(-1)?.type).toBe(
-      "session_interruptions_reset",
-    )
+    expect(store.events("blocked").at(-1)?.type).toBe("session_interruptions_reset")
     store.close()
   })
 
@@ -629,12 +609,8 @@ describe("RunStore", () => {
     store.close()
     const legacy = new DatabaseSync(path)
     legacy.exec("ALTER TABLE challenge_announcements DROP COLUMN reviewed_at")
-    legacy.exec(
-      "ALTER TABLE challenge_announcements DROP COLUMN approval_status",
-    )
-    legacy.exec(
-      "ALTER TABLE challenge_announcements DROP COLUMN matched_keywords_json",
-    )
+    legacy.exec("ALTER TABLE challenge_announcements DROP COLUMN approval_status")
+    legacy.exec("ALTER TABLE challenge_announcements DROP COLUMN matched_keywords_json")
     legacy.close()
 
     const migrated = await RunStore.open(path)
@@ -944,9 +920,7 @@ describe("RunStore", () => {
     migrated.close()
 
     const reopened = await RunStore.open(path)
-    expect(reopened.challengeRuntimeState("legacy-challenge").blockScore).toBe(
-      9,
-    )
+    expect(reopened.challengeRuntimeState("legacy-challenge").blockScore).toBe(9)
     reopened.close()
   })
 

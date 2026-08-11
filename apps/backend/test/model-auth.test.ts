@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   createFileModelAuthentication,
   FileCredentialStore,
@@ -11,9 +11,7 @@ import {
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("model authentication", () => {
@@ -103,10 +101,7 @@ describe("model authentication", () => {
   it("可从指定 auth.json 导入且状态接口不会返回密钥", async () => {
     const root = await temporaryRoot()
     const importPath = join(root, "import-auth.json")
-    await writeFile(
-      importPath,
-      JSON.stringify({ ANTHROPIC_API_KEY: "anthropic-test-secret" }),
-    )
+    await writeFile(importPath, JSON.stringify({ ANTHROPIC_API_KEY: "anthropic-test-secret" }))
     const authentication = await createFileModelAuthentication({
       storagePath: join(root, "stored-auth.json"),
       importPath,
@@ -118,9 +113,10 @@ describe("model authentication", () => {
       imported: [{ provider: "anthropic", type: "api_key" }],
     })
     const snapshot = await authentication.snapshot()
-    expect(
-      snapshot.providers.find((provider) => provider.id === "anthropic"),
-    ).toMatchObject({ configured: true, credentialType: "api_key" })
+    expect(snapshot.providers.find((provider) => provider.id === "anthropic")).toMatchObject({
+      configured: true,
+      credentialType: "api_key",
+    })
     expect(JSON.stringify(snapshot)).not.toContain("anthropic-test-secret")
   })
 
@@ -135,9 +131,7 @@ describe("model authentication", () => {
       method: "oauth_token",
       secret: "claude-setup-token",
     })
-    await expect
-      .poll(() => authentication.loginSession(login.id).status)
-      .toBe("success")
+    await expect.poll(() => authentication.loginSession(login.id).status).toBe("success")
 
     const provider = (await authentication.snapshot()).providers.find(
       (candidate) => candidate.id === "anthropic",

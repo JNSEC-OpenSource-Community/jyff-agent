@@ -1,9 +1,5 @@
 import { activityMonitor } from "./activity.ts"
-import type {
-  SearchOptions,
-  SearchResponse,
-  SearchResult,
-} from "./perplexity.ts"
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts"
 import { providerOption } from "./runtime.ts"
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts"
 
@@ -58,9 +54,7 @@ function isValidHeaderValue(value: string): boolean {
 function normalizeHeaders(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {}
   const headers: Record<string, string> = {}
-  for (const [key, headerValue] of Object.entries(
-    value as Record<string, unknown>,
-  )) {
+  for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) {
     if (typeof headerValue !== "string") continue
     const name = key.trim()
     // RFC 7230 token chars only — reject empty or malformed header names.
@@ -81,14 +75,11 @@ function getConfiguredHeaders(): Record<string, string> {
   }
 }
 
-function mergeDefaultHeaders(
-  configured: Record<string, string>,
-): Record<string, string> {
+function mergeDefaultHeaders(configured: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" }
   for (const [name, value] of Object.entries(configured)) {
     for (const existing of Object.keys(headers)) {
-      if (existing.toLowerCase() === name.toLowerCase())
-        delete headers[existing]
+      if (existing.toLowerCase() === name.toLowerCase()) delete headers[existing]
     }
     headers[name] = value
   }
@@ -116,9 +107,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -127,25 +116,18 @@ function normalizeDomain(value: string): string | null {
   return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null
 }
 
-function normalizeDomainFilters(
-  domainFilter: string[] | undefined,
-): NormalizedDomainFilters {
+function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
   const filters: NormalizedDomainFilters = { allowed: [], blocked: [] }
   for (const raw of domainFilter ?? []) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? filters.blocked
-      : filters.allowed
+    const target = raw.trim().startsWith("-") ? filters.blocked : filters.allowed
     if (!target.includes(domain)) target.push(domain)
   }
   return filters
 }
 
-function buildSearXNGQuery(
-  query: string,
-  filters: NormalizedDomainFilters,
-): string {
+function buildSearXNGQuery(query: string, filters: NormalizedDomainFilters): string {
   const parts = [query]
   if (filters.allowed.length === 1) {
     parts.push(`site:${filters.allowed[0]}`)
@@ -160,10 +142,7 @@ function hostMatchesDomain(hostname: string, domain: string): boolean {
   return hostname === domain || hostname.endsWith(`.${domain}`)
 }
 
-function matchesDomainFilters(
-  url: string,
-  filters: NormalizedDomainFilters,
-): boolean {
+function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): boolean {
   if (filters.allowed.length === 0 && filters.blocked.length === 0) return true
   let hostname: string
   try {
@@ -179,9 +158,7 @@ function matchesDomainFilters(
   return !filters.blocked.some((domain) => hostMatchesDomain(hostname, domain))
 }
 
-function mapTimeRange(
-  recencyFilter: SearchOptions["recencyFilter"],
-): string | null {
+function mapTimeRange(recencyFilter: SearchOptions["recencyFilter"]): string | null {
   return recencyFilter === "day" ||
     recencyFilter === "week" ||
     recencyFilter === "month" ||
@@ -223,27 +200,20 @@ export async function searchWithSearXNG(
         method: "GET",
         headers,
         signal: options.signal
-          ? AbortSignal.any([
-              AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-              options.signal,
-            ])
+          ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
           : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
       },
       {
         ...loadSsrfConfig(),
         onRedirect: ({ from, to, init }) =>
-          from.origin === to.origin
-            ? init
-            : { ...init, headers: { Accept: "application/json" } },
+          from.origin === to.origin ? init : { ...init, headers: { Accept: "application/json" } },
       },
     )
 
     if (!response.ok) {
       activityMonitor.logError(activityId, `HTTP ${response.status}`)
       const errorText = await response.text()
-      throw new Error(
-        `SearXNG search error ${response.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`SearXNG search error ${response.status}: ${errorText.slice(0, 300)}`)
     }
 
     let data: SearXNGResponse
@@ -267,10 +237,7 @@ export async function searchWithSearXNG(
     }
 
     const answerParts = (data.answers ?? [])
-      .filter(
-        (answer): answer is string =>
-          typeof answer === "string" && answer.trim().length > 0,
-      )
+      .filter((answer): answer is string => typeof answer === "string" && answer.trim().length > 0)
       .map((answer) => answer.trim())
     answerParts.push(
       ...results.map((result) =>
@@ -282,8 +249,7 @@ export async function searchWithSearXNG(
     return { answer: answerParts.join("\n\n"), results }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (message.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, message)
     throw err
   }

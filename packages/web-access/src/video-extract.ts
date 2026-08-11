@@ -60,10 +60,7 @@ interface VideoConfig {
   maxSizeMB: number
 }
 
-function normalizePreferredModel(
-  value: string | undefined,
-  fallback: string,
-): string {
+function normalizePreferredModel(value: string | undefined, fallback: string): string {
   if (value === undefined) return fallback
   const normalized = value.trim()
   return normalized.length > 0 ? normalized : fallback
@@ -159,9 +156,7 @@ function resolveFilePath(filePath: string): string | null {
 
   try {
     const normalizedBase = normalizeSpaces(base)
-    const match = readdirSync(dir).find(
-      (f) => normalizeSpaces(f) === normalizedBase,
-    )
+    const match = readdirSync(dir).find((f) => normalizeSpaces(f) === normalizedBase)
     return match ? join(dir, match) : null
   } catch {
     return null
@@ -192,12 +187,7 @@ export async function extractVideo(
     url: `video:${displayName}`,
   })
 
-  const result = await tryVideoGeminiApi(
-    info,
-    effectivePrompt,
-    effectiveModel,
-    signal,
-  )
+  const result = await tryVideoGeminiApi(info, effectivePrompt, effectiveModel, signal)
 
   if (result) {
     const thumbnail = await extractVideoFrame(info.absolutePath)
@@ -219,8 +209,7 @@ export async function extractVideo(
 
 function mapFfprobeError(err: unknown): string {
   const { code, stderr, message } = readExecError(err)
-  if (code === "ENOENT")
-    return "ffprobe is not installed. Install ffmpeg which includes ffprobe"
+  if (code === "ENOENT") return "ffprobe is not installed. Install ffmpeg which includes ffprobe"
   const snippet = trimErrorText(stderr || message)
   return snippet ? `ffprobe failed: ${snippet}` : "ffprobe failed"
 }
@@ -258,26 +247,15 @@ export async function extractVideoFrame(
   }
 }
 
-export async function getLocalVideoDuration(
-  filePath: string,
-): Promise<number | { error: string }> {
+export async function getLocalVideoDuration(filePath: string): Promise<number | { error: string }> {
   try {
     const output = execFileSync(
       "ffprobe",
-      [
-        "-v",
-        "quiet",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "csv=p=0",
-        filePath,
-      ],
+      ["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", filePath],
       { timeout: 10000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim()
     const duration = Number.parseFloat(output)
-    if (!Number.isFinite(duration))
-      return { error: "ffprobe failed: invalid duration output" }
+    if (!Number.isFinite(duration)) return { error: "ffprobe failed: invalid duration output" }
     return duration
   } catch (err) {
     return { error: mapFfprobeError(err) }
@@ -349,9 +327,7 @@ async function uploadToFilesApi(
 
   if (!initRes.ok) {
     const text = redactGeminiApiResponse(initRes, await initRes.text(), apiKey)
-    throw new Error(
-      `File upload init failed: ${initRes.status} (${text.slice(0, 200)})`,
-    )
+    throw new Error(`File upload init failed: ${initRes.status} (${text.slice(0, 200)})`)
   }
 
   const uploadUrl = initRes.headers.get("x-goog-upload-url")
@@ -374,14 +350,8 @@ async function uploadToFilesApi(
   )
 
   if (!uploadRes.ok) {
-    const text = redactGeminiApiResponse(
-      uploadRes,
-      await uploadRes.text(),
-      apiKey,
-    )
-    throw new Error(
-      `File upload failed: ${uploadRes.status} (${text.slice(0, 200)})`,
-    )
+    const text = redactGeminiApiResponse(uploadRes, await uploadRes.text(), apiKey)
+    throw new Error(`File upload failed: ${uploadRes.status} (${text.slice(0, 200)})`)
   }
 
   const result = (await uploadRes.json()) as {
@@ -401,11 +371,7 @@ async function pollFileState(
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new Error("Aborted")
 
-    const res = await fetchGeminiApi(
-      `${getVersionedApiBase()}/${fileName}`,
-      { signal },
-      apiKey,
-    )
+    const res = await fetchGeminiApi(`${getVersionedApiBase()}/${fileName}`, { signal }, apiKey)
     if (!res.ok) throw new Error(`File state check failed: ${res.status}`)
 
     const data = (await res.json()) as { state: string }
@@ -419,14 +385,12 @@ async function pollFileState(
 }
 
 function deleteGeminiFile(fileName: string, apiKey: string): void {
-  void fetchGeminiApi(
-    `${getVersionedApiBase()}/${fileName}`,
-    { method: "DELETE" },
-    apiKey,
-  ).catch((err) => {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`Failed to delete Gemini file ${fileName}: ${message}`)
-  })
+  void fetchGeminiApi(`${getVersionedApiBase()}/${fileName}`, { method: "DELETE" }, apiKey).catch(
+    (err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Failed to delete Gemini file ${fileName}: ${message}`)
+    },
+  )
 }
 
 function extractVideoTitle(text: string, filePath: string): string {

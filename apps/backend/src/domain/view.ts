@@ -17,12 +17,7 @@ import type {
   DashboardStats,
 } from "../types.ts"
 
-const ACTIVE = new Set<RunRecord["status"]>([
-  "preparing",
-  "running",
-  "blocking",
-  "writing_writeup",
-])
+const ACTIVE = new Set<RunRecord["status"]>(["preparing", "running", "blocking", "writing_writeup"])
 const FAILED = new Set<DashboardChallengeStatus>([
   "failed",
   "timed_out",
@@ -52,17 +47,13 @@ export async function buildDashboardSnapshot(
 
   const cached = project.cachedPlatformView?.() ?? {}
   const challengeIds = [...new Set(runs.map((run) => run.challengeId))]
-  const fallbackChallenges: ChallengeSummary[] = challengeIds.map(
-    (challengeId) => ({
-      id: challengeId,
-      title: challengeId,
-      category: "本地记录",
-      score: 0,
-      solved: runs.some(
-        (run) => run.challengeId === challengeId && run.status === "solved",
-      ),
-    }),
-  )
+  const fallbackChallenges: ChallengeSummary[] = challengeIds.map((challengeId) => ({
+    id: challengeId,
+    title: challengeId,
+    category: "本地记录",
+    score: 0,
+    solved: runs.some((run) => run.challengeId === challengeId && run.status === "solved"),
+  }))
   const overview = settledValue(reads[0]) ??
     cached.overview ?? {
       id: controlPlane?.snapshot(projectId).projectId ?? "local",
@@ -70,13 +61,11 @@ export async function buildDashboardSnapshot(
       challenges: cached.challenges?.length ?? challengeIds.length,
       announcements: cached.announcements?.length ?? 0,
     }
-  const listed =
-    settledValue(reads[1]) ?? cached.challenges ?? fallbackChallenges
+  const listed = settledValue(reads[1]) ?? cached.challenges ?? fallbackChallenges
   const announcements = settledValue(reads[2]) ?? cached.announcements ?? []
   const announcementCandidates = project.announcementCandidates()
   const environments = settledValue(reads[3]) ?? cached.environments ?? []
-  const schedulerSnapshot =
-    scheduler?.snapshot() ?? readOnlySchedulerSnapshot(project)
+  const schedulerSnapshot = scheduler?.snapshot() ?? readOnlySchedulerSnapshot(project)
   const queuedByChallenge = new Map(
     schedulerSnapshot?.queued.map((item) => [item.challengeId, item]) ?? [],
   )
@@ -91,16 +80,12 @@ export async function buildDashboardSnapshot(
   const challenges = listed.map((challenge): DashboardChallenge => {
     const challengeRuns = runsByChallenge.get(challenge.id) ?? []
     const latest = challengeRuns.at(-1)
-    const active = [...challengeRuns]
-      .reverse()
-      .find((run) => ACTIVE.has(run.status))
+    const active = [...challengeRuns].reverse().find((run) => ACTIVE.has(run.status))
     const queued = queuedByChallenge.get(challenge.id)
     const schedulerActive = activeByChallenge.get(challenge.id)
     const lastEvent = latest ? project.latestRunEvent(latest.id) : undefined
     const blackboard = blackboardByChallenge.get(challenge.id)
-    const schedulingDisposition = project.challengeSchedulingDisposition(
-      challenge.id,
-    )
+    const schedulingDisposition = project.challengeSchedulingDisposition(challenge.id)
     const status = challengeStatus(
       challenge.solved === true,
       schedulingDisposition,
@@ -117,17 +102,14 @@ export async function buildDashboardSnapshot(
       status,
       platformSolved: challenge.solved === true,
       ...(schedulingDisposition ? { schedulingDisposition } : {}),
-      ...(challenge.needsEnv === undefined
-        ? {}
-        : { needsEnv: challenge.needsEnv }),
+      ...(challenge.needsEnv === undefined ? {} : { needsEnv: challenge.needsEnv }),
       attempts: challengeRuns.length,
       latestRunId: latest?.id ?? null,
       latestRunStatus: latest?.status ?? null,
       lastActivityAt: lastEvent?.createdAt ?? latest?.updatedAt ?? null,
       progress: progressLabel(status, lastEvent),
       queuePosition: queued?.position ?? null,
-      dispatchSource:
-        schedulerActive?.source ?? queued?.source ?? latest?.source ?? null,
+      dispatchSource: schedulerActive?.source ?? queued?.source ?? latest?.source ?? null,
       schedulerAttempts: project.schedulerAttemptCount(challenge.id),
       sessionInterruptions: project.sessionInterruptionCount(challenge.id),
       evidence: blackboard?.evidence ?? 0,
@@ -141,9 +123,9 @@ export async function buildDashboardSnapshot(
     overview,
     stats: dashboardStats(challenges),
     challenges,
-    categories: [
-      ...new Set(challenges.map((challenge) => challenge.category)),
-    ].sort((left, right) => left.localeCompare(right)),
+    categories: [...new Set(challenges.map((challenge) => challenge.category))].sort(
+      (left, right) => left.localeCompare(right),
+    ),
     announcements: [...announcements].sort((left, right) =>
       right.publishedAt.localeCompare(left.publishedAt),
     ),
@@ -158,9 +140,7 @@ function settledValue<T>(result: PromiseSettledResult<T>): T | undefined {
   return result.status === "fulfilled" ? result.value : undefined
 }
 
-function readOnlySchedulerSnapshot(
-  project: DashboardProject,
-): ContestSchedulerSnapshot {
+function readOnlySchedulerSnapshot(project: DashboardProject): ContestSchedulerSnapshot {
   const validSources = new Set<SchedulerQueueEntry["source"]>([
     "auto",
     "manual",
@@ -202,9 +182,7 @@ export function buildEmptyDashboardSnapshot(
     generatedAt: new Date().toISOString(),
     overview: {
       id: state.projectId ?? "setup",
-      name:
-        state.projectName ??
-        (state.phase === "degraded" ? "平台连接失败" : "尚未配置比赛"),
+      name: state.projectName ?? (state.phase === "degraded" ? "平台连接失败" : "尚未配置比赛"),
       challenges: 0,
       announcements: 0,
     },
@@ -233,11 +211,8 @@ export async function buildChallengeDetails(
   scheduler?: DashboardScheduler,
   currentSnapshot?: DashboardSnapshot,
 ): Promise<ChallengeDetails | undefined> {
-  const snapshot =
-    currentSnapshot ?? (await buildDashboardSnapshot(project, scheduler))
-  const challenge = snapshot.challenges.find(
-    (candidate) => candidate.id === challengeId,
-  )
+  const snapshot = currentSnapshot ?? (await buildDashboardSnapshot(project, scheduler))
+  const challenge = snapshot.challenges.find((candidate) => candidate.id === challengeId)
   if (!challenge) return undefined
   const runs = project.runs({ challengeId }).map((run) => {
     const events = project.runEvents(run.id)
@@ -267,8 +242,7 @@ export async function buildChallengeDetails(
     environment:
       snapshot.environments.find(
         (environment) =>
-          environment.challengeId === challengeId &&
-          environment.status !== "stopped",
+          environment.challengeId === challengeId && environment.status !== "stopped",
       ) ?? null,
     writeup: await project.challengeWriteup(challengeId),
     tldr: project.tldr(challengeId) ?? null,
@@ -316,9 +290,7 @@ function compactTimelineEvents(events: RunEvent[]): RunEvent[] {
       previous.data = {
         ...(isRecord(previous.data) ? previous.data : {}),
         text: combined.slice(0, TIMELINE_THINKING_MAX_CHARACTERS),
-        ...(combined.length > TIMELINE_THINKING_MAX_CHARACTERS
-          ? { truncated: true }
-          : {}),
+        ...(combined.length > TIMELINE_THINKING_MAX_CHARACTERS ? { truncated: true } : {}),
       }
       continue
     }
@@ -333,9 +305,7 @@ function eventText(event: RunEvent): string | undefined {
 }
 
 function nonNegativeNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : 0
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -352,8 +322,7 @@ function groupRuns(runs: RunRecord[]): Map<string, RunRecord[]> {
   for (const challengeRuns of grouped.values()) {
     challengeRuns.sort(
       (left, right) =>
-        left.createdAt.localeCompare(right.createdAt) ||
-        left.id.localeCompare(right.id),
+        left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
     )
   }
   return grouped
@@ -369,20 +338,17 @@ function challengeStatus(
 ): DashboardChallengeStatus {
   if (schedulingDisposition === "solved") return "solved"
   if (schedulingDisposition === "excluded") return "excluded"
-  if (schedulerPhase)
-    return schedulerPhase === "preparing" ? "preparing" : "running"
+  if (schedulerPhase) return schedulerPhase === "preparing" ? "preparing" : "running"
   if (active) return active.status
   if (queued) return "queued"
-  if (platformSolved || runs.some((run) => run.status === "solved"))
-    return "solved"
+  if (platformSolved || runs.some((run) => run.status === "solved")) return "solved"
   return runs.at(-1)?.status ?? "pending"
 }
 
 function dashboardStats(challenges: DashboardChallenge[]): DashboardStats {
   return {
     total: challenges.length,
-    solved: challenges.filter((challenge) => challenge.status === "solved")
-      .length,
+    solved: challenges.filter((challenge) => challenge.status === "solved").length,
     active: challenges.filter(
       (challenge) =>
         challenge.status === "preparing" ||
@@ -390,25 +356,16 @@ function dashboardStats(challenges: DashboardChallenge[]): DashboardStats {
         challenge.status === "blocking" ||
         challenge.status === "writing_writeup",
     ).length,
-    failed: challenges.filter((challenge) => FAILED.has(challenge.status))
-      .length,
+    failed: challenges.filter((challenge) => FAILED.has(challenge.status)).length,
     pending: challenges.filter(
-      (challenge) =>
-        challenge.status === "pending" || challenge.status === "closed",
+      (challenge) => challenge.status === "pending" || challenge.status === "closed",
     ).length,
-    attempts: challenges.reduce(
-      (sum, challenge) => sum + challenge.attempts,
-      0,
-    ),
-    queued: challenges.filter((challenge) => challenge.status === "queued")
-      .length,
+    attempts: challenges.reduce((sum, challenge) => sum + challenge.attempts, 0),
+    queued: challenges.filter((challenge) => challenge.status === "queued").length,
   }
 }
 
-function progressLabel(
-  status: DashboardChallengeStatus,
-  event: RunEvent | undefined,
-): string {
+function progressLabel(status: DashboardChallengeStatus, event: RunEvent | undefined): string {
   if (event?.type === "tool_started") {
     const tool = eventField(event, "toolName")
     return tool ? `正在执行 ${humanToolName(tool)}` : "正在执行工具"
@@ -457,7 +414,16 @@ function progressLabel(
 function eventField(event: RunEvent, key: string): string | undefined {
   if (typeof event.data !== "object" || event.data === null) return undefined
   const value = (event.data as Record<string, unknown>)[key]
-  return value === undefined ? undefined : String(value)
+  if (value === undefined) return undefined
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return "[unserializable]"
+  }
 }
 
 function humanToolName(tool: string): string {

@@ -23,7 +23,7 @@ export function LoginPage() {
       await apiMutation("/api/auth/login", "POST", { username: u, password: p })
       await refreshAuth()
       await refreshProjects()
-      nav("/", { replace: true })
+      void nav("/", { replace: true })
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -35,16 +35,7 @@ export function LoginPage() {
     <div className="flex min-h-screen">
       {/* Brand panel */}
       <div className="relative hidden w-[44%] flex-col justify-between overflow-hidden border-r border-border bg-background p-14 lg:flex">
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
-            backgroundSize: "44px 44px",
-            maskImage:
-              "linear-gradient(to bottom right, black, transparent 70%)",
-          }}
-        />
+        <div className="login-grid absolute inset-0" />
         <div className="relative z-10 flex items-center gap-3 font-mono text-sm font-bold tracking-wide">
           <span className="text-primary">JYFF</span>
           <span className="text-foreground/50">AGENT</span>
@@ -70,10 +61,7 @@ export function LoginPage() {
 
       {/* Login form */}
       <div className="flex flex-1 items-center justify-center p-8">
-        <form
-          className="w-full max-w-sm space-y-6"
-          onSubmit={(e) => void submit(e)}
-        >
+        <form className="w-full max-w-sm space-y-6" onSubmit={(e) => void submit(e)}>
           <div className="flex items-center gap-4">
             <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-card text-primary shadow-sm">
               <Icon icon="lucide:fingerprint" width="20" />
@@ -122,11 +110,7 @@ export function LoginPage() {
 
           <Button type="submit" className="w-full" disabled={busy || !u || !p}>
             {busy ? (
-              <Icon
-                icon="lucide:loader-circle"
-                className="animate-spin"
-                width="15"
-              />
+              <Icon icon="lucide:loader-circle" className="animate-spin" width="15" />
             ) : (
               <Icon icon="lucide:log-in" width="15" />
             )}
@@ -134,8 +118,7 @@ export function LoginPage() {
           </Button>
 
           <p className="text-center text-xs text-muted-foreground lg:hidden">
-            <span className="font-semibold text-primary">JYFF</span> Agent ·
-            Operations Console
+            <span className="font-semibold text-primary">JYFF</span> Agent · Operations Console
           </p>
         </form>
       </div>

@@ -20,8 +20,7 @@ function object(value: unknown, label: string): Record<string, unknown> {
 }
 
 function text(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "")
-    throw new Error(`${label} 必须是非空字符串`)
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} 必须是非空字符串`)
   return value
 }
 
@@ -32,11 +31,7 @@ export function parseProjectConfig(value: unknown): ProjectConfig {
   const platform = object(root.platform, "platform")
   const sandbox = object(root.sandbox, "sandbox")
   const networkMode = sandbox.networkMode ?? "bridge"
-  if (
-    networkMode !== "none" &&
-    networkMode !== "bridge" &&
-    networkMode !== "host"
-  ) {
+  if (networkMode !== "none" && networkMode !== "bridge" && networkMode !== "host") {
     throw new Error("sandbox.networkMode 仅支持 none、bridge 或 host")
   }
 
@@ -78,9 +73,7 @@ export async function loadProjectConfig(root: string): Promise<ProjectConfig> {
   try {
     raw = JSON.parse(await readFile(path, "utf8"))
   } catch (error) {
-    throw new Error(
-      `无法读取 ${path}: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    throw new Error(`无法读取 ${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
   return parseProjectConfig(raw)
 }

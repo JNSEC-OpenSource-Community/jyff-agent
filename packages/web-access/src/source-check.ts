@@ -12,11 +12,7 @@ export type SourceQuality =
   | "forum"
   | "news"
   | "unknown"
-export type ClaimStatus =
-  | "supported"
-  | "contradicted"
-  | "unclear"
-  | "missing-evidence"
+export type ClaimStatus = "supported" | "contradicted" | "unclear" | "missing-evidence"
 export type RecencyFilter = "day" | "week" | "month" | "year"
 
 export interface ResearchSource {
@@ -90,15 +86,13 @@ export interface ResearchProvider {
   search(req: ResearchSearchRequest): Promise<ResearchSearchResponse>
 }
 
-const OFFICIAL_DOCS_HOSTS =
-  /^(developers\.|docs\.|learn\.|reference\.)|\.github\.io$/i
+const OFFICIAL_DOCS_HOSTS = /^(developers\.|docs\.|learn\.|reference\.)|\.github\.io$/i
 const OFFICIAL_DOCS_PATHS = /\/(docs?|reference)(\/|\b)/i
 const VENDOR_DOCS_PATHS = /\/(documentation|docs?)\//i
 const REPO_ISSUE_PATHS = /\/(issues|pull|pulls)\//i
 const BLOG_HOSTS = /(medium\.com|substack\.com|dev\.to|hashnode\.)/i
 const BLOG_PATHS = /\/blogs?\//i
-const FORUM_HOSTS =
-  /(stackoverflow\.com|serverfault\.com|superuser\.com|discourse\.|community\.)/i
+const FORUM_HOSTS = /(stackoverflow\.com|serverfault\.com|superuser\.com|discourse\.|community\.)/i
 const FORUM_PATHS = /\/(forum|forums|threads)\//i
 const NEWS_HOSTS =
   /(reuters\.com|bloomberg\.com|techcrunch\.com|theverge\.com|arstechnica\.com|wired\.com|cnet\.com|zdnet\.com)/i
@@ -115,8 +109,7 @@ export function classifySource(url: string): SourceQuality {
     return "unknown"
   }
   if (REPO_ISSUE_PATHS.test(path)) return "repo_issue"
-  if (OFFICIAL_DOCS_HOSTS.test(host) || OFFICIAL_DOCS_PATHS.test(path))
-    return "official_docs"
+  if (OFFICIAL_DOCS_HOSTS.test(host) || OFFICIAL_DOCS_PATHS.test(path)) return "official_docs"
   if (VENDOR_DOCS_PATHS.test(path)) return "vendor_docs"
   if (NEWS_HOSTS.test(host) || NEWS_PATHS.test(path)) return "news"
   if (FORUM_HOSTS.test(host) || FORUM_PATHS.test(path)) return "forum"
@@ -162,8 +155,7 @@ function extractRelevantSpans(content: string, hint: string): Span[] {
     .map((sentence, index) => ({
       sentence,
       index,
-      score: terms.filter((term) => sentence.text.toLowerCase().includes(term))
-        .length,
+      score: terms.filter((term) => sentence.text.toLowerCase().includes(term)).length,
     }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.index - b.index)
@@ -195,10 +187,7 @@ export function buildPassages(
     const page = fetchedByUrl.get(source.url)
     if (page && !page.error && page.content) {
       const passageHint = source.snippet?.trim() || hint
-      for (const [index, span] of extractRelevantSpans(
-        page.content,
-        passageHint,
-      ).entries()) {
+      for (const [index, span] of extractRelevantSpans(page.content, passageHint).entries()) {
         passages.push({
           passage_id: passageId(source.rank, index + 1),
           source_url: source.url,
@@ -255,36 +244,21 @@ function markerIsNegated(value: string, marker: string): boolean {
     .split(/\s+/)
     .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .join("\\s+")
-  const markerPattern = new RegExp(
-    `(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`,
-    "i",
-  )
+  const markerPattern = new RegExp(`(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, "i")
   const match = markerPattern.exec(value)
   if (!match || match.index === undefined) return false
   const matchedMarker = match[0].replace(/^[^a-z0-9]+/i, "")
-  const beforeMarker = value.slice(
-    0,
-    match.index + match[0].length - matchedMarker.length,
-  )
+  const beforeMarker = value.slice(0, match.index + match[0].length - matchedMarker.length)
   return /(?:^|[^a-z0-9])(?:not|no|never|without)\s+$/i.test(beforeMarker)
 }
 
-function hasPolarityMarker(
-  value: string,
-  markers: string[],
-  allowNegated = false,
-): boolean {
+function hasPolarityMarker(value: string, markers: string[], allowNegated = false): boolean {
   return markers.some(
-    (marker) =>
-      containsPhrase(value, marker) &&
-      (allowNegated || !markerIsNegated(value, marker)),
+    (marker) => containsPhrase(value, marker) && (allowNegated || !markerIsNegated(value, marker)),
   )
 }
 
-export function assessClaim(
-  claim: string,
-  passages: ResearchPassage[],
-): ClaimAssessment {
+export function assessClaim(claim: string, passages: ResearchPassage[]): ClaimAssessment {
   const terms = tokenize(claim)
   if (terms.length === 0 || passages.length === 0) {
     return {
@@ -362,13 +336,9 @@ export interface BuildArtifactInput {
   domainFilter?: string[]
 }
 
-export function buildResearchArtifact(
-  input: BuildArtifactInput,
-): ResearchArtifact {
+export function buildResearchArtifact(input: BuildArtifactInput): ResearchArtifact {
   const filters = input.domainFilter ?? []
-  const fetchedByUrl = new Map(
-    (input.fetched ?? []).map((page) => [page.url, page]),
-  )
+  const fetchedByUrl = new Map((input.fetched ?? []).map((page) => [page.url, page]))
   const sources: ResearchSource[] = []
   const seen = new Set<string>()
   for (const [index, result] of input.results.entries()) {
@@ -384,9 +354,7 @@ export function buildResearchArtifact(
       quality: classifySource(result.url),
       fetched,
       ...(page ? { fetch_timestamp: Date.now() } : {}),
-      ...(page && !page.error
-        ? { content_hash: hashContent(page.content) }
-        : {}),
+      ...(page && !page.error ? { content_hash: hashContent(page.content) } : {}),
       ...(page?.error ? { fetch_error: page.error } : {}),
     })
   }
@@ -406,9 +374,7 @@ export function buildResearchArtifact(
     ...(input.summary !== undefined ? { summary: input.summary } : {}),
     ...(passages.length > 0
       ? {
-          content_hash: hashContent(
-            passages.map((passage) => passage.text).join("\n"),
-          ),
+          content_hash: hashContent(passages.map((passage) => passage.text).join("\n")),
         }
       : {}),
     filters: {
@@ -441,7 +407,6 @@ export function storeResearchArtifact(artifact: ResearchArtifact): void {
 
 export function getResearchArtifact(id: string): ResearchArtifact | null {
   const data = getResult(id)
-  if (data?.type !== "research" || typeof data?.artifact !== "object")
-    return null
+  if (data?.type !== "research" || typeof data?.artifact !== "object") return null
   return data.artifact as ResearchArtifact
 }

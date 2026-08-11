@@ -39,28 +39,15 @@ class SkillDiscoveryEnv implements ExecutionEnv {
   private host(path: string): Result<string, FileError> {
     const virtual = posix.resolve(this.cwd, path)
     if (virtual !== this.cwd && !virtual.startsWith(`${this.cwd}/`)) {
-      return err(
-        new FileError("permission_denied", `Path escapes ${this.cwd}`, path),
-      )
+      return err(new FileError("permission_denied", `Path escapes ${this.cwd}`, path))
     }
-    return ok(
-      join(
-        this.root,
-        ...virtual.slice(this.cwd.length).split("/").filter(Boolean),
-      ),
-    )
+    return ok(join(this.root, ...virtual.slice(this.cwd.length).split("/").filter(Boolean)))
   }
 
   private virtual(path: string): Result<string, FileError> {
     const suffix = relative(this.root, path)
-    if (
-      suffix === ".." ||
-      suffix.startsWith(`..\\`) ||
-      suffix.startsWith("../")
-    ) {
-      return err(
-        new FileError("permission_denied", `Path escapes ${this.root}`, path),
-      )
+    if (suffix === ".." || suffix.startsWith(`..\\`) || suffix.startsWith("../")) {
+      return err(new FileError("permission_denied", `Path escapes ${this.root}`, path))
     }
     return ok(suffix ? `${this.cwd}/${suffix.replaceAll("\\", "/")}` : this.cwd)
   }
@@ -88,8 +75,7 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     >
   > {
     const cwd = this.host(options.cwd ?? this.cwd)
-    if (!cwd.ok)
-      return err(new ExecutionError("unknown", cwd.error.message, cwd.error))
+    if (!cwd.ok) return err(new ExecutionError("unknown", cwd.error.message, cwd.error))
     return this.node.exec(command, { ...options, cwd: cwd.value })
   }
 
@@ -98,10 +84,7 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     return host.ok ? this.node.readTextFile(host.value, signal) : host
   }
 
-  async readTextLines(
-    path: string,
-    options?: { maxLines?: number; abortSignal?: AbortSignal },
-  ) {
+  async readTextLines(path: string, options?: { maxLines?: number; abortSignal?: AbortSignal }) {
     const host = this.host(path)
     return host.ok ? this.node.readTextLines(host.value, options) : host
   }
@@ -111,11 +94,7 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     return host.ok ? this.node.readBinaryFile(host.value, signal) : host
   }
 
-  async writeFile(
-    path: string,
-    content: string | Uint8Array,
-    signal?: AbortSignal,
-  ) {
+  async writeFile(path: string, content: string | Uint8Array, signal?: AbortSignal) {
     const host = this.host(path)
     return host.ok ? this.node.writeFile(host.value, content, signal) : host
   }
@@ -126,8 +105,7 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     signal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
     const host = this.host(path)
-    if (signal?.aborted)
-      return err(new FileError("aborted", "Operation aborted", path))
+    if (signal?.aborted) return err(new FileError("aborted", "Operation aborted", path))
     return host.ok ? this.node.appendFile(host.value, content) : host
   }
 
@@ -146,10 +124,7 @@ class SkillDiscoveryEnv implements ExecutionEnv {
       : virtual
   }
 
-  async listDir(
-    path: string,
-    signal?: AbortSignal,
-  ): Promise<Result<FileInfo[], FileError>> {
+  async listDir(path: string, signal?: AbortSignal): Promise<Result<FileInfo[], FileError>> {
     const host = this.host(path)
     if (!host.ok) return host
     const result = await this.node.listDir(host.value, signal)
@@ -174,20 +149,13 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     return result.ok ? this.virtual(result.value) : result
   }
 
-  async exists(
-    path: string,
-    signal?: AbortSignal,
-  ): Promise<Result<boolean, FileError>> {
+  async exists(path: string, signal?: AbortSignal): Promise<Result<boolean, FileError>> {
     const host = this.host(path)
-    if (signal?.aborted)
-      return err(new FileError("aborted", "Operation aborted", path))
+    if (signal?.aborted) return err(new FileError("aborted", "Operation aborted", path))
     return host.ok ? this.node.exists(host.value) : host
   }
 
-  async createDir(
-    path: string,
-    options?: { recursive?: boolean; abortSignal?: AbortSignal },
-  ) {
+  async createDir(path: string, options?: { recursive?: boolean; abortSignal?: AbortSignal }) {
     const host = this.host(path)
     return host.ok ? this.node.createDir(host.value, options) : host
   }
@@ -204,12 +172,8 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     return host.ok ? this.node.remove(host.value, options) : host
   }
 
-  async createTempDir(
-    prefix?: string,
-    signal?: AbortSignal,
-  ): Promise<Result<string, FileError>> {
-    if (signal?.aborted)
-      return err(new FileError("aborted", "Operation aborted"))
+  async createTempDir(prefix?: string, signal?: AbortSignal): Promise<Result<string, FileError>> {
+    if (signal?.aborted) return err(new FileError("aborted", "Operation aborted"))
     const result = await this.node.createTempDir(prefix)
     return result.ok ? this.virtual(result.value) : result
   }
@@ -219,8 +183,7 @@ class SkillDiscoveryEnv implements ExecutionEnv {
     suffix?: string
     abortSignal?: AbortSignal
   }): Promise<Result<string, FileError>> {
-    if (options?.abortSignal?.aborted)
-      return err(new FileError("aborted", "Operation aborted"))
+    if (options?.abortSignal?.aborted) return err(new FileError("aborted", "Operation aborted"))
     const result = await this.node.createTempFile({
       prefix: options?.prefix,
       suffix: options?.suffix,
@@ -251,10 +214,7 @@ export async function discoverProjectSkillsWithDiagnostics(
   const byName = new Map<string, AgentSkill>()
   for (const skill of loaded.skills) {
     if (!byName.has(skill.name)) {
-      const filePath = join(
-        root,
-        ...skill.filePath.slice("/project/".length).split("/"),
-      )
+      const filePath = join(root, ...skill.filePath.slice("/project/".length).split("/"))
       byName.set(skill.name, {
         ...skill,
         filePath,
@@ -285,8 +245,7 @@ export async function materializeSkills(
   await mkdir(root, { recursive: true })
   const copyTree = async (source: string, target: string): Promise<void> => {
     const stat = await lstat(source)
-    if (stat.isSymbolicLink())
-      throw new Error(`skill 包含不允许的符号链接: ${source}`)
+    if (stat.isSymbolicLink()) throw new Error(`skill 包含不允许的符号链接: ${source}`)
     if (stat.isDirectory()) {
       await mkdir(target, { recursive: true })
       for (const entry of await readdir(source, {
@@ -305,8 +264,7 @@ export async function materializeSkills(
   const materialized: AgentSkill[] = []
   for (const [index, skill] of skills.entries()) {
     const directory = join(root, `skill-${index + 1}`)
-    const isStandardDirectory =
-      basename(skill.filePath).toLowerCase() === "skill.md"
+    const isStandardDirectory = basename(skill.filePath).toLowerCase() === "skill.md"
     if (isStandardDirectory) await copyTree(skill.baseDir, directory)
     else {
       await mkdir(directory, { recursive: true })

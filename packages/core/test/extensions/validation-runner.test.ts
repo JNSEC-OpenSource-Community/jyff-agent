@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 
 const roots: string[] = []
 const setup = {
@@ -14,9 +14,7 @@ const setup = {
 }
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("Father validation runner", () => {
@@ -47,9 +45,7 @@ describe("Father validation runner", () => {
     })
 
     expect(result.code).not.toBe(0)
-    expect(`${result.stdout}\n${result.stderr}`).toContain(
-      "manifest ID 与插件导出 ID 不一致",
-    )
+    expect(`${result.stdout}\n${result.stderr}`).toContain("manifest ID 与插件导出 ID 不一致")
     expect(result.stdout).not.toContain("__FATHER_REPORT__")
   })
 
@@ -119,10 +115,7 @@ async function runRunner(input: {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [
-        "--experimental-transform-types",
-        "packages/core/src/extensions/validation-runner.ts",
-      ],
+      ["--experimental-transform-types", "packages/core/src/extensions/validation-runner.ts"],
       { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] },
     )
     let stdout = ""
@@ -156,8 +149,5 @@ function reportFrom(stdout: string): Record<string, unknown> {
   const marker = "__FATHER_REPORT__"
   const index = stdout.indexOf(marker)
   if (index < 0) throw new Error("runner did not emit a validation report")
-  return JSON.parse(stdout.slice(index + marker.length)) as Record<
-    string,
-    unknown
-  >
+  return JSON.parse(stdout.slice(index + marker.length)) as Record<string, unknown>
 }

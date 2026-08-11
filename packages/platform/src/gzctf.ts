@@ -62,13 +62,7 @@ export const gzctfConfig: PlatformConfig<GZCTFPlatformConfig> = {
 
     const gameId = integer(raw.gameId, "GZCTF gameId", 1)
     const auth = parseAuth(raw.auth)
-    const timeoutMs = optionalInteger(
-      raw.timeoutMs,
-      15_000,
-      "GZCTF timeoutMs",
-      1_000,
-      120_000,
-    )
+    const timeoutMs = optionalInteger(raw.timeoutMs, 15_000, "GZCTF timeoutMs", 1_000, 120_000)
     const maxRequestAttempts = optionalInteger(
       raw.maxRequestAttempts,
       3,
@@ -83,13 +77,7 @@ export const gzctfConfig: PlatformConfig<GZCTFPlatformConfig> = {
       1,
       30_000,
     )
-    const cacheTtlMs = optionalInteger(
-      raw.cacheTtlMs,
-      5_000,
-      "GZCTF cacheTtlMs",
-      250,
-      60_000,
-    )
+    const cacheTtlMs = optionalInteger(raw.cacheTtlMs, 5_000, "GZCTF cacheTtlMs", 250, 60_000)
     const submissionPollIntervalMs = optionalInteger(
       raw.submissionPollIntervalMs,
       500,
@@ -104,10 +92,7 @@ export const gzctfConfig: PlatformConfig<GZCTFPlatformConfig> = {
       1_000,
       300_000,
     )
-    if (
-      raw.name !== undefined &&
-      (typeof raw.name !== "string" || raw.name.trim() === "")
-    ) {
+    if (raw.name !== undefined && (typeof raw.name !== "string" || raw.name.trim() === "")) {
       throw new Error("GZCTF name 必须是非空字符串")
     }
 
@@ -207,11 +192,7 @@ function parseAuth(value: unknown): GZCTFAuthConfig {
   const raw = object(value, "GZCTF auth")
   const type = text(raw.type, "GZCTF auth.type")
   if (type === "password") {
-    rejectUnknown(
-      raw,
-      new Set(["type", "usernameSecret", "passwordSecret"]),
-      "GZCTF password auth",
-    )
+    rejectUnknown(raw, new Set(["type", "usernameSecret", "passwordSecret"]), "GZCTF password auth")
     return {
       type,
       usernameSecret:
@@ -254,8 +235,7 @@ function rejectUnknown(
 }
 
 function text(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "")
-    throw new Error(`${label} 必须是非空字符串`)
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} 必须是非空字符串`)
   return value.trim()
 }
 
@@ -273,11 +253,7 @@ function optionalInteger(
   max: number,
 ): number {
   if (value === undefined) return fallback
-  if (
-    !Number.isInteger(value) ||
-    (value as number) < min ||
-    (value as number) > max
-  ) {
+  if (!Number.isInteger(value) || (value as number) < min || (value as number) > max) {
     throw new Error(`${label} 必须是 ${min} 到 ${max} 之间的整数`)
   }
   return value as number
@@ -338,9 +314,7 @@ export async function encryptGZCTFApiData(
     const ephemeralPublic = new Uint8Array(
       await webcrypto.subtle.exportKey("raw", ephemeral.publicKey),
     )
-    return Buffer.concat([ephemeralPublic, nonce, ciphertext]).toString(
-      "base64",
-    )
+    return Buffer.concat([ephemeralPublic, nonce, ciphertext]).toString("base64")
   } catch (error) {
     throw new Error("无法按 GZCTF 协议加密 API 数据", { cause: error })
   }
@@ -431,23 +405,10 @@ export class GZCTFClient {
       credentials.type === "cookie"
         ? normalizeCookie(credentials.cookie)
         : await retryRequest(
-            () =>
-              loginCookie(
-                fetchFn,
-                baseUrl,
-                config.timeoutMs,
-                clientConfig,
-                credentials,
-              ),
+            () => loginCookie(fetchFn, baseUrl, config.timeoutMs, clientConfig, credentials),
             config,
           )
-    const client = new GZCTFClient(
-      config,
-      cookie,
-      credentials,
-      clientConfig,
-      fetchFn,
-    )
+    const client = new GZCTFClient(config, cookie, credentials, clientConfig, fetchFn)
     await client.get("account/profile")
     return client
   }
@@ -496,8 +457,7 @@ export class GZCTFClient {
             sameOrigin ? this.cookie : "",
             {},
           )
-          if (!result.ok)
-            throw await errorFromResponse(result, "GZCTF 附件下载失败")
+          if (!result.ok) throw await errorFromResponse(result, "GZCTF 附件下载失败")
           return result
         },
         true,
@@ -509,24 +469,12 @@ export class GZCTFClient {
     }
   }
 
-  private async api<T>(
-    path: string,
-    init: RequestInit,
-    expectJson: boolean,
-  ): Promise<T> {
+  private async api<T>(path: string, init: RequestInit, expectJson: boolean): Promise<T> {
     const url = new URL(`api/${path.replace(/^\/+/, "")}`, this.baseUrl)
     const method = init.method ?? "GET"
     try {
       return await this.execute(
-        () =>
-          request<T>(
-            this.fetchFn,
-            url,
-            this.timeoutMs,
-            this.cookie,
-            init,
-            expectJson,
-          ),
+        () => request<T>(this.fetchFn, url, this.timeoutMs, this.cookie, init, expectJson),
         method === "GET" || method === "HEAD",
         true,
       )
@@ -610,20 +558,14 @@ async function loginCookie(
     credentials.password,
     clientConfig.apiPublicKey,
   )
-  const response = await rawRequest(
-    fetchFn,
-    new URL("api/account/login", baseUrl),
-    timeoutMs,
-    "",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userName: credentials.username,
-        password: encryptedPassword,
-      }),
-    },
-  )
+  const response = await rawRequest(fetchFn, new URL("api/account/login", baseUrl), timeoutMs, "", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userName: credentials.username,
+      password: encryptedPassword,
+    }),
+  })
   await ensureSuccess(response)
   return extractAuthCookie(response.headers)
 }
@@ -636,10 +578,7 @@ async function retryRequest<T>(
     try {
       return await operation()
     } catch (error) {
-      if (
-        !isRetryableGZCTFError(error) ||
-        attempt >= config.maxRequestAttempts
-      ) {
+      if (!isRetryableGZCTFError(error) || attempt >= config.maxRequestAttempts) {
         throw error
       }
       await delay(retryDelay(config.retryBaseDelayMs, attempt))
@@ -690,13 +629,9 @@ async function request<T>(
   try {
     return (await response.json()) as T
   } catch (error) {
-    throw new GZCTFApiError(
-      "无法解析 GZCTF API 响应",
-      "protocol",
-      response.status,
-      undefined,
-      { cause: error },
-    )
+    throw new GZCTFApiError("无法解析 GZCTF API 响应", "protocol", response.status, undefined, {
+      cause: error,
+    })
   }
 }
 
@@ -708,19 +643,17 @@ async function rawRequest(
   init: RequestInit,
 ): Promise<Response> {
   try {
+    const headers = new Headers(init.headers)
+    headers.set("Accept", headers.get("Accept") ?? "application/json")
+    if (cookie && !headers.has("Cookie")) headers.set("Cookie", cookie)
     return await fetchFn(url, {
       ...init,
       redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        Accept: "application/json",
-        ...(cookie ? { Cookie: cookie } : {}),
-        ...init.headers,
-      },
+      headers,
     })
   } catch (error) {
-    const timeout =
-      error instanceof DOMException && error.name === "TimeoutError"
+    const timeout = error instanceof DOMException && error.name === "TimeoutError"
     throw new GZCTFApiError(
       timeout ? `GZCTF 请求超过 ${timeoutMs}ms` : "无法连接 GZCTF",
       "network",
@@ -739,22 +672,13 @@ async function ensureSuccess(response: Response): Promise<void> {
       response.status,
     )
   }
-  if (!response.ok)
-    throw await errorFromResponse(response, "GZCTF API 请求失败")
+  if (!response.ok) throw await errorFromResponse(response, "GZCTF API 请求失败")
 }
 
-async function errorFromResponse(
-  response: Response,
-  fallback: string,
-): Promise<GZCTFApiError> {
+async function errorFromResponse(response: Response, fallback: string): Promise<GZCTFApiError> {
   let details: unknown
   let message = `${fallback}: HTTP ${response.status}`
-  if (
-    response.headers
-      .get("content-type")
-      ?.toLowerCase()
-      .includes("application/json")
-  ) {
+  if (response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
     try {
       details = await response.json()
       const title = (details as GZCTFErrorBody | null)?.title
@@ -763,12 +687,7 @@ async function errorFromResponse(
       // Preserve the HTTP error when an error body is malformed.
     }
   }
-  return new GZCTFApiError(
-    message,
-    kindForStatus(response.status),
-    response.status,
-    details,
-  )
+  return new GZCTFApiError(message, kindForStatus(response.status), response.status, details)
 }
 
 function kindForStatus(status: number): GZCTFApiError["kind"] {
@@ -797,10 +716,7 @@ function extractAuthCookie(headers: Headers): string {
     const match = /(?:^|[,;]\s*)GZCTF_Token=([^;,]+)/i.exec(value)
     if (match?.[1]) return `GZCTF_Token=${match[1]}`
   }
-  throw new GZCTFApiError(
-    "GZCTF 登录成功但响应未设置 GZCTF_Token Cookie",
-    "protocol",
-  )
+  throw new GZCTFApiError("GZCTF 登录成功但响应未设置 GZCTF_Token Cookie", "protocol")
 }
 
 interface GZCTFGame {
@@ -832,11 +748,7 @@ interface GZCTFChallengeDetail {
   category?: string
   hints?: string[] | null
   score?: number
-  type?:
-    | "StaticAttachment"
-    | "StaticContainer"
-    | "DynamicAttachment"
-    | "DynamicContainer"
+  type?: "StaticAttachment" | "StaticContainer" | "DynamicAttachment" | "DynamicContainer"
   context?: {
     closeTime?: number | null
     instanceEntry?: string | null
@@ -936,13 +848,9 @@ class GZCTFChallengeCapability implements ChallengeCapability {
           const existing = await this.getInstanceStatus()
           if (existing) return existing
           try {
-            const container = await this.client.post<GZCTFContainer>(
-              this.containerPath(),
-            )
+            const container = await this.client.post<GZCTFContainer>(this.containerPath())
             this.invalidate()
-            return this.remember(
-              mapContainer(this.environmentId(), this.challengeId, container),
-            )
+            return this.remember(mapContainer(this.environmentId(), this.challengeId, container))
           } catch (error) {
             // POST may have reached GZCTF even when its response was lost, and
             // GZCTF reports an already-created instance as an error. Re-read
@@ -964,16 +872,14 @@ class GZCTFChallengeCapability implements ChallengeCapability {
   }
 
   async getInfo(): Promise<ChallengeInfo> {
-    if (!this.info)
-      this.info = mapChallengeInfo(await this.detail(), this.solved)
+    if (!this.info) this.info = mapChallengeInfo(await this.detail(), this.solved)
     return this.info
   }
 
   async downloadAttachment(
     attachmentId: string,
   ): Promise<{ attachment: Attachment; content: Uint8Array }> {
-    if (attachmentId !== "attachment")
-      throw new Error(`当前题不存在附件: ${attachmentId}`)
+    if (attachmentId !== "attachment") throw new Error(`当前题不存在附件: ${attachmentId}`)
     const detail = await this.detail()
     const location = detail.context?.url
     if (!location) throw new Error("当前题没有可下载的附件")
@@ -984,53 +890,34 @@ class GZCTFChallengeCapability implements ChallengeCapability {
   }
 
   async submitFlag(flag: string): Promise<FlagSubmission> {
-    if (this.solved)
-      return { status: "already_solved", message: "Already solved" }
+    if (this.solved) return { status: "already_solved", message: "Already solved" }
     const encrypted = await this.client.encrypt(flag)
     const submitId = await this.client.post<number>(this.challengePath(), {
       flag: encrypted,
     })
     if (!Number.isInteger(submitId) || submitId < 1) {
-      throw new GZCTFApiError(
-        "GZCTF 提交响应缺少有效 submission id",
-        "protocol",
-      )
+      throw new GZCTFApiError("GZCTF 提交响应缺少有效 submission id", "protocol")
     }
 
     const deadline = Date.now() + this.config.submissionTimeoutMs
     while (Date.now() < deadline) {
-      const status = await this.client.get<string>(
-        `${this.challengePath()}/status/${submitId}`,
-      )
+      const status = await this.client.get<string>(`${this.challengePath()}/status/${submitId}`)
       if (status === "Accepted") {
         this.solved = true
         this.invalidate()
         return { status: "accepted", message: "Accepted" }
       }
-      if (
-        status === "WrongAnswer" ||
-        status === "CheatDetected" ||
-        status === "NotFound"
-      ) {
+      if (status === "WrongAnswer" || status === "CheatDetected" || status === "NotFound") {
         return { status: "rejected", message: status }
       }
       if (status !== "FlagSubmitted") {
-        throw new GZCTFApiError(
-          `GZCTF 返回了未知判题状态: ${status}`,
-          "protocol",
-        )
+        throw new GZCTFApiError(`GZCTF 返回了未知判题状态: ${status}`, "protocol")
       }
       await delay(
-        Math.min(
-          this.config.submissionPollIntervalMs,
-          Math.max(0, deadline - Date.now()),
-        ),
+        Math.min(this.config.submissionPollIntervalMs, Math.max(0, deadline - Date.now())),
       )
     }
-    throw new GZCTFApiError(
-      `GZCTF 判题超过 ${this.config.submissionTimeoutMs}ms`,
-      "network",
-    )
+    throw new GZCTFApiError(`GZCTF 判题超过 ${this.config.submissionTimeoutMs}ms`, "network")
   }
 
   private async detail(): Promise<GZCTFChallengeDetail> {
@@ -1098,10 +985,7 @@ class GZCTFProject implements PlatformProject {
   private readonly game: AsyncTtlCache<GZCTFGame>
   private readonly details: AsyncTtlCache<GZCTFGameDetails>
   private readonly notices: AsyncTtlCache<GZCTFNotice[]>
-  private readonly challengeDetails = new Map<
-    number,
-    AsyncTtlCache<GZCTFChallengeDetail>
-  >()
+  private readonly challengeDetails = new Map<number, AsyncTtlCache<GZCTFChallengeDetail>>()
 
   constructor(
     private readonly project: { id: string; name: string },
@@ -1123,10 +1007,7 @@ class GZCTFProject implements PlatformProject {
 
   async getOverview(): Promise<ContestOverview> {
     const [game, challenges, announcements] = await Promise.all([
-      this.game.get(
-        async () =>
-          await this.client.get<GZCTFGame>(`game/${this.config.gameId}`),
-      ),
+      this.game.get(async () => await this.client.get<GZCTFGame>(`game/${this.config.gameId}`)),
       this.listChallenges(),
       this.listAnnouncements(),
     ])
@@ -1140,9 +1021,7 @@ class GZCTFProject implements PlatformProject {
 
   async listChallenges(): Promise<ChallengeSummary[]> {
     const details = await this.gameDetails()
-    const solved = new Set(
-      details.rank?.solvedChallenges?.map((item) => item.id) ?? [],
-    )
+    const solved = new Set(details.rank?.solvedChallenges?.map((item) => item.id) ?? [])
     return Object.values(details.challenges ?? {})
       .flat()
       .map((challenge) => ({
@@ -1157,9 +1036,7 @@ class GZCTFProject implements PlatformProject {
   async listAnnouncements(): Promise<Announcement[]> {
     const notices = await this.notices.get(
       async () =>
-        await this.client.get<GZCTFNotice[]>(
-          `game/${this.config.gameId}/notices?count=100&skip=0`,
-        ),
+        await this.client.get<GZCTFNotice[]>(`game/${this.config.gameId}/notices?count=100&skip=0`),
     )
     return notices.map((notice) => ({
       id: String(notice.id),
@@ -1173,9 +1050,7 @@ class GZCTFProject implements PlatformProject {
 
   async listRemoteEnvironments(): Promise<RemoteEnvironment[]> {
     const ids = [...this.environments.keys()]
-    const current = await Promise.all(
-      ids.map(async (id) => await this.getRemoteEnvironment(id)),
-    )
+    const current = await Promise.all(ids.map(async (id) => await this.getRemoteEnvironment(id)))
     return current.filter((item): item is RemoteEnvironment => item !== null)
   }
 
@@ -1191,19 +1066,14 @@ class GZCTFProject implements PlatformProject {
     if (challengeId === null || !this.environments.has(id))
       throw new Error(`未知 GZCTF 远程实例: ${id}`)
     const capability = await this.bindChallenge(String(challengeId))
-    if (!capability.instance)
-      throw new Error(`GZCTF 题目 ${challengeId} 不是容器题`)
+    if (!capability.instance) throw new Error(`GZCTF 题目 ${challengeId} 不是容器题`)
     await capability.instance.destroy()
   }
 
   async bindChallenge(challengeId: string): Promise<ChallengeCapability> {
     const id = positiveId(challengeId)
-    const [detail, game] = await Promise.all([
-      this.challengeDetail(id),
-      this.gameDetails(),
-    ])
-    const solved =
-      game.rank?.solvedChallenges?.some((item) => item.id === id) === true
+    const [detail, game] = await Promise.all([this.challengeDetail(id), this.gameDetails()])
+    const solved = game.rank?.solvedChallenges?.some((item) => item.id === id) === true
     return new GZCTFChallengeCapability(
       this.config.gameId,
       id,
@@ -1221,10 +1091,7 @@ class GZCTFProject implements PlatformProject {
 
   private async gameDetails(): Promise<GZCTFGameDetails> {
     return await this.details.get(
-      async () =>
-        await this.client.get<GZCTFGameDetails>(
-          `game/${this.config.gameId}/details`,
-        ),
+      async () => await this.client.get<GZCTFGameDetails>(`game/${this.config.gameId}/details`),
     )
   }
 
@@ -1236,9 +1103,7 @@ class GZCTFProject implements PlatformProject {
     }
     return await cache.get(
       async () =>
-        await this.client.get<GZCTFChallengeDetail>(
-          `game/${this.config.gameId}/challenges/${id}`,
-        ),
+        await this.client.get<GZCTFChallengeDetail>(`game/${this.config.gameId}/challenges/${id}`),
     )
   }
 
@@ -1255,7 +1120,7 @@ export class GZCTFPlatformPlugin implements PlatformPlugin {
 
   async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
     const config = this.config.parse(options.config)
-    const credentials = resolveCredentials(config, options.resolveSecret)
+    const credentials = resolveCredentials(config, (name) => options.resolveSecret(name))
     const client = await GZCTFClient.connect(config, credentials)
     return new GZCTFProject(options.project, config, client)
   }
@@ -1266,28 +1131,20 @@ export const gzctfPlatform = new GZCTFPlatformPlugin()
 function resolveCredentials(
   config: GZCTFPlatformConfig,
   resolveSecret: (name: string) => string | undefined,
-):
-  | { type: "password"; username: string; password: string }
-  | { type: "cookie"; cookie: string } {
+): { type: "password"; username: string; password: string } | { type: "cookie"; cookie: string } {
   if (config.auth.type === "cookie") {
     const cookie = resolveSecret(config.auth.cookieSecret)?.trim()
-    if (!cookie)
-      throw new Error(`缺少 GZCTF Cookie secret: ${config.auth.cookieSecret}`)
+    if (!cookie) throw new Error(`缺少 GZCTF Cookie secret: ${config.auth.cookieSecret}`)
     return { type: "cookie", cookie }
   }
   const username = resolveSecret(config.auth.usernameSecret)?.trim()
   const password = resolveSecret(config.auth.passwordSecret)
-  if (!username)
-    throw new Error(`缺少 GZCTF username secret: ${config.auth.usernameSecret}`)
-  if (!password)
-    throw new Error(`缺少 GZCTF password secret: ${config.auth.passwordSecret}`)
+  if (!username) throw new Error(`缺少 GZCTF username secret: ${config.auth.usernameSecret}`)
+  if (!password) throw new Error(`缺少 GZCTF password secret: ${config.auth.passwordSecret}`)
   return { type: "password", username, password }
 }
 
-function mapChallengeInfo(
-  detail: GZCTFChallengeDetail,
-  solved: boolean,
-): ChallengeInfo {
+function mapChallengeInfo(detail: GZCTFChallengeDetail, solved: boolean): ChallengeInfo {
   const context = detail.context
   const attachment = attachmentFor(detail)
   const hints = detail.hints?.length
@@ -1302,9 +1159,7 @@ function mapChallengeInfo(
     needsEnv: isContainer(detail.type),
     description: `${detail.content ?? ""}${hints}`,
     attachments: attachment ? [attachment] : [],
-    ...(context?.instanceEntry
-      ? { environmentGuide: context.instanceEntry }
-      : {}),
+    ...(context?.instanceEntry ? { environmentGuide: context.instanceEntry } : {}),
   }
 }
 

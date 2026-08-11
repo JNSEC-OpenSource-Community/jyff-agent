@@ -49,21 +49,12 @@ function parseResponse(value: unknown): AnySearchResponse {
   }
   const envelope = value as Record<string, unknown>
   if (envelope.code !== 0) throw invalidResponse("expected code 0")
-  if (
-    !envelope.data ||
-    typeof envelope.data !== "object" ||
-    Array.isArray(envelope.data)
-  ) {
+  if (!envelope.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)) {
     throw invalidResponse("expected data object")
   }
   const data = envelope.data as Record<string, unknown>
-  if (!Array.isArray(data.results))
-    throw invalidResponse("expected data.results array")
-  if (
-    !data.metadata ||
-    typeof data.metadata !== "object" ||
-    Array.isArray(data.metadata)
-  ) {
+  if (!Array.isArray(data.results)) throw invalidResponse("expected data.results array")
+  if (!data.metadata || typeof data.metadata !== "object" || Array.isArray(data.metadata)) {
     throw invalidResponse("expected data.metadata object")
   }
 
@@ -76,16 +67,12 @@ function parseResponse(value: unknown): AnySearchResponse {
     const { title, url, snippet, content } = result
     if (typeof title !== "string")
       throw invalidResponse(`expected data.results[${index}].title string`)
-    if (typeof url !== "string")
-      throw invalidResponse(`expected data.results[${index}].url string`)
+    if (typeof url !== "string") throw invalidResponse(`expected data.results[${index}].url string`)
     if (typeof snippet !== "string")
       throw invalidResponse(`expected data.results[${index}].snippet string`)
     if (typeof content !== "string")
       throw invalidResponse(`expected data.results[${index}].content string`)
-    if (!url)
-      throw invalidResponse(
-        `expected data.results[${index}].url to be non-empty`,
-      )
+    if (!url) throw invalidResponse(`expected data.results[${index}].url to be non-empty`)
     results.push({ title, url, snippet, content })
   }
 
@@ -128,17 +115,13 @@ export async function searchWithAnySearch(
       },
       body: JSON.stringify(body),
       signal: options.signal
-        ? AbortSignal.any([
-            AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-            options.signal,
-          ])
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
         : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     })
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -149,9 +132,7 @@ export async function searchWithAnySearch(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `AnySearch API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`AnySearch API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
 
   let rawData: unknown

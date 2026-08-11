@@ -6,7 +6,7 @@ import {
   type DockerSandboxOptions,
   dockerSandboxCreateArguments,
 } from "@ctf-agent/sandbox"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 
 const options: DockerSandboxOptions = {
   projectId: "project",
@@ -22,10 +22,7 @@ function valueAfter(args: string[], flag: string): string | undefined {
   return index < 0 ? undefined : args[index + 1]
 }
 
-function result(
-  code: number,
-  output: { stdout?: string; stderr?: string } = {},
-): CommandResult {
+function result(code: number, output: { stdout?: string; stderr?: string } = {}): CommandResult {
   return {
     code,
     stdout: output.stdout ?? "",
@@ -41,12 +38,8 @@ describe("DockerSandbox resources", () => {
   it("默认限制每个 Solver 容器的 CPU、内存、swap、PID 与存储", () => {
     const args = dockerSandboxCreateArguments(options)
 
-    expect(valueAfter(args, "--cpus")).toBe(
-      String(DEFAULT_DOCKER_SANDBOX_RESOURCES.cpus),
-    )
-    expect(valueAfter(args, "--memory")).toBe(
-      String(DEFAULT_DOCKER_SANDBOX_RESOURCES.memoryBytes),
-    )
+    expect(valueAfter(args, "--cpus")).toBe(String(DEFAULT_DOCKER_SANDBOX_RESOURCES.cpus))
+    expect(valueAfter(args, "--memory")).toBe(String(DEFAULT_DOCKER_SANDBOX_RESOURCES.memoryBytes))
     expect(valueAfter(args, "--memory-swap")).toBe(
       String(DEFAULT_DOCKER_SANDBOX_RESOURCES.memorySwapBytes),
     )
@@ -99,8 +92,7 @@ describe("DockerSandbox resources", () => {
     execute
       .mockResolvedValueOnce(
         result(125, {
-          stderr:
-            "--storage-opt is supported only for overlay over xfs with 'pquota' mount option",
+          stderr: "--storage-opt is supported only for overlay over xfs with 'pquota' mount option",
         }),
       )
       .mockResolvedValueOnce(result(0, { stdout: "container-id\n" }))
@@ -114,9 +106,7 @@ describe("DockerSandbox resources", () => {
     expect(execute).toHaveBeenCalledTimes(4)
     expect(execute.mock.calls[0]?.[0]).toContain("--storage-opt")
     expect(execute.mock.calls[1]?.[0]).not.toContain("--storage-opt")
-    expect(execute.mock.calls[1]?.[0]).toEqual(
-      expect.arrayContaining(["--cpus", "2", "--mount"]),
-    )
+    expect(execute.mock.calls[1]?.[0]).toEqual(expect.arrayContaining(["--cpus", "2", "--mount"]))
     expect(execute.mock.calls[2]?.[0]).toEqual(["start", "container-id"])
     expect(execute.mock.calls[3]?.[0]).toEqual(["rm", "-f", "container-id"])
     expect(warning).toHaveBeenCalledOnce()

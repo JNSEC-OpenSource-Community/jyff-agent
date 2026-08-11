@@ -1,17 +1,13 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { ApiError, apiRequest, projectApi } from "../src/lib/api.ts"
 
 describe("projectApi", () => {
   it("把 /api/ 路径规范为项目级路径", () => {
-    expect(projectApi("p-1", "/api/snapshot")).toBe(
-      "/api/projects/p-1/snapshot",
-    )
+    expect(projectApi("p-1", "/api/snapshot")).toBe("/api/projects/p-1/snapshot")
   })
 
   it("已含项目前缀的路径按原样拼接（旧式 /api 后缀兼容）", () => {
-    expect(projectApi("p-1", "/api/projects/p-1/x")).toBe(
-      "/api/projects/p-1/projects/p-1/x",
-    )
+    expect(projectApi("p-1", "/api/projects/p-1/x")).toBe("/api/projects/p-1/projects/p-1/x")
   })
 
   it("处理不带前导斜杠的 /api/ 形式", () => {
@@ -24,9 +20,7 @@ describe("projectApi", () => {
   })
 
   it("对项目 ID 做 encodeURIComponent", () => {
-    expect(projectApi("a/b c", "/api/snapshot")).toBe(
-      "/api/projects/a%2Fb%20c/snapshot",
-    )
+    expect(projectApi("a/b c", "/api/snapshot")).toBe("/api/projects/a%2Fb%20c/snapshot")
   })
 })
 
@@ -34,10 +28,10 @@ describe("apiRequest", () => {
   it("非 2xx 抛出带 code 的 ApiError", async () => {
     const original = globalThis.fetch
     globalThis.fetch = async () =>
-      new Response(
-        JSON.stringify({ error: "model_unavailable", message: "模型未配置" }),
-        { status: 503, headers: { "content-type": "application/json" } },
-      )
+      new Response(JSON.stringify({ error: "model_unavailable", message: "模型未配置" }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      })
     try {
       const promise = apiRequest<never>("/x")
       await expect(promise).rejects.toMatchObject({

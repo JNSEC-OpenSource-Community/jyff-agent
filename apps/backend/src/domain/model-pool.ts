@@ -9,11 +9,7 @@ import {
 } from "@ctf-agent/core"
 import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { AgentOptions, ThinkingLevel } from "@earendil-works/pi-agent-core"
-import {
-  createModels,
-  createProvider,
-  type Models,
-} from "@earendil-works/pi-ai"
+import { createModels, createProvider, type Models } from "@earendil-works/pi-ai"
 import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages"
 import { streamSimple as streamOpenAiCompletions } from "@earendil-works/pi-ai/api/openai-completions"
 import { streamSimple as streamOpenAiResponses } from "@earendil-works/pi-ai/api/openai-responses"
@@ -41,10 +37,7 @@ import type {
 
 const MODEL_API_KEY_SECRET_PREFIX = "CTF_MODEL_API_KEY_"
 const PASSTHROUGH_THINKING_MAP = Object.fromEntries(
-  ["minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [
-    level,
-    level,
-  ]),
+  ["minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [level, level]),
 )
 
 interface StoredModelEntry {
@@ -110,16 +103,12 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   snapshot(bindings?: AgentModelBindings): ModelConfigurationView {
     const selectedBindings = bindings ?? this.values
     const models = this.values.models.map((entry) => this.entryView(entry))
-    const solver = models.find(
-      (entry) => entry.id === selectedBindings.solverModelId,
-    )
+    const solver = models.find((entry) => entry.id === selectedBindings.solverModelId)
     return {
       models,
       customProviders: this.values.providers.map((provider) => ({
         ...provider,
-        apiKeyConfigured: this.options.secretStore.has(
-          providerSecret(provider.id),
-        ),
+        apiKeyConfigured: this.options.secretStore.has(providerSecret(provider.id)),
       })),
       solverModelId: selectedBindings.solverModelId,
       tldrModelId: selectedBindings.tldrModelId,
@@ -130,16 +119,13 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       ...(!solver?.configured
         ? {
             unavailableReason:
-              solver?.unavailableReason ??
-              "未选择可用的 Solver 模型，调度操作已禁用",
+              solver?.unavailableReason ?? "未选择可用的 Solver 模型，调度操作已禁用",
           }
         : {}),
     }
   }
 
-  async update(
-    configuration: ModelConfigurationUpdate,
-  ): Promise<ModelConfigurationView> {
+  async update(configuration: ModelConfigurationUpdate): Promise<ModelConfigurationView> {
     const next = normalizeUpdate(configuration)
     next.configuration.providers = this.values.providers
     await persistConfiguration(this.options.storagePath, next.configuration)
@@ -152,9 +138,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     return this.snapshot()
   }
 
-  async addCustomProvider(
-    input: CustomModelProviderUpdate,
-  ): Promise<ModelConfigurationView> {
+  async addCustomProvider(input: CustomModelProviderUpdate): Promise<ModelConfigurationView> {
     const base = slugifyProvider(input.name)
     let id = `custom-${base || "provider"}`
     let suffix = 2
@@ -181,9 +165,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     providerId: string,
     input: CustomModelProviderEdit,
   ): Promise<ModelConfigurationView> {
-    const providerIndex = this.values.providers.findIndex(
-      (provider) => provider.id === providerId,
-    )
+    const providerIndex = this.values.providers.findIndex((provider) => provider.id === providerId)
     if (providerIndex < 0) {
       throw new Error(`自定义供应商不存在: ${providerId}`)
     }
@@ -205,17 +187,13 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     return this.snapshot()
   }
 
-  async removeCustomProvider(
-    providerId: string,
-  ): Promise<ModelConfigurationView> {
+  async removeCustomProvider(providerId: string): Promise<ModelConfigurationView> {
     if (this.values.models.some((model) => model.provider === providerId)) {
       throw new Error("该供应商仍被模型池引用，请先移除相关模型")
     }
     const next = {
       ...this.values,
-      providers: this.values.providers.filter(
-        (provider) => provider.id !== providerId,
-      ),
+      providers: this.values.providers.filter((provider) => provider.id !== providerId),
     }
     if (next.providers.length === this.values.providers.length) {
       throw new Error(`自定义供应商不存在: ${providerId}`)
@@ -229,9 +207,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   }
 
   async discoverCustomProviderModels(providerId: string): Promise<string[]> {
-    const provider = this.values.providers.find(
-      (candidate) => candidate.id === providerId,
-    )
+    const provider = this.values.providers.find((candidate) => candidate.id === providerId)
     if (!provider) throw new Error(`自定义供应商不存在: ${providerId}`)
     const apiKey = this.options.secretStore.get(providerSecret(providerId))
     if (!apiKey) throw new Error("该供应商尚未配置 API Key")
@@ -272,14 +248,9 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       )
       .filter(
         (id): id is string =>
-          typeof id === "string" &&
-          id.length > 0 &&
-          id.length <= 256 &&
-          !hasControlCharacters(id),
+          typeof id === "string" && id.length > 0 && id.length <= 256 && !hasControlCharacters(id),
       )
-    return [...new Set(ids)]
-      .sort((left, right) => left.localeCompare(right))
-      .slice(0, 1_000)
+    return [...new Set(ids)].sort((left, right) => left.localeCompare(right)).slice(0, 1_000)
   }
 
   createAgentOptions(
@@ -301,21 +272,12 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     }
     const unavailableReason = this.entryUnavailableReason(selected)
     if (unavailableReason) throw new Error(unavailableReason)
-    const model = resolveModel(
-      selected,
-      this.values.providers,
-      this.options.authentication,
-    )
+    const model = resolveModel(selected, this.values.providers, this.options.authentication)
     const models = this.createModelsRegistry()
     const agent: AgentOptions = {
       streamFn: ((candidate, context, streamOptions) =>
-        models.streamSimple(
-          candidate,
-          context,
-          streamOptions,
-        )) as AgentOptions["streamFn"],
-      getApiKey: (provider) =>
-        this.options.secretStore.get(providerSecret(provider)),
+        models.streamSimple(candidate, context, streamOptions)) as AgentOptions["streamFn"],
+      getApiKey: (provider) => this.options.secretStore.get(providerSecret(provider)),
       initialState: {
         model,
         thinkingLevel: configuredThinkingLevel(model, selected),
@@ -325,10 +287,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     return attachModelsToAgentOptions(agent, models)
   }
 
-  modelForSubagent(
-    role: string,
-    bindings?: AgentModelBindings,
-  ): string | undefined {
+  modelForSubagent(role: string, bindings?: AgentModelBindings): string | undefined {
     const id = (bindings ?? this.values).subagentModels[role]
     const entry = this.values.models.find((candidate) => candidate.id === id)
     return entry ? `${entry.provider}/${entry.modelId}` : undefined
@@ -372,9 +331,8 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
 
   private hasProviderCredential(entry: StoredModelEntry): boolean {
     return (
-      !this.values.providers.some(
-        (provider) => provider.id === entry.provider,
-      ) && this.options.authentication?.hasCredential(entry.provider) === true
+      !this.values.providers.some((provider) => provider.id === entry.provider) &&
+      this.options.authentication?.hasCredential(entry.provider) === true
     )
   }
 
@@ -385,11 +343,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       return [
         {
           entry,
-          model: resolveModel(
-            entry,
-            this.values.providers,
-            this.options.authentication,
-          ),
+          model: resolveModel(entry, this.values.providers, this.options.authentication),
         },
       ]
     })
@@ -400,20 +354,10 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       providers.set(candidate.entry.provider, group)
     }
     for (const [provider, entries] of providers) {
-      const native = entries.every(({ entry }) =>
-        this.hasProviderCredential(entry),
-      )
-      const stream = (
-        model: Model<Api>,
-        context: Context,
-        streamOptions?: SimpleStreamOptions,
-      ) =>
+      const native = entries.every(({ entry }) => this.hasProviderCredential(entry))
+      const stream = (model: Model<Api>, context: Context, streamOptions?: SimpleStreamOptions) =>
         native && this.options.authentication
-          ? this.options.authentication.models.streamSimple(
-              model,
-              context,
-              streamOptions,
-            )
+          ? this.options.authentication.models.streamSimple(model, context, streamOptions)
           : streamCustomModel(model, context, streamOptions)
       registry.setProvider(
         createProvider({
@@ -429,9 +373,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
                 auth: native
                   ? {}
                   : {
-                      apiKey: this.options.secretStore.get(
-                        providerSecret(provider),
-                      ),
+                      apiKey: this.options.secretStore.get(providerSecret(provider)),
                     },
                 source: native ? "provider credential" : "SecretStore",
               }),
@@ -477,9 +419,7 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
   }
 }
 
-function dropNullHeaders(
-  headers: Record<string, string | null>,
-): Record<string, string> {
+function dropNullHeaders(headers: Record<string, string | null>): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [name, value] of Object.entries(headers)) {
     if (value !== null) out[name] = value
@@ -487,9 +427,7 @@ function dropNullHeaders(
   return out
 }
 
-async function readStoredConfiguration(
-  path: string,
-): Promise<StoredModelConfiguration> {
+async function readStoredConfiguration(path: string): Promise<StoredModelConfiguration> {
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(path, "utf8"))
@@ -504,9 +442,7 @@ async function readStoredConfiguration(
   return parseVersionThree(parsed)
 }
 
-function parseVersionThree(
-  parsed: Record<string, unknown>,
-): StoredModelConfiguration {
+function parseVersionThree(parsed: Record<string, unknown>): StoredModelConfiguration {
   const models = (parsed.models as unknown[]).map((value, index) => {
     if (!isRecord(value)) throw new Error(`模型配置 models[${index}] 格式无效`)
     return storedEntry(value, index)
@@ -516,13 +452,7 @@ function parseVersionThree(
   const tldrModelId = stringValue(parsed.tldrModelId) ?? solverModelId
   const fatherModelId = stringValue(parsed.fatherModelId) ?? solverModelId
   const subagentModels = stringRecord(parsed.subagentModels)
-  validateReferences(
-    ids,
-    solverModelId,
-    tldrModelId,
-    fatherModelId,
-    subagentModels,
-  )
+  validateReferences(ids, solverModelId, tldrModelId, fatherModelId, subagentModels)
   const providers = parseStoredProviders(parsed.providers)
   validateProviderGroups(models)
   return {
@@ -570,27 +500,21 @@ function normalizeUpdate(configuration: ModelConfigurationUpdate): {
   }
 }
 
-function storedEntry(
-  value: Record<string, unknown>,
-  index: number,
-): StoredModelEntry {
+function storedEntry(value: Record<string, unknown>, index: number): StoredModelEntry {
   const id = stringValue(value.id)
   const provider = stringValue(value.provider)
   const modelId = stringValue(value.modelId)
   if (!id || !provider || !modelId) {
     throw new Error(`模型配置 models[${index}] 缺少 id/provider/modelId`)
   }
-  const contextWindow = positiveInteger(value.contextWindow)
-    ? value.contextWindow
-    : 64_000
+  const contextWindow = positiveInteger(value.contextWindow) ? value.contextWindow : 64_000
   return {
     id,
     provider,
     modelId,
     contextWindow,
     thinkingEnabled: value.thinkingEnabled !== false,
-    reasoningEffort:
-      stringValue(value.reasoningEffort) ?? DEFAULT_SOLVER_THINKING_LEVEL,
+    reasoningEffort: stringValue(value.reasoningEffort) ?? DEFAULT_SOLVER_THINKING_LEVEL,
     passthroughThinking: value.passthroughThinking === true,
   }
 }
@@ -603,12 +527,7 @@ function validateReferences(
   subagentModels: Readonly<Record<string, string>>,
 ): void {
   if (ids.size === 0) {
-    if (
-      solverModelId ||
-      tldrModelId ||
-      fatherModelId ||
-      Object.keys(subagentModels).length > 0
-    ) {
+    if (solverModelId || tldrModelId || fatherModelId || Object.keys(subagentModels).length > 0) {
       throw new Error("空模型池不能包含 Agent 模型绑定")
     }
     return
@@ -685,17 +604,14 @@ function modelRecords(payload: unknown): unknown[] {
 }
 
 function hasControlCharacters(value: string): boolean {
-  return [...value].some((character) => {
+  return Array.from(value).some((character) => {
     const code = character.charCodeAt(0)
     return code <= 0x1f || code === 0x7f
   })
 }
 
 function providerSecret(provider: string): string {
-  const digest = createHash("sha256")
-    .update(provider)
-    .digest("hex")
-    .toUpperCase()
+  const digest = createHash("sha256").update(provider).digest("hex").toUpperCase()
   return `${MODEL_API_KEY_SECRET_PREFIX}${digest.slice(0, 32)}`
 }
 
@@ -706,9 +622,7 @@ function resolveModel(
 ): Model<Api> {
   const provider = configuration.provider
   const modelId = configuration.modelId
-  const customProvider = customProviders.find(
-    (candidate) => candidate.id === provider,
-  )
+  const customProvider = customProviders.find((candidate) => candidate.id === provider)
   const baseUrl = customProvider?.baseUrl ?? ""
   const contextWindow = configuration.contextWindow
   const reasoning = configuration.thinkingEnabled
@@ -758,9 +672,7 @@ function resolveModel(
   const builtin = getModel(provider as never, modelId as never)
   if (!builtin) throw new Error(`Pi 未内置模型: ${provider}/${modelId}`)
   if (builtin.api !== "openai-completions") {
-    throw new Error(
-      `当前运行镜像仅支持 OpenAI-compatible 模型: ${provider}/${modelId}`,
-    )
+    throw new Error(`当前运行镜像仅支持 OpenAI-compatible 模型: ${provider}/${modelId}`)
   }
   const openAiModel = builtin as Model<"openai-completions">
   return {
@@ -787,30 +699,14 @@ function streamWithoutOutputTokenLimit(
   })
 }
 
-function streamCustomModel(
-  model: Model<Api>,
-  context: Context,
-  options?: SimpleStreamOptions,
-) {
+function streamCustomModel(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
   if (model.api === "openai-responses") {
-    return streamOpenAiResponses(
-      model as Model<"openai-responses">,
-      context,
-      options,
-    )
+    return streamOpenAiResponses(model as Model<"openai-responses">, context, options)
   }
   if (model.api === "anthropic-messages") {
-    return streamAnthropic(
-      model as Model<"anthropic-messages">,
-      context,
-      options,
-    )
+    return streamAnthropic(model as Model<"anthropic-messages">, context, options)
   }
-  return streamWithoutOutputTokenLimit(
-    model as Model<"openai-completions">,
-    context,
-    options,
-  )
+  return streamWithoutOutputTokenLimit(model as Model<"openai-completions">, context, options)
 }
 
 function parseStoredProviders(value: unknown): StoredCustomProvider[] {
@@ -825,11 +721,7 @@ function parseStoredProviders(value: unknown): StoredCustomProvider[] {
       !id ||
       !name ||
       !baseUrl ||
-      ![
-        "openai-completions",
-        "openai-responses",
-        "anthropic-messages",
-      ].includes(String(api))
+      !["openai-completions", "openai-responses", "anthropic-messages"].includes(String(api))
     )
       return []
     return [{ id, name, baseUrl, api: api as CustomModelProviderApi }]
@@ -853,9 +745,7 @@ export function omitOutputTokenLimit(payload: unknown): unknown {
   return copy
 }
 
-function deepseekThinkingLevelMap(
-  modelId: string,
-): Record<string, string | null> {
+function deepseekThinkingLevelMap(modelId: string): Record<string, string | null> {
   const pro = modelId.includes("v4-pro")
   return {
     minimal: null,
@@ -883,9 +773,7 @@ function stringRecord(value: unknown): Record<string, string> {
   return Object.fromEntries(
     Object.entries(value).filter(
       (entry): entry is [string, string] =>
-        Boolean(entry[0].trim()) &&
-        typeof entry[1] === "string" &&
-        Boolean(entry[1]),
+        Boolean(entry[0].trim()) && typeof entry[1] === "string" && Boolean(entry[1]),
     ),
   )
 }

@@ -1,16 +1,8 @@
 import { join } from "node:path"
-import type {
-  ChallengeCapability,
-  ChallengeInfo,
-  FlagSubmission,
-} from "@ctf-agent/platform"
+import type { ChallengeCapability, ChallengeInfo, FlagSubmission } from "@ctf-agent/platform"
 import { CTF_COMPACTION_PROMPT, SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
-import type {
-  AgentMessage,
-  AgentOptions,
-  Skill,
-} from "@earendil-works/pi-agent-core"
+import type { AgentMessage, AgentOptions, Skill } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
 import {
   type AgentSkill,
@@ -105,9 +97,7 @@ export class CtfSolverAgent extends BaseAgent {
   readonly challenge: ChallengeInfo
   private readonly sandbox: Sandbox
   private readonly capability: ChallengeCapability
-  private readonly onClosed?: (
-    details: SolverCloseDetails,
-  ) => Promise<void> | void
+  private readonly onClosed?: (details: SolverCloseDetails) => Promise<void> | void
   private readonly onBeforeCleanup?: () => Promise<void> | void
   private readonly closeOnSubmission: boolean
   private closeReason: SolverCloseReason = "manual"
@@ -115,10 +105,7 @@ export class CtfSolverAgent extends BaseAgent {
   private finalSubmission?: FlagSubmission
   private closing?: Promise<void>
 
-  private constructor(
-    options: CreateCtfSolverAgentOptions,
-    prepared: PreparedBaseAgent,
-  ) {
+  private constructor(options: CreateCtfSolverAgentOptions, prepared: PreparedBaseAgent) {
     super(prepared, {
       compaction: options.features?.compaction !== false,
       compactionInstructions: CTF_COMPACTION_PROMPT,
@@ -148,9 +135,7 @@ export class CtfSolverAgent extends BaseAgent {
     })
   }
 
-  static async create(
-    options: CreateCtfSolverAgentOptions,
-  ): Promise<CtfSolverAgent> {
+  static async create(options: CreateCtfSolverAgentOptions): Promise<CtfSolverAgent> {
     const unsupported = unsupportedAgentOptions(options.agent)
     if (unsupported.length > 0) {
       throw new Error(
@@ -180,11 +165,8 @@ export class CtfSolverAgent extends BaseAgent {
       },
       models: modelsFromAgentOptions(options.agent, model),
       model,
-      systemPrompt:
-        options.agent.initialState?.systemPrompt ?? SOLVER_SYSTEM_PROMPT,
-      thinkingLevel:
-        options.agent.initialState?.thinkingLevel ??
-        DEFAULT_SOLVER_THINKING_LEVEL,
+      systemPrompt: options.agent.initialState?.systemPrompt ?? SOLVER_SYSTEM_PROMPT,
+      thinkingLevel: options.agent.initialState?.thinkingLevel ?? DEFAULT_SOLVER_THINKING_LEVEL,
       tools,
       skills: piSkills(options.features?.skills ?? []),
       initialMessages: options.agent.initialState?.messages,
@@ -223,10 +205,7 @@ export class CtfSolverAgent extends BaseAgent {
     this.closeReason = "submitted"
   }
 
-  async close(
-    reason: SolverCloseReason = this.closeReason,
-    error?: string,
-  ): Promise<void> {
+  async close(reason: SolverCloseReason = this.closeReason, error?: string): Promise<void> {
     if (this.closing) return this.closing
     if (this.finalSubmission) reason = "submitted"
     this.closed = true

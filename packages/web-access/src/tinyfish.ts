@@ -63,10 +63,7 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function requestSignal(
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): AbortSignal {
+function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
@@ -77,9 +74,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -103,9 +98,7 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
   return { includeDomains, excludeDomains }
 }
 
-function recencyMinutes(
-  filter: SearchOptions["recencyFilter"],
-): number | undefined {
+function recencyMinutes(filter: SearchOptions["recencyFilter"]): number | undefined {
   if (!filter) return undefined
   const minutes: Record<NonNullable<SearchOptions["recencyFilter"]>, number> = {
     day: 1_440,
@@ -121,19 +114,11 @@ function normalizeNumResults(value: number | undefined): number {
   return Math.max(1, Math.min(Math.floor(value), 20))
 }
 
-function buildSearchUrl(
-  query: string,
-  options: SearchOptions,
-  page: number,
-): string {
+function buildSearchUrl(query: string, options: SearchOptions, page: number): string {
   const params = new URLSearchParams({ query })
-  const { includeDomains, excludeDomains } = mapDomainFilter(
-    options.domainFilter,
-  )
-  if (includeDomains.length > 0)
-    params.set("include_domains", includeDomains.join(","))
-  if (excludeDomains.length > 0)
-    params.set("exclude_domains", excludeDomains.join(","))
+  const { includeDomains, excludeDomains } = mapDomainFilter(options.domainFilter)
+  if (includeDomains.length > 0) params.set("include_domains", includeDomains.join(","))
+  if (excludeDomains.length > 0) params.set("exclude_domains", excludeDomains.join(","))
   const recency = recencyMinutes(options.recencyFilter)
   if (recency !== undefined) params.set("recency_minutes", String(recency))
   if (page > 0) params.set("page", String(page))
@@ -150,13 +135,14 @@ async function tinyFishJsonRequest<T>(
 ): Promise<T> {
   let response: Response
   try {
+    const headers = new Headers(init.headers)
+    headers.set("X-API-Key", headers.get("X-API-Key") ?? apiKey)
+    if (init.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json")
+    }
     response = await fetch(url, {
       ...init,
-      headers: {
-        "X-API-Key": apiKey,
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...init.headers,
-      },
+      headers,
       signal: requestSignal(signal, timeoutMs),
     })
   } catch (err) {
@@ -177,31 +163,20 @@ async function tinyFishJsonRequest<T>(
   try {
     return JSON.parse(raw) as T
   } catch (err) {
-    throw new Error(
-      `TinyFish ${label} API returned invalid JSON: ${errorMessage(err)}`,
-    )
+    throw new Error(`TinyFish ${label} API returned invalid JSON: ${errorMessage(err)}`)
   }
 }
 
-function mapSearchResults(
-  results: TinyFishSearchResult[] | undefined,
-): SearchResponse["results"] {
+function mapSearchResults(results: TinyFishSearchResult[] | undefined): SearchResponse["results"] {
   if (!Array.isArray(results)) return []
   return results.flatMap((item) => {
-    if (!item || typeof item.url !== "string" || item.url.trim().length === 0)
-      return []
+    if (!item || typeof item.url !== "string" || item.url.trim().length === 0) return []
     const url = item.url.trim()
     return [
       {
-        title:
-          typeof item.title === "string" && item.title.trim()
-            ? item.title.trim()
-            : url,
+        title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : url,
         url,
-        snippet:
-          typeof item.snippet === "string"
-            ? item.snippet.replace(/\s+/g, " ").trim()
-            : "",
+        snippet: typeof item.snippet === "string" ? item.snippet.replace(/\s+/g, " ").trim() : "",
       },
     ]
   })
@@ -225,23 +200,18 @@ function deduplicateResults(
 function buildAnswer(results: SearchResponse["results"]): string {
   return results
     .map((result) => {
-      if (result.snippet)
-        return `${result.snippet}\nSource: ${result.title} (${result.url})`
+      if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`
       return `Source: ${result.title} (${result.url})`
     })
     .join("\n\n")
 }
 
 function fetchPerUrlTimeout(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value))
-    return MAX_FETCH_PER_URL_TIMEOUT_MS
+  if (typeof value !== "number" || !Number.isFinite(value)) return MAX_FETCH_PER_URL_TIMEOUT_MS
   return Math.max(1, Math.min(Math.floor(value), MAX_FETCH_PER_URL_TIMEOUT_MS))
 }
 
-function fetchBody(
-  urls: string[],
-  options: ExtractOptions = {},
-): Record<string, unknown> {
+function fetchBody(urls: string[], options: ExtractOptions = {}): Record<string, unknown> {
   const body: Record<string, unknown> = {
     urls,
     format: "markdown",
@@ -262,8 +232,7 @@ function findFetchError(
 
 function fetchResultContent(result: TinyFishFetchResult): string {
   if (typeof result.text === "string") return result.text.trim()
-  if (result.text && typeof result.text === "object")
-    return JSON.stringify(result.text, null, 2)
+  if (result.text && typeof result.text === "object") return JSON.stringify(result.text, null, 2)
   return ""
 }
 
@@ -308,15 +277,11 @@ async function fetchInlineContent(
     const batch = urls.slice(offset, offset + MAX_FETCH_URLS)
     const data = await fetchBatch(batch, apiKey, signal)
     if (!Array.isArray(data.results) || !Array.isArray(data.errors)) {
-      throw new Error(
-        "TinyFish Fetch API returned an unexpected response shape",
-      )
+      throw new Error("TinyFish Fetch API returned an unexpected response shape")
     }
     for (const url of batch) {
       const result = Array.isArray(data.results)
-        ? data.results.find(
-            (item) => item?.url === url || item?.final_url === url,
-          )
+        ? data.results.find((item) => item?.url === url || item?.final_url === url)
         : undefined
       const mapped = mapFetchResult(result, url)
       if (mapped) content.push(mapped)
@@ -350,9 +315,7 @@ export async function searchWithTinyFish(
         options.signal,
       )
       if (!Array.isArray(data.results))
-        throw new Error(
-          "TinyFish Search API returned an unexpected response shape",
-        )
+        throw new Error("TinyFish Search API returned an unexpected response shape")
       combined.push(...mapSearchResults(data.results))
       if (data.results.length < 10) break
     }
@@ -372,8 +335,7 @@ export async function searchWithTinyFish(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -397,14 +359,10 @@ export async function extractWithTinyFish(
   try {
     const data = await fetchBatch([url], apiKey, signal, options)
     if (!Array.isArray(data.results) || !Array.isArray(data.errors)) {
-      throw new Error(
-        "TinyFish Fetch API returned an unexpected response shape",
-      )
+      throw new Error("TinyFish Fetch API returned an unexpected response shape")
     }
     const result =
-      data.results.find(
-        (item) => item?.url === url || item?.final_url === url,
-      ) ?? data.results[0]
+      data.results.find((item) => item?.url === url || item?.final_url === url) ?? data.results[0]
     const mapped = mapFetchResult(result, url)
     if (mapped) {
       activityMonitor.logComplete(activityId, 200)
@@ -412,10 +370,7 @@ export async function extractWithTinyFish(
     }
     const fetchError = findFetchError(data.errors, url)
     if (fetchError) {
-      const status =
-        typeof fetchError.status === "number"
-          ? ` (HTTP ${fetchError.status})`
-          : ""
+      const status = typeof fetchError.status === "number" ? ` (HTTP ${fetchError.status})` : ""
       throw new Error(
         `TinyFish Fetch failed for ${url}: ${fetchError.error || "unknown error"}${status}`,
       )
@@ -425,8 +380,7 @@ export async function extractWithTinyFish(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)

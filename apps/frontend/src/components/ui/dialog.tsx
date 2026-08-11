@@ -12,9 +12,7 @@ function DialogContent({
   className,
   children,
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof DialogPrimitive.Content
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>): React.ReactElement {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
@@ -31,11 +29,4 @@ function DialogContent({
   )
 }
 
-export {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-}
+export { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger }

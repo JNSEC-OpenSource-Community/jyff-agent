@@ -1,8 +1,4 @@
-import {
-  randomBytes,
-  scrypt as scryptCallback,
-  timingSafeEqual,
-} from "node:crypto"
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto"
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { promisify } from "node:util"
@@ -54,10 +50,7 @@ export interface WebUiAuthentication {
 export async function createFileWebUiAuthentication(
   storagePath: string,
 ): Promise<WebUiAuthentication> {
-  return new FileWebUiAuthentication(
-    storagePath,
-    await readConfiguration(storagePath),
-  )
+  return new FileWebUiAuthentication(storagePath, await readConfiguration(storagePath))
 }
 
 class FileWebUiAuthentication implements WebUiAuthentication {
@@ -155,9 +148,7 @@ class FileWebUiAuthentication implements WebUiAuthentication {
   }
 }
 
-async function readConfiguration(
-  path: string,
-): Promise<StoredAuthenticationConfiguration> {
+async function readConfiguration(path: string): Promise<StoredAuthenticationConfiguration> {
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(path, "utf8"))
@@ -171,10 +162,7 @@ async function readConfiguration(
     throw new Error(`WebUI 全局配置格式无效: ${path}`)
   }
   const authentication = parsed.authentication
-  if (
-    !isRecord(authentication) ||
-    typeof authentication.enabled !== "boolean"
-  ) {
+  if (!isRecord(authentication) || typeof authentication.enabled !== "boolean") {
     throw new Error(`WebUI 鉴权配置格式无效: ${path}`)
   }
   if (!authentication.enabled) {
@@ -186,10 +174,7 @@ async function readConfiguration(
       enabled: true,
       username: normalizedUsername(authentication.username),
       salt: requiredText(authentication.salt, "authentication.salt"),
-      passwordHash: requiredText(
-        authentication.passwordHash,
-        "authentication.passwordHash",
-      ),
+      passwordHash: requiredText(authentication.passwordHash, "authentication.passwordHash"),
     },
   }
 }

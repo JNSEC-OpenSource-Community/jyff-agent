@@ -178,11 +178,7 @@ export function scopedProjectRoutes(services: Services): App {
     try {
       configuration = await runtime.update(body)
     } catch (error) {
-      throw new HttpError(
-        400,
-        "invalid_project_runtime_configuration",
-        errorText(error),
-      )
+      throw new HttpError(400, "invalid_project_runtime_configuration", errorText(error))
     }
     const scheduler = services.currentScheduler(projectId)
     await scheduler?.setMaxConcurrent(configuration.maxConcurrent)

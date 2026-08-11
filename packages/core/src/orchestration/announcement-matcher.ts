@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto"
-import type {
-  Announcement,
-  AnnouncementKind,
-  ChallengeSummary,
-} from "@ctf-agent/platform"
+import type { Announcement, AnnouncementKind, ChallengeSummary } from "@ctf-agent/platform"
 
 export interface AnnouncementClassification {
   kind: AnnouncementKind
@@ -56,9 +52,7 @@ const CRITICAL_KEYWORDS: ReadonlyArray<{
   },
 ]
 
-export function classifyAnnouncement(
-  announcement: Announcement,
-): AnnouncementClassification {
+export function classifyAnnouncement(announcement: Announcement): AnnouncementClassification {
   if (announcement.kind === "solve_broadcast") {
     return { kind: "solve_broadcast", ignored: true, reason: "platform_kind" }
   }
@@ -75,10 +69,7 @@ export function classifyAnnouncement(
   if (BLOOD_TITLE.test(announcement.title)) {
     return { kind: "solve_broadcast", ignored: true, reason: "blood_title" }
   }
-  if (
-    SOLVE_ACTION.test(announcement.content) ||
-    BLOOD_BROADCAST.test(announcement.content)
-  ) {
+  if (SOLVE_ACTION.test(announcement.content) || BLOOD_BROADCAST.test(announcement.content)) {
     return {
       kind: "solve_broadcast",
       ignored: true,
@@ -93,16 +84,14 @@ export function classifyAnnouncement(
 }
 
 /** 仅让可能改变既有题目解法的公告进入人工审批队列。 */
-export function filterAnnouncementKeywords(
-  announcement: Announcement,
-): AnnouncementKeywordFilter {
+export function filterAnnouncementKeywords(announcement: Announcement): AnnouncementKeywordFilter {
   if (announcement.kind === "new_challenge") {
     return { eligible: false, matchedKeywords: [], reason: "new_challenge" }
   }
   const text = `${announcement.title}\n${announcement.content}`
-  const matchedKeywords = CRITICAL_KEYWORDS.filter(({ pattern }) =>
-    pattern.test(text),
-  ).map(({ name }) => name)
+  const matchedKeywords = CRITICAL_KEYWORDS.filter(({ pattern }) => pattern.test(text)).map(
+    ({ name }) => name,
+  )
   if (announcement.kind === "hint" && !matchedKeywords.includes("hint")) {
     matchedKeywords.unshift("hint")
   }
@@ -120,9 +109,7 @@ export function matchAnnouncementChallenges(
   announcement: Announcement,
   challenges: readonly ChallengeSummary[],
 ): AnnouncementChallengeMatch[] {
-  const haystack = normalizeAnnouncementText(
-    `${announcement.title}\n${announcement.content}`,
-  )
+  const haystack = normalizeAnnouncementText(`${announcement.title}\n${announcement.content}`)
   const titleCounts = new Map<string, number>()
   for (const challenge of challenges) {
     const title = normalizeAnnouncementText(challenge.title)
@@ -134,17 +121,14 @@ export function matchAnnouncementChallenges(
   const ordered = [...challenges].sort(
     (left, right) =>
       normalizeAnnouncementText(right.title).length -
-        normalizeAnnouncementText(left.title).length ||
-      left.id.localeCompare(right.id),
+        normalizeAnnouncementText(left.title).length || left.id.localeCompare(right.id),
   )
   for (const challenge of ordered) {
     const title = normalizeAnnouncementText(challenge.title)
     const id = normalizeAnnouncementText(challenge.id)
     if (
       title &&
-      !matchedTitles.some(
-        (longer) => longer !== title && longer.includes(title),
-      ) &&
+      !matchedTitles.some((longer) => longer !== title && longer.includes(title)) &&
       titleMatch(haystack, title)
     ) {
       matchedTitles.push(title)
@@ -186,11 +170,7 @@ export function announcementRevision(announcement: Announcement): {
 }
 
 export function normalizeAnnouncementText(value: string): string {
-  return value
-    .normalize("NFKC")
-    .toLocaleLowerCase("und")
-    .replace(/\s+/gu, " ")
-    .trim()
+  return value.normalize("NFKC").toLocaleLowerCase("und").replace(/\s+/gu, " ").trim()
 }
 
 function titleMatch(haystack: string, title: string): boolean {

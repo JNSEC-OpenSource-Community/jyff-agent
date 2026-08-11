@@ -1,14 +1,8 @@
 // @vitest-environment jsdom
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { AgentSidebar } from "../src/pages/challenge/AgentSidebar.tsx"
 import type { ChallengeDetails } from "../src/types.ts"
 
@@ -18,10 +12,12 @@ const endpoint =
 afterEach(cleanup)
 
 describe("AgentSidebar", () => {
-  it("根据选中 Agent 切换实时缓存指标", () => {
+  it("根据选中 Agent 按需展示用量详情", () => {
     const { rerender } = renderSidebar("worker-1")
 
     expect(screen.getAllByText("Explorer Worker")).toHaveLength(2)
+    expect(screen.queryByText("75%")).toBeNull()
+    fireEvent.click(screen.getByText("用量详情"))
     expect(screen.getByText("75%")).toBeTruthy()
     expect(screen.getByText("100 tokens")).toBeTruthy()
     expect(screen.getByText("300 tokens")).toBeTruthy()
@@ -49,9 +45,7 @@ describe("AgentSidebar", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(endpoint))
     expect(screen.getByRole("button", { name: "环境 URL 已复制" })).toBeTruthy()
-    expect(url.parentElement?.parentElement?.className).toContain(
-      "minmax(0,1fr)",
-    )
+    expect(url.parentElement?.parentElement?.className).toContain("minmax(0,1fr)")
   })
 
   it("区分平台未提供与明确不需要环境", () => {
@@ -78,10 +72,7 @@ function renderSidebar(selectedSubagentId: string | null) {
   return render(sidebar(selectedSubagentId))
 }
 
-function sidebar(
-  selectedSubagentId: string | null,
-  challengeDetails: ChallengeDetails = details,
-) {
+function sidebar(selectedSubagentId: string | null, challengeDetails: ChallengeDetails = details) {
   return createElement(AgentSidebar, {
     details: challengeDetails,
     selectedRunId: "run-1",

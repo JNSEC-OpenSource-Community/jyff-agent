@@ -102,8 +102,7 @@ export function appendAgentMessageDelta(
   } else {
     content[contentIndex] = {
       type: "thinking",
-      thinking:
-        current?.type === "thinking" ? `${current.thinking}${delta}` : delta,
+      thinking: current?.type === "thinking" ? `${current.thinking}${delta}` : delta,
       redacted: false,
     }
   }

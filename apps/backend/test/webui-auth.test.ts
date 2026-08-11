@@ -1,15 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { createFileWebUiAuthentication } from "../src/domain/webui-auth.ts"
 
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function fixture() {
@@ -33,9 +31,9 @@ describe("FileWebUiAuthentication", () => {
       username: "operator",
       password: "strong-password",
     })
-    await expect(
-      authentication.login("operator", "wrong-password"),
-    ).rejects.toThrow("用户名或密码错误")
+    await expect(authentication.login("operator", "wrong-password")).rejects.toThrow(
+      "用户名或密码错误",
+    )
 
     const session = await authentication.login("operator", "strong-password")
     expect(authentication.authenticate(session.token)).toBe(true)

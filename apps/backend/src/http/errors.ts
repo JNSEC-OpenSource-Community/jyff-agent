@@ -16,11 +16,7 @@ export class HttpError extends Error {
 
 /** 跨包错误契约：按 Error 上的 code 字段匹配（不依赖错误类型）。 */
 export function hasCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === code
-  )
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code
 }
 
 export function errorText(error: unknown): string {

@@ -2,7 +2,7 @@
 
 import { render, screen } from "@testing-library/react"
 import { createElement } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { IntelligencePanel } from "../src/pages/challenge/IntelligencePanel.tsx"
 
 describe("情报面板", () => {
@@ -30,12 +30,8 @@ describe("情报面板", () => {
       }),
     )
 
-    const tldrCard = screen
-      .getByRole("heading", { name: "TLDR 摘要" })
-      .closest("section")
-    const evidenceCard = screen
-      .getByRole("heading", { name: "已确认事实" })
-      .closest("section")
+    const tldrCard = screen.getByRole("heading", { name: "TLDR 摘要" }).closest("section")
+    const evidenceCard = screen.getByRole("heading", { name: "已确认事实" }).closest("section")
     for (const card of [tldrCard, evidenceCard]) {
       expect(card?.className).toContain("rounded-xl")
       expect(card?.className).toContain("border-border")

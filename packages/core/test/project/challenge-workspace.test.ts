@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   assertWorkspaceArtifactContained,
   challengeWorkspacePath,
@@ -12,9 +12,7 @@ import {
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("challenge workspace", () => {
@@ -51,23 +49,17 @@ describe("challenge workspace", () => {
     await mkdir(workspace)
     await writeFile(join(root, "secret.txt"), "secret")
 
-    expect(() => resolveWorkspaceArtifact(workspace, "../secret.txt")).toThrow(
-      "escapes",
+    expect(() => resolveWorkspaceArtifact(workspace, "../secret.txt")).toThrow("escapes")
+    expect(() => resolveWorkspaceArtifact(workspace, join(root, "secret.txt"))).toThrow(
+      "relative path",
     )
-    expect(() =>
-      resolveWorkspaceArtifact(workspace, join(root, "secret.txt")),
-    ).toThrow("relative path")
     const outside = join(root, "outside")
     await mkdir(outside)
     const link = join(workspace, "escape")
-    await symlink(
-      outside,
-      link,
-      process.platform === "win32" ? "junction" : "dir",
+    await symlink(outside, link, process.platform === "win32" ? "junction" : "dir")
+    await expect(assertWorkspaceArtifactContained(workspace, link)).rejects.toThrow(
+      "symlink escapes",
     )
-    await expect(
-      assertWorkspaceArtifactContained(workspace, link),
-    ).rejects.toThrow("symlink escapes")
   })
 
   it("递归列出普通文件并在上限处截断", async () => {
@@ -106,8 +98,6 @@ describe("challenge workspace", () => {
       process.platform === "win32" ? "junction" : "dir",
     )
 
-    await expect(
-      readWorkspaceArtifact(workspace, "escape/secret.txt"),
-    ).rejects.toThrow("escapes")
+    await expect(readWorkspaceArtifact(workspace, "escape/secret.txt")).rejects.toThrow("escapes")
   })
 })

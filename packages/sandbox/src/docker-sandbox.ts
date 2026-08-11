@@ -22,11 +22,7 @@ export type DockerCommandExecutor = (
   options?: SandboxExecOptions,
 ) => Promise<CommandResult>
 
-export type SandboxCommandErrorCode =
-  | "aborted"
-  | "timeout"
-  | "spawn_error"
-  | "callback_error"
+export type SandboxCommandErrorCode = "aborted" | "timeout" | "spawn_error" | "callback_error"
 
 export class SandboxCommandError extends Error {
   constructor(
@@ -64,14 +60,13 @@ export interface DockerSandboxResources {
   storageBytes: number
 }
 
-export const DEFAULT_DOCKER_SANDBOX_RESOURCES: Readonly<DockerSandboxResources> =
-  Object.freeze({
-    cpus: 2,
-    memoryBytes: 4 * 1024 * 1024 * 1024,
-    memorySwapBytes: 4 * 1024 * 1024 * 1024,
-    pidsLimit: 512,
-    storageBytes: 20 * 1024 * 1024 * 1024,
-  })
+export const DEFAULT_DOCKER_SANDBOX_RESOURCES: Readonly<DockerSandboxResources> = Object.freeze({
+  cpus: 2,
+  memoryBytes: 4 * 1024 * 1024 * 1024,
+  memorySwapBytes: 4 * 1024 * 1024 * 1024,
+  pidsLimit: 512,
+  storageBytes: 20 * 1024 * 1024 * 1024,
+})
 
 export type DockerWorkspaceMount =
   | { type: "bind"; source: string }
@@ -80,10 +75,7 @@ export type DockerWorkspaceMount =
 const OUTPUT_LIMIT = 8 * 1024 * 1024
 
 /** Execute Docker directly without involving a host shell. */
-async function execute(
-  args: string[],
-  options: SandboxExecOptions = {},
-): Promise<CommandResult> {
+async function execute(args: string[], options: SandboxExecOptions = {}): Promise<CommandResult> {
   if (options.signal?.aborted) {
     throw new SandboxCommandError("aborted", "Docker command aborted")
   }
@@ -118,12 +110,10 @@ async function execute(
       try {
         options.onStdout?.(text)
       } catch (cause) {
-        callbackError =
-          cause instanceof Error ? cause : new Error(String(cause))
+        callbackError = cause instanceof Error ? cause : new Error(String(cause))
         child.kill("SIGKILL")
       }
-      if (stdout.length < OUTPUT_LIMIT)
-        stdout += text.slice(0, OUTPUT_LIMIT - stdout.length)
+      if (stdout.length < OUTPUT_LIMIT) stdout += text.slice(0, OUTPUT_LIMIT - stdout.length)
       if (stdout.length >= OUTPUT_LIMIT) stdoutTruncated = true
     })
     child.stderr.on("data", (chunk: Buffer) => {
@@ -131,20 +121,14 @@ async function execute(
       try {
         options.onStderr?.(text)
       } catch (cause) {
-        callbackError =
-          cause instanceof Error ? cause : new Error(String(cause))
+        callbackError = cause instanceof Error ? cause : new Error(String(cause))
         child.kill("SIGKILL")
       }
-      if (stderr.length < OUTPUT_LIMIT)
-        stderr += text.slice(0, OUTPUT_LIMIT - stderr.length)
+      if (stderr.length < OUTPUT_LIMIT) stderr += text.slice(0, OUTPUT_LIMIT - stderr.length)
       if (stderr.length >= OUTPUT_LIMIT) stderrTruncated = true
     })
     child.on("error", (cause) =>
-      finish(() =>
-        reject(
-          new SandboxCommandError("spawn_error", cause.message, { cause }),
-        ),
-      ),
+      finish(() => reject(new SandboxCommandError("spawn_error", cause.message, { cause }))),
     )
     child.on("close", (code) =>
       finish(() => {
@@ -155,14 +139,8 @@ async function execute(
             }),
           )
         }
-        if (aborted)
-          return reject(
-            new SandboxCommandError("aborted", "Docker command aborted"),
-          )
-        if (timedOut)
-          return reject(
-            new SandboxCommandError("timeout", "Docker command timed out"),
-          )
+        if (aborted) return reject(new SandboxCommandError("aborted", "Docker command aborted"))
+        if (timedOut) return reject(new SandboxCommandError("timeout", "Docker command timed out"))
         resolve({
           code: code ?? 1,
           stdout,
@@ -174,11 +152,7 @@ async function execute(
     )
     child.stdin.on("error", (cause) => {
       if ((cause as NodeJS.ErrnoException).code !== "EPIPE") {
-        finish(() =>
-          reject(
-            new SandboxCommandError("spawn_error", cause.message, { cause }),
-          ),
-        )
+        finish(() => reject(new SandboxCommandError("spawn_error", cause.message, { cause })))
       }
     })
     child.stdin.end(options.input)
@@ -229,13 +203,9 @@ export class DockerSandbox implements Sandbox {
     return new DockerSandbox(id, executeCommand)
   }
 
-  async exec(
-    args: string[],
-    options?: SandboxExecOptions,
-  ): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     if (this.closed) throw new Error("Docker sandbox is closed")
-    if (args.length === 0)
-      throw new Error("Docker exec arguments must not be empty")
+    if (args.length === 0) throw new Error("Docker exec arguments must not be empty")
     return this.executeCommand(["exec", "-i", this.id, ...args], options)
   }
 
@@ -256,9 +226,7 @@ export class DockerSandbox implements Sandbox {
   }
 }
 
-export function dockerSandboxCreateArguments(
-  options: DockerSandboxOptions,
-): string[] {
+export function dockerSandboxCreateArguments(options: DockerSandboxOptions): string[] {
   const name = `ctf-solver-${options.runId}`
   const workspaceMount = dockerMount(
     options.workspaceMount ?? {
@@ -302,12 +270,8 @@ export function newRunId(): string {
 }
 
 function commandFailure(operation: string, result: CommandResult): Error {
-  const output = [result.stderr.trim(), result.stdout.trim()]
-    .filter(Boolean)
-    .join("\n")
-  return new Error(
-    `Docker ${operation} failed: ${output || `exit code ${result.code}`}`,
-  )
+  const output = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n")
+  return new Error(`Docker ${operation} failed: ${output || `exit code ${result.code}`}`)
 }
 
 function isUnsupportedStorageQuota(result: CommandResult): boolean {
@@ -342,13 +306,7 @@ function dockerMount(mount: DockerWorkspaceMount): string {
       normalized.startsWith("/") ||
       normalized
         .split("/")
-        .some(
-          (segment) =>
-            !segment ||
-            segment === "." ||
-            segment === ".." ||
-            segment.includes(","),
-        )
+        .some((segment) => !segment || segment === "." || segment === ".." || segment.includes(","))
     ) {
       throw new Error("Invalid Docker workspace volume subpath")
     }
@@ -367,9 +325,7 @@ function resolveDockerSandboxResources(
   positiveInteger(resources.pidsLimit, "resources.pidsLimit")
   positiveInteger(resources.storageBytes, "resources.storageBytes")
   if (resources.memorySwapBytes < resources.memoryBytes) {
-    throw new Error(
-      "resources.memorySwapBytes must be >= resources.memoryBytes",
-    )
+    throw new Error("resources.memorySwapBytes must be >= resources.memoryBytes")
   }
   return resources
 }

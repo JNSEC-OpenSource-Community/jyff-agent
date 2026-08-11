@@ -40,7 +40,7 @@ export function WorkspaceFilePreviewDialog({
   file: PreviewableWorkspaceFile | null
   previewUrl: string | null
   downloadUrl: string | null
-  onClose(): void
+  onClose: () => void
 }) {
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null)
   const [error, setError] = useState("")
@@ -100,12 +100,7 @@ export function WorkspaceFilePreviewDialog({
             </Button>
           ) : null}
           <DialogClose asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-9"
-              aria-label="关闭预览"
-            >
+            <Button size="icon" variant="ghost" className="size-9" aria-label="关闭预览">
               <Icon icon="lucide:x" width="17" />
             </Button>
           </DialogClose>
@@ -126,10 +121,7 @@ export function WorkspaceFilePreviewDialog({
             </MarkdownContent>
           ) : preview?.kind === "code" ? (
             <pre className="min-h-full min-w-full w-max p-4 font-mono text-xs leading-6 sm:p-6">
-              <SyntaxHighlightedCode
-                code={preview.content}
-                language={preview.language}
-              />
+              <SyntaxHighlightedCode code={preview.content} language={preview.language} />
             </pre>
           ) : preview ? (
             <pre className="min-h-full min-w-full w-max whitespace-pre p-4 font-mono text-xs leading-6 text-foreground/90 sm:p-6">

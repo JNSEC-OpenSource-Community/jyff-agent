@@ -3,26 +3,20 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { MessageBody } from "../src/pages/challenge/MessageBody.tsx"
 
 describe("MessageBody", () => {
   it("默认展开短小工具结果并保持大型结果折叠", () => {
-    const { unmount } = render(
-      createElement(MessageBody, { message: toolResult("flag found") }),
-    )
+    const { unmount } = render(createElement(MessageBody, { message: toolResult("flag found") }))
     expect(
-      screen
-        .getByRole("button", { name: /终端命令 · 返回/ })
-        .getAttribute("aria-expanded"),
+      screen.getByRole("button", { name: /终端命令 · 返回/ }).getAttribute("aria-expanded"),
     ).toBe("true")
 
     unmount()
     render(createElement(MessageBody, { message: toolResult("x".repeat(600)) }))
     expect(
-      screen
-        .getByRole("button", { name: /终端命令 · 返回/ })
-        .getAttribute("aria-expanded"),
+      screen.getByRole("button", { name: /终端命令 · 返回/ }).getAttribute("aria-expanded"),
     ).toBe("false")
   })
 
@@ -33,28 +27,18 @@ describe("MessageBody", () => {
     )
     const trigger = screen.getByRole("button", { name: /正在推理/ })
     expect(trigger.getAttribute("aria-expanded")).toBe("true")
-    expect(
-      trigger.querySelectorAll(".agent-thinking-wave > span"),
-    ).toHaveLength(3)
+    expect(trigger.querySelectorAll(".agent-thinking-wave > span")).toHaveLength(3)
 
-    rerender(
-      createElement(MessageBody, { message, streaming: false, latest: true }),
+    rerender(createElement(MessageBody, { message, streaming: false, latest: true }))
+    expect(screen.getByRole("button", { name: /推理记录/ }).getAttribute("aria-expanded")).toBe(
+      "true",
     )
-    expect(
-      screen
-        .getByRole("button", { name: /推理记录/ })
-        .getAttribute("aria-expanded"),
-    ).toBe("true")
 
-    rerender(
-      createElement(MessageBody, { message, streaming: false, latest: false }),
-    )
+    rerender(createElement(MessageBody, { message, streaming: false, latest: false }))
     await waitFor(() =>
-      expect(
-        screen
-          .getByRole("button", { name: /推理记录/ })
-          .getAttribute("aria-expanded"),
-      ).toBe("false"),
+      expect(screen.getByRole("button", { name: /推理记录/ }).getAttribute("aria-expanded")).toBe(
+        "false",
+      ),
     )
   })
 
@@ -149,9 +133,7 @@ describe("MessageBody", () => {
       }),
     )
     expect(screen.getByText("Blocked Finalization")).toBeTruthy()
-    expect(
-      screen.getByText(/investigation is now considered stuck/),
-    ).toBeTruthy()
+    expect(screen.getByText(/investigation is now considered stuck/)).toBeTruthy()
     expect(screen.queryByText("Active SubAgents")).toBeNull()
   })
 })
@@ -193,10 +175,7 @@ function thinkingMessage(): AgentMessage {
   }
 }
 
-function assistantToolCall(
-  name: string,
-  args: Record<string, unknown>,
-): AgentMessage {
+function assistantToolCall(name: string, args: Record<string, unknown>): AgentMessage {
   return {
     role: "assistant",
     content: [{ type: "toolCall", id: "tool-subagent", name, arguments: args }],

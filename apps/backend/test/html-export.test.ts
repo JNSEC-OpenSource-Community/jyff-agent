@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   exportPiSessionHtml,
   piSessionHasConversation,
@@ -11,9 +11,7 @@ import {
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("exportPiSessionHtml", () => {
@@ -98,15 +96,12 @@ describe("exportPiSessionHtml", () => {
       })
     ).toString("utf8")
     expect(html).toContain("<!DOCTYPE html>")
-    const sessionData =
-      /<script id="session-data" type="application\/json">([^<]+)<\/script>/.exec(
-        html,
-      )?.[1]
+    const sessionData = /<script id="session-data" type="application\/json">([^<]+)<\/script>/.exec(
+      html,
+    )?.[1]
     expect(sessionData).toBeDefined()
     if (!sessionData) throw new Error("Pi HTML 导出缺少会话数据")
-    expect(
-      JSON.parse(Buffer.from(sessionData, "base64").toString("utf8")),
-    ).toMatchObject({
+    expect(JSON.parse(Buffer.from(sessionData, "base64").toString("utf8"))).toMatchObject({
       header: { id: "run-1" },
       systemPrompt: "Solve the current CTF challenge.",
       tools: [
@@ -202,9 +197,7 @@ describe("exportPiSessionHtml", () => {
     )
 
     expect(
-      readPiSessionConversation(sessionPath).messages.map(
-        (message) => message.entryId,
-      ),
+      readPiSessionConversation(sessionPath).messages.map((message) => message.entryId),
     ).toEqual(["root", "active"])
   })
 })

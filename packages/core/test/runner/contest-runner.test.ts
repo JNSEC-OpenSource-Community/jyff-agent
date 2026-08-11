@@ -1,27 +1,21 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type {
-  CommandResult,
-  DockerSandboxOptions,
-  Sandbox,
-} from "@ctf-agent/sandbox"
+import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import {
   createFauxCore,
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { ContestRunner } from "../../src/orchestration/contest-runner.js"
 import { Project } from "../../src/project/project.js"
 import { type TestChallenge, TestPlatformPlugin } from "../fake-platform.ts"
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 function requiredChallenge(item: TestChallenge | undefined): TestChallenge {
@@ -57,10 +51,7 @@ class SandboxTracker {
   }
 }
 
-async function projectFixture(
-  challenges: TestChallenge[],
-  tracker: SandboxTracker,
-) {
+async function projectFixture(challenges: TestChallenge[], tracker: SandboxTracker) {
   const root = await mkdtemp(join(tmpdir(), "ctf-runner-"))
   roots.push(root)
   await mkdir(join(root, ".pi"), { recursive: true })
@@ -92,13 +83,7 @@ function solvingAgent(
   })
   const calls = [
     ...(challenge.remote
-      ? [
-          fauxToolCall(
-            "ctf_instance_start",
-            {},
-            { id: `start-${challenge.id}-${attempt}` },
-          ),
-        ]
+      ? [fauxToolCall("ctf_instance_start", {}, { id: `start-${challenge.id}-${attempt}` })]
       : []),
     fauxToolCall(
       "ctf_submit_flag",
@@ -119,10 +104,7 @@ function solvingAgent(
   }
 }
 
-function challenge(
-  index: number,
-  options: Partial<TestChallenge> = {},
-): TestChallenge {
+function challenge(index: number, options: Partial<TestChallenge> = {}): TestChallenge {
   return {
     id: `challenge-${index}`,
     title: `Challenge ${index}`,
@@ -169,9 +151,7 @@ describe("ContestRunner", () => {
         cancelled: 0,
         attempts: 10,
       })
-      expect(
-        summary.results.every((result) => result.status === "solved"),
-      ).toBe(true)
+      expect(summary.results.every((result) => result.status === "solved")).toBe(true)
       expect(tracker.maximum).toBeGreaterThan(1)
       expect(tracker.maximum).toBeLessThanOrEqual(3)
       expect(tracker.active).toBe(0)
@@ -189,9 +169,7 @@ describe("ContestRunner", () => {
       expect(runs.filter((run) => run.status === "solved")).toHaveLength(8)
       expect(runs.filter((run) => run.status === "blocked")).toHaveLength(1)
       expect(runs.filter((run) => run.status === "interrupted")).toHaveLength(1)
-      expect(
-        runs.every((run) => !["preparing", "running"].includes(run.status)),
-      ).toBe(true)
+      expect(runs.every((run) => !["preparing", "running"].includes(run.status))).toBe(true)
     } finally {
       await project.close()
     }
@@ -211,10 +189,9 @@ describe("ContestRunner", () => {
         createAgentOptions: () => {
           const faux = createFauxCore({ provider: "runner-timeout" })
           faux.setResponses([
-            fauxAssistantMessage(
-              fauxToolCall("ctf_instance_start", {}, { id: "start-timeout" }),
-              { stopReason: "toolUse" },
-            ),
+            fauxAssistantMessage(fauxToolCall("ctf_instance_start", {}, { id: "start-timeout" }), {
+              stopReason: "toolUse",
+            }),
             async () => {
               await new Promise((resolve) => setTimeout(resolve, 1_000))
               return fauxAssistantMessage("too late")
@@ -266,10 +243,9 @@ describe("ContestRunner", () => {
         createAgentOptions: () => {
           const faux = createFauxCore({ provider: "runner-stop" })
           faux.setResponses([
-            fauxAssistantMessage(
-              fauxToolCall("ctf_instance_start", {}, { id: "start-stop" }),
-              { stopReason: "toolUse" },
-            ),
+            fauxAssistantMessage(fauxToolCall("ctf_instance_start", {}, { id: "start-stop" }), {
+              stopReason: "toolUse",
+            }),
             async () => {
               await new Promise((resolve) => setTimeout(resolve, 50))
               return fauxAssistantMessage("too late")
@@ -311,10 +287,7 @@ describe("ContestRunner", () => {
   })
 })
 
-async function waitUntil(
-  predicate: () => boolean,
-  timeoutMs = 1_000,
-): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待条件超时")

@@ -2,14 +2,12 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PlatformPluginRegistry } from "@ctf-agent/platform"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { PlatformExtensionStore } from "../../src/index.ts"
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("PlatformExtensionStore", () => {
@@ -42,9 +40,7 @@ describe("PlatformExtensionStore", () => {
     const described = await store.describeCandidate(candidate)
     expect(described.setup).toEqual(candidateSetup)
     await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" })
-    expect((await store.readCandidateEntry(candidate)).filename).toBe(
-      "demo-platform.ts",
-    )
+    expect((await store.readCandidateEntry(candidate)).filename).toBe("demo-platform.ts")
   })
 
   it("仅激活通过 Gate 且内容未变化的 revision", async () => {
@@ -104,9 +100,7 @@ describe("PlatformExtensionStore", () => {
     })
     expect(activated.authorSessionId).toBe("father-1")
     expect(
-      restartedRegistry
-        .list()
-        .find(({ plugin }) => plugin.id === "demo-platform")?.source,
+      restartedRegistry.list().find(({ plugin }) => plugin.id === "demo-platform")?.source,
     ).toBe("extension")
   })
 
@@ -126,30 +120,23 @@ describe("PlatformExtensionStore", () => {
         setup: candidateSetup,
       }),
     )
-    await writeFile(
-      join(candidate, "index.ts"),
-      "throw new Error('host import')",
-    )
+    await writeFile(join(candidate, "index.ts"), "throw new Error('host import')")
     const close = vi.fn(async () => undefined)
-    const exec = vi.fn(
-      async (_args: string[], options?: { input?: string }) => {
-        const runnerInput = JSON.parse(
-          options?.input ?? "{}",
-        ) as RunnerInput & {
-          profile: { secrets: { TOKEN: string } }
-        }
-        const report = validationReport(
-          runnerInput,
-          `upstream rejected ${runnerInput.profile.secrets.TOKEN}`,
-          "failed",
-        )
-        return {
-          code: 0,
-          stdout: `plugin log\n__FATHER_REPORT__${JSON.stringify(report)}`,
-          stderr: "",
-        }
-      },
-    )
+    const exec = vi.fn(async (_args: string[], options?: { input?: string }) => {
+      const runnerInput = JSON.parse(options?.input ?? "{}") as RunnerInput & {
+        profile: { secrets: { TOKEN: string } }
+      }
+      const report = validationReport(
+        runnerInput,
+        `upstream rejected ${runnerInput.profile.secrets.TOKEN}`,
+        "failed",
+      )
+      return {
+        code: 0,
+        stdout: `plugin log\n__FATHER_REPORT__${JSON.stringify(report)}`,
+        stderr: "",
+      }
+    })
     const store = await PlatformExtensionStore.open({
       root,
       registry: new PlatformPluginRegistry([]),
@@ -172,10 +159,7 @@ describe("PlatformExtensionStore", () => {
 
     expect(report.checks[0]?.message).toBe("upstream rejected [redacted]")
     expect(exec).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        "node",
-        "/workspace/.father-runtime/validation-runner.ts",
-      ]),
+      expect.arrayContaining(["node", "/workspace/.father-runtime/validation-runner.ts"]),
       expect.objectContaining({
         input: expect.stringContaining("super-secret"),
       }),

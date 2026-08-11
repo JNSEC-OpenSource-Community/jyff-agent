@@ -9,12 +9,7 @@ import {
   useRef,
   useState,
 } from "react"
-import {
-  Button,
-  EmptyState,
-  ErrorNotice,
-  Textarea,
-} from "../../components/index.ts"
+import { Button, EmptyState, ErrorNotice, Textarea } from "../../components/index.ts"
 import type { ConversationTarget } from "../../hooks/useChallengeDetails.ts"
 import { useConversation } from "../../hooks/useConversation.ts"
 import { apiMutation } from "../../lib/api.ts"
@@ -73,8 +68,8 @@ export function ConversationPanel({
   stopUrl?: string
   viewKey?: string
   viewStateStore?: ConversationViewStateStore
-  onSelectSubagent?(id: string): void
-  onChanged(): Promise<void>
+  onSelectSubagent?: (id: string) => void
+  onChanged: () => Promise<void>
   header?: { label: string; subLabel: string; icon: string }
   readOnly?: boolean
   notice?: ReactNode
@@ -83,19 +78,8 @@ export function ConversationPanel({
   idleStatusLabel?: string
   stopPlacement?: "header" | "composer"
 }): React.ReactElement {
-  const {
-    conversation,
-    loading,
-    error,
-    message,
-    sending,
-    activity,
-    setMessage,
-    send,
-  } = useConversation(
-    { conversationUrl, streamUrl, sendUrl, hasConversation },
-    onChanged,
-  )
+  const { conversation, loading, error, message, sending, activity, setMessage, send } =
+    useConversation({ conversationUrl, streamUrl, sendUrl, hasConversation }, onChanged)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const localViewStateStore = useRef<ConversationViewStateStore>(new Map())
@@ -118,12 +102,7 @@ export function ConversationPanel({
       ),
     [messages],
   )
-  const isRunActive = [
-    "preparing",
-    "running",
-    "blocking",
-    "writing_writeup",
-  ].includes(runStatus)
+  const isRunActive = ["preparing", "running", "blocking", "writing_writeup"].includes(runStatus)
   const status = activityLabel(activity, isRunActive, idleStatusLabel)
   const isAgentBusy = activity.phase !== "idle"
 
@@ -159,10 +138,7 @@ export function ConversationPanel({
       requestAnimationFrame(() => {
         element.scrollTop = saved.atBottom
           ? element.scrollHeight
-          : Math.min(
-              saved.scrollTop,
-              Math.max(0, element.scrollHeight - element.clientHeight),
-            )
+          : Math.min(saved.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
         atBottomRef.current = saved.atBottom
         setAwayFromBottom(!saved.atBottom)
       })
@@ -201,8 +177,7 @@ export function ConversationPanel({
   const handleScroll = useCallback(() => {
     const element = scrollRef.current
     if (!element) return
-    const atBottom =
-      element.scrollHeight - element.scrollTop - element.clientHeight < 48
+    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48
     atBottomRef.current = atBottom
     setAwayFromBottom(!atBottom)
     if (atBottom) {
@@ -224,27 +199,19 @@ export function ConversationPanel({
       await apiMutation(stopUrl, "POST")
       await onChanged()
     } catch (cause) {
-      setActionError(
-        cause instanceof Error ? cause.message : "无法中止 Agent，请稍后重试",
-      )
+      setActionError(cause instanceof Error ? cause.message : "无法中止 Agent，请稍后重试")
     } finally {
       setStopping(false)
     }
   }
 
   return (
-    <section
-      className="flex h-full min-h-0 flex-1 flex-col"
-      aria-label="Agent 对话"
-    >
+    <section className="flex h-full min-h-0 flex-1 flex-col" aria-label="Agent 对话">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-card/70 px-4 py-3 backdrop-blur-sm max-lg:px-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/70 text-primary">
             <Icon
-              icon={
-                header?.icon ??
-                (target.type === "solver" ? "lucide:bot" : "lucide:git-fork")
-              }
+              icon={header?.icon ?? (target.type === "solver" ? "lucide:bot" : "lucide:git-fork")}
               width="16"
               aria-hidden="true"
             />
@@ -295,18 +262,11 @@ export function ConversationPanel({
                 className={stopping ? "animate-spin" : "fill-current"}
                 aria-hidden="true"
               />
-              <span className="max-lg:sr-only">
-                {stopping ? "正在中止" : "中止"}
-              </span>
+              <span className="max-lg:sr-only">{stopping ? "正在中止" : "中止"}</span>
             </Button>
           ) : null}
           {exportUrl ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="shrink-0 max-lg:px-2"
-              asChild
-            >
+            <Button variant="ghost" size="sm" className="shrink-0 max-lg:px-2" asChild>
               <a href={exportUrl} target="_blank" rel="noreferrer">
                 <Icon icon="lucide:file-code-2" width="15" aria-hidden="true" />
                 <span className="max-lg:sr-only">查看 HTML</span>
@@ -325,9 +285,7 @@ export function ConversationPanel({
         <div className="mx-auto w-full max-w-5xl">
           {loading ? <ConversationSkeleton /> : null}
           {error ? <ErrorNotice message={error} className="mb-4" /> : null}
-          {actionError ? (
-            <ErrorNotice message={actionError} className="mb-4" />
-          ) : null}
+          {actionError ? <ErrorNotice message={actionError} className="mb-4" /> : null}
           {!loading && messages.length === 0 ? (
             isRunActive ? (
               <WorkingEmptyState label={status.text} />
@@ -335,20 +293,13 @@ export function ConversationPanel({
               <EmptyState
                 icon="lucide:message-circle-dashed"
                 title="尚无 Agent 对话"
-                description={
-                  emptyDescription ?? "这个 Attempt 还没有生成可查看的回复。"
-                }
+                description={emptyDescription ?? "这个 Attempt 还没有生成可查看的回复。"}
               />
             )
           ) : null}
-          <div
-            className="flex flex-col gap-6"
-            aria-live="polite"
-            aria-relevant="additions text"
-          >
+          <div className="flex flex-col gap-6" aria-live="polite" aria-relevant="additions text">
             {messages.map(({ entryId, message: item, timestamp }, index) => {
-              const streaming =
-                entryId === `live:${activity.streamingMessageId ?? ""}`
+              const streaming = entryId === `live:${activity.streamingMessageId ?? ""}`
               return (
                 <article
                   key={entryId}
@@ -359,10 +310,7 @@ export function ConversationPanel({
                       : "w-full pl-5 before:absolute before:top-1 before:bottom-1 before:left-0 before:w-px before:bg-border",
                   )}
                 >
-                  <MessageMeta
-                    role={item.role}
-                    timestamp={absoluteTime(timestamp)}
-                  />
+                  <MessageMeta role={item.role} timestamp={absoluteTime(timestamp)} />
                   <MessageBody
                     message={item}
                     streaming={streaming}
@@ -383,9 +331,7 @@ export function ConversationPanel({
             type="button"
             onClick={scrollToBottom}
             className="animate-in fade-in-0 slide-in-from-bottom-2 relative inline-flex size-9 -translate-y-5 items-center justify-center rounded-full border border-border/80 bg-card/80 text-foreground opacity-80 shadow-md backdrop-blur-sm transition-[transform,opacity,border-color,background-color] duration-200 hover:-translate-y-[1.375rem] hover:border-primary/40 hover:bg-card hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:animate-none motion-reduce:transition-none"
-            aria-label={
-              newBelow > 0 ? `回到底部，${newBelow} 条新内容` : "回到底部"
-            }
+            aria-label={newBelow > 0 ? `回到底部，${newBelow} 条新内容` : "回到底部"}
           >
             <Icon icon="lucide:arrow-down" width="15" aria-hidden="true" />
             {newBelow > 0 ? (
@@ -409,9 +355,7 @@ export function ConversationPanel({
               onChange={(event) => setMessage(event.target.value)}
               placeholder={
                 composerPlaceholder ??
-                (isRunActive
-                  ? "给 Agent 补充方向或要求…"
-                  : "发送消息以继续这个 Attempt…")
+                (isRunActive ? "给 Agent 补充方向或要求…" : "发送消息以继续这个 Attempt…")
               }
               rows={1}
               name="agent-message"
@@ -510,10 +454,7 @@ function ConversationSkeleton(): React.ReactElement {
 
 function WorkingEmptyState({ label }: { label: string }): React.ReactElement {
   return (
-    <div
-      className="flex min-h-52 flex-col items-center justify-center text-center"
-      role="status"
-    >
+    <div className="flex min-h-52 flex-col items-center justify-center text-center" role="status">
       <span className="relative mb-4 flex size-10 items-center justify-center rounded-xl border border-primary/25 bg-primary/5 text-primary">
         <Icon icon="lucide:bot" width="18" aria-hidden="true" />
         <span className="absolute inset-0 animate-ping-soft rounded-xl border border-primary/30" />

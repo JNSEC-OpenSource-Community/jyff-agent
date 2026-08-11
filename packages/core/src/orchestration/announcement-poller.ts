@@ -47,9 +47,7 @@ export class AnnouncementPoller {
       this.failureCount += 1
       this.options.onError?.(error)
       const maximum = this.options.maximumBackoffMs ?? interval * 16
-      this.schedule(
-        Math.min(maximum, interval * 2 ** Math.min(this.failureCount, 8)),
-      )
+      this.schedule(Math.min(maximum, interval * 2 ** Math.min(this.failureCount, 8)))
     }
   }
 }

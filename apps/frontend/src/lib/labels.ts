@@ -1,24 +1,21 @@
-import type { DashboardChallengeStatus } from "../types.ts"
-
-export const STATUS_LABELS: Record<DashboardChallengeStatus | string, string> =
-  {
-    queued: "队列中",
-    pending: "未调度",
-    preparing: "准备中",
-    running: "执行中",
-    blocking: "正在收尾",
-    writing_writeup: "正在编写 Writeup",
-    solved: "已解出",
-    excluded: "不调度",
-    failed: "失败",
-    timed_out: "已超时",
-    cancelled: "已取消",
-    interrupted: "已中断",
-    blocked: "需人工介入",
-    closed: "已关闭",
-    completed: "已完成",
-    aborted: "已终止",
-  }
+export const STATUS_LABELS: Record<string, string> = {
+  queued: "队列中",
+  pending: "未调度",
+  preparing: "准备中",
+  running: "执行中",
+  blocking: "正在收尾",
+  writing_writeup: "正在编写 Writeup",
+  solved: "已解出",
+  excluded: "不调度",
+  failed: "失败",
+  timed_out: "已超时",
+  cancelled: "已取消",
+  interrupted: "已中断",
+  blocked: "需人工介入",
+  closed: "已关闭",
+  completed: "已完成",
+  aborted: "已终止",
+}
 
 export const EVENT_LABELS: Record<string, string> = {
   run_created: "已创建本次尝试",

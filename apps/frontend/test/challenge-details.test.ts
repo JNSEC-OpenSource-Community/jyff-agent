@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { useChallengeDetails } from "../src/hooks/useChallengeDetails.ts"
 import { useSse } from "../src/hooks/useSse.ts"
 
@@ -82,7 +82,7 @@ describe("useChallengeDetails", () => {
       details("two", "other project"),
     ]
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      const url = String(input)
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       if (init?.method === "POST") {
         expect(url).toBe("/api/projects/one/challenges/web-1/dispatch")
         return jsonResponse({})
@@ -118,21 +118,11 @@ describe("useChallengeDetails", () => {
     )
     expect(await screen.findByText("other project")).toBeTruthy()
     expect(first.close).toHaveBeenCalledOnce()
-    await waitFor(() =>
-      expect(FakeEventSource.instances[1]?.url).toBe(
-        "/api/projects/two/events",
-      ),
-    )
+    await waitFor(() => expect(FakeEventSource.instances[1]?.url).toBe("/api/projects/two/events"))
   })
 })
 
-function SseProbe({
-  url,
-  onSnapshot,
-}: {
-  url: string
-  onSnapshot(value: unknown): void
-}) {
+function SseProbe({ url, onSnapshot }: { url: string; onSnapshot: (value: unknown) => void }) {
   useSse(url, { snapshot: onSnapshot })
   return null
 }
@@ -144,10 +134,7 @@ function ChallengeDetailsProbe({
   projectId: string
   challengeId: string
 }) {
-  const { details, challengeAction } = useChallengeDetails(
-    projectId,
-    challengeId,
-  )
+  const { details, challengeAction } = useChallengeDetails(projectId, challengeId)
   return createElement(
     "div",
     null,

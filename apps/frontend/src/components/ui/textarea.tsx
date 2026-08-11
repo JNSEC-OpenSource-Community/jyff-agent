@@ -1,10 +1,7 @@
 import type * as React from "react"
 import { cn } from "#lib/utils"
 
-function Textarea({
-  className,
-  ...props
-}: React.ComponentProps<"textarea">): React.ReactElement {
+function Textarea({ className, ...props }: React.ComponentProps<"textarea">): React.ReactElement {
   return (
     <textarea
       data-slot="textarea"

@@ -7,11 +7,7 @@ import {
   WRITEUP_PROMPT,
 } from "@ctf-agent/prompts"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import type {
-  RunRecord,
-  RunSource,
-  SchedulerQueueRecord,
-} from "../persistence/run-store.ts"
+import type { RunRecord, RunSource, SchedulerQueueRecord } from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
 import {
   ChallengeTimeoutError,
@@ -22,10 +18,7 @@ import {
 import { classifySolverStop } from "./stop-classifier.ts"
 import { validateChallengeWriteup } from "./writeup-validator.ts"
 
-export type SchedulerQueueSource = Extract<
-  RunSource,
-  "auto" | "manual" | "retry" | "revival"
->
+export type SchedulerQueueSource = Extract<RunSource, "auto" | "manual" | "retry" | "revival">
 export type SchedulerPhase = "preparing" | "running" | "cancelling"
 
 export interface ContestSchedulerOptions {
@@ -39,13 +32,9 @@ export interface ContestSchedulerOptions {
   transientRetryDelaysMs?: readonly [number, number, number]
   /** Flag accepted 后执行 writeup turn；生产调度应开启。 */
   writeup?: boolean
-  createAgentOptions(
-    context: SchedulerAttemptContext,
-  ): AgentOptions | Promise<AgentOptions>
+  createAgentOptions(context: SchedulerAttemptContext): AgentOptions | Promise<AgentOptions>
   compaction?: CreateSolverOptions["compaction"]
-  prompt?:
-    | string
-    | ((context: SchedulerAttemptContext) => string | Promise<string>)
+  prompt?: string | ((context: SchedulerAttemptContext) => string | Promise<string>)
   availability?: () => SchedulerAvailability
   available?: boolean
   unavailableReason?: string
@@ -146,9 +135,7 @@ interface ActiveItem {
   cancelRetryDelay?: () => void
 }
 
-export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [
-  10_000, 60_000, 300_000,
-] as const
+export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const
 
 /**
  * 长驻的混合调度控制面：
@@ -175,20 +162,11 @@ export class ContestScheduler {
     positiveInteger(options.maxConcurrent, "maxConcurrent")
     this.maxConcurrent = options.maxConcurrent
     positiveInteger(options.maxAttempts ?? 2, "maxAttempts")
-    positiveInteger(
-      options.maxSessionInterruptions ?? 3,
-      "maxSessionInterruptions",
-    )
-    positiveInteger(
-      options.challengeTimeoutMs ?? 30 * 60_000,
-      "challengeTimeoutMs",
-    )
+    positiveInteger(options.maxSessionInterruptions ?? 3, "maxSessionInterruptions")
+    positiveInteger(options.challengeTimeoutMs ?? 30 * 60_000, "challengeTimeoutMs")
     nonNegativeInteger(options.abortGraceMs ?? 5_000, "abortGraceMs")
     nonNegativeInteger(options.retryDelayMs ?? 2_000, "retryDelayMs")
-    nonNegativeInteger(
-      options.infrastructureRetryDelayMs ?? 15_000,
-      "infrastructureRetryDelayMs",
-    )
+    nonNegativeInteger(options.infrastructureRetryDelayMs ?? 15_000, "infrastructureRetryDelayMs")
     for (const [index, delay] of (
       options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
     ).entries()) {
@@ -242,8 +220,7 @@ export class ContestScheduler {
     this.autoEnabled = false
     this.queueGeneration += 1
     for (const item of this.queue) {
-      if (!item.resumeRun)
-        this.project.removeSchedulerChallenge(item.challenge.id)
+      if (!item.resumeRun) this.project.removeSchedulerChallenge(item.challenge.id)
     }
     this.queue.length = 0
     return this.snapshot()
@@ -262,9 +239,7 @@ export class ContestScheduler {
     return this.snapshot()
   }
 
-  async setMaxConcurrent(
-    maxConcurrent: number,
-  ): Promise<ContestSchedulerSnapshot> {
+  async setMaxConcurrent(maxConcurrent: number): Promise<ContestSchedulerSnapshot> {
     this.assertAvailable()
     this.assertNotShuttingDown()
     positiveInteger(maxConcurrent, "maxConcurrent")
@@ -277,18 +252,12 @@ export class ContestScheduler {
   }
 
   async reconcile(): Promise<ContestSchedulerSnapshot> {
-    if (
-      !this.autoEnabled ||
-      this.shuttingDown ||
-      !this.availability().available
-    ) {
+    if (!this.autoEnabled || this.shuttingDown || !this.availability().available) {
       return this.snapshot()
     }
     await this.project.refresh()
     const challenges = deduplicate(await this.project.challenges())
-    const byId = new Map(
-      challenges.map((challenge) => [challenge.id, challenge]),
-    )
+    const byId = new Map(challenges.map((challenge) => [challenge.id, challenge]))
 
     for (const persisted of this.project.schedulerQueue()) {
       const challenge = byId.get(persisted.challengeId)
@@ -307,8 +276,7 @@ export class ContestScheduler {
         source: persisted.source as SchedulerQueueSource,
         lane: persisted.lane,
         manualOverride: persisted.manualOverride,
-        requiresAuto:
-          persisted.source !== "manual" && !persisted.manualOverride,
+        requiresAuto: persisted.source !== "manual" && !persisted.manualOverride,
         enqueuedAt: persisted.enqueuedAt,
         version: persisted.version,
       })
@@ -344,13 +312,9 @@ export class ContestScheduler {
             !this.hasChallenge(challenge.id),
         )
         .sort((left, right) => {
-          const leftAt =
-            this.project.challengeRuntimeState(left.id).blockedAt ?? ""
-          const rightAt =
-            this.project.challengeRuntimeState(right.id).blockedAt ?? ""
-          return (
-            leftAt.localeCompare(rightAt) || left.id.localeCompare(right.id)
-          )
+          const leftAt = this.project.challengeRuntimeState(left.id).blockedAt ?? ""
+          const rightAt = this.project.challengeRuntimeState(right.id).blockedAt ?? ""
+          return leftAt.localeCompare(rightAt) || left.id.localeCompare(right.id)
         })
       for (const challenge of blocked) {
         this.enqueueChallenge(challenge, "revival", "blocked", false, true)
@@ -367,10 +331,7 @@ export class ContestScheduler {
     this.assertAvailable()
     this.assertNotShuttingDown()
     if (this.active.has(challengeId)) {
-      throw new ContestSchedulerError(
-        "already_active",
-        "该题已有正在运行的 Agent",
-      )
+      throw new ContestSchedulerError("already_active", "该题已有正在运行的 Agent")
     }
     if (this.queue.some((item) => item.challenge.id === challengeId)) {
       throw new ContestSchedulerError("already_queued", "该题已经在调度队列中")
@@ -380,13 +341,9 @@ export class ContestScheduler {
       (candidate) => candidate.id === challengeId,
     )
     if (!challenge) {
-      throw new ContestSchedulerError(
-        "challenge_not_found",
-        `平台不存在题目: ${challengeId}`,
-      )
+      throw new ContestSchedulerError("challenge_not_found", `平台不存在题目: ${challengeId}`)
     }
-    const schedulingDisposition =
-      this.project.challengeSchedulingDisposition(challengeId)
+    const schedulingDisposition = this.project.challengeSchedulingDisposition(challengeId)
     if (schedulingDisposition) {
       throw new ContestSchedulerError(
         "excluded",
@@ -395,13 +352,9 @@ export class ContestScheduler {
           : "该题已标记为不调度；请先恢复默认调度状态",
       )
     }
-    const solved =
-      challenge.solved || this.project.isChallengeSolved(challengeId)
+    const solved = challenge.solved || this.project.isChallengeSolved(challengeId)
     if (solved && !options.force) {
-      throw new ContestSchedulerError(
-        "already_solved",
-        "该题已经解出；重新验证需要显式 force",
-      )
+      throw new ContestSchedulerError("already_solved", "该题已经解出；重新验证需要显式 force")
     }
     const blocked = this.project.isChallengeBlocked(challengeId)
     if (blocked && !options.force) {
@@ -438,10 +391,7 @@ export class ContestScheduler {
       )
     }
     if (this.active.has(run.challengeId)) {
-      throw new ContestSchedulerError(
-        "already_active",
-        "该题已有正在运行的 Agent",
-      )
+      throw new ContestSchedulerError("already_active", "该题已有正在运行的 Agent")
     }
     if (this.queue.some((item) => item.challenge.id === run.challengeId)) {
       throw new ContestSchedulerError("already_queued", "该题已经在调度队列中")
@@ -455,16 +405,10 @@ export class ContestScheduler {
       (candidate) => candidate.id === run.challengeId,
     )
     if (!challenge) {
-      throw new ContestSchedulerError(
-        "challenge_not_found",
-        `平台不存在题目: ${run.challengeId}`,
-      )
+      throw new ContestSchedulerError("challenge_not_found", `平台不存在题目: ${run.challengeId}`)
     }
     if (this.project.challengeSchedulingDisposition(run.challengeId)) {
-      throw new ContestSchedulerError(
-        "excluded",
-        "该题已设置人工调度状态；请先恢复默认调度状态",
-      )
+      throw new ContestSchedulerError("excluded", "该题已设置人工调度状态；请先恢复默认调度状态")
     }
     if (challenge.solved || this.project.isChallengeSolved(run.challengeId)) {
       throw new ContestSchedulerError("already_solved", "该题已经解出")
@@ -493,14 +437,9 @@ export class ContestScheduler {
       overrideBlockedLane?: boolean
     },
   ): ContestSchedulerSnapshot {
-    const item = this.queue.find(
-      (candidate) => candidate.challenge.id === challengeId,
-    )
+    const item = this.queue.find((candidate) => candidate.challenge.id === challengeId)
     if (!item) {
-      throw new ContestSchedulerError(
-        "challenge_not_found",
-        `题目不在调度队列中: ${challengeId}`,
-      )
+      throw new ContestSchedulerError("challenge_not_found", `题目不在调度队列中: ${challengeId}`)
     }
     if (item.resumeRun) {
       if (item.version !== options.expectedVersion) {
@@ -511,10 +450,7 @@ export class ContestScheduler {
       }
       const from = this.queue.indexOf(item)
       this.queue.splice(from, 1)
-      const target = Math.max(
-        0,
-        Math.min(this.queue.length, options.position - 1),
-      )
+      const target = Math.max(0, Math.min(this.queue.length, options.position - 1))
       this.queue.splice(target, 0, item)
       item.version += 1
       return this.snapshot()
@@ -529,10 +465,7 @@ export class ContestScheduler {
       })
     } catch (error) {
       if (errorText(error).includes("version conflict")) {
-        throw new ContestSchedulerError(
-          "queue_version_conflict",
-          errorText(error),
-        )
+        throw new ContestSchedulerError("queue_version_conflict", errorText(error))
       }
       throw error
     }
@@ -541,9 +474,7 @@ export class ContestScheduler {
     item.requiresAuto = item.requiresAuto && !moved.manualOverride
     const persisted = this.project.schedulerQueue()
     this.syncPersistedQueueMetadata(persisted)
-    const order = new Map(
-      persisted.map((record, index) => [record.challengeId, index]),
-    )
+    const order = new Map(persisted.map((record, index) => [record.challengeId, index]))
     this.queue.sort(
       (left, right) =>
         (order.get(left.challenge.id) ?? Number.MAX_SAFE_INTEGER) -
@@ -575,13 +506,10 @@ export class ContestScheduler {
   }
 
   async cancel(challengeId: string): Promise<ContestSchedulerSnapshot> {
-    const queueIndex = this.queue.findIndex(
-      (item) => item.challenge.id === challengeId,
-    )
+    const queueIndex = this.queue.findIndex((item) => item.challenge.id === challengeId)
     if (queueIndex >= 0) {
       const [removed] = this.queue.splice(queueIndex, 1)
-      if (!removed?.resumeRun)
-        this.project.removeSchedulerChallenge(challengeId)
+      if (!removed?.resumeRun) this.project.removeSchedulerChallenge(challengeId)
       return this.snapshot()
     }
     const active = this.active.get(challengeId)
@@ -589,7 +517,7 @@ export class ContestScheduler {
     active.cancelRequested = true
     active.phase = "cancelling"
     active.cancelRetryDelay?.()
-    active.solver?.abort()
+    await active.solver?.abort()
     if (active.solver) await active.solver.close("cancelled", "由控制面取消")
     await active.operation?.catch(() => undefined)
     return this.snapshot()
@@ -600,9 +528,7 @@ export class ContestScheduler {
       await Promise.allSettled(
         [...this.active.values()]
           .map((item) => item.operation)
-          .filter(
-            (operation): operation is Promise<void> => operation !== undefined,
-          ),
+          .filter((operation): operation is Promise<void> => operation !== undefined),
       )
       return
     }
@@ -614,7 +540,7 @@ export class ContestScheduler {
       item.cancelRequested = true
       item.phase = "cancelling"
       item.cancelRetryDelay?.()
-      item.solver?.abort()
+      await item.solver?.abort()
     }
     await Promise.allSettled(
       active.map(async (item) => {
@@ -626,23 +552,16 @@ export class ContestScheduler {
 
   private hasChallenge(challengeId: string): boolean {
     return (
-      this.active.has(challengeId) ||
-      this.queue.some((item) => item.challenge.id === challengeId)
+      this.active.has(challengeId) || this.queue.some((item) => item.challenge.id === challengeId)
     )
   }
 
   private pump(): void {
-    if (this.pumping || this.shuttingDown || !this.availability().available)
-      return
+    if (this.pumping || this.shuttingDown || !this.availability().available) return
     this.pumping = true
     try {
-      while (
-        this.active.size < this.maxConcurrent &&
-        this.availability().available
-      ) {
-        const index = this.queue.findIndex(
-          (item) => !item.requiresAuto || this.autoEnabled,
-        )
+      while (this.active.size < this.maxConcurrent && this.availability().available) {
+        const index = this.queue.findIndex((item) => !item.requiresAuto || this.autoEnabled)
         if (index < 0) break
         const [item] = this.queue.splice(index, 1)
         if (!item) break
@@ -678,9 +597,7 @@ export class ContestScheduler {
   }
 
   private async runItem(active: ActiveItem): Promise<void> {
-    const schedulerAttemptsBefore = this.project.schedulerAttemptCount(
-      active.challenge.id,
-    )
+    const schedulerAttemptsBefore = this.project.schedulerAttemptCount(active.challenge.id)
     let failureReason: SolverCloseReason | undefined
     let failureMessage: string | undefined
     let retryableFailure = false
@@ -692,10 +609,7 @@ export class ContestScheduler {
     const transientRetryDelays =
       this.options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
 
-    if (
-      active.lane === "blocked" &&
-      this.project.isChallengeBlocked(active.challenge.id)
-    ) {
+    if (active.lane === "blocked" && this.project.isChallengeBlocked(active.challenge.id)) {
       this.project.reviveChallenge(active.challenge.id)
     }
 
@@ -704,8 +618,7 @@ export class ContestScheduler {
       try {
         if (!solver) {
           const resumed = active.resumeRun
-          active.attempt =
-            resumed?.attempt ?? this.project.nextAttempt(active.challenge.id)
+          active.attempt = resumed?.attempt ?? this.project.nextAttempt(active.challenge.id)
           const source: SchedulerQueueSource = resumed
             ? "retry"
             : continuation
@@ -746,13 +659,10 @@ export class ContestScheduler {
         }
         const pressure = await solver.contextPressure()
         if (pressure.shouldCompact) {
-          const runtime = this.project.challengeRuntimeState(
-            active.challenge.id,
-          )
+          const runtime = this.project.challengeRuntimeState(active.challenge.id)
           const eventKey = `${solver.runId}:compact:${this.project.runEvents(solver.runId).length}`
           const canCompact =
-            !runtime.blocked &&
-            runtime.blockScore + 2 <= runtime.effectiveBlockThreshold
+            !runtime.blocked && runtime.blockScore + 2 <= runtime.effectiveBlockThreshold
           if (!canCompact) {
             const blockEvent = this.project.recordChallengeBlockEvent({
               challengeId: active.challenge.id,
@@ -787,15 +697,11 @@ export class ContestScheduler {
               reason: "compaction_failed",
               compactPerformed: false,
             })
-            this.project.appendRunEvent(
-              solver.runId,
-              "block_finalization_failed",
-              {
-                eventKey,
-                scoreAfter: blockEvent.scoreAfter,
-                error: errorText(error),
-              },
-            )
+            this.project.appendRunEvent(solver.runId, "block_finalization_failed", {
+              eventKey,
+              scoreAfter: blockEvent.scoreAfter,
+              error: errorText(error),
+            })
             await this.finalizeBlockedRun(active, solver, errorText(error))
             solver = undefined
             active.solver = undefined
@@ -814,10 +720,7 @@ export class ContestScheduler {
             compactPerformed: true,
             scoreAfter: blockEvent.scoreAfter,
           })
-          compactRecovery = this.project.compactRecoveryPrompt(
-            active.challenge.id,
-            solver.runId,
-          )
+          compactRecovery = this.project.compactRecoveryPrompt(active.challenge.id, solver.runId)
         }
         const retryPrompt = active.retryPrompt
         active.retryPrompt = undefined
@@ -834,9 +737,7 @@ export class ContestScheduler {
                   },
                 )
               : (this.options.prompt ?? "Start solving this CTF challenge."))
-        const prompt = compactRecovery
-          ? `${compactRecovery}\n\n${nextPrompt}`
-          : nextPrompt
+        const prompt = compactRecovery ? `${compactRecovery}\n\n${nextPrompt}` : nextPrompt
         compactRecovery = undefined
         const promptRunId = solver.runId
         const outcome = await runSolverPrompt({
@@ -844,8 +745,7 @@ export class ContestScheduler {
           prompt,
           timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
           abortGraceMs: this.options.abortGraceMs ?? 5_000,
-          pauseTimeout: () =>
-            this.project.isWaitingForRemoteEnvironment(promptRunId),
+          pauseTimeout: () => this.project.isWaitingForRemoteEnvironment(promptRunId),
         })
         if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
           if (this.options.writeup === true) {
@@ -871,8 +771,7 @@ export class ContestScheduler {
         if (classification.blockDelta === 0) {
           const message = `${classification.kind}: ${classification.detail ?? outcome.stopReason}`
           const retryDelay = transientRetryDelays[transientRetries]
-          const retryScheduled =
-            classification.retryable && retryDelay !== undefined
+          const retryScheduled = classification.retryable && retryDelay !== undefined
           this.project.appendRunEvent(solver.runId, "run_transient_failure", {
             retryable: classification.retryable,
             reason: classification.kind,
@@ -902,8 +801,7 @@ export class ContestScheduler {
 
         sameRunStops += 1
         const interruptionCount =
-          this.project.sessionInterruptionCount(active.challenge.id) +
-          sameRunStops
+          this.project.sessionInterruptionCount(active.challenge.id) + sameRunStops
         const maximum = this.options.maxSessionInterruptions ?? 3
         const eventKey = `${solver.runId}:stop:${this.project.runEvents(solver.runId).length}`
         const blockEvent = this.project.recordChallengeBlockEvent({
@@ -1006,8 +904,7 @@ export class ContestScheduler {
           })
           sameRunStops += 1
           const interruptionCount =
-            this.project.sessionInterruptionCount(active.challenge.id) +
-            sameRunStops
+            this.project.sessionInterruptionCount(active.challenge.id) + sameRunStops
           const maximum = this.options.maxSessionInterruptions ?? 3
           if (
             blockEvent.scoreAfter <= blockEvent.threshold &&
@@ -1030,11 +927,7 @@ export class ContestScheduler {
           )
         }
         if (failureReason === "blocked" && solver && !solver.isClosed) {
-          await this.finalizeBlockedRun(
-            active,
-            solver,
-            failureMessage ?? "blocked",
-          )
+          await this.finalizeBlockedRun(active, solver, failureMessage ?? "blocked")
           solver = undefined
         } else if (solver && !solver.isClosed) {
           await solver.close(failureReason, failureMessage)
@@ -1048,16 +941,13 @@ export class ContestScheduler {
 
     if (active.cancelRequested || this.shuttingDown) return
 
-    const schedulerAttemptsAfter = this.project.schedulerAttemptCount(
-      active.challenge.id,
-    )
+    const schedulerAttemptsAfter = this.project.schedulerAttemptCount(active.challenge.id)
     if (
       failureReason !== "cancelled" &&
       (retryableFailure || schedulerAttemptsAfter > schedulerAttemptsBefore) &&
       !this.shuttingDown &&
       active.queueGeneration === this.queueGeneration &&
-      (retryableFailure ||
-        schedulerAttemptsAfter < (this.options.maxAttempts ?? 2)) &&
+      (retryableFailure || schedulerAttemptsAfter < (this.options.maxAttempts ?? 2)) &&
       !this.project.isChallengeSolved(active.challenge.id) &&
       !this.project.isChallengeBlocked(active.challenge.id)
     ) {
@@ -1066,10 +956,7 @@ export class ContestScheduler {
       }
       const configuredDelay = this.options.retryDelayMs ?? 2_000
       const delay = retryableFailure
-        ? Math.max(
-            this.options.infrastructureRetryDelayMs ?? 15_000,
-            configuredDelay,
-          )
+        ? Math.max(this.options.infrastructureRetryDelayMs ?? 15_000, configuredDelay)
         : configuredDelay
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
       if (
@@ -1078,23 +965,14 @@ export class ContestScheduler {
         active.queueGeneration === this.queueGeneration &&
         !this.queue.some((item) => item.challenge.id === active.challenge.id)
       ) {
-        this.enqueueChallenge(
-          active.challenge,
-          "retry",
-          active.lane,
-          false,
-          active.requiresAuto,
-        )
+        this.enqueueChallenge(active.challenge, "retry", active.lane, false, active.requiresAuto)
       }
     } else if (failureMessage && failureReason !== "cancelled") {
       this.lastError = `${active.challenge.title}: ${failureMessage}`
     }
   }
 
-  private async writeupAfterSubmission(
-    active: ActiveItem,
-    solver: CtfSolverAgent,
-  ): Promise<void> {
+  private async writeupAfterSubmission(active: ActiveItem, solver: CtfSolverAgent): Promise<void> {
     await this.project.markRunWritingWriteup(solver.runId)
     await solver.prepareWriteup()
     let prompt = WRITEUP_PROMPT
@@ -1103,10 +981,7 @@ export class ContestScheduler {
       const outcome = await runSolverPrompt({
         solver,
         prompt,
-        timeoutMs: Math.min(
-          this.options.challengeTimeoutMs ?? 120_000,
-          120_000,
-        ),
+        timeoutMs: Math.min(this.options.challengeTimeoutMs ?? 120_000, 120_000),
         abortGraceMs: this.options.abortGraceMs ?? 5_000,
         ignoreExistingSubmission: true,
       })
@@ -1178,8 +1053,7 @@ export class ContestScheduler {
         return
       }
       if (outcome.stopReason === "error" || outcome.stopReason === "aborted") {
-        finalizationError =
-          outcome.error ?? `Final turn stopped: ${outcome.stopReason}`
+        finalizationError = outcome.error ?? `Final turn stopped: ${outcome.stopReason}`
         this.project.appendRunEvent(solver.runId, "block_finalization_failed", {
           trigger,
           error: finalizationError,
@@ -1226,12 +1100,8 @@ export class ContestScheduler {
     else this.queue.push(item)
   }
 
-  private waitForRetryDelay(
-    active: ActiveItem,
-    delayMs: number,
-  ): Promise<boolean> {
-    if (active.cancelRequested || this.shuttingDown)
-      return Promise.resolve(false)
+  private waitForRetryDelay(active: ActiveItem, delayMs: number): Promise<boolean> {
+    if (active.cancelRequested || this.shuttingDown) return Promise.resolve(false)
     if (delayMs === 0) {
       return Promise.resolve(true)
     }
@@ -1255,10 +1125,7 @@ export class ContestScheduler {
   private assertAvailable(): void {
     const availability = this.availability()
     if (availability.available) return
-    throw new ContestSchedulerError(
-      "unavailable",
-      availability.unavailableReason ?? "调度器未配置",
-    )
+    throw new ContestSchedulerError("unavailable", availability.unavailableReason ?? "调度器未配置")
   }
 
   private availability(): SchedulerAvailability {
@@ -1283,9 +1150,7 @@ export class ContestScheduler {
   }
 }
 
-function deduplicate(
-  challenges: readonly ChallengeSummary[],
-): ChallengeSummary[] {
+function deduplicate(challenges: readonly ChallengeSummary[]): ChallengeSummary[] {
   const unique = new Map<string, ChallengeSummary>()
   for (const challenge of challenges)
     if (!unique.has(challenge.id)) unique.set(challenge.id, challenge)
@@ -1302,13 +1167,11 @@ const RETRYABLE_RUN_STATUSES = new Set<RunRecord["status"]>([
 ])
 
 function positiveInteger(value: number, field: string): void {
-  if (!Number.isInteger(value) || value <= 0)
-    throw new Error(`${field} 必须是正整数`)
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${field} 必须是正整数`)
 }
 
 function nonNegativeInteger(value: number, field: string): void {
-  if (!Number.isInteger(value) || value < 0)
-    throw new Error(`${field} 必须是非负整数`)
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${field} 必须是非负整数`)
 }
 
 function errorText(error: unknown): string {

@@ -18,9 +18,7 @@ import type { Services } from "../services.ts"
 import { sseRoute } from "../sse/events.ts"
 
 function authenticationOf(services: Services) {
-  return (
-    services.authentication?.snapshot() ?? { enabled: false, username: null }
-  )
+  return services.authentication?.snapshot() ?? { enabled: false, username: null }
 }
 
 function setupFromBody(body: Record<string, unknown>): {
@@ -34,11 +32,7 @@ function setupFromBody(body: Record<string, unknown>): {
     throw new HttpError(400, "invalid_project_config", errorText(error))
   }
   if (body.secrets === undefined) return { config }
-  if (
-    typeof body.secrets !== "object" ||
-    body.secrets === null ||
-    Array.isArray(body.secrets)
-  ) {
+  if (typeof body.secrets !== "object" || body.secrets === null || Array.isArray(body.secrets)) {
     throw new HttpError(400, "invalid_secrets", "secrets 必须是字符串键值对象")
   }
   const secrets: Record<string, string | undefined> = {}
@@ -65,8 +59,7 @@ export function healthRoutes(services: Services): App {
       controlPlane: services.controlPlane?.snapshot() ?? null,
       scheduler: services.currentScheduler()?.snapshot() ?? null,
       modelConfiguration: services.modelConfiguration?.snapshot() ?? null,
-      modelAuthentication:
-        (await services.modelAuthentication?.snapshot()) ?? null,
+      modelAuthentication: (await services.modelAuthentication?.snapshot()) ?? null,
       authentication: { ...authentication, authenticated },
     })
   })
@@ -93,14 +86,8 @@ export function systemRoutes(services: Services): App {
       code: "invalid_login",
     })
     try {
-      const session = await services.authentication.login(
-        body.username,
-        body.password,
-      )
-      c.header(
-        "Set-Cookie",
-        sessionCookie(session.token, c.get("secureCookies")),
-      )
+      const session = await services.authentication.login(body.username, body.password)
+      c.header("Set-Cookie", sessionCookie(session.token, c.get("secureCookies")))
       return c.json({
         authenticated: true,
         username: session.username,
@@ -121,8 +108,7 @@ export function systemRoutes(services: Services): App {
     return c.json({
       authentication: authenticationOf(services),
       modelConfiguration: services.modelConfiguration?.snapshot() ?? null,
-      modelAuthentication:
-        (await services.modelAuthentication?.snapshot()) ?? null,
+      modelAuthentication: (await services.modelAuthentication?.snapshot()) ?? null,
       webAccess: services.webAccessConfiguration
         ? await services.webAccessConfiguration.snapshot()
         : null,
@@ -131,11 +117,7 @@ export function systemRoutes(services: Services): App {
 
   app.post("/global-config/authentication", async (c) => {
     if (!services.authentication) {
-      throw new HttpError(
-        404,
-        "authentication_unavailable",
-        "当前 WebUI 未配置鉴权存储",
-      )
+      throw new HttpError(404, "authentication_unavailable", "当前 WebUI 未配置鉴权存储")
     }
     const body = await parseJsonBody(c, webUiAuthenticationSchema, {
       code: "invalid_authentication_configuration",
@@ -147,19 +129,13 @@ export function systemRoutes(services: Services): App {
           ...(body.enabled
             ? {
                 username: body.username ?? "",
-                ...(body.password === undefined
-                  ? {}
-                  : { password: body.password }),
+                ...(body.password === undefined ? {} : { password: body.password }),
               }
             : {}),
         }),
       )
     } catch (error) {
-      throw new HttpError(
-        400,
-        "invalid_authentication_configuration",
-        errorText(error),
-      )
+      throw new HttpError(400, "invalid_authentication_configuration", errorText(error))
     }
   })
 

@@ -1,11 +1,7 @@
 import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
 import type { ExtractedContent, ExtractOptions } from "./extract.ts"
-import {
-  providerKeyConfigured,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import { providerKeyConfigured, providerOption, resolveProviderKey } from "./runtime.ts"
 import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts"
 
 const DEFAULT_API_VERSION = "v2"
@@ -20,8 +16,7 @@ export interface FirecrawlSsrfOptions {
   trustEnvProxy: boolean
 }
 
-export interface FirecrawlExtractOptions
-  extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
+export interface FirecrawlExtractOptions extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
   ssrf?: FirecrawlSsrfOptions
 }
 
@@ -128,9 +123,7 @@ function ssrfOptions(options?: FirecrawlExtractOptions): {
   }
 }
 
-function withoutSensitiveHeaders(
-  headers: Record<string, string>,
-): Record<string, string> {
+function withoutSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
   const next = { ...headers }
   delete next.Authorization
   delete next.authorization
@@ -166,12 +159,8 @@ async function fetchFirecrawlApi(
     if (redirects === DEFAULT_MAX_REDIRECTS)
       throw new Error(`Too many redirects fetching ${current.toString()}`)
 
-    const next = await validateRemoteUrl(
-      new URL(location, current),
-      ssrfOptions(options),
-    )
-    if (next.origin !== current.origin)
-      headers = withoutSensitiveHeaders(headers)
+    const next = await validateRemoteUrl(new URL(location, current), ssrfOptions(options))
+    if (next.origin !== current.origin) headers = withoutSensitiveHeaders(headers)
     current = next
   }
   throw new Error(`Too many redirects fetching ${current.toString()}`)
@@ -223,9 +212,7 @@ async function firecrawlFetch(
     try {
       data = await response.json()
     } catch (err) {
-      throw new Error(
-        `Firecrawl scrape returned invalid JSON: ${errorMessage(err)}`,
-      )
+      throw new Error(`Firecrawl scrape returned invalid JSON: ${errorMessage(err)}`)
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       throw new Error("Firecrawl scrape returned an unexpected response shape")
@@ -236,9 +223,7 @@ async function firecrawlFetch(
         typeof envelope.error === "string" && envelope.error.trim()
           ? envelope.error
           : "unknown error"
-      throw new Error(
-        `Firecrawl scrape unsuccessful: ${redactCredential(reason, apiKey)}`,
-      )
+      throw new Error(`Firecrawl scrape unsuccessful: ${redactCredential(reason, apiKey)}`)
     }
     if (envelope.success !== true) {
       throw new Error("Firecrawl scrape returned an unexpected response shape")
@@ -263,12 +248,7 @@ export async function extractWithFirecrawl(
 ): Promise<ExtractedContent | null> {
   requireBaseUrl()
   await validateRemoteUrl(url, ssrfOptions(options))
-  const envelope = await firecrawlFetch(
-    "scrape",
-    scrapeBody(url),
-    signal,
-    options,
-  )
+  const envelope = await firecrawlFetch("scrape", scrapeBody(url), signal, options)
   const data = envelope.data
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error("Firecrawl scrape returned an unexpected data shape")

@@ -2,30 +2,30 @@
   "name": "ctf-agent-workspace",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",
+  "scripts": {
+    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
+    "build:webui": "vp build",
+    "check": "vp check",
+    "test": "vp test run",
+    "test:runner": "vp test run packages/core/test/runner/contest-runner.test.ts",
+    "test:watch": "vp test",
+    "webui": "vp build && node --experimental-transform-types apps/backend/src/main.ts",
+    "format": "vp fmt --write",
+    "format:check": "vp fmt --check",
+    "lint": "vp lint",
+    "lint:fix": "vp check --fix",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepare": "vp config"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
   "engines": {
     "node": ">=22.19.0"
   },
-  "scripts": {
-    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
-    "build:webui": "pnpm --filter @ctf-agent/frontend build:client",
-    "check": "biome check .",
-    "test": "vitest run",
-    "test:runner": "vitest run packages/core/test/runner/contest-runner.test.ts",
-    "test:watch": "vitest",
-    "webui": "pnpm build:webui && node --experimental-transform-types apps/backend/src/main.ts",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "lint": "biome lint .",
-    "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "webui:backend": "node --experimental-transform-types apps/backend/src/main.ts"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.5.6",
-    "@types/node": "^24.13.3",
-    "esbuild": "^0.28.1",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
-  }
+  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee"
 }

@@ -1,10 +1,6 @@
 import { join } from "node:path"
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
-import {
-  type ImageContent,
-  StringEnum,
-  type TextContent,
-} from "@earendil-works/pi-ai/compat"
+import { type ImageContent, StringEnum, type TextContent } from "@earendil-works/pi-ai/compat"
 import { Type } from "typebox"
 import { type FindMode, findContent } from "./content-find.ts"
 import { type ExtractedContent, fetchAllContent } from "./extract.ts"
@@ -158,17 +154,14 @@ function buildRuntime(config: WebAccessConfig): WebAccessRuntime {
     githubClonePath: workspaceHostPath
       ? join(workspaceHostPath, ".web-access", "github")
       : undefined,
-    pdfDir: workspaceHostPath
-      ? join(workspaceHostPath, ".web-access", "pdf")
-      : undefined,
+    pdfDir: workspaceHostPath ? join(workspaceHostPath, ".web-access", "pdf") : undefined,
     timeouts: {
       fetchMs: config.timeouts?.fetchMs ?? 30_000,
       searchMs: config.timeouts?.searchMs ?? 30_000,
       cloneMs: config.timeouts?.cloneMs ?? 30_000,
     },
     limits: {
-      maxContentSliceLength:
-        config.limits?.maxContentSliceLength ?? MAX_CONTENT_SLICE_LENGTH,
+      maxContentSliceLength: config.limits?.maxContentSliceLength ?? MAX_CONTENT_SLICE_LENGTH,
       maxInlineChars: config.limits?.maxInlineChars ?? MAX_INLINE_CONTENT,
     },
     sessionSignal: config.sessionSignal,
@@ -196,13 +189,8 @@ function normalizeQueryList(queryList: unknown[]): string[] {
   return normalized
 }
 
-function normalizeRecencyFilter(
-  value: unknown,
-): SearchOptions["recencyFilter"] | undefined {
-  return value === "day" ||
-    value === "week" ||
-    value === "month" ||
-    value === "year"
+function normalizeRecencyFilter(value: unknown): SearchOptions["recencyFilter"] | undefined {
+  return value === "day" || value === "week" || value === "month" || value === "year"
     ? value
     : undefined
 }
@@ -213,20 +201,15 @@ function resolveRequestedProvider(requested: unknown): SearchProviderSelection {
   return "auto"
 }
 
-function normalizeProviderInput(
-  value: unknown,
-): SearchProviderSelection | undefined {
+function normalizeProviderInput(value: unknown): SearchProviderSelection | undefined {
   if (value === undefined) return undefined
   if (Array.isArray(value)) {
-    const list = value.filter(
-      (entry): entry is string => typeof entry === "string",
-    )
+    const list = value.filter((entry): entry is string => typeof entry === "string")
     return list.length > 0 ? (list as ResolvedSearchProvider[]) : undefined
   }
   if (typeof value === "string") {
     const trimmed = value.trim().toLowerCase()
-    if (SEARCH_PROVIDERS.includes(trimmed as SearchProvider))
-      return trimmed as SearchProvider
+    if (SEARCH_PROVIDERS.includes(trimmed as SearchProvider)) return trimmed as SearchProvider
   }
   return undefined
 }
@@ -250,14 +233,10 @@ function searchProviderSchema(description: string) {
 
 function formatSearchSummary(results: SearchResult[], answer: string): string {
   if (results.length === 0) {
-    return answer
-      ? `${answer}\n\n---\n\n**Sources:**\nNo sources returned.`
-      : "No results found."
+    return answer ? `${answer}\n\n---\n\n**Sources:**\nNo sources returned.` : "No results found."
   }
   let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : ""
-  output += results
-    .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`)
-    .join("\n\n")
+  output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n")
   return output
 }
 
@@ -279,40 +258,30 @@ function formatSourceCheckResult(
   const assessment = artifact.claims?.[0]
   const lines = [`# Source check: ${artifact.query}`, ""]
   if (assessment) {
-    lines.push(
-      `**Status:** ${assessment.status} (confidence ${assessment.confidence.toFixed(2)})`,
-    )
+    lines.push(`**Status:** ${assessment.status} (confidence ${assessment.confidence.toFixed(2)})`)
     lines.push(`**Rationale:** ${assessment.rationale}`)
     if (assessment.supporting_passages.length > 0)
-      lines.push(
-        `**Supporting passages:** ${assessment.supporting_passages.join(", ")}`,
-      )
+      lines.push(`**Supporting passages:** ${assessment.supporting_passages.join(", ")}`)
     if (assessment.contradicting_passages.length > 0)
-      lines.push(
-        `**Contradicting passages:** ${assessment.contradicting_passages.join(", ")}`,
-      )
+      lines.push(`**Contradicting passages:** ${assessment.contradicting_passages.join(", ")}`)
     lines.push("")
   }
   if (artifact.sources.length > 0) {
     lines.push("## Sources")
     for (const source of artifact.sources)
-      lines.push(
-        `${source.rank}. [${source.quality}] ${source.title}\n   ${source.url}`,
-      )
+      lines.push(`${source.rank}. [${source.quality}] ${source.title}\n   ${source.url}`)
     lines.push("")
   }
   if (artifact.errors?.length)
     lines.push(
       `Search errors: ${artifact.errors.map((entry) => `${entry.query}: ${entry.error}`).join("; ")}`,
     )
-  lines.push(
-    `Artifact responseId: ${artifact.id} (retrievable via ${getSearchContentTool}).`,
-  )
+  lines.push(`Artifact responseId: ${artifact.id} (retrievable via ${getSearchContentTool}).`)
   return lines.join("\n")
 }
 
 function stripThumbnails(results: ExtractedContent[]): ExtractedContent[] {
-  return results.map(({ thumbnail, frames, ...rest }) => rest)
+  return results.map(({ thumbnail: _thumbnail, frames: _frames, ...rest }) => rest)
 }
 
 function initialContentSlice(content: string): {
@@ -326,8 +295,7 @@ function initialContentSlice(content: string): {
   let endOffset = Math.min(content.length, MAX_INLINE_CONTENT)
   if (endOffset < content.length) {
     const lineBreak = content.lastIndexOf("\n", endOffset)
-    if (lineBreak >= Math.floor(MAX_INLINE_CONTENT * 0.8))
-      endOffset = lineBreak + 1
+    if (lineBreak >= Math.floor(MAX_INLINE_CONTENT * 0.8)) endOffset = lineBreak + 1
   }
   const text = content.slice(0, endOffset)
   return {
@@ -344,8 +312,7 @@ function normalizeFindQueries(value: string | string[]): string[] {
   const queries = (Array.isArray(value) ? value : [value])
     .map((query) => query.trim())
     .filter(Boolean)
-  if (queries.length === 0)
-    throw new Error("findText must contain at least one non-empty string")
+  if (queries.length === 0) throw new Error("findText must contain at least one non-empty string")
   return queries
 }
 
@@ -429,8 +396,7 @@ const webSearchParams = Type.Object({
   ),
   workflow: Type.Optional(
     StringEnum(["none", "auto-summary"], {
-      description:
-        "Search workflow: none (default) or auto-summary (model-generated summary)",
+      description: "Search workflow: none (default) or auto-summary (model-generated summary)",
     }),
   ),
 })
@@ -458,17 +424,14 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
       const workflow = resolveWorkflow(params.workflow ?? rt.workflow)
       const recencyFilter = normalizeRecencyFilter(params.recencyFilter)
       const domainFilter = Array.isArray(params.domainFilter)
-        ? params.domainFilter.filter(
-            (domain): domain is string => typeof domain === "string",
-          )
+        ? params.domainFilter.filter((domain): domain is string => typeof domain === "string")
         : undefined
       const provider = resolveRequestedProvider(params.provider)
 
       if (queryList.length === 0) {
-        return errorResult(
-          "No query provided. Use 'query' or 'queries' parameter.",
-          { code: "no_query" },
-        )
+        return errorResult("No query provided. Use 'query' or 'queries' parameter.", {
+          code: "no_query",
+        })
       }
 
       const results: QueryResultData[] = []
@@ -494,10 +457,7 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
         try {
           const response = await search(query, {
             provider,
-            numResults:
-              typeof params.numResults === "number"
-                ? params.numResults
-                : undefined,
+            numResults: typeof params.numResults === "number" ? params.numResults : undefined,
             recencyFilter,
             domainFilter,
             signal,
@@ -514,13 +474,10 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
           for (const r of response.results) {
             if (!allUrls.includes(r.url)) allUrls.push(r.url)
           }
-          if (response.inlineContent)
-            allInlineContent.push(...response.inlineContent)
+          if (response.inlineContent) allInlineContent.push(...response.inlineContent)
         } catch (err) {
           if (signal?.aborted || isAbortError(err)) break
-          fallbackErrors.push(
-            `"${query}": ${err instanceof Error ? err.message : String(err)}`,
-          )
+          fallbackErrors.push(`"${query}": ${err instanceof Error ? err.message : String(err)}`)
           results.push({
             query,
             answer: "",
@@ -542,10 +499,9 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
       let summaryMeta: SummaryMeta | undefined
       if (workflow === "auto-summary") {
         if (!rt.modelAuth) {
-          return errorResult(
-            "Auto-summary requires a configured summary model.",
-            { code: "auto_summary_unavailable" },
-          )
+          return errorResult("Auto-summary requires a configured summary model.", {
+            code: "auto_summary_unavailable",
+          })
         }
         onUpdate?.({
           content: [{ type: "text", text: "Generating summary..." }],
@@ -563,10 +519,7 @@ function createWebSearchTool(): AgentTool<typeof webSearchParams> {
       const sc = results.filter((r) => !r.error).length
       const tr = results.reduce((sum, r) => sum + r.results.length, 0)
       let output = ""
-      if (
-        typeof approvedSummary === "string" &&
-        approvedSummary.trim().length > 0
-      ) {
+      if (typeof approvedSummary === "string" && approvedSummary.trim().length > 0) {
         output = approvedSummary.trim()
       } else {
         for (const { query, answer, results: queryResults, error } of results) {
@@ -645,9 +598,7 @@ const sourceCheckParams = Type.Object({
     }),
   ),
   provider: Type.Optional(
-    searchProviderSchema(
-      "Search provider or non-empty list of providers to search simultaneously",
-    ),
+    searchProviderSchema("Search provider or non-empty list of providers to search simultaneously"),
   ),
 })
 
@@ -659,15 +610,10 @@ function createSourceCheckTool(): AgentTool<typeof sourceCheckParams> {
       "Check a claim against web sources and return a bounded machine-readable research artifact with exact passage citations.",
     parameters: sourceCheckParams,
     executionMode: "sequential",
-    async execute(
-      _toolCallId,
-      params,
-      signal,
-    ): Promise<AgentToolResult<Record<string, unknown>>> {
+    async execute(_toolCallId, params, signal): Promise<AgentToolResult<Record<string, unknown>>> {
       const rt = getRuntime()
       const claim = typeof params.claim === "string" ? params.claim.trim() : ""
-      if (!claim)
-        return errorResult("'claim' is required.", { code: "missing_claim" })
+      if (!claim) return errorResult("'claim' is required.", { code: "missing_claim" })
 
       const requestedQueries = Array.isArray(params.queries)
         ? params.queries
@@ -675,18 +621,13 @@ function createSourceCheckTool(): AgentTool<typeof sourceCheckParams> {
             .map((query) => query.trim())
             .filter(Boolean)
         : []
-      const queries = (
-        requestedQueries.length > 0 ? requestedQueries : [claim]
-      ).slice(0, 8)
+      const queries = (requestedQueries.length > 0 ? requestedQueries : [claim]).slice(0, 8)
       const numResults =
-        typeof params.numResults === "number" &&
-        Number.isFinite(params.numResults)
+        typeof params.numResults === "number" && Number.isFinite(params.numResults)
           ? Math.min(20, Math.max(1, Math.floor(params.numResults)))
           : 5
       const domainFilter = Array.isArray(params.domainFilter)
-        ? params.domainFilter.filter(
-            (domain): domain is string => typeof domain === "string",
-          )
+        ? params.domainFilter.filter((domain): domain is string => typeof domain === "string")
         : undefined
       const recencyFilter = normalizeRecencyFilter(params.recencyFilter)
       const resultsByUrl = new Map<string, SearchResult>()
@@ -709,8 +650,7 @@ function createSourceCheckTool(): AgentTool<typeof sourceCheckParams> {
           provider ??= response.provider
           if (response.answer) summaries.push(`${query}: ${response.answer}`)
           for (const result of response.results) {
-            if (!resultsByUrl.has(result.url))
-              resultsByUrl.set(result.url, result)
+            if (!resultsByUrl.has(result.url)) resultsByUrl.set(result.url, result)
           }
         } catch (err) {
           if (signal?.aborted || isAbortError(err)) break
@@ -728,9 +668,7 @@ function createSourceCheckTool(): AgentTool<typeof sourceCheckParams> {
       if (params.fetchContent && results.length > 0) {
         const urls = results.slice(0, 5).map((entry) => entry.url)
         try {
-          fetched = await fetchAllContent(urls, signal, {
-            ...(rt.lookup ? { lookup: rt.lookup } : {}),
-          })
+          fetched = await fetchAllContent(urls, signal, rt.lookup ? { lookup: rt.lookup } : {})
         } catch (err) {
           if (signal?.aborted || isAbortError(err)) throw err
           fetched = urls.map((url) => ({
@@ -773,13 +711,10 @@ function createSourceCheckTool(): AgentTool<typeof sourceCheckParams> {
 
 const fetchContentParams = Type.Object({
   url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
-  urls: Type.Optional(
-    Type.Array(Type.String(), { description: "Multiple URLs (parallel)" }),
-  ),
+  urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
   forceClone: Type.Optional(
     Type.Boolean({
-      description:
-        "Force cloning large GitHub repositories that exceed the size threshold",
+      description: "Force cloning large GitHub repositories that exceed the size threshold",
     }),
   ),
   prompt: Type.Optional(
@@ -874,16 +809,13 @@ function createFetchContentTool(): AgentTool<typeof fetchContentParams> {
         return errorResult("No URL provided.", { code: "no_url" })
       }
       if (urlList.length > MAX_FETCH_URLS) {
-        return errorResult(
-          `Too many URLs: ${urlList.length} (max ${MAX_FETCH_URLS}).`,
-          { code: "too_many_urls" },
-        )
+        return errorResult(`Too many URLs: ${urlList.length} (max ${MAX_FETCH_URLS}).`, {
+          code: "too_many_urls",
+        })
       }
 
       onUpdate?.({
-        content: [
-          { type: "text", text: `Fetching ${urlList.length} URL(s)...` },
-        ],
+        content: [{ type: "text", text: `Fetching ${urlList.length} URL(s)...` }],
         details: { phase: "fetch", progress: 0 },
       })
 
@@ -903,10 +835,7 @@ function createFetchContentTool(): AgentTool<typeof fetchContentParams> {
           ? await Promise.all(
               fetchResults.map(async (fetchResult) => {
                 if (fetchResult.error) return fetchResult
-                if (
-                  fetchResult.thumbnail ||
-                  fetchResult.mimeType?.startsWith("image/")
-                ) {
+                if (fetchResult.thumbnail || fetchResult.mimeType?.startsWith("image/")) {
                   return {
                     ...fetchResult,
                     error: "Page answer requires textual fetched content",
@@ -924,9 +853,7 @@ function createFetchContentTool(): AgentTool<typeof fetchContentParams> {
                       question: options.prompt!,
                       pageText: fetchResult.content,
                       sourceUrl: fetchResult.url,
-                      ...(options.answerModel
-                        ? { model: options.answerModel }
-                        : {}),
+                      ...(options.answerModel ? { model: options.answerModel } : {}),
                     },
                     { modelAuth: rt.modelAuth },
                     signal,
@@ -942,10 +869,7 @@ function createFetchContentTool(): AgentTool<typeof fetchContentParams> {
             )
           : fetchResults
       const successful = presentedResults.filter((entry) => !entry.error).length
-      const totalChars = presentedResults.reduce(
-        (sum, entry) => sum + entry.content.length,
-        0,
-      )
+      const totalChars = presentedResults.reduce((sum, entry) => sum + entry.content.length, 0)
 
       // ALWAYS store results (even for single URL)
       const responseId = generateId()
@@ -999,8 +923,7 @@ function createFetchContentTool(): AgentTool<typeof fetchContentParams> {
         }
         content.push({ type: "text", text: output })
 
-        const imageCount =
-          (fetchResult.frames?.length ?? 0) + (fetchResult.thumbnail ? 1 : 0)
+        const imageCount = (fetchResult.frames?.length ?? 0) + (fetchResult.thumbnail ? 1 : 0)
         return {
           content,
           details: {
@@ -1058,17 +981,12 @@ const getSearchContentParams = Type.Object({
     description: `The responseId from ${storedContentSources}`,
   }),
   query: Type.Optional(Type.String({ description: searchQueryDescription })),
-  queryIndex: Type.Optional(
-    Type.Number({ description: "Get content for query at index" }),
-  ),
+  queryIndex: Type.Optional(Type.Number({ description: "Get content for query at index" })),
   url: Type.Optional(Type.String({ description: "Get content for this URL" })),
-  urlIndex: Type.Optional(
-    Type.Number({ description: "Get content for URL at index" }),
-  ),
+  urlIndex: Type.Optional(Type.Number({ description: "Get content for URL at index" })),
   offset: Type.Optional(
     Type.Number({
-      description:
-        "Character offset for fetched URL content slices (default 0)",
+      description: "Character offset for fetched URL content slices (default 0)",
     }),
   ),
   limit: Type.Optional(
@@ -1095,19 +1013,14 @@ const getSearchContentParams = Type.Object({
   ),
 })
 
-function createGetSearchContentTool(): AgentTool<
-  typeof getSearchContentParams
-> {
+function createGetSearchContentTool(): AgentTool<typeof getSearchContentParams> {
   return {
     name: DEFAULT_TOOL_NAMES.getSearchContent,
     label: "Get Search Content",
     description: `Retrieve bounded content slices or find matching passages in a previous ${storedContentSources} call.`,
     parameters: getSearchContentParams,
     executionMode: "sequential",
-    async execute(
-      _toolCallId,
-      params,
-    ): Promise<AgentToolResult<Record<string, unknown>>> {
+    async execute(_toolCallId, params): Promise<AgentToolResult<Record<string, unknown>>> {
       if (
         params.findText !== undefined &&
         (params.offset !== undefined || params.limit !== undefined)
@@ -1146,29 +1059,19 @@ function createGetSearchContentTool(): AgentTool<
             offset,
           })
         }
-        if (
-          !Number.isInteger(limit) ||
-          limit <= 0 ||
-          limit > MAX_CONTENT_SLICE_LENGTH
-        ) {
-          return errorResult(
-            `limit must be an integer from 1 to ${MAX_CONTENT_SLICE_LENGTH}`,
-            {
-              code: "invalid_limit",
-              limit,
-              maxLimit: MAX_CONTENT_SLICE_LENGTH,
-            },
-          )
+        if (!Number.isInteger(limit) || limit <= 0 || limit > MAX_CONTENT_SLICE_LENGTH) {
+          return errorResult(`limit must be an integer from 1 to ${MAX_CONTENT_SLICE_LENGTH}`, {
+            code: "invalid_limit",
+            limit,
+            maxLimit: MAX_CONTENT_SLICE_LENGTH,
+          })
         }
         if (offset > serialized.length) {
-          return errorResult(
-            `offset ${offset} is out of range (0-${serialized.length})`,
-            {
-              code: "offset_out_of_range",
-              offset,
-              contentLength: serialized.length,
-            },
-          )
+          return errorResult(`offset ${offset} is out of range (0-${serialized.length})`, {
+            code: "offset_out_of_range",
+            offset,
+            contentLength: serialized.length,
+          })
         }
         const endOffset = Math.min(offset + limit, serialized.length)
         const artifactSlice = serialized.slice(offset, endOffset)
@@ -1195,10 +1098,9 @@ function createGetSearchContentTool(): AgentTool<
           queryData = data.queries.find((q) => q.query === params.query)
           if (!queryData) {
             const available = data.queries.map((q) => `"${q.query}"`).join(", ")
-            return errorResult(
-              `Query "${params.query}" not found. Available: ${available}`,
-              { code: "query_not_found" },
-            )
+            return errorResult(`Query "${params.query}" not found. Available: ${available}`, {
+              code: "query_not_found",
+            })
           }
         } else if (params.queryIndex !== undefined) {
           queryData = data.queries[params.queryIndex]
@@ -1209,20 +1111,17 @@ function createGetSearchContentTool(): AgentTool<
             )
           }
         } else {
-          const available = data.queries
-            .map((q, i) => `${i}: "${q.query}"`)
-            .join(", ")
-          return errorResult(
-            `Specify query or queryIndex. Available: ${available}`,
-            { code: "no_query_specified" },
-          )
+          const available = data.queries.map((q, i) => `${i}: "${q.query}"`).join(", ")
+          return errorResult(`Specify query or queryIndex. Available: ${available}`, {
+            code: "no_query_specified",
+          })
         }
 
         if (queryData.error) {
-          return errorResult(
-            `Error for "${queryData.query}": ${queryData.error}`,
-            { code: "query_error", query: queryData.query },
-          )
+          return errorResult(`Error for "${queryData.query}": ${queryData.error}`, {
+            code: "query_error",
+            query: queryData.query,
+          })
         }
 
         const fullResults = formatFullResults(queryData)
@@ -1284,13 +1183,10 @@ function createGetSearchContentTool(): AgentTool<
             )
           }
         } else {
-          const available = data.urls
-            .map((u, i) => `${i}: ${u.url}`)
-            .join("\n  ")
-          return errorResult(
-            `Specify url or urlIndex. Available:\n  ${available}`,
-            { code: "no_url_specified" },
-          )
+          const available = data.urls.map((u, i) => `${i}: ${u.url}`).join("\n  ")
+          return errorResult(`Specify url or urlIndex. Available:\n  ${available}`, {
+            code: "no_url_specified",
+          })
         }
 
         if (urlData.error) {
@@ -1340,29 +1236,19 @@ function createGetSearchContentTool(): AgentTool<
             offset,
           })
         }
-        if (
-          !Number.isInteger(limit) ||
-          limit <= 0 ||
-          limit > MAX_CONTENT_SLICE_LENGTH
-        ) {
-          return errorResult(
-            `limit must be an integer from 1 to ${MAX_CONTENT_SLICE_LENGTH}`,
-            {
-              code: "invalid_limit",
-              limit,
-              maxLimit: MAX_CONTENT_SLICE_LENGTH,
-            },
-          )
+        if (!Number.isInteger(limit) || limit <= 0 || limit > MAX_CONTENT_SLICE_LENGTH) {
+          return errorResult(`limit must be an integer from 1 to ${MAX_CONTENT_SLICE_LENGTH}`, {
+            code: "invalid_limit",
+            limit,
+            maxLimit: MAX_CONTENT_SLICE_LENGTH,
+          })
         }
         if (offset > urlData.content.length) {
-          return errorResult(
-            `offset ${offset} is out of range (0-${urlData.content.length})`,
-            {
-              code: "offset_out_of_range",
-              offset,
-              contentLength: urlData.content.length,
-            },
-          )
+          return errorResult(`offset ${offset} is out of range (0-${urlData.content.length})`, {
+            code: "offset_out_of_range",
+            offset,
+            contentLength: urlData.content.length,
+          })
         }
 
         const endOffset = Math.min(offset + limit, urlData.content.length)
@@ -1405,17 +1291,12 @@ function createGetSearchContentTool(): AgentTool<
  * 能力仅在提供 sandbox 可见的 `workspaceHostPath` 时可用，否则返回明确的禁用错误。
  */
 /** 把工具 execute 绑定到指定 runtime 上下文，保证多 Project/run 并发时隔离。 */
-function bindRuntime<T extends AgentTool>(
-  runtime: WebAccessRuntime,
-  tool: T,
-): T {
+function bindRuntime<T extends AgentTool>(runtime: WebAccessRuntime, tool: T): T {
   const execute = tool.execute
   return {
     ...tool,
     execute: ((toolCallId, params, signal, onUpdate) =>
-      withRuntime(runtime, () =>
-        execute(toolCallId, params, signal, onUpdate),
-      )) as T["execute"],
+      withRuntime(runtime, () => execute(toolCallId, params, signal, onUpdate))) as T["execute"],
   }
 }
 
@@ -1441,11 +1322,7 @@ function createTricksSearchTool(): AgentTool<typeof tricksSearchParams> {
       "Search CTF tricks and techniques from the distilled nekozuki knowledge base (39k writeups). Use this when you are stuck on a challenge and need technique ideas, or to look up specific CTF techniques (exploits, vulnerabilities, payload patterns, attack vectors). Returns technique descriptions with source citations. Be specific in your query about the vulnerability class or technique you need. Does NOT search the web — only searches the local CTF knowledge base.",
     parameters: tricksSearchParams,
     executionMode: "sequential",
-    async execute(
-      _toolCallId,
-      params,
-      signal,
-    ): Promise<AgentToolResult<Record<string, unknown>>> {
+    async execute(_toolCallId, params, signal): Promise<AgentToolResult<Record<string, unknown>>> {
       const query = typeof params.query === "string" ? params.query.trim() : ""
       if (!query) {
         return errorResult("No query provided.", { code: "no_query" })
@@ -1458,8 +1335,7 @@ function createTricksSearchTool(): AgentTool<typeof tricksSearchParams> {
         )
       }
       const numResults =
-        typeof params.numResults === "number" &&
-        Number.isFinite(params.numResults)
+        typeof params.numResults === "number" && Number.isFinite(params.numResults)
           ? Math.min(20, Math.max(1, Math.floor(params.numResults)))
           : 5
 
@@ -1469,10 +1345,7 @@ function createTricksSearchTool(): AgentTool<typeof tricksSearchParams> {
           signal,
         })
         const output = response.results
-          .map(
-            (r, i) =>
-              `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet?.slice(0, 300)}`,
-          )
+          .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet?.slice(0, 300)}`)
           .join("\n\n")
         return {
           content: [{ type: "text", text: output || "No results found." }],
@@ -1510,8 +1383,6 @@ export function createWebAccessTools(config: WebAccessConfig): AgentTool[] {
     bindRuntime(runtime, createSourceCheckTool()),
     bindRuntime(runtime, createFetchContentTool()),
     bindRuntime(runtime, createGetSearchContentTool()),
-    ...(runtime.providers.has("nekozuki")
-      ? [bindRuntime(runtime, createTricksSearchTool())]
-      : []),
+    ...(runtime.providers.has("nekozuki") ? [bindRuntime(runtime, createTricksSearchTool())] : []),
   ]
 }

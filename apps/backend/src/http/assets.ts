@@ -41,15 +41,11 @@ const FALLBACK_HTML = `<!doctype html>
 </html>`
 
 function contentTypeFor(path: string): string {
-  return (
-    CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream"
-  )
+  return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream"
 }
 
 /** 递归加载前端构建产物到内存；找不到 dist 时退化为兜底首页。 */
-export async function loadStaticAssets(
-  frontendDist?: string,
-): Promise<Map<string, StaticAsset>> {
+export async function loadStaticAssets(frontendDist?: string): Promise<Map<string, StaticAsset>> {
   const assets = new Map<string, StaticAsset>()
   const dist =
     frontendDist ??
@@ -69,10 +65,7 @@ export async function loadStaticAssets(
   return assets
 }
 
-async function collectFiles(
-  directory: string,
-  assets: Map<string, StaticAsset>,
-): Promise<void> {
+async function collectFiles(directory: string, assets: Map<string, StaticAsset>): Promise<void> {
   const entries = await readdir(directory, { withFileTypes: true })
   for (const entry of entries) {
     const absolute = join(directory, entry.name)

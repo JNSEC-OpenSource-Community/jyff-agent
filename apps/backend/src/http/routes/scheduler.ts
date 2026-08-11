@@ -19,9 +19,7 @@ export function schedulerRoutes(services: Services): App {
 
   const refreshFor = (c: AppContext) => {
     const projectId = projectIdOf(c)
-    return projectId
-      ? services.sync.refreshProject(projectId)
-      : services.sync.refresh()
+    return projectId ? services.sync.refreshProject(projectId) : services.sync.refresh()
   }
 
   app.post("/scheduler/auto/start", async (c) => {
@@ -40,9 +38,7 @@ export function schedulerRoutes(services: Services): App {
     const body = await parseJsonBody(c, schedulerConcurrencySchema, {
       code: "invalid_scheduler_configuration",
     })
-    await services
-      .requireSolverScheduler(projectIdOf(c))
-      .setMaxConcurrent(body.maxConcurrent)
+    await services.requireSolverScheduler(projectIdOf(c)).setMaxConcurrent(body.maxConcurrent)
     return c.json(await refreshFor(c))
   })
 
@@ -53,13 +49,11 @@ export function schedulerRoutes(services: Services): App {
         expectedVersion: "invalid_queue_version",
       },
     })
-    services
-      .requireSolverScheduler(projectIdOf(c))
-      .reorderQueue(c.req.param("challengeId"), {
-        position: body.position,
-        expectedVersion: body.expectedVersion,
-        overrideBlockedLane: body.overrideBlockedLane === true,
-      })
+    services.requireSolverScheduler(projectIdOf(c)).reorderQueue(c.req.param("challengeId"), {
+      position: body.position,
+      expectedVersion: body.expectedVersion,
+      overrideBlockedLane: body.overrideBlockedLane === true,
+    })
     return c.json(await refreshFor(c))
   })
 

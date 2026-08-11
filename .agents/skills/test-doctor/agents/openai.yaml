@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Doctor"
+  short_description: "Audit and improve automated test suites"
+  default_prompt: "Use $test-doctor to audit this project’s tests and propose a high-value migration plan."

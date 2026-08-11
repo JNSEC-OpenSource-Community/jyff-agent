@@ -1,17 +1,9 @@
 import { createHash } from "node:crypto"
-import type {
-  ChallengeInfo,
-  ChallengeSummary,
-  PlatformPlugin,
-  RemoteEnvironment,
-} from "./index.ts"
+import type { ChallengeInfo, ChallengeSummary, PlatformPlugin, RemoteEnvironment } from "./index.ts"
 
 export const PLATFORM_VALIDATION_HARNESS_VERSION = "1"
 
-export type PlatformValidationLevel =
-  | "failed"
-  | "read_only_verified"
-  | "fully_verified"
+export type PlatformValidationLevel = "failed" | "read_only_verified" | "fully_verified"
 
 export interface PlatformValidationProfile {
   id: string
@@ -72,10 +64,7 @@ export async function validatePlatformPlugin(input: {
   let project: Awaited<ReturnType<PlatformPlugin["connect"]>> | undefined
   let startedEnvironment: RemoteEnvironment | undefined
 
-  const check = async <T>(
-    id: string,
-    operation: () => Promise<T> | T,
-  ): Promise<T | undefined> => {
+  const check = async <T>(id: string, operation: () => Promise<T> | T): Promise<T | undefined> => {
     const started = performance.now()
     try {
       const value = await operation()
@@ -97,9 +86,7 @@ export async function validatePlatformPlugin(input: {
     }
   }
 
-  const parsed = await check("config.parse", () =>
-    input.plugin.config.parse(input.profile.config),
-  )
+  const parsed = await check("config.parse", () => input.plugin.config.parse(input.profile.config))
   if (parsed !== undefined) {
     project = await check("plugin.connect", () =>
       input.plugin.connect({
@@ -112,9 +99,7 @@ export async function validatePlatformPlugin(input: {
 
   try {
     if (project) {
-      const overview = await check("project.getOverview", () =>
-        project?.getOverview(),
-      )
+      const overview = await check("project.getOverview", () => project?.getOverview())
       await check("project.refresh", () => project?.refresh())
       if (overview && input.profile.expected?.contestId) {
         await check("expected.contestId", () => {
@@ -141,9 +126,7 @@ export async function validatePlatformPlugin(input: {
         }
         return first ?? []
       })
-      capabilities.challenges = checkPassed(checks, "project.listChallenges")
-        ? "passed"
-        : "failed"
+      capabilities.challenges = checkPassed(checks, "project.listChallenges") ? "passed" : "failed"
 
       await check("project.listAnnouncements", async () => {
         const announcements = await project?.listAnnouncements()
@@ -158,17 +141,11 @@ export async function validatePlatformPlugin(input: {
           }
         }
       })
-      capabilities.announcements = checkPassed(
-        checks,
-        "project.listAnnouncements",
-      )
+      capabilities.announcements = checkPassed(checks, "project.listAnnouncements")
         ? "passed"
         : "failed"
 
-      const selected = selectChallenge(
-        challenges ?? [],
-        input.profile.expected?.challengeId,
-      )
+      const selected = selectChallenge(challenges ?? [], input.profile.expected?.challengeId)
       if (selected) {
         const capability = await check("project.bindChallenge", () =>
           project?.bindChallenge(selected.id),
@@ -190,10 +167,7 @@ export async function validatePlatformPlugin(input: {
                 throw new Error("测试 Flag 未返回 rejected")
               }
             })
-            capabilities.submitFlag = checkPassed(
-              checks,
-              "challenge.submitRejectedFlag",
-            )
+            capabilities.submitFlag = checkPassed(checks, "challenge.submitRejectedFlag")
               ? "passed"
               : "failed"
           } else {
@@ -207,19 +181,13 @@ export async function validatePlatformPlugin(input: {
         capabilities.submitFlag = "skipped"
       }
 
-      await check("project.listRemoteEnvironments", () =>
-        project?.listRemoteEnvironments(),
-      )
+      await check("project.listRemoteEnvironments", () => project?.listRemoteEnvironments())
       if (
         input.profile.mutations?.testEnvironmentLifecycle &&
         input.profile.expected?.environmentChallengeId
       ) {
-        const environmentCapability = await check(
-          "environment.bindChallenge",
-          () =>
-            project?.bindChallenge(
-              input.profile.expected?.environmentChallengeId ?? "",
-            ),
+        const environmentCapability = await check("environment.bindChallenge", () =>
+          project?.bindChallenge(input.profile.expected?.environmentChallengeId ?? ""),
         )
         if (!environmentCapability?.instance) {
           failed(checks, "environment.start", "插件未提供环境生命周期能力")
@@ -229,9 +197,7 @@ export async function validatePlatformPlugin(input: {
             environmentCapability.instance?.start(),
           )
           if (startedEnvironment) {
-            await check("environment.status", () =>
-              environmentCapability.instance?.status(),
-            )
+            await check("environment.status", () => environmentCapability.instance?.status())
           }
           try {
             await environmentCapability.instance.destroy()
@@ -276,9 +242,7 @@ export async function validatePlatformPlugin(input: {
     "project.listAnnouncements",
     "project.close",
   ]
-  const readOnlyPassed = requiredReadChecks.every((id) =>
-    checkPassed(checks, id),
-  )
+  const readOnlyPassed = requiredReadChecks.every((id) => checkPassed(checks, id))
   const mutations = [capabilities.submitFlag, capabilities.environment]
   const allMutationsPassed = mutations.every((status) => status === "passed")
   const status: PlatformValidationLevel = failedAny
@@ -327,10 +291,7 @@ function validateChallenges(challenges: readonly ChallengeSummary[]): void {
   }
 }
 
-function validateChallengeInfo(
-  summary: ChallengeSummary,
-  info: ChallengeInfo,
-): void {
+function validateChallengeInfo(summary: ChallengeSummary, info: ChallengeInfo): void {
   if (info.id !== summary.id) throw new Error("题目详情 ID 与列表不一致")
   const attachmentIds = new Set<string>()
   for (const attachment of info.attachments) {
@@ -345,9 +306,7 @@ function selectChallenge(
   challenges: readonly ChallengeSummary[],
   expectedId?: string,
 ): ChallengeSummary | undefined {
-  return expectedId
-    ? challenges.find(({ id }) => id === expectedId)
-    : challenges[0]
+  return expectedId ? challenges.find(({ id }) => id === expectedId) : challenges[0]
 }
 
 function stableJson(value: unknown): string {
@@ -364,40 +323,22 @@ function stableJson(value: unknown): string {
 function safeError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return message
-    .replace(
-      /(authorization|cookie|token|password)\s*[:=]\s*\S+/gi,
-      "$1=[redacted]",
-    )
+    .replace(/(authorization|cookie|token|password)\s*[:=]\s*\S+/gi, "$1=[redacted]")
     .slice(0, 500)
 }
 
-function checkPassed(
-  checks: readonly PlatformValidationCheck[],
-  id: string,
-): boolean {
+function checkPassed(checks: readonly PlatformValidationCheck[], id: string): boolean {
   return checks.some((check) => check.id === id && check.status === "passed")
 }
 
-function passed(
-  checks: PlatformValidationCheck[],
-  id: string,
-  message: string,
-): void {
+function passed(checks: PlatformValidationCheck[], id: string, message: string): void {
   checks.push({ id, status: "passed", message, durationMs: 0 })
 }
 
-function failed(
-  checks: PlatformValidationCheck[],
-  id: string,
-  message: string,
-): void {
+function failed(checks: PlatformValidationCheck[], id: string, message: string): void {
   checks.push({ id, status: "failed", message, durationMs: 0 })
 }
 
-function skipped(
-  checks: PlatformValidationCheck[],
-  id: string,
-  message: string,
-): void {
+function skipped(checks: PlatformValidationCheck[], id: string, message: string): void {
   checks.push({ id, status: "skipped", message, durationMs: 0 })
 }

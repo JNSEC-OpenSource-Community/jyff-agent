@@ -35,9 +35,7 @@ export class ActivityMonitor {
   }
   private nextId = 1
 
-  logStart(
-    partial: Omit<ActivityEntry, "id" | "startTime" | "status">,
-  ): string {
+  logStart(partial: Omit<ActivityEntry, "id" | "startTime" | "status">): string {
     const id = `act-${this.nextId++}`
     const entry: ActivityEntry = {
       ...partial,

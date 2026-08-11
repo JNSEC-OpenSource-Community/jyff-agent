@@ -1,5 +1,5 @@
 import type { Announcement, ChallengeSummary } from "@ctf-agent/platform"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import {
   announcementRevision,
   classifyAnnouncement,
@@ -28,42 +28,32 @@ function announcement(input: Partial<Announcement>): Announcement {
 
 describe("announcement classification", () => {
   it("uses a stable key per platform ID and content revision", () => {
-    const first = announcementRevision(
-      announcement({ id: "1", title: "Hint", content: "v1" }),
+    const first = announcementRevision(announcement({ id: "1", title: "Hint", content: "v1" }))
+    expect(announcementRevision(announcement({ id: "1", title: "Hint", content: "v1" }))).toEqual(
+      first,
     )
     expect(
-      announcementRevision(
-        announcement({ id: "1", title: "Hint", content: "v1" }),
-      ),
-    ).toEqual(first)
-    expect(
-      announcementRevision(
-        announcement({ id: "1", title: "Hint", content: "v2" }),
-      ).key,
+      announcementRevision(announcement({ id: "1", title: "Hint", content: "v2" })).key,
     ).not.toBe(first.key)
   })
 
   it("filters platform blood kinds, blood titles, and structured solve actions", () => {
+    expect(classifyAnnouncement(announcement({ kind: "solve_broadcast" }))).toMatchObject({
+      ignored: true,
+      reason: "platform_kind",
+    })
+    expect(classifyAnnouncement(announcement({ title: "First Blood: Cookie Jar" }))).toMatchObject({
+      ignored: true,
+      reason: "blood_title",
+    })
     expect(
-      classifyAnnouncement(announcement({ kind: "solve_broadcast" })),
-    ).toMatchObject({ ignored: true, reason: "platform_kind" })
-    expect(
-      classifyAnnouncement(announcement({ title: "First Blood: Cookie Jar" })),
-    ).toMatchObject({ ignored: true, reason: "blood_title" })
-    expect(
-      classifyAnnouncement(
-        announcement({ content: "team alpha solved by user beta" }),
-      ),
+      classifyAnnouncement(announcement({ content: "team alpha solved by user beta" })),
     ).toMatchObject({ ignored: true, reason: "structured_solve_action" })
     expect(
-      classifyAnnouncement(
-        announcement({ content: "Team alpha 拿下 Cookie Jar 一血" }),
-      ),
+      classifyAnnouncement(announcement({ content: "Team alpha 拿下 Cookie Jar 一血" })),
     ).toMatchObject({ ignored: true, reason: "structured_solve_action" })
     expect(
-      classifyAnnouncement(
-        announcement({ content: "Second Blood claimed by Team beta" }),
-      ),
+      classifyAnnouncement(announcement({ content: "Second Blood claimed by Team beta" })),
     ).toMatchObject({ ignored: true, reason: "structured_solve_action" })
   })
 
@@ -113,9 +103,7 @@ describe("announcement classification", () => {
       ),
     ).toMatchObject({ eligible: false, reason: "new_challenge" })
     expect(
-      filterAnnouncementKeywords(
-        announcement({ title: "Welcome", content: "Contest starts now" }),
-      ),
+      filterAnnouncementKeywords(announcement({ title: "Welcome", content: "Contest starts now" })),
     ).toMatchObject({ eligible: false, reason: "no_critical_keyword" })
     expect(
       filterAnnouncementKeywords(
@@ -139,16 +127,12 @@ describe("announcement challenge matching", () => {
 
   it("requires quoting for very short titles and marks duplicate titles", () => {
     expect(
-      matchAnnouncementChallenges(
-        announcement({ content: "Use RE tooling" }),
-        challenges,
-      ),
+      matchAnnouncementChallenges(announcement({ content: "Use RE tooling" }), challenges),
     ).toEqual([])
     expect(
-      matchAnnouncementChallenges(
-        announcement({ content: "Hint for [RE]" }),
-        challenges,
-      ).map((match) => match.challengeId),
+      matchAnnouncementChallenges(announcement({ content: "Hint for [RE]" }), challenges).map(
+        (match) => match.challengeId,
+      ),
     ).toEqual(["14"])
     expect(
       matchAnnouncementChallenges(

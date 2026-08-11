@@ -37,18 +37,15 @@ export function useConversation(
   message: string
   sending: boolean
   activity: AgentActivity
-  setMessage(message: string): void
-  send(text: string): Promise<void>
+  setMessage: (message: string) => void
+  send: (text: string) => Promise<void>
 } {
-  const [conversation, setConversation] =
-    useState<DashboardConversation | null>(null)
+  const [conversation, setConversation] = useState<DashboardConversation | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
-  const [activity, setActivity] = useState<AgentActivity>(
-    INITIAL_AGENT_ACTIVITY,
-  )
+  const [activity, setActivity] = useState<AgentActivity>(INITIAL_AGENT_ACTIVITY)
 
   const { conversationUrl, hasConversation } = target
 
@@ -77,16 +74,12 @@ export function useConversation(
       frame = undefined
       const events = pending.splice(0)
       if (events.length === 0) return
-      setConversation((current) =>
-        events.reduce(applyAgentStreamEvent, current),
-      )
+      setConversation((current) => events.reduce(applyAgentStreamEvent, current))
       setActivity((current) => events.reduce(reduceAgentActivity, current))
     }
     const queue = (event: Event): void => {
       try {
-        const parsed = JSON.parse(
-          (event as MessageEvent<string>).data,
-        ) as AgentStreamEvent
+        const parsed = JSON.parse((event as MessageEvent<string>).data) as AgentStreamEvent
         pending.push(parsed)
         if (shouldRefreshAgentView(parsed)) {
           void onChanged().catch((cause) => setError(errorMessage(cause)))

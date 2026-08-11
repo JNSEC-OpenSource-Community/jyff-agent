@@ -82,8 +82,7 @@ export function buildSearchErrorPlan(
   // get_search_content). A bare argument error (e.g. "No URL
   // provided") stays a clean single line -- no noise.
   const extras = details.extraLines ?? []
-  const rich =
-    details.cancelled === true || queries.length > 0 || extras.length > 0
+  const rich = details.cancelled === true || queries.length > 0 || extras.length > 0
   if (!rich) {
     return { expanded: [headline], collapsed: [], expandHint: null }
   }
@@ -110,9 +109,7 @@ export function buildSearchErrorPlan(
       typeof details.lastHeartbeatAgeMs === "number" &&
       Number.isFinite(details.lastHeartbeatAgeMs)
     ) {
-      diag.push(
-        `last heartbeat  : ${Math.round(details.lastHeartbeatAgeMs / 1000)}s ago`,
-      )
+      diag.push(`last heartbeat  : ${Math.round(details.lastHeartbeatAgeMs / 1000)}s ago`)
     }
     if (queryCount > 0) {
       diag.push(`queries started : ${queryCount}`)

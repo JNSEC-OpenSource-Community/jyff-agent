@@ -4,8 +4,7 @@ import { promisify } from "node:util"
 const execAsync = promisify(exec)
 const COMMAND_TIMEOUT_MS = 5_000
 const MAX_CREDENTIAL_BYTES = 16_384
-const ENV_SOURCE =
-  /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})$/
+const ENV_SOURCE = /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})$/
 const OP_SESSION_NAME = /^OP_SESSION_[A-Za-z0-9_]+$/
 const COMMAND_ENVIRONMENT_NAMES = [
   "HOME",
@@ -81,10 +80,7 @@ function hasControlCharacter(value: string): boolean {
   })
 }
 
-export function redactCredential(
-  text: string,
-  credential: string | null | undefined,
-): string {
+export function redactCredential(text: string, credential: string | null | undefined): string {
   return credential ? text.split(credential).join("[redacted]") : text
 }
 
@@ -94,17 +90,14 @@ function normalize(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null
 }
 
-function commandEnvironment(
-  source: Record<string, string | undefined>,
-): Record<string, string> {
+function commandEnvironment(source: Record<string, string | undefined>): Record<string, string> {
   const environment: Record<string, string> = {}
   for (const name of COMMAND_ENVIRONMENT_NAMES) {
     const value = source[name]
     if (value !== undefined) environment[name] = value
   }
   for (const [name, value] of Object.entries(source)) {
-    if (value !== undefined && OP_SESSION_NAME.test(name))
-      environment[name] = value
+    if (value !== undefined && OP_SESSION_NAME.test(name)) environment[name] = value
   }
   return environment
 }
@@ -146,17 +139,12 @@ async function defaultRunCommand(
   return { stdout: result.stdout }
 }
 
-function commandFailureCategory(
-  error: unknown,
-  signal?: AbortSignal,
-): CredentialFailureCategory {
+function commandFailureCategory(error: unknown, signal?: AbortSignal): CredentialFailureCategory {
   if (signal?.aborted) return "command-aborted"
   if (error && typeof error === "object") {
     const code = (error as { code?: string }).code
-    if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER")
-      return "command-output-too-large"
-    if ((error as { killed?: boolean }).killed || code === "ETIMEDOUT")
-      return "command-timeout"
+    if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "command-output-too-large"
+    if ((error as { killed?: boolean }).killed || code === "ETIMEDOUT") return "command-timeout"
   }
   return "command-failed"
 }
@@ -168,16 +156,13 @@ export function hasCredentialSource(options: CredentialOptions): boolean {
   return normalize(options.environmentValue) !== null || source !== null
 }
 
-export async function resolveCredential(
-  options: CredentialOptions,
-): Promise<string | null> {
+export async function resolveCredential(options: CredentialOptions): Promise<string | null> {
   const source = configuredSource(options)
   const escaped = source ? escapedSource(source) : null
   if (escaped !== null) return escaped
   if (source?.startsWith("!")) {
     const command = source.slice(1).trim()
-    if (!command)
-      throw new CredentialResolutionError(options.provider, "invalid-source")
+    if (!command) throw new CredentialResolutionError(options.provider, "invalid-source")
     let result: CredentialCommandResult
     try {
       result = await (options.runCommand ?? defaultRunCommand)(command, {
@@ -192,23 +177,14 @@ export async function resolveCredential(
         commandFailureCategory(error, options.signal),
       )
     }
-    const stdout = Buffer.isBuffer(result.stdout)
-      ? result.stdout.toString("utf8")
-      : result.stdout
+    const stdout = Buffer.isBuffer(result.stdout) ? result.stdout.toString("utf8") : result.stdout
     if (Buffer.byteLength(stdout, "utf8") > MAX_CREDENTIAL_BYTES) {
-      throw new CredentialResolutionError(
-        options.provider,
-        "command-output-too-large",
-      )
+      throw new CredentialResolutionError(options.provider, "command-output-too-large")
     }
     const value = stdout.trim()
-    if (!value)
-      throw new CredentialResolutionError(options.provider, "command-empty")
+    if (!value) throw new CredentialResolutionError(options.provider, "command-empty")
     if (hasControlCharacter(value)) {
-      throw new CredentialResolutionError(
-        options.provider,
-        "command-invalid-output",
-      )
+      throw new CredentialResolutionError(options.provider, "command-invalid-output")
     }
     return value
   }
@@ -217,11 +193,9 @@ export async function resolveCredential(
   }
   if (source?.startsWith("$")) {
     const name = explicitEnvironmentName(source)
-    if (!name)
-      throw new CredentialResolutionError(options.provider, "invalid-source")
+    if (!name) throw new CredentialResolutionError(options.provider, "invalid-source")
     const value = normalize((options.environment ?? process.env)[name])
-    if (!value)
-      throw new CredentialResolutionError(options.provider, "environment-empty")
+    if (!value) throw new CredentialResolutionError(options.provider, "environment-empty")
     return value
   }
   return normalize(options.environmentValue) ?? source

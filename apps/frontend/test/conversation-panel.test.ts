@@ -1,15 +1,8 @@
 // @vitest-environment jsdom
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { INITIAL_AGENT_ACTIVITY } from "../src/lib/conversation-stream.ts"
 import {
   ConversationPanel,
@@ -104,9 +97,7 @@ describe("ConversationPanel scroll affordance", () => {
       sendUrl: "/message",
       onChanged: async () => {},
     }
-    const { container, rerender } = render(
-      createElement(ConversationPanel, props),
-    )
+    const { container, rerender } = render(createElement(ConversationPanel, props))
     const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")
     if (!scroller) throw new Error("conversation scroller missing")
     Object.defineProperties(scroller, {

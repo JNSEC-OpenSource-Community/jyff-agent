@@ -1,20 +1,31 @@
 <!doctype html>
 <html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)" />
+    <meta name="description" content="JYFF Agent 实时控制台" />
+    <title>JYFF Agent · Operations</title>
+    <script>
+      try {
+        const theme = localStorage.getItem("ctf-agent.theme") === "light" ? "light" : "dark"
+        document.documentElement.classList.toggle("dark", theme === "dark")
+        document.documentElement.dataset.theme = theme
+        document.documentElement.style.colorScheme = theme
+      } catch {
+        document.documentElement.classList.add("dark")
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-BZDxiQi_.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-hePW80VL.js" />
+    <link rel="modulepreload" crossorigin href="/assets/components-89BI59Jm.js" />
+    <link rel="stylesheet" crossorigin href="/assets/index-DdJSeOeg.css" />
+  </head>
 
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0a0d0c">
-  <meta name="description" content="JYFF Agent 实时控制台">
-  <title>JYFF Agent · Operations</title>
-  <link rel="stylesheet" href="/app.css">
-  <script src="/app.js" defer></script>
-</head>
-
-<body>
-  <div id="root">
-    <main class="boot-screen" aria-busy="true">正在载入控制面…</main>
-  </div>
-</body>
-
+  <body>
+    <div id="root">
+      <main class="boot-screen" aria-busy="true">正在载入控制面…</main>
+    </div>
+  </body>
 </html>

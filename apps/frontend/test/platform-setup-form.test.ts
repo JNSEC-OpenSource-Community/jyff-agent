@@ -2,7 +2,7 @@
 import type { ControlPlaneSetupSnapshot } from "@ctf-agent/core"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { createElement } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { PlatformSetupForm } from "../src/components/platform/PlatformSetupForm.tsx"
 
 const platform: ControlPlaneSetupSnapshot["platforms"][number] = {

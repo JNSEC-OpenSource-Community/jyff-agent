@@ -7,10 +7,7 @@ export function sessionToken(c: AppContext): string | undefined {
   if (!cookie) return undefined
   for (const part of cookie.split(";")) {
     const separator = part.indexOf("=")
-    if (
-      separator < 0 ||
-      part.slice(0, separator).trim() !== "ctf_agent_session"
-    ) {
+    if (separator < 0 || part.slice(0, separator).trim() !== "ctf_agent_session") {
       continue
     }
     try {
@@ -22,10 +19,7 @@ export function sessionToken(c: AppContext): string | undefined {
   return undefined
 }
 
-export function isAuthenticated(
-  services: Services,
-  token: string | undefined,
-): boolean {
+export function isAuthenticated(services: Services, token: string | undefined): boolean {
   const authentication = services.authentication
   if (!authentication?.snapshot().enabled) return true
   return authentication.authenticate(token) === true

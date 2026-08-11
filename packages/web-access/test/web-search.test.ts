@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { createWebAccessTools, type WebAccessConfig } from "../src/index.ts"
 import { getResult } from "../src/storage.ts"
 
@@ -7,8 +7,7 @@ function tools(overrides: Partial<WebAccessConfig> = {}) {
   return createWebAccessTools({
     providers: ["brave"],
     workflow: "none",
-    resolveSecret: (provider) =>
-      provider === "brave" ? "test-brave-key" : undefined,
+    resolveSecret: (provider) => (provider === "brave" ? "test-brave-key" : undefined),
     ...overrides,
   })
 }
@@ -39,18 +38,13 @@ afterEach(() => {
 describe("createWebAccessTools", () => {
   it("未启用 nekozuki 时不注入 tricks_search", () => {
     const names = tools().map((tool) => tool.name)
-    expect(names).toEqual([
-      "web_search",
-      "source_check",
-      "fetch_content",
-      "get_search_content",
-    ])
+    expect(names).toEqual(["web_search", "source_check", "fetch_content", "get_search_content"])
   })
 
   it("启用 nekozuki 时注入 tricks_search", () => {
-    expect(
-      tools({ providers: ["brave", "nekozuki"] }).map((tool) => tool.name),
-    ).toContain("tricks_search")
+    expect(tools({ providers: ["brave", "nekozuki"] }).map((tool) => tool.name)).toContain(
+      "tricks_search",
+    )
   })
 
   it("web_search 使用 allowlist 内的 provider（brave），不读 process.env", async () => {
@@ -66,11 +60,7 @@ describe("createWebAccessTools", () => {
       ]),
     )
     const tool = findTool("web_search")
-    const result = await tool.execute(
-      "call-1",
-      { query: "hello world" },
-      undefined,
-    )
+    const result = await tool.execute("call-1", { query: "hello world" }, undefined)
     expect(result.content[0]).toMatchObject({ type: "text" })
     const text = (result.content[0] as { text: string }).text
     expect(text).toContain("example.com")
@@ -89,8 +79,7 @@ describe("createWebAccessTools", () => {
     const config: WebAccessConfig = {
       providers: ["tavily"],
       workflow: "none",
-      resolveSecret: (provider) =>
-        provider === "brave" ? "test-brave-key" : undefined,
+      resolveSecret: (provider) => (provider === "brave" ? "test-brave-key" : undefined),
     }
     const app = createWebAccessTools(config)
     const tool = app.find((t) => t.name === "web_search")
@@ -113,15 +102,9 @@ describe("createWebAccessTools", () => {
     // 首次 fetch 立即 abort。
     vi.mocked(fetch).mockImplementation((_input, _init) => {
       controller.abort()
-      return Promise.reject(
-        Object.assign(new Error("Aborted"), { name: "AbortError" }),
-      )
+      return Promise.reject(Object.assign(new Error("Aborted"), { name: "AbortError" }))
     })
-    const result = await tool.execute(
-      "call-1",
-      { query: "x" },
-      controller.signal,
-    )
+    const result = await tool.execute("call-1", { query: "x" }, controller.signal)
     // 中止后返回错误结果而不是成功响应。
     const details = result.details as { code?: string }
     expect(details.code).toBe("aborted")
@@ -129,9 +112,7 @@ describe("createWebAccessTools", () => {
 
   it("web_search 存储结果可由 get_search_content 按 responseId 读取", async () => {
     vi.mocked(fetch).mockResolvedValue(
-      braveResponse([
-        { title: "T", url: "https://t.example", description: "d" },
-      ]),
+      braveResponse([{ title: "T", url: "https://t.example", description: "d" }]),
     )
     const webSearch = findTool("web_search")
     const result = await webSearch.execute("call-1", { query: "q" }, undefined)

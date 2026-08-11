@@ -17,20 +17,14 @@ URL: `
 
 function shouldRethrow(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  return (
-    err instanceof CredentialResolutionError ||
-    message.startsWith("Failed to parse ")
-  )
+  return err instanceof CredentialResolutionError || message.startsWith("Failed to parse ")
 }
 
 export async function extractWithUrlContext(
   url: string,
   signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
-  const requestSignal = AbortSignal.any([
-    AbortSignal.timeout(60000),
-    ...(signal ? [signal] : []),
-  ])
+  const requestSignal = AbortSignal.any([AbortSignal.timeout(60000), ...(signal ? [signal] : [])])
   const apiKey = await getApiKey(requestSignal)
   if (!apiKey && !isGatewayConfigured()) return null
 
@@ -68,10 +62,7 @@ export async function extractWithUrlContext(
     const metadata = data.candidates?.[0]?.url_context_metadata
     if (metadata?.url_metadata?.length) {
       const status = metadata.url_metadata[0]!.url_retrieval_status
-      if (
-        status === "URL_RETRIEVAL_STATUS_UNSAFE" ||
-        status === "URL_RETRIEVAL_STATUS_ERROR"
-      ) {
+      if (status === "URL_RETRIEVAL_STATUS_UNSAFE" || status === "URL_RETRIEVAL_STATUS_ERROR") {
         return null
       }
     }
@@ -99,9 +90,7 @@ export async function extractWithUrlContext(
 }
 
 function extractTitleFromContent(text: string, url: string): string {
-  return (
-    extractHeadingTitle(text) ?? (new URL(url).pathname.split("/").pop() || url)
-  )
+  return extractHeadingTitle(text) ?? (new URL(url).pathname.split("/").pop() || url)
 }
 
 interface UrlContextResponse {

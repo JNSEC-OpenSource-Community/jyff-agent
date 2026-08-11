@@ -98,13 +98,8 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
   }
 }
 
-function exaSearchArgs(
-  query: string,
-  options: ExaSearchOptions,
-): Record<string, unknown> {
-  const startDate = options.recencyFilter
-    ? recencyToStartDate(options.recencyFilter)
-    : null
+function exaSearchArgs(query: string, options: ExaSearchOptions): Record<string, unknown> {
+  const startDate = options.recencyFilter ? recencyToStartDate(options.recencyFilter) : null
   return {
     query,
     type: "auto",
@@ -116,15 +111,10 @@ function exaSearchArgs(
 
 function normalizeHighlights(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.filter(
-    (item): item is string =>
-      typeof item === "string" && item.trim().length > 0,
-  )
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
 }
 
-function buildAnswerFromSearchResults(
-  results: ExaSearchResponse["results"],
-): string {
+function buildAnswerFromSearchResults(results: ExaSearchResponse["results"]): string {
   if (!results?.length) return ""
   const parts: string[] = []
   for (let i = 0; i < results.length; i++) {
@@ -161,9 +151,7 @@ function mapResults(
   return mapped
 }
 
-function mapInlineContent(
-  results: ExaSearchResponse["results"],
-): ExtractedContent[] {
+function mapInlineContent(results: ExaSearchResponse["results"]): ExtractedContent[] {
   if (!results?.length) return []
   return results
     .filter(
@@ -223,9 +211,7 @@ export async function callExaMcp(
         `Exa MCP rate limit reached (429). Configure the Exa API key via the WebUI plugins settings for unthrottled Exa search: ${errorText.slice(0, 200)}`,
       )
     }
-    throw new Error(
-      `Exa MCP error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Exa MCP error ${response.status}: ${errorText.slice(0, 300)}`)
   }
 
   const body = await response.text()
@@ -258,8 +244,7 @@ export async function callExaMcp(
   }
 
   if (parsed.error) {
-    const code =
-      typeof parsed.error.code === "number" ? ` ${parsed.error.code}` : ""
+    const code = typeof parsed.error.code === "number" ? ` ${parsed.error.code}` : ""
     const message = parsed.error.message || "Unknown error"
     throw new Error(`Exa MCP error${code}: ${message}`)
   }
@@ -272,10 +257,7 @@ export async function callExaMcp(
   }
 
   const text = parsed.result?.content?.find(
-    (item) =>
-      item.type === "text" &&
-      typeof item.text === "string" &&
-      item.text.trim().length > 0,
+    (item) => item.type === "text" && typeof item.text === "string" && item.text.trim().length > 0,
   )?.text
 
   if (!text) {
@@ -286,9 +268,7 @@ export async function callExaMcp(
 }
 
 function parseMcpResults(text: string): McpParsedResult[] | null {
-  const blocks = text
-    .split(/(?=^Title: )/m)
-    .filter((block) => block.trim().length > 0)
+  const blocks = text.split(/(?=^Title: )/m).filter((block) => block.trim().length > 0)
   const parsed = blocks
     .map((block) => {
       const title = block.match(/^Title: (.+)/m)?.[1]?.trim() ?? ""
@@ -351,9 +331,7 @@ function buildMcpQuery(query: string, options: ExaSearchOptions): string {
         parts.push("past week")
         break
       case "month":
-        parts.push(
-          `${now.toLocaleString("en", { month: "long" })} ${now.getFullYear()}`,
-        )
+        parts.push(`${now.toLocaleString("en", { month: "long" })} ${now.getFullYear()}`)
         break
       case "year":
         parts.push(String(now.getFullYear()))
@@ -367,9 +345,7 @@ function isAbortMessage(message: string): boolean {
   return message.toLowerCase().includes("abort")
 }
 
-function parseJsonMcpResults(
-  text: string,
-): ExaSearchResponse["results"] | null {
+function parseJsonMcpResults(text: string): ExaSearchResponse["results"] | null {
   try {
     const results = (JSON.parse(text) as ExaSearchResponse).results
     return Array.isArray(results) && results.length > 0 ? results : null
@@ -425,8 +401,7 @@ async function searchWithFilteredExaMcp(
       options,
     )
   } catch (err) {
-    if (isAbortMessage(err instanceof Error ? err.message : String(err)))
-      throw err
+    if (isAbortMessage(err instanceof Error ? err.message : String(err))) throw err
     // The basic tool ignores every argument except query/numResults, so the
     // filters degrade into the query text.
     return searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options)
@@ -443,9 +418,7 @@ async function searchWithExaMcp(
     numResults: options.numResults ?? 5,
   }
   const filtered =
-    !!options.includeContent ||
-    !!options.recencyFilter ||
-    !!options.domainFilter?.length
+    !!options.includeContent || !!options.recencyFilter || !!options.domainFilter?.length
 
   try {
     const response = filtered
@@ -500,9 +473,7 @@ export async function searchWithExa(
 
       if (!response.ok) {
         const errorText = redactCredential(await response.text(), apiKey)
-        throw new Error(
-          `Exa API error ${response.status}: ${errorText.slice(0, 300)}`,
-        )
+        throw new Error(`Exa API error ${response.status}: ${errorText.slice(0, 300)}`)
       }
 
       const data = (await response.json()) as ExaAnswerResponse
@@ -518,18 +489,14 @@ export async function searchWithExa(
       headers: exaApiHeaders(apiKey),
       body: JSON.stringify({
         ...exaSearchArgs(query, options),
-        contents: options.includeContent
-          ? { text: true, highlights: true }
-          : { highlights: true },
+        contents: options.includeContent ? { text: true, highlights: true } : { highlights: true },
       }),
       signal: requestSignal(options.signal),
     })
 
     if (!response.ok) {
       const errorText = redactCredential(await response.text(), apiKey)
-      throw new Error(
-        `Exa API error ${response.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`Exa API error ${response.status}: ${errorText.slice(0, 300)}`)
     }
 
     const data = (await response.json()) as ExaSearchResponse

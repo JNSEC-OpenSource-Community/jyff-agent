@@ -27,24 +27,18 @@ const BRIGHT = [
 ]
 const ESC = "\u001b"
 const SGR_PATTERN = new RegExp(`${ESC}\\[([\\d;:]*)m`, "g")
-const OSC_PATTERN = new RegExp(
-  `${ESC}\\][^\\u0007]*(?:\\u0007|${ESC}\\\\)?`,
-  "g",
-)
+const OSC_PATTERN = new RegExp(`${ESC}\\][^\\u0007]*(?:\\u0007|${ESC}\\\\)?`, "g")
 const CSI_PATTERN = new RegExp(`${ESC}\\[[\\d:;<=>?]*[ -/]*[@-~]`, "g")
 const ESCAPED_ESC_PATTERN = /\\(?:x1b|u001b|033|e)(?=\[|\])/gi
 const BARE_CSI_PATTERN = /\[([\d:;<=>?]*[ -/]*[@-~])/g
-const BARE_TERMINAL_CONTROL_PATTERN =
-  /\[(?:\?\d+[hl]|(?:\d+(?:[;:]\d+)*)?[ABCDEFGHJKSTfm])/g
+const BARE_TERMINAL_CONTROL_PATTERN = /\[(?:\?\d+[hl]|(?:\d+(?:[;:]\d+)*)?[ABCDEFGHJKSTfm])/g
 const C1_CSI = String.fromCharCode(0x9b)
 const C1_OSC = String.fromCharCode(0x9d)
 function stripControlCharacters(text: string): string {
-  return [...text]
+  return Array.from(text)
     .filter((character) => {
       const code = character.charCodeAt(0)
-      return (
-        code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)
-      )
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)
     })
     .join("")
 }
@@ -89,11 +83,7 @@ export function AnsiText({ text }: { text: string }): React.ReactElement {
   )
 }
 
-function pushSegment(
-  segments: AnsiSegment[],
-  text: string,
-  state: AnsiState,
-): void {
+function pushSegment(segments: AnsiSegment[], text: string, state: AnsiState): void {
   const sanitized = stripControlCharacters(
     text
       .replace(OSC_PATTERN, "")
@@ -155,8 +145,7 @@ function applySgr(state: AnsiState, codes: number[]): void {
     else if (code >= 90 && code <= 97) state.color = BRIGHT[code - 90]
     else if (code === 39) delete state.color
     else if (code >= 40 && code <= 47) state.backgroundColor = NORMAL[code - 40]
-    else if (code >= 100 && code <= 107)
-      state.backgroundColor = BRIGHT[code - 100]
+    else if (code >= 100 && code <= 107) state.backgroundColor = BRIGHT[code - 100]
     else if (code === 49) delete state.backgroundColor
     else if (code === 38 || code === 48) {
       const parsed = extendedColor(codes, index)
@@ -169,10 +158,7 @@ function applySgr(state: AnsiState, codes: number[]): void {
   }
 }
 
-function extendedColor(
-  codes: number[],
-  index: number,
-): { color?: string; consumed: number } {
+function extendedColor(codes: number[], index: number): { color?: string; consumed: number } {
   const mode = codes[index + 1]
   if (mode === 5 && codes[index + 2] !== undefined) {
     return { color: ansi256Color(codes[index + 2] ?? 0), consumed: 2 }

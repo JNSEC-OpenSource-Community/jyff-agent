@@ -2,18 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ChallengeCapability } from "@ctf-agent/platform"
-import {
-  BLOCKED_FINALIZATION_PROMPT,
-  CTF_COMPACTION_PROMPT,
-} from "@ctf-agent/prompts"
+import { BLOCKED_FINALIZATION_PROMPT, CTF_COMPACTION_PROMPT } from "@ctf-agent/prompts"
 import type { CommandResult, Sandbox } from "@ctf-agent/sandbox"
 import { AgentHarness, type AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import { afterEach, describe, expect, it, vi } from "vitest"
-import {
-  CtfSolverAgent,
-  type SolverCloseDetails,
-} from "../../../src/solver/agent/solver-agent.js"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
+import { CtfSolverAgent, type SolverCloseDetails } from "../../../src/solver/agent/solver-agent.js"
 
 const model: Model<"openai-completions"> = {
   id: "reasoning-model",
@@ -38,9 +32,7 @@ const agent = {
 const roots: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 async function runDirectory(): Promise<string> {
@@ -49,10 +41,7 @@ async function runDirectory(): Promise<string> {
   return root
 }
 
-function challengeCapability(
-  log: string[],
-  destroyError?: Error,
-): ChallengeCapability {
+function challengeCapability(log: string[], destroyError?: Error): ChallengeCapability {
   return {
     getInfo: async () => ({
       id: "remote",
@@ -98,12 +87,10 @@ class OrderedSandbox implements Sandbox {
 
 describe("CtfSolverAgent 强制清理", () => {
   it("将 CTF_COMPACTION_PROMPT 原样传给 Pi compact", async () => {
-    const compact = vi
-      .spyOn(AgentHarness.prototype, "compact")
-      .mockResolvedValue({
-        summary: "compacted investigation",
-        tokensBefore: 1_024,
-      })
+    const compact = vi.spyOn(AgentHarness.prototype, "compact").mockResolvedValue({
+      summary: "compacted investigation",
+      tokensBefore: 1_024,
+    })
     const log: string[] = []
     const capability = challengeCapability(log)
     const solver = await CtfSolverAgent.create({
@@ -191,9 +178,7 @@ describe("CtfSolverAgent 强制清理", () => {
 
     await expect(solver.close("cancelled")).rejects.toThrow("关闭时发生错误")
     expect(log).toEqual(["instance", "sandbox", "persist"])
-    expect(details?.cleanupErrors).toEqual([
-      "远程实例销毁失败: API unavailable",
-    ])
+    expect(details?.cleanupErrors).toEqual(["远程实例销毁失败: API unavailable"])
   })
 
   it("writeup 模式只保留文件读写工具", async () => {

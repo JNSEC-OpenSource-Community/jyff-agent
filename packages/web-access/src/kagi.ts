@@ -19,8 +19,7 @@ interface KagiSearchOptions extends SearchOptions {
   includeContent?: boolean
 }
 
-export interface KagiExtractOptions
-  extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
+export interface KagiExtractOptions extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
   ssrf?: SsrfConfig
 }
 
@@ -31,9 +30,7 @@ function getApiKey(_signal?: AbortSignal): string | undefined {
 function requireApiKey(_signal?: AbortSignal): string {
   const apiKey = getApiKey(_signal)
   if (!apiKey) {
-    throw new Error(
-      "Kagi Search API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Kagi Search API key not configured. Set it via the WebUI plugins settings.")
   }
   return apiKey
 }
@@ -119,21 +116,15 @@ function parseSearchResponse(value: unknown): {
   return { results, inlineContent }
 }
 
-function parseExtractResponse(
-  value: unknown,
-  requestedUrl: string,
-): ExtractedContent | null {
+function parseExtractResponse(value: unknown, requestedUrl: string): ExtractedContent | null {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw invalidResponse("expected extract object envelope")
   const message = parseErrors(value)
   if (message) throw invalidResponse(message)
   const envelope = value as Record<string, unknown>
-  const candidates = Array.isArray(envelope.data)
-    ? envelope.data
-    : [envelope.data ?? envelope]
+  const candidates = Array.isArray(envelope.data) ? envelope.data : [envelope.data ?? envelope]
   for (const candidate of candidates) {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
-      continue
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue
     const item = candidate as Record<string, unknown>
     const content = firstString(item.markdown, item.content, item.text)
     if (!content) continue
@@ -179,17 +170,13 @@ export async function searchWithKagi(
       },
       body: JSON.stringify({ query, limit: numResults }),
       signal: options.signal
-        ? AbortSignal.any([
-            AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-            options.signal,
-          ])
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
         : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     })
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -199,9 +186,7 @@ export async function searchWithKagi(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `Kagi API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Kagi API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
   let rawData: unknown
   try {
@@ -216,9 +201,7 @@ export async function searchWithKagi(
   const mapped: SearchResponse = { answer: buildAnswer(results), results }
   if (options.includeContent) {
     const urls = new Set(results.map((result) => result.url))
-    const inlineContent = parsed.inlineContent.filter((content) =>
-      urls.has(content.url),
-    )
+    const inlineContent = parsed.inlineContent.filter((content) => urls.has(content.url))
     if (inlineContent.length > 0) mapped.inlineContent = inlineContent
   }
   return mapped
@@ -259,10 +242,7 @@ export async function extractWithKagi(
         },
         body: JSON.stringify({ pages: [{ url }] }),
         signal: signal
-          ? AbortSignal.any([
-              AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
-              signal,
-            ])
+          ? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal])
           : AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
       },
       {
@@ -284,8 +264,7 @@ export async function extractWithKagi(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -295,18 +274,14 @@ export async function extractWithKagi(
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
     const errorText = redactCredential(await response.text(), apiKey)
-    throw new Error(
-      `Kagi Extract API error ${response.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Kagi Extract API error ${response.status}: ${errorText.slice(0, 300)}`)
   }
   let rawData: unknown
   try {
     rawData = await response.json()
   } catch (err) {
     activityMonitor.logComplete(activityId, response.status)
-    throw new Error(
-      `Kagi Extract API returned invalid JSON: ${errorMessage(err)}`,
-    )
+    throw new Error(`Kagi Extract API returned invalid JSON: ${errorMessage(err)}`)
   }
   const parsed = parseExtractResponse(rawData, url)
   activityMonitor.logComplete(activityId, response.status)

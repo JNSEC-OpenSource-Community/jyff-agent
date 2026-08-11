@@ -1,11 +1,7 @@
 import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
 import type { SearchOptions, SearchResponse } from "./perplexity.ts"
-import {
-  providerKeyConfigured,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import { providerKeyConfigured, providerOption, resolveProviderKey } from "./runtime.ts"
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request"
 const SEARCH_TIMEOUT_MS = 60_000
@@ -52,9 +48,7 @@ function getApiKey(_signal?: AbortSignal): string | undefined {
 function requireApiKey(signal?: AbortSignal): string {
   const apiKey = getApiKey(signal)
   if (!apiKey) {
-    throw new Error(
-      "Bright Data API key not configured. Set it via the WebUI plugins settings.",
-    )
+    throw new Error("Bright Data API key not configured. Set it via the WebUI plugins settings.")
   }
   return apiKey
 }
@@ -134,9 +128,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -156,9 +148,7 @@ function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
   for (const raw of domainFilter) {
     const domain = normalizeDomain(raw)
     if (!domain) continue
-    const target = raw.trim().startsWith("-")
-      ? filters.exclude
-      : filters.include
+    const target = raw.trim().startsWith("-") ? filters.exclude : filters.include
     if (!target.includes(domain)) target.push(domain)
   }
   return filters
@@ -213,8 +203,7 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
   } catch {
     return false
   }
-  if (filters.exclude.some((domain) => domainMatches(hostname, domain)))
-    return false
+  if (filters.exclude.some((domain) => domainMatches(hostname, domain))) return false
   if (filters.include.length === 0) return true
   return filters.include.some((domain) => domainMatches(hostname, domain))
 }
@@ -303,9 +292,7 @@ function untrustedText(text: string, limit = 300): string {
 }
 
 function invalidResponse(zone: string, message: string): Error {
-  return new Error(
-    `Bright Data API returned invalid response for zone ${zone}: ${message}`,
-  )
+  return new Error(`Bright Data API returned invalid response for zone ${zone}: ${message}`)
 }
 
 // Bright Data reports some failures inside a normal HTTP 200 body — e.g.
@@ -315,23 +302,17 @@ function invalidResponse(zone: string, message: string): Error {
 // The envelope is upstream text, so it gets the same two-step treatment as every other
 // quoted body: `redactCredential` first (an upstream "token <yours> is not valid for
 // this zone" must not reprint the token), then `untrustedText`.
-function envelopeError(
-  envelope: Record<string, unknown>,
-  apiKey: string | null,
-): string | null {
+function envelopeError(envelope: Record<string, unknown>, apiKey: string | null): string | null {
   const parts: string[] = []
   const { error, errors } = envelope
   if (typeof error === "string" && error.trim()) parts.push(error.trim())
   else if (error && typeof error === "object") parts.push(JSON.stringify(error))
-  if (Array.isArray(errors) && errors.length > 0)
-    parts.push(JSON.stringify(errors))
-  else if (typeof errors === "string" && errors.trim())
-    parts.push(errors.trim())
+  if (Array.isArray(errors) && errors.length > 0) parts.push(JSON.stringify(errors))
+  else if (typeof errors === "string" && errors.trim()) parts.push(errors.trim())
   if (parts.length === 0) return null
   for (const key of ["code", "error_code"]) {
     const code = envelope[key]
-    if (typeof code === "string" && code.trim())
-      parts.push(`${key} ${code.trim()}`)
+    if (typeof code === "string" && code.trim()) parts.push(`${key} ${code.trim()}`)
     else if (typeof code === "number") parts.push(`${key} ${code}`)
   }
   return untrustedText(redactCredential(parts.join(", "), apiKey), 200)
@@ -357,10 +338,7 @@ function parseSerpResponse(
   const envelope = value as Record<string, unknown>
   const upstreamError = envelopeError(envelope, apiKey)
   if (upstreamError) {
-    throw invalidResponse(
-      zone,
-      `Bright Data reported an error instead of a SERP: ${upstreamError}`,
-    )
+    throw invalidResponse(zone, `Bright Data reported an error instead of a SERP: ${upstreamError}`)
   }
   if (envelope.organic === undefined || envelope.organic === null) {
     throw invalidResponse(
@@ -369,8 +347,7 @@ function parseSerpResponse(
         "returns { organic: [...] }; a zone of type `unblocker`, or a missing brd_json=1, is the usual cause",
     )
   }
-  if (!Array.isArray(envelope.organic))
-    throw invalidResponse(zone, "expected organic array")
+  if (!Array.isArray(envelope.organic)) throw invalidResponse(zone, "expected organic array")
   const organic: BrightDataOrganicResult[] = []
   for (const [index, entry] of envelope.organic.entries()) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -396,9 +373,7 @@ function mapResults(
       title: title || `Source ${mapped.length + 1}`,
       url,
       snippet:
-        typeof item.description === "string"
-          ? item.description.replace(/\s+/g, " ").trim()
-          : "",
+        typeof item.description === "string" ? item.description.replace(/\s+/g, " ").trim() : "",
     })
     if (mapped.length >= numResults) break
   }
@@ -478,8 +453,7 @@ export async function searchWithBrightData(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)
@@ -492,12 +466,8 @@ export async function searchWithBrightData(
   // a paid failure has to answer.
   if (!response.ok) {
     activityMonitor.logComplete(activityId, response.status)
-    const errorText = untrustedText(
-      redactCredential(await response.text(), apiKey),
-    )
-    throw new Error(
-      `Bright Data API error ${response.status} for zone ${zone}: ${errorText}`,
-    )
+    const errorText = untrustedText(redactCredential(await response.text(), apiKey))
+    throw new Error(`Bright Data API error ${response.status} for zone ${zone}: ${errorText}`)
   }
 
   // The body is read as text before parsing on purpose. `format: "raw"` means a
@@ -525,9 +495,7 @@ export async function searchWithBrightData(
     // below shows what arrived, filtered. Dropping it removes the leak by construction
     // rather than by pattern-matching.
     const body = untrustedText(redactCredential(raw, apiKey))
-    throw new Error(
-      `Bright Data API returned invalid JSON for zone ${zone}: ${body}`,
-    )
+    throw new Error(`Bright Data API returned invalid JSON for zone ${zone}: ${body}`)
   }
 
   let data: BrightDataSerpResponse

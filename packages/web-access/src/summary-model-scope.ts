@@ -1,12 +1,4 @@
-const THINKING_LEVELS = new Set([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-])
+const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
 
 interface SummaryModelScopeContext {
   cwd: string
@@ -36,9 +28,7 @@ export function findModelWithProviderRouting<T extends ModelLike>(
   id: string,
 ): T | undefined {
   const available = registry.getAvailable()
-  const direct = available.find(
-    (model) => model.provider === provider && model.id === id,
-  )
+  const direct = available.find((model) => model.provider === provider && model.id === id)
   if (direct) return direct
 
   const routedId = `${provider}/${id}`
@@ -49,9 +39,7 @@ export function findModelWithProviderRouting<T extends ModelLike>(
   return routed ?? registry.find(provider, id)
 }
 
-export function loadEnabledModelPatterns(
-  _ctx: SummaryModelScopeContext,
-): string[] | null {
+export function loadEnabledModelPatterns(_ctx: SummaryModelScopeContext): string[] | null {
   // The host model pool already gates which models exist and are enabled, so no
   // additional file-based gating is applied here. `null` means "all enabled".
   return null
@@ -82,10 +70,7 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(`${source}$`, "i")
 }
 
-export function modelMatchesEnabledPatterns(
-  model: ModelLike,
-  patterns: string[] | null,
-): boolean {
+export function modelMatchesEnabledPatterns(model: ModelLike, patterns: string[] | null): boolean {
   if (patterns === null) return true
   const value = summaryModelValue(model).toLowerCase()
   const id = model.id.toLowerCase()

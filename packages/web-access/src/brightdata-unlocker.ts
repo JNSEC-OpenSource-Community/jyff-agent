@@ -1,11 +1,7 @@
 import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
 import type { ExtractedContent, ExtractOptions } from "./extract.ts"
-import {
-  providerKeyConfigured,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import { providerKeyConfigured, providerOption, resolveProviderKey } from "./runtime.ts"
 import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts"
 
 const BRIGHTDATA_REQUEST_URL = "https://api.brightdata.com/request"
@@ -19,8 +15,7 @@ export interface BrightDataSsrfOptions {
   trustEnvProxy: boolean
 }
 
-export interface BrightDataExtractOptions
-  extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
+export interface BrightDataExtractOptions extends Pick<ExtractOptions, "timeoutMs" | "lookup"> {
   ssrf?: BrightDataSsrfOptions
 }
 
@@ -111,9 +106,7 @@ function ssrfOptions(options?: BrightDataExtractOptions): {
   }
 }
 
-function withoutSensitiveHeaders(
-  headers: Record<string, string>,
-): Record<string, string> {
+function withoutSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
   const next = { ...headers }
   delete next.Authorization
   delete next.authorization
@@ -158,12 +151,8 @@ async function fetchBrightDataApi(
     if (redirects === DEFAULT_MAX_REDIRECTS)
       throw new Error(`Too many redirects fetching ${current.toString()}`)
 
-    const next = await validateRemoteUrl(
-      new URL(location, current),
-      ssrfOptions(options),
-    )
-    if (next.origin !== current.origin)
-      headers = withoutSensitiveHeaders(headers)
+    const next = await validateRemoteUrl(new URL(location, current), ssrfOptions(options))
+    if (next.origin !== current.origin) headers = withoutSensitiveHeaders(headers)
     current = next
   }
 }

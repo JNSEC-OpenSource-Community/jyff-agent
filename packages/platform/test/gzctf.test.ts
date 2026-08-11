@@ -1,6 +1,6 @@
 import { webcrypto } from "node:crypto"
 import { createServer, type Server } from "node:http"
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vite-plus/test"
 import {
   encryptGZCTFApiData,
   gzctfConfig,
@@ -10,9 +10,7 @@ import {
 
 describe("GZCTF platform config", () => {
   test("uses secret references and rejects plaintext credentials", () => {
-    expect(
-      gzctfConfig.parse({ baseUrl: "https://gz.example/", gameId: 7 }),
-    ).toMatchObject({
+    expect(gzctfConfig.parse({ baseUrl: "https://gz.example/", gameId: 7 })).toMatchObject({
       baseUrl: "https://gz.example",
       gameId: 7,
       auth: {
@@ -28,9 +26,7 @@ describe("GZCTF platform config", () => {
         auth: { type: "password", username: "user", password: "secret" },
       }),
     ).toThrow("未知字段")
-    expect(() =>
-      gzctfConfig.parse({ baseUrl: "file:///tmp/gzctf", gameId: 7 }),
-    ).toThrow("http")
+    expect(() => gzctfConfig.parse({ baseUrl: "file:///tmp/gzctf", gameId: 7 })).toThrow("http")
   })
 })
 
@@ -42,10 +38,7 @@ describe("GZCTF request encryption", () => {
     const publicKey = Buffer.from(
       await webcrypto.subtle.exportKey("raw", recipient.publicKey),
     ).toString("base64")
-    const payload = Buffer.from(
-      await encryptGZCTFApiData("flag{secret}", publicKey),
-      "base64",
-    )
+    const payload = Buffer.from(await encryptGZCTFApiData("flag{secret}", publicKey), "base64")
 
     const ephemeral = await webcrypto.subtle.importKey(
       "raw",
@@ -117,10 +110,7 @@ describe("GZCTF platform contract", () => {
       if (path === "/api/config")
         return json(response, { title: "Local GZCTF", apiPublicKey: null })
       if (path === "/api/account/login" && request.method === "POST") {
-        response.setHeader(
-          "Set-Cookie",
-          "GZCTF_Token=session-token; Path=/; HttpOnly",
-        )
+        response.setHeader("Set-Cookie", "GZCTF_Token=session-token; Path=/; HttpOnly")
         response.statusCode = 200
         return response.end()
       }
@@ -131,8 +121,7 @@ describe("GZCTF platform contract", () => {
         return json(response, { title: "Unauthorized", status: 401 }, 401)
       }
       if (path === "/api/account/profile") return json(response, { id: "user" })
-      if (path === "/api/game/9")
-        return json(response, { id: 9, title: "Local Finals" })
+      if (path === "/api/game/9") return json(response, { id: 9, title: "Local Finals" })
       if (path === "/api/game/9/notices?count=100&skip=0") {
         return json(response, [
           {
@@ -203,8 +192,7 @@ describe("GZCTF platform contract", () => {
     const project = await gzctfPlatform.connect({
       project: { id: "local", name: "Fallback" },
       config: { baseUrl, gameId: 9, submissionPollIntervalMs: 50 },
-      resolveSecret: (name) =>
-        ({ GZCTF_USERNAME: "alice", GZCTF_PASSWORD: "password" })[name],
+      resolveSecret: (name) => ({ GZCTF_USERNAME: "alice", GZCTF_PASSWORD: "password" })[name],
     })
     expect(await project.getOverview()).toEqual({
       id: "local",
@@ -257,17 +245,13 @@ describe("GZCTF platform contract", () => {
     await challenge.instance?.destroy()
     expect(await project.listRemoteEnvironments()).toEqual([])
 
-    expect(
-      requests.find((item) => item.path === "/api/account/login")?.body,
-    ).toEqual({
+    expect(requests.find((item) => item.path === "/api/account/login")?.body).toEqual({
       userName: "alice",
       password: "password",
     })
     expect(
-      requests.find(
-        (item) =>
-          item.path === "/api/game/9/challenges/12" && item.method === "POST",
-      )?.body,
+      requests.find((item) => item.path === "/api/game/9/challenges/12" && item.method === "POST")
+        ?.body,
     ).toEqual({ flag: "flag{right}" })
     expect(
       requests
@@ -284,14 +268,10 @@ describe("GZCTF platform contract", () => {
     server = createServer((request, response) => {
       const path = request.url ?? "/"
       counts.set(path, (counts.get(path) ?? 0) + 1)
-      if (path === "/api/config")
-        return json(response, { title: "Local", apiPublicKey: null })
+      if (path === "/api/config") return json(response, { title: "Local", apiPublicKey: null })
       if (path === "/api/account/login") {
         loginCount++
-        response.setHeader(
-          "Set-Cookie",
-          `GZCTF_Token=session-${loginCount}; Path=/; HttpOnly`,
-        )
+        response.setHeader("Set-Cookie", `GZCTF_Token=session-${loginCount}; Path=/; HttpOnly`)
         response.statusCode = 200
         return response.end()
       }
@@ -300,11 +280,9 @@ describe("GZCTF platform contract", () => {
         rejectGameOnce = false
         return json(response, { title: "Expired" }, 401)
       }
-      if (path === "/api/game/9")
-        return json(response, { id: 9, title: "Retry Finals" })
+      if (path === "/api/game/9") return json(response, { id: 9, title: "Retry Finals" })
       if (path === "/api/game/9/details") {
-        if (detailFailures-- > 0)
-          return json(response, { title: "Temporary gateway error" }, 502)
+        if (detailFailures-- > 0) return json(response, { title: "Temporary gateway error" }, 502)
         return json(response, {
           challenges: {
             web: [{ id: 12, title: "Cache", category: "Web", score: 500 }],
@@ -312,8 +290,7 @@ describe("GZCTF platform contract", () => {
           rank: { solvedChallenges: [] },
         })
       }
-      if (path === "/api/game/9/notices?count=100&skip=0")
-        return json(response, [])
+      if (path === "/api/game/9/notices?count=100&skip=0") return json(response, [])
       if (path === "/api/game/9/challenges/12")
         return json(response, {
           id: 12,
@@ -335,8 +312,7 @@ describe("GZCTF platform contract", () => {
         retryBaseDelayMs: 1,
         cacheTtlMs: 250,
       },
-      resolveSecret: (name) =>
-        ({ GZCTF_USERNAME: "alice", GZCTF_PASSWORD: "password" })[name],
+      resolveSecret: (name) => ({ GZCTF_USERNAME: "alice", GZCTF_PASSWORD: "password" })[name],
     })
 
     const [overview, challenges, announcements] = await Promise.all([
@@ -363,28 +339,21 @@ describe("GZCTF platform contract", () => {
     expect(isRetryablePlatformError(transient)).toBe(true)
   })
 
-  test.runIf(process.env.GZCTF_LIVE === "1")(
-    "matches gz.imxbt.cn public API shape",
-    async () => {
-      const [config, games] = await Promise.all([
-        fetch("https://gz.imxbt.cn/api/config").then((response) =>
-          response.json(),
-        ) as Promise<{ apiPublicKey?: string }>,
-        fetch("https://gz.imxbt.cn/api/game?count=1&skip=0").then((response) =>
-          response.json(),
-        ) as Promise<{ data?: unknown[] }>,
-      ])
-      expect(config.apiPublicKey).toBeTypeOf("string")
-      expect(games.data).toBeInstanceOf(Array)
-    },
-  )
+  test.runIf(process.env.GZCTF_LIVE === "1")("matches gz.imxbt.cn public API shape", async () => {
+    const [config, games] = await Promise.all([
+      fetch("https://gz.imxbt.cn/api/config").then((response) => response.json()) as Promise<{
+        apiPublicKey?: string
+      }>,
+      fetch("https://gz.imxbt.cn/api/game?count=1&skip=0").then((response) =>
+        response.json(),
+      ) as Promise<{ data?: unknown[] }>,
+    ])
+    expect(config.apiPublicKey).toBeTypeOf("string")
+    expect(games.data).toBeInstanceOf(Array)
+  })
 })
 
-function json(
-  response: import("node:http").ServerResponse,
-  body: unknown,
-  status = 200,
-): void {
+function json(response: import("node:http").ServerResponse, body: unknown, status = 200): void {
   response.statusCode = status
   response.setHeader("Content-Type", "application/json")
   response.end(JSON.stringify(body))
@@ -396,7 +365,6 @@ async function listen(server: Server): Promise<string> {
     server.listen(0, "127.0.0.1", resolve)
   })
   const address = server.address()
-  if (!address || typeof address === "string")
-    throw new Error("测试服务器未监听 TCP 端口")
+  if (!address || typeof address === "string") throw new Error("测试服务器未监听 TCP 端口")
   return `http://127.0.0.1:${address.port}`
 }

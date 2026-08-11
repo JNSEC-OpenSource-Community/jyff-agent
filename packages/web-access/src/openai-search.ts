@@ -1,15 +1,7 @@
 import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
-import type {
-  SearchOptions,
-  SearchResponse,
-  SearchResult,
-} from "./perplexity.ts"
-import {
-  type ModelAuthResolver,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts"
+import { type ModelAuthResolver, providerOption, resolveProviderKey } from "./runtime.ts"
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
@@ -26,16 +18,9 @@ const MODEL_PREFERENCE = [
 ]
 const SEARCH_PROVIDERS = ["openai-codex", "openai"] as const
 
-function pickSearchModel<T extends { id: string }>(
-  models: readonly T[],
-): T | undefined {
+function pickSearchModel<T extends { id: string }>(models: readonly T[]): T | undefined {
   const candidates = models
-    .filter(
-      (model) =>
-        !model.id
-          .split("-")
-          .some((segment) => EXCLUDED_MODEL_SEGMENTS.has(segment)),
-    )
+    .filter((model) => !model.id.split("-").some((segment) => EXCLUDED_MODEL_SEGMENTS.has(segment)))
     .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }))
   for (const prefers of MODEL_PREFERENCE) {
     const preferred = candidates.find((model) => prefers(model.id))
@@ -65,9 +50,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -92,12 +75,8 @@ function normalizeDomainFilters(
 
   return allowedDomains.length > 0 || blockedDomains.length > 0
     ? {
-        ...(allowedDomains.length > 0
-          ? { allowedDomains: allowedDomains.slice(0, 100) }
-          : {}),
-        ...(blockedDomains.length > 0
-          ? { blockedDomains: blockedDomains.slice(0, 100) }
-          : {}),
+        ...(allowedDomains.length > 0 ? { allowedDomains: allowedDomains.slice(0, 100) } : {}),
+        ...(blockedDomains.length > 0 ? { blockedDomains: blockedDomains.slice(0, 100) } : {}),
       }
     : null
 }
@@ -111,9 +90,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
       .replace(/_/g, "/")
       .padEnd(Math.ceil(parts[1].length / 4) * 4, "=")
     const parsed = JSON.parse(Buffer.from(padded, "base64").toString("utf8"))
-    return parsed && typeof parsed === "object"
-      ? (parsed as Record<string, unknown>)
-      : null
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
   } catch {
     return null
   }
@@ -148,9 +125,7 @@ function resolveConfiguredResponsesUrl(value: unknown): string {
     )
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error(
-      `openaiResponsesUrl in the WebUI plugins settings must use http or https`,
-    )
+    throw new Error(`openaiResponsesUrl in the WebUI plugins settings must use http or https`)
   }
   return url.toString()
 }
@@ -158,9 +133,7 @@ function resolveConfiguredResponsesUrl(value: unknown): string {
 function resolveConfiguredSearchModel(value: unknown): string | undefined {
   if (value == null) return undefined
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(
-      `openaiSearchModel in the WebUI plugins settings must be a non-empty string`,
-    )
+    throw new Error(`openaiSearchModel in the WebUI plugins settings must be a non-empty string`)
   }
   return value.trim()
 }
@@ -180,9 +153,7 @@ async function resolvePiAuth(
 ): Promise<OpenAIAuth | undefined> {
   const models = ctx.getAvailable()
   for (const provider of SEARCH_PROVIDERS) {
-    const preferred = pickSearchModel(
-      models.filter((model) => model.provider === provider),
-    )
+    const preferred = pickSearchModel(models.filter((model) => model.provider === provider))
     if (!preferred) continue
     try {
       const resolved = await ctx.getApiKeyAndHeaders(preferred)
@@ -229,9 +200,7 @@ export async function resolveOpenAIAuth(
     : undefined
 }
 
-export async function isOpenAISearchAvailable(
-  ctx?: ModelAuthResolver,
-): Promise<boolean> {
+export async function isOpenAISearchAvailable(ctx?: ModelAuthResolver): Promise<boolean> {
   const config = {
     openaiApiKey: resolveProviderKey("openai"),
     openaiResponsesUrl: providerOption("openai", "responsesUrl"),
@@ -263,9 +232,7 @@ function buildInstructions(options: SearchOptions): string {
     Number.isFinite(options.numResults) &&
     options.numResults > 0
   ) {
-    lines.push(
-      `Prefer around ${Math.min(Math.floor(options.numResults), 20)} distinct sources.`,
-    )
+    lines.push(`Prefer around ${Math.min(Math.floor(options.numResults), 20)} distinct sources.`)
   }
 
   const filters = normalizeDomainFilters(options.domainFilter)
@@ -282,20 +249,14 @@ function buildWebSearchTool(options: SearchOptions): Record<string, unknown> {
   const filters = normalizeDomainFilters(options.domainFilter)
   if (filters) {
     tool.filters = {
-      ...(filters.allowedDomains
-        ? { allowed_domains: filters.allowedDomains }
-        : {}),
-      ...(filters.blockedDomains
-        ? { blocked_domains: filters.blockedDomains }
-        : {}),
+      ...(filters.allowedDomains ? { allowed_domains: filters.allowedDomains } : {}),
+      ...(filters.blockedDomains ? { blocked_domains: filters.blockedDomains } : {}),
     }
   }
   return tool
 }
 
-async function parseOpenAIResponse(
-  response: Response,
-): Promise<Record<string, unknown>> {
+async function parseOpenAIResponse(response: Response): Promise<Record<string, unknown>> {
   const text = await response.text()
   const trimmed = text.trim()
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
@@ -319,11 +280,9 @@ async function parseOpenAIResponse(
     if (!data || data === "[DONE]") continue
     try {
       const parsed = JSON.parse(data) as Record<string, unknown>
-      if (parsed.type === "response.output_item.done" && parsed.item)
-        outputItems.push(parsed.item)
+      if (parsed.type === "response.output_item.done" && parsed.item) outputItems.push(parsed.item)
       if (
-        (parsed.type === "response.done" ||
-          parsed.type === "response.completed") &&
+        (parsed.type === "response.done" || parsed.type === "response.completed") &&
         parsed.response &&
         typeof parsed.response === "object"
       ) {
@@ -333,12 +292,8 @@ async function parseOpenAIResponse(
   }
 
   if (completedResponse) {
-    const output = Array.isArray(completedResponse.output)
-      ? completedResponse.output
-      : []
-    return output.length > 0
-      ? completedResponse
-      : { ...completedResponse, output: outputItems }
+    const output = Array.isArray(completedResponse.output) ? completedResponse.output : []
+    return output.length > 0 ? completedResponse : { ...completedResponse, output: outputItems }
   }
   if (outputItems.length > 0) return { output: outputItems }
   throw new Error("OpenAI API returned no parseable response output")
@@ -347,19 +302,14 @@ async function parseOpenAIResponse(
 function cleanSourceUrl(rawUrl: string): string {
   try {
     const url = new URL(rawUrl)
-    if (url.searchParams.get("utm_source") === "openai")
-      url.searchParams.delete("utm_source")
+    if (url.searchParams.get("utm_source") === "openai") url.searchParams.delete("utm_source")
     return url.toString()
   } catch {
     return rawUrl.replace(/[?&]utm_source=openai$/, "")
   }
 }
 
-function extractSnippetAround(
-  text: string,
-  start: unknown,
-  end: unknown,
-): string {
+function extractSnippetAround(text: string, start: unknown, end: unknown): string {
   if (typeof start !== "number" || typeof end !== "number" || !text) return ""
   const before = Math.max(0, start - 100)
   const after = Math.min(text.length, end + 100)
@@ -382,35 +332,25 @@ function addResult(
   if (seen.has(cleanUrl)) return
   seen.add(cleanUrl)
   results.push({
-    title:
-      typeof title === "string" && title.trim().length > 0 ? title : cleanUrl,
+    title: typeof title === "string" && title.trim().length > 0 ? title : cleanUrl,
     url: cleanUrl,
     snippet,
   })
 }
 
-function extractSearchResults(
-  output: unknown[],
-  numResults: number | undefined,
-): SearchResult[] {
+function extractSearchResults(output: unknown[], numResults: number | undefined): SearchResult[] {
   const results: SearchResult[] = []
   const seenUrls = new Set<string>()
 
   for (const item of output) {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      (item as { type?: unknown }).type !== "message"
-    )
+    if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message")
       continue
     const content = (item as { content?: unknown }).content
     if (!Array.isArray(content)) continue
     for (const part of content) {
       if (!part || typeof part !== "object") continue
       const text =
-        typeof (part as { text?: unknown }).text === "string"
-          ? (part as { text: string }).text
-          : ""
+        typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""
       const annotations = (part as { annotations?: unknown }).annotations
       if (!Array.isArray(annotations)) continue
       for (const annotation of annotations) {
@@ -467,11 +407,7 @@ function extractSearchResults(
     }
   }
 
-  if (
-    typeof numResults === "number" &&
-    Number.isFinite(numResults) &&
-    numResults > 0
-  ) {
+  if (typeof numResults === "number" && Number.isFinite(numResults) && numResults > 0) {
     return results.slice(0, Math.min(Math.floor(numResults), 20))
   }
   return results
@@ -480,11 +416,7 @@ function extractSearchResults(
 function extractAnswer(output: unknown[]): string {
   const parts: string[] = []
   for (const item of output) {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      (item as { type?: unknown }).type !== "message"
-    )
+    if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message")
       continue
     const content = (item as { content?: unknown }).content
     if (!Array.isArray(content)) continue
@@ -516,8 +448,7 @@ export async function searchWithOpenAI(
     "Content-Type": "application/json",
     "OpenAI-Beta": "responses=experimental",
   }
-  const useCodexEndpoint =
-    auth.provider === "openai-codex" || isCodexJwt(auth.apiKey)
+  const useCodexEndpoint = auth.provider === "openai-codex" || isCodexJwt(auth.apiKey)
   if (useCodexEndpoint) {
     const accountId = extractAccountId(auth.apiKey)
     if (accountId) headers["chatgpt-account-id"] = accountId
@@ -537,27 +468,19 @@ export async function searchWithOpenAI(
   }
 
   try {
-    const response = await fetch(
-      useCodexEndpoint ? CODEX_RESPONSES_URL : auth.responsesUrl,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: options.signal
-          ? AbortSignal.any([
-              AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-              options.signal,
-            ])
-          : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-      },
-    )
+    const response = await fetch(useCodexEndpoint ? CODEX_RESPONSES_URL : auth.responsesUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: options.signal
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
+        : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    })
 
     if (!response.ok) {
       activityMonitor.logError(activityId, `HTTP ${response.status}`)
       const errorText = redactCredential(await response.text(), auth.apiKey)
-      throw new Error(
-        `OpenAI API error ${response.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`OpenAI API error ${response.status}: ${errorText.slice(0, 300)}`)
     }
 
     const parsed = await parseOpenAIResponse(response)

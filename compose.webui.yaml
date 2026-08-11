@@ -3,7 +3,9 @@ services:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
+      target: runtime
     image: ctf-agent-webui:latest
+    init: true
     command:
       - --root
       - /data
@@ -19,12 +21,13 @@ services:
       - /auth.json
       - --workspace-volume
       - ctf-agent-data
+    environment:
+      NODE_ENV: production
+      PI_OAUTH_CALLBACK_HOST: 0.0.0.0
     ports:
       - "0.0.0.0:${CTF_AGENT_WEBUI_PORT:-3000}:3000"
       - "127.0.0.1:1455:1455"
       - "127.0.0.1:53692:53692"
-    environment:
-      PI_OAUTH_CALLBACK_HOST: 0.0.0.0
     volumes:
       - ctf-agent-data:/data/.ctf-agent
       - /var/run/docker.sock:/var/run/docker.sock

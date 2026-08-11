@@ -52,17 +52,9 @@ import {
 const DEFAULT_TIMEOUT_MS = 30000
 const CONCURRENT_LIMIT = 3
 
-const NON_RECOVERABLE_ERRORS = [
-  "Unsupported content type",
-  "Response too large",
-]
+const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large"]
 const MIN_USEFUL_CONTENT = 500
-const SUPPORTED_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-])
+const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
 
 // 本 fork 无浏览器 canvas，直接图片按原样透传（尺寸/解码不做校验）。
 function resizeImage(
@@ -163,9 +155,7 @@ function isRedirectPolicyError(message: string): boolean {
 
 function loadFetchRouting(): FetchRouting {
   const { providers } = getRuntime()
-  const ordered = DEFAULT_FETCH_PROVIDER_ORDER.filter((provider) =>
-    providers.has(provider),
-  )
+  const ordered = DEFAULT_FETCH_PROVIDER_ORDER.filter((provider) => providers.has(provider))
   return {
     providers: ordered.length > 0 ? ordered : DEFAULT_FETCH_PROVIDER_ORDER,
     allowRemoteHostedProviders: ordered.some((provider) =>
@@ -252,10 +242,7 @@ async function extractWithJinaReader(
         Accept: "text/markdown",
         "X-No-Cache": "true",
       },
-      signal: AbortSignal.any([
-        AbortSignal.timeout(JINA_TIMEOUT_MS),
-        ...(signal ? [signal] : []),
-      ]),
+      signal: AbortSignal.any([AbortSignal.timeout(JINA_TIMEOUT_MS), ...(signal ? [signal] : [])]),
     })
 
     if (!res.ok) {
@@ -283,8 +270,7 @@ async function extractWithJinaReader(
     }
 
     const title =
-      extractHeadingTitle(markdownPart) ??
-      (new URL(url).pathname.split("/").pop() || url)
+      extractHeadingTitle(markdownPart) ?? (new URL(url).pathname.split("/").pop() || url)
     return { url, title, content: markdownPart, error: null }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -302,8 +288,7 @@ function parseTimestamp(ts: string): number | null {
   if (!Number.isNaN(num) && num >= 0) return Math.floor(num)
   const parts = ts.split(":").map(Number)
   if (parts.some((p) => Number.isNaN(p) || p < 0)) return null
-  if (parts.length === 3)
-    return Math.floor(parts[0]! * 3600 + parts[1]! * 60 + parts[2]!)
+  if (parts.length === 3) return Math.floor(parts[0]! * 3600 + parts[1]! * 60 + parts[2]!)
   if (parts.length === 2) return Math.floor(parts[0]! * 60 + parts[1]!)
   return null
 }
@@ -317,8 +302,7 @@ function parseTimestampSpec(ts: string): TimestampSpec | null {
   if (dashIdx > 0) {
     const start = parseTimestamp(ts.slice(0, dashIdx))
     const end = parseTimestamp(ts.slice(dashIdx + 1))
-    if (start !== null && end !== null && end > start)
-      return { type: "range", start, end }
+    if (start !== null && end !== null && end > start) return { type: "range", start, end }
   }
   const seconds = parseTimestamp(ts)
   return seconds !== null ? { type: "single", seconds } : null
@@ -337,18 +321,12 @@ function computeRangeTimestamps(
   const idealInterval = duration / (maxFrames - 1)
   if (idealInterval < MIN_FRAME_INTERVAL) {
     const timestamps: number[] = []
-    for (
-      let t = start;
-      t <= end && timestamps.length < maxFrames;
-      t += MIN_FRAME_INTERVAL
-    ) {
+    for (let t = start; t <= end && timestamps.length < maxFrames; t += MIN_FRAME_INTERVAL) {
       timestamps.push(t)
     }
     return timestamps
   }
-  return Array.from({ length: maxFrames }, (_, i) =>
-    Math.round(start + i * idealInterval),
-  )
+  return Array.from({ length: maxFrames }, (_, i) => Math.round(start + i * idealInterval))
 }
 
 function buildFrameResult(
@@ -420,8 +398,7 @@ export async function extractContent(
   let remoteUrl: URL | null = null
   try {
     const parsed = new URL(url)
-    if (parsed.protocol === "http:" || parsed.protocol === "https:")
-      remoteUrl = parsed
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed
   } catch {}
   if (remoteUrl) {
     try {
@@ -456,17 +433,12 @@ export async function extractContent(
         }
       }
       if (streamInfo.duration === null) {
-        const error =
-          "Cannot determine video duration. Use a timestamp range instead."
+        const error = "Cannot determine video duration. Use a timestamp range instead."
         return { url, title: "Frames", content: error, error }
       }
       const dur = Math.floor(streamInfo.duration)
       const timestamps = computeRangeTimestamps(0, dur, frameCount)
-      const result = await extractYouTubeFrames(
-        ytInfo.videoId,
-        timestamps,
-        streamInfo,
-      )
+      const result = await extractYouTubeFrames(ytInfo.videoId, timestamps, streamInfo)
       const label = `${formatSeconds(0)}-${formatSeconds(dur)}`
       return buildFrameResult(
         url,
@@ -483,9 +455,7 @@ export async function extractContent(
       return { url, title: "", content: "", error: localVideo.error }
     }
     if (localVideo.info) {
-      const durationResult = await getLocalVideoDuration(
-        localVideo.info.absolutePath,
-      )
+      const durationResult = await getLocalVideoDuration(localVideo.info.absolutePath)
       if (typeof durationResult !== "number") {
         return {
           url,
@@ -496,10 +466,7 @@ export async function extractContent(
       }
       const dur = Math.floor(durationResult)
       const timestamps = computeRangeTimestamps(0, dur, frameCount)
-      const result = await extractLocalFrames(
-        localVideo.info.absolutePath,
-        timestamps,
-      )
+      const result = await extractLocalFrames(localVideo.info.absolutePath, timestamps)
       const label = `${formatSeconds(0)}-${formatSeconds(dur)}`
       return buildFrameResult(
         url,
@@ -571,11 +538,7 @@ export async function extractContent(
         const timestamps = frameCount
           ? computeRangeTimestamps(spec.start, spec.end, frameCount)
           : computeRangeTimestamps(spec.start, spec.end)
-        const result = await extractYouTubeFrames(
-          ytInfo.videoId,
-          timestamps,
-          streamInfo,
-        )
+        const result = await extractYouTubeFrames(ytInfo.videoId, timestamps, streamInfo)
         return buildFrameResult(
           url,
           label,
@@ -594,11 +557,7 @@ export async function extractContent(
           return { url, title: `Frames ${label}`, content: error, error }
         }
         const timestamps = computeRangeTimestamps(spec.seconds, end, frameCount)
-        const result = await extractYouTubeFrames(
-          ytInfo.videoId,
-          timestamps,
-          streamInfo,
-        )
+        const result = await extractYouTubeFrames(ytInfo.videoId, timestamps, streamInfo)
         return buildFrameResult(
           url,
           label,
@@ -618,11 +577,7 @@ export async function extractContent(
           error,
         }
       }
-      const frame = await extractYouTubeFrame(
-        ytInfo.videoId,
-        spec.seconds,
-        streamInfo,
-      )
+      const frame = await extractYouTubeFrame(ytInfo.videoId, spec.seconds, streamInfo)
       if ("error" in frame) {
         return {
           url,
@@ -649,41 +604,20 @@ export async function extractContent(
         const timestamps = frameCount
           ? computeRangeTimestamps(spec.start, spec.end, frameCount)
           : computeRangeTimestamps(spec.start, spec.end)
-        const result = await extractLocalFrames(
-          localVideo.info.absolutePath,
-          timestamps,
-        )
+        const result = await extractLocalFrames(localVideo.info.absolutePath, timestamps)
         const label = `${formatSeconds(spec.start)}-${formatSeconds(spec.end)}`
-        return buildFrameResult(
-          url,
-          label,
-          timestamps.length,
-          result.frames,
-          result.error,
-        )
+        return buildFrameResult(url, label, timestamps.length, result.frames, result.error)
       }
 
       if (frameCount) {
         const end = spec.seconds + (frameCount - 1) * MIN_FRAME_INTERVAL
         const timestamps = computeRangeTimestamps(spec.seconds, end, frameCount)
-        const result = await extractLocalFrames(
-          localVideo.info.absolutePath,
-          timestamps,
-        )
+        const result = await extractLocalFrames(localVideo.info.absolutePath, timestamps)
         const label = `${formatSeconds(spec.seconds)}-${formatSeconds(end)}`
-        return buildFrameResult(
-          url,
-          label,
-          timestamps.length,
-          result.frames,
-          result.error,
-        )
+        return buildFrameResult(url, label, timestamps.length, result.frames, result.error)
       }
 
-      const frame = await extractVideoFrame(
-        localVideo.info.absolutePath,
-        spec.seconds,
-      )
+      const frame = await extractVideoFrame(localVideo.info.absolutePath, spec.seconds)
       if ("error" in frame) {
         return {
           url,
@@ -705,8 +639,7 @@ export async function extractContent(
       url,
       title: "",
       content: "",
-      error:
-        "Timestamp extraction only works with YouTube and local video files",
+      error: "Timestamp extraction only works with YouTube and local video files",
     }
   }
 
@@ -758,12 +691,7 @@ export async function extractContent(
   }
   if (ytInfo.isYouTube && youtubeEnabled) {
     try {
-      const ytResult = await extractYouTube(
-        url,
-        signal,
-        options?.prompt,
-        options?.model,
-      )
+      const ytResult = await extractYouTube(url, signal, options?.prompt, options?.model)
       if (ytResult) return ytResult
       if (signal?.aborted) return abortedResult(url)
     } catch (err) {
@@ -790,9 +718,7 @@ export async function extractContent(
   }
   const providerOrder =
     remoteUrl && !fetchRouting.allowRemoteHostedProviders
-      ? fetchRouting.providers.filter(
-          (provider) => !REMOTE_HOSTED_FETCH_PROVIDERS.has(provider),
-        )
+      ? fetchRouting.providers.filter((provider) => !REMOTE_HOSTED_FETCH_PROVIDERS.has(provider))
       : fetchRouting.providers
   if (providerOrder.length === 0) {
     return {
@@ -811,20 +737,19 @@ export async function extractContent(
     content: appendDeclaredWebLinks(result.content, declaredLinks),
   })
   const parseErrorResult = (message: string): ExtractedContent =>
-    httpResult
-      ? { ...httpResult, error: message }
-      : { url, title: "", content: "", error: message }
+    httpResult ? { ...httpResult, error: message } : { url, title: "", content: "", error: message }
   const runHttpProvider = async (): Promise<ExtractedContent | null> => {
-    const { declaredLinks: discoveredLinks = [], ...result } =
-      await extractViaHttp(url, signal, options)
+    const { declaredLinks: discoveredLinks = [], ...result } = await extractViaHttp(
+      url,
+      signal,
+      options,
+    )
     httpResult = result
     declaredLinks = discoveredLinks
     if (signal?.aborted) return abortedResult(url)
     if (!httpResult.error) return httpResult
     if (
-      NON_RECOVERABLE_ERRORS.some((prefix) =>
-        httpResult!.error!.startsWith(prefix),
-      ) ||
+      NON_RECOVERABLE_ERRORS.some((prefix) => httpResult!.error!.startsWith(prefix)) ||
       isRedirectPolicyError(httpResult.error)
     ) {
       return httpResult
@@ -875,11 +800,7 @@ export async function extractContent(
     }
 
     if (provider === "jina") {
-      const jinaResult = await extractWithJinaReader(
-        url,
-        signal,
-        options?.lookup,
-      )
+      const jinaResult = await extractWithJinaReader(url, signal, options?.lookup)
       if (jinaResult) return withDeclaredLinks(jinaResult)
       continue
     }
@@ -901,11 +822,7 @@ export async function extractContent(
     if (provider === "search1api") {
       try {
         if (isSearch1APIAvailable()) {
-          const search1apiResult = await extractWithSearch1API(
-            url,
-            signal,
-            options,
-          )
+          const search1apiResult = await extractWithSearch1API(url, signal, options)
           if (search1apiResult) return withDeclaredLinks(search1apiResult)
         }
       } catch (err) {
@@ -986,15 +903,11 @@ export async function extractContent(
       try {
         if (isBrightDataUnlockerAvailable()) {
           const ssrf = loadSsrfConfig()
-          const brightdataResult = await extractWithBrightDataUnlocker(
-            url,
-            signal,
-            {
-              timeoutMs: options?.timeoutMs,
-              ...(options?.lookup ? { lookup: options.lookup } : {}),
-              ssrf,
-            },
-          )
+          const brightdataResult = await extractWithBrightDataUnlocker(url, signal, {
+            timeoutMs: options?.timeoutMs,
+            ...(options?.lookup ? { lookup: options.lookup } : {}),
+            ssrf,
+          })
           if (brightdataResult) return withDeclaredLinks(brightdataResult)
         }
       } catch (err) {
@@ -1011,10 +924,7 @@ export async function extractContent(
         geminiResult = await extractWithUrlContext(url, signal)
       } catch (err) {
         if (isAbortError(err)) return abortedResult(url)
-        if (
-          err instanceof CredentialResolutionError ||
-          isConfigParseError(err)
-        ) {
+        if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
           return parseErrorResult(errorMessage(err))
         }
       }
@@ -1024,23 +934,18 @@ export async function extractContent(
 
   if (signal?.aborted) return abortedResult(url)
   const finalHttpResult = httpResult as ExtractedContent | null
-  if (finalHttpResult && declaredLinks.length > 0)
-    return { ...finalHttpResult, error: null }
+  if (finalHttpResult && declaredLinks.length > 0) return { ...finalHttpResult, error: null }
 
   const guidance = [
     finalHttpResult?.error ?? "No fetch_content provider returned content",
     ...(firecrawlError ? [`Firecrawl fallback failed: ${firecrawlError}`] : []),
     ...(tinyfishError ? [`TinyFish fallback failed: ${tinyfishError}`] : []),
-    ...(search1apiError
-      ? [`Search1API fallback failed: ${search1apiError}`]
-      : []),
+    ...(search1apiError ? [`Search1API fallback failed: ${search1apiError}`] : []),
     ...(queritError ? [`Querit fallback failed: ${queritError}`] : []),
     ...(kagiError ? [`Kagi fallback failed: ${kagiError}`] : []),
     ...(ollamaError ? [`Ollama fallback failed: ${ollamaError}`] : []),
     ...(parallelError ? [`Parallel fallback failed: ${parallelError}`] : []),
-    ...(brightdataError
-      ? [`Bright Data fallback failed: ${brightdataError}`]
-      : []),
+    ...(brightdataError ? [`Bright Data fallback failed: ${brightdataError}`] : []),
     "",
     "Fallback options:",
     `  • Set firecrawlBaseUrl in the WebUI plugins settings to a self-hosted Firecrawl instance`,
@@ -1088,15 +993,10 @@ export async function readPDFResponseBuffer(
   maxSizeMB: number,
 ): Promise<ArrayBuffer> {
   const maxBytes = maxSizeMB * 1024 * 1024
-  return readResponseBufferWithLimit(response, maxBytes, () =>
-    pdfSizeLimitError(maxSizeMB),
-  )
+  return readResponseBufferWithLimit(response, maxBytes, () => pdfSizeLimitError(maxSizeMB))
 }
 
-async function readTextResponseWithLimit(
-  response: Response,
-  maxBytes: number,
-): Promise<string> {
+async function readTextResponseWithLimit(response: Response, maxBytes: number): Promise<string> {
   const buffer = await readResponseBufferWithLimit(response, maxBytes, () =>
     responseSizeLimitError(maxBytes),
   )
@@ -1165,15 +1065,11 @@ async function readResponseBufferWithLimit(
 }
 
 function pdfSizeLimitError(maxSizeMB: number): Error {
-  return new Error(
-    `PDF exceeds configured pdf.maxSizeMB limit (${maxSizeMB} MB)`,
-  )
+  return new Error(`PDF exceeds configured pdf.maxSizeMB limit (${maxSizeMB} MB)`)
 }
 
 function responseSizeLimitError(maxBytes: number): Error {
-  return new Error(
-    `Response too large (${Math.round(maxBytes / 1024 / 1024)}MB)`,
-  )
+  return new Error(`Response too large (${Math.round(maxBytes / 1024 / 1024)}MB)`)
 }
 
 async function extractViaHttp(
@@ -1277,10 +1173,8 @@ async function extractViaHttp(
 
     if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
       try {
-        const buffer = await readResponseBufferWithLimit(
-          response,
-          maxResponseSize,
-          () => responseSizeLimitError(maxResponseSize),
+        const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () =>
+          responseSizeLimitError(maxResponseSize),
         )
         const resized = resizeImage(new Uint8Array(buffer), mimeType)
         activityMonitor.logComplete(activityId, response.status)
@@ -1293,8 +1187,7 @@ async function extractViaHttp(
             mimeType,
             status: response.status,
           }
-        const title =
-          new URL(response.url || url).pathname.split("/").pop() || url
+        const title = new URL(response.url || url).pathname.split("/").pop() || url
         return {
           url,
           title,
@@ -1323,10 +1216,7 @@ async function extractViaHttp(
 
     if (isPDFContent && pdfConfig) {
       try {
-        const buffer = await readPDFResponseBuffer(
-          response,
-          pdfConfig.maxSizeMB,
-        )
+        const buffer = await readPDFResponseBuffer(response, pdfConfig.maxSizeMB)
         if (signal?.aborted) return abortedResult(url)
         const result = await extractPDFToMarkdown(buffer, url, { signal })
         activityMonitor.logComplete(activityId, response.status)
@@ -1342,10 +1232,7 @@ async function extractViaHttp(
         if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
           return { url, title: "", content: "", error: message }
         }
-        if (
-          err instanceof CredentialResolutionError ||
-          isConfigParseError(err)
-        ) {
+        if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
           return { url, title: "", content: "", error: message }
         }
         return {
@@ -1375,8 +1262,7 @@ async function extractViaHttp(
 
     const text = await readTextResponseWithLimit(response, maxResponseSize)
     const isHTML =
-      contentType.includes("text/html") ||
-      contentType.includes("application/xhtml+xml")
+      contentType.includes("text/html") || contentType.includes("application/xhtml+xml")
 
     if (!isHTML) {
       activityMonitor.logComplete(activityId, response.status)
@@ -1469,9 +1355,7 @@ export function extractHeadingTitle(text: string): string | null {
 }
 
 function extractTextTitle(text: string, url: string): string {
-  return (
-    extractHeadingTitle(text) ?? (new URL(url).pathname.split("/").pop() || url)
-  )
+  return extractHeadingTitle(text) ?? (new URL(url).pathname.split("/").pop() || url)
 }
 
 export async function fetchAllContent(
@@ -1479,7 +1363,5 @@ export async function fetchAllContent(
   signal?: AbortSignal,
   options?: ExtractOptions,
 ): Promise<ExtractedContent[]> {
-  return Promise.all(
-    urls.map((url) => fetchLimit(() => extractContent(url, signal, options))),
-  )
+  return Promise.all(urls.map((url) => fetchLimit(() => extractContent(url, signal, options))))
 }

@@ -13,6 +13,7 @@ import {
   Input,
   Label,
   PlatformSetupForm,
+  SettingsSection,
   Spinner,
   Tabs,
   TabsContent,
@@ -21,10 +22,7 @@ import {
 } from "../../components/index.ts"
 import { apiMutation, apiRequest, projectApi } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
-import type {
-  ModelConfigurationView,
-  ProjectRuntimeConfigurationView,
-} from "../../types.ts"
+import type { ModelConfigurationView, ProjectRuntimeConfigurationView } from "../../types.ts"
 
 interface RT {
   runtime: ProjectRuntimeConfigurationView
@@ -39,20 +37,15 @@ export function ProjectSettingsPage() {
   const [setup, setSetup] = useState<ControlPlaneSetupSnapshot | null>(null)
   const [rt, setRt] = useState<RT | null>(null)
   const [pcfg, setPcfg] = useState<ProjectConfig | null>(null)
-  const [runtime, setRuntime] =
-    useState<ProjectRuntimeConfigurationView | null>(null)
+  const [runtime, setRuntime] = useState<ProjectRuntimeConfigurationView | null>(null)
   const [secrets, setSecrets] = useState<Record<string, string>>({})
   const [err, setErr] = useState("")
-  const [busy, setBusy] = useState<"platform" | "runtime" | "reset" | null>(
-    null,
-  )
+  const [busy, setBusy] = useState<"platform" | "runtime" | "reset" | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
 
   useEffect(() => {
     void Promise.all([
-      apiRequest<ControlPlaneSetupSnapshot>(
-        projectApi(projectId, "/api/control-plane"),
-      ),
+      apiRequest<ControlPlaneSetupSnapshot>(projectApi(projectId, "/api/control-plane")),
       apiRequest<RT>(projectApi(projectId, "/api/runtime-config")),
     ])
       .then(([s, r]) => {
@@ -82,9 +75,7 @@ export function ProjectSettingsPage() {
     try {
       await apiMutation("/api/projects", "POST", {
         config: pcfg,
-        secrets: Object.fromEntries(
-          Object.entries(secrets).filter(([, v]) => v),
-        ),
+        secrets: Object.fromEntries(Object.entries(secrets).filter(([, v]) => v)),
       })
       setSecrets({})
       await refreshProjects()
@@ -99,11 +90,7 @@ export function ProjectSettingsPage() {
     setBusy("runtime")
     setErr("")
     try {
-      const n = await apiMutation<RT>(
-        projectApi(projectId, "/api/runtime-config"),
-        "POST",
-        runtime,
-      )
+      const n = await apiMutation<RT>(projectApi(projectId, "/api/runtime-config"), "POST", runtime)
       setRt(n)
       setRuntime(n.runtime)
     } catch (e) {
@@ -127,22 +114,13 @@ export function ProjectSettingsPage() {
     }
   }
 
-  if (!setup || !rt || !pcfg || !runtime)
-    return <Spinner label="加载比赛配置" />
+  if (!setup || !rt || !pcfg || !runtime) return <Spinner label="加载比赛配置" />
   const models = rt.models.models
 
   return (
     <div className="page-container">
-      <header className="mb-8">
-        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          {pcfg.project.id}
-        </p>
-        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
-          比赛配置
-        </h1>
-        <p className="hero-desc mt-3! max-w-2xl text-sm text-muted-foreground">
-          The hardest part in today's CTF.
-        </p>
+      <header className="mb-5 border-b border-border pb-4">
+        <h1 className="text-xl font-semibold tracking-tight">比赛配置</h1>
       </header>
 
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
@@ -153,224 +131,205 @@ export function ProjectSettingsPage() {
           <TabsTrigger value="platform">平台</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="runtime" className="space-y-5">
-          <div>
-            <h2 className="text-lg font-semibold">Agent 模型绑定</h2>
-            <p className="text-sm text-muted-foreground">请选择你的英雄。</p>
-          </div>
-          <Card className="space-y-6 p-6">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <ModelField
-                label="Solver Agent"
-                value={runtime.solverModelId}
-                models={models}
-                onChange={(v) =>
-                  setRuntime((c) => (c ? { ...c, solverModelId: v } : c))
-                }
-              />
-              <ModelField
-                label="TLDR Agent"
-                value={runtime.tldrModelId}
-                models={models}
-                onChange={(v) =>
-                  setRuntime((c) => (c ? { ...c, tldrModelId: v } : c))
-                }
-              />
-              <div className="space-y-1.5">
-                <Label
-                  htmlFor={maxConcurrentId}
-                  className="text-xs font-medium text-muted-foreground"
-                >
-                  最大并发
-                </Label>
-                <Input
-                  id={maxConcurrentId}
-                  type="number"
-                  min="1"
-                  max="64"
-                  value={runtime.maxConcurrent}
-                  onChange={(e) =>
-                    setRuntime((c) =>
-                      c ? { ...c, maxConcurrent: Number(e.target.value) } : c,
-                    )
-                  }
-                  className="h-8 text-xs"
+        <TabsContent value="runtime">
+          <SettingsSection
+            title="模型与并发"
+            description="选择各类 Agent 使用的模型，并限制同时运行的 Solver 与远程环境。"
+          >
+            <Card className="space-y-6 p-5 sm:p-6">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <ModelField
+                  label="Solver Agent"
+                  value={runtime.solverModelId}
+                  models={models}
+                  onChange={(v) => setRuntime((c) => (c ? { ...c, solverModelId: v } : c))}
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label
-                  htmlFor={maxRemoteEnvironmentsId}
-                  className="text-xs font-medium text-muted-foreground"
-                >
-                  最大远程环境数
-                </Label>
-                <Input
-                  id={maxRemoteEnvironmentsId}
-                  type="number"
-                  min="1"
-                  max="64"
-                  value={runtime.maxRemoteEnvironments}
-                  onChange={(e) =>
-                    setRuntime((c) =>
-                      c
-                        ? {
-                            ...c,
-                            maxRemoteEnvironments: Number(e.target.value),
-                          }
-                        : c,
-                    )
-                  }
-                  className="h-8 text-xs"
+                <ModelField
+                  label="TLDR Agent"
+                  value={runtime.tldrModelId}
+                  models={models}
+                  onChange={(v) => setRuntime((c) => (c ? { ...c, tldrModelId: v } : c))}
                 />
-                <p className="text-xs text-muted-foreground">
-                  无附件题优先；附件题先本地分析，需要验证时排队申请。
-                </p>
-              </div>
-            </div>
-            {rt.models.subagentRoles?.length ? (
-              <div className="border-t border-border pt-5">
-                <h3 className="mb-3 text-sm font-semibold">SubAgent Roles</h3>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  {rt.models.subagentRoles.map((r) => (
-                    <ModelField
-                      key={r.name}
-                      label={r.displayName}
-                      hint={r.name}
-                      value={runtime.subagentModels[r.name] ?? ""}
-                      models={models}
-                      onChange={(v) =>
-                        setRuntime((c) =>
-                          c
-                            ? {
-                                ...c,
-                                subagentModels: {
-                                  ...c.subagentModels,
-                                  [r.name]: v,
-                                },
-                              }
-                            : c,
-                        )
-                      }
-                    />
-                  ))}
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor={maxConcurrentId}
+                    className="text-xs font-medium text-muted-foreground"
+                  >
+                    最大并发
+                  </Label>
+                  <Input
+                    id={maxConcurrentId}
+                    type="number"
+                    min="1"
+                    max="64"
+                    value={runtime.maxConcurrent}
+                    onChange={(e) =>
+                      setRuntime((c) => (c ? { ...c, maxConcurrent: Number(e.target.value) } : c))
+                    }
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor={maxRemoteEnvironmentsId}
+                    className="text-xs font-medium text-muted-foreground"
+                  >
+                    最大远程环境数
+                  </Label>
+                  <Input
+                    id={maxRemoteEnvironmentsId}
+                    type="number"
+                    min="1"
+                    max="64"
+                    value={runtime.maxRemoteEnvironments}
+                    onChange={(e) =>
+                      setRuntime((c) =>
+                        c
+                          ? {
+                              ...c,
+                              maxRemoteEnvironments: Number(e.target.value),
+                            }
+                          : c,
+                      )
+                    }
+                    className="h-8 text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    无附件题优先；附件题先本地分析，需要验证时排队申请。
+                  </p>
                 </div>
               </div>
-            ) : null}
-            <div className="flex justify-end">
-              <Button
-                onClick={() => void saveRt()}
-                disabled={busy !== null}
-                size="sm"
-              >
-                <Icon icon="lucide:save" width="13" /> 保存
-              </Button>
-            </div>
-          </Card>
-          <Card className="border-danger/30 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-semibold">重置所有 Solver</h3>
-                <p className="mt-1! max-w-2xl text-xs text-muted-foreground">
-                  停止当前任务并清空 Run、对话、黑板、公告审核、调度队列和题目
-                  workspace；比赛连接与本页配置会保留。
-                </p>
+              {rt.models.subagentRoles?.length ? (
+                <div className="border-t border-border pt-5">
+                  <h3 className="mb-3 text-sm font-semibold">SubAgent Roles</h3>
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    {rt.models.subagentRoles.map((r) => (
+                      <ModelField
+                        key={r.name}
+                        label={r.displayName}
+                        hint={r.name}
+                        value={runtime.subagentModels[r.name] ?? ""}
+                        models={models}
+                        onChange={(v) =>
+                          setRuntime((c) =>
+                            c
+                              ? {
+                                  ...c,
+                                  subagentModels: {
+                                    ...c.subagentModels,
+                                    [r.name]: v,
+                                  },
+                                }
+                              : c,
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex justify-end">
+                <Button onClick={() => void saveRt()} disabled={busy !== null} size="sm">
+                  <Icon icon="lucide:save" width="13" /> 保存
+                </Button>
               </div>
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={busy !== null}
-                onClick={() => setResetOpen(true)}
-              >
-                <Icon icon="lucide:rotate-ccw" width="13" />
-                重置所有 Solver
-              </Button>
-            </div>
-          </Card>
+            </Card>
+          </SettingsSection>
+          <SettingsSection
+            title="重置解题数据"
+            description="停止当前任务并清空运行、对话、黑板、公告审核、调度队列和题目文件。比赛连接与本页配置会保留。"
+            danger
+          >
+            <Card className="border-danger/30 bg-danger/[0.025] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <p className="max-w-xl text-xs leading-5 text-muted-foreground">
+                  此操作无法撤销。运行中的 Solver 和 SubAgent 会先停止。
+                </p>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => setResetOpen(true)}
+                >
+                  <Icon icon="lucide:rotate-ccw" width="13" />
+                  重置所有 Solver
+                </Button>
+              </div>
+            </Card>
+          </SettingsSection>
         </TabsContent>
 
-        <TabsContent value="platform" className="space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">
-                {plat?.setup.label ?? pcfg.platform.plugin}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {plat?.setup.description}
-              </p>
-            </div>
-            <Badge
-              tone={setup.state.phase === "ready" ? "positive" : "warning"}
-              className="text-[10px]"
-            >
-              {setup.state.phase}
-            </Badge>
-          </div>
-          <Card className="space-y-6 p-6">
-            <div className="mb-5 max-w-md space-y-1.5">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">
-                  显示名称
-                </Label>
-                <Input
-                  value={pcfg.project.name}
-                  onChange={(e) =>
-                    setPcfg((c) =>
-                      c
+        <TabsContent value="platform">
+          <SettingsSection
+            title={plat?.setup.label ?? pcfg.platform.plugin}
+            description={plat?.setup.description ?? "配置比赛平台连接。"}
+            meta={
+              <Badge tone={setup.state.phase === "ready" ? "positive" : "warning"}>
+                {setup.state.phase}
+              </Badge>
+            }
+          >
+            <Card className="space-y-6 p-5 sm:p-6">
+              <div className="mb-5 max-w-md space-y-1.5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">显示名称</Label>
+                  <Input
+                    value={pcfg.project.name}
+                    onChange={(e) =>
+                      setPcfg((c) =>
+                        c
+                          ? {
+                              ...c,
+                              project: { ...c.project, name: e.target.value },
+                            }
+                          : c,
+                      )
+                    }
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+              {plat && strat ? (
+                <PlatformSetupForm
+                  platform={plat}
+                  strategyId={strat.id}
+                  config={pconf}
+                  secrets={secrets}
+                  configuredSecrets={setup.secrets}
+                  onStrategyChange={(_id, defaults) => {
+                    setPcfg((current) =>
+                      current
                         ? {
-                            ...c,
-                            project: { ...c.project, name: e.target.value },
+                            ...current,
+                            platform: {
+                              ...current.platform,
+                              config: { ...pconf, ...defaults },
+                            },
                           }
-                        : c,
+                        : current,
+                    )
+                    setSecrets({})
+                  }}
+                  onConfigChange={(next) =>
+                    setPcfg((current) =>
+                      current
+                        ? {
+                            ...current,
+                            platform: { ...current.platform, config: next },
+                          }
+                        : current,
                     )
                   }
-                  className="h-8 text-xs"
+                  onSecretsChange={setSecrets}
                 />
+              ) : null}
+              <div className="flex justify-end">
+                <Button onClick={() => void savePlat()} disabled={busy !== null} size="sm">
+                  <Icon icon="lucide:plug-zap" width="13" /> 保存并重连
+                </Button>
               </div>
-            </div>
-            {plat && strat ? (
-              <PlatformSetupForm
-                platform={plat}
-                strategyId={strat.id}
-                config={pconf}
-                secrets={secrets}
-                configuredSecrets={setup.secrets}
-                onStrategyChange={(_id, defaults) => {
-                  setPcfg((current) =>
-                    current
-                      ? {
-                          ...current,
-                          platform: {
-                            ...current.platform,
-                            config: { ...pconf, ...defaults },
-                          },
-                        }
-                      : current,
-                  )
-                  setSecrets({})
-                }}
-                onConfigChange={(next) =>
-                  setPcfg((current) =>
-                    current
-                      ? {
-                          ...current,
-                          platform: { ...current.platform, config: next },
-                        }
-                      : current,
-                  )
-                }
-                onSecretsChange={setSecrets}
-              />
-            ) : null}
-            <div className="flex justify-end">
-              <Button
-                onClick={() => void savePlat()}
-                disabled={busy !== null}
-                size="sm"
-              >
-                <Icon icon="lucide:plug-zap" width="13" /> 保存并重连
-              </Button>
-            </div>
-          </Card>
+            </Card>
+          </SettingsSection>
         </TabsContent>
       </Tabs>
       <ConfirmDialog
@@ -398,7 +357,7 @@ function ModelField({
   hint?: string
   value: string
   models: ModelConfigurationView["models"]
-  onChange(v: string): void
+  onChange: (v: string) => void
 }) {
   const id = useId()
   return (

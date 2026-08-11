@@ -27,17 +27,14 @@ export function normalizeFetchContentParams(
   params: FetchContentParams,
 ): NormalizedFetchContentParams {
   const normalizedUrls = uniqueUrls(normalizeUrlArray(params.urls))
-  const urlList =
-    normalizedUrls.length > 0 ? normalizedUrls : normalizeSingleUrl(params.url)
+  const urlList = normalizedUrls.length > 0 ? normalizedUrls : normalizeSingleUrl(params.url)
   const prompt = normalizeOptionalString(params.prompt)
   const timestamp = normalizeOptionalString(params.timestamp)
   const frames = normalizeOptionalInteger(params.frames)
 
-  const shouldIncludeFrames =
-    frames !== undefined && (timestamp !== undefined || frames > 1)
+  const shouldIncludeFrames = frames !== undefined && (timestamp !== undefined || frames > 1)
 
-  const forceClone =
-    typeof params.forceClone === "boolean" ? params.forceClone : undefined
+  const forceClone = typeof params.forceClone === "boolean" ? params.forceClone : undefined
   const model = normalizeOptionalString(params.model)
   const mode = normalizeMode(params.mode)
   const answerModel = normalizeOptionalString(params.answerModel)
@@ -73,18 +70,14 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return trimmed || undefined
 }
 
-function normalizeMode(
-  value: unknown,
-): "readable" | "raw" | "answer" | undefined {
+function normalizeMode(value: unknown): "readable" | "raw" | "answer" | undefined {
   if (value === undefined) return undefined
-  if (value === "readable" || value === "raw" || value === "answer")
-    return value
+  if (value === "readable" || value === "raw" || value === "answer") return value
   throw new Error('mode must be "readable", "raw", or "answer"')
 }
 
 function normalizeOptionalInteger(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
-    return undefined
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return undefined
   return value
 }
 

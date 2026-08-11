@@ -1,17 +1,16 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   validateChallengeWriteup,
+  WRITEUP_MAX_BYTES,
   WRITEUP_REQUIRED_HEADINGS,
 } from "../../src/orchestration/writeup-validator.ts"
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe("writeup validator", () => {
@@ -34,20 +33,55 @@ describe("writeup validator", () => {
     })
   })
 
-  it("reports a missing file and every missing required heading", async () => {
+  it("reports a missing writeup file", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "writeup-invalid-"))
     roots.push(workspace)
-    expect((await validateChallengeWriteup(workspace)).errors).toContain(
-      "writeup.md does not exist",
-    )
 
-    await mkdir(workspace, { recursive: true })
-    await writeFile(
-      join(workspace, "writeup.md"),
-      "# Challenge\n\n## Summary\nshort",
-    )
-    const invalid = await validateChallengeWriteup(workspace)
-    expect(invalid.valid).toBe(false)
-    expect(invalid.errors).toContain("Missing required heading: ## Flag")
+    await expect(validateChallengeWriteup(workspace)).resolves.toMatchObject({
+      valid: false,
+      errors: ["writeup.md does not exist"],
+      size: 0,
+    })
+  })
+
+  it("reports every missing heading with the feedback delimiters sent to the Solver", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "writeup-headings-"))
+    roots.push(workspace)
+
+    await writeFile(join(workspace, "writeup.md"), "# Challenge\n\n## Summary\nshort")
+    await expect(validateChallengeWriteup(workspace)).resolves.toMatchObject({
+      valid: false,
+      errors: WRITEUP_REQUIRED_HEADINGS.slice(1).map(
+        (heading) => `Missing required heading: ## ${heading}\n`,
+      ),
+    })
+  })
+
+  it.each([
+    {
+      label: "空文件",
+      content: Buffer.alloc(0),
+      error: "writeup.md is empty",
+    },
+    {
+      label: "无效 UTF-8",
+      content: Buffer.from([0xc3, 0x28]),
+      error: "writeup.md must be valid UTF-8",
+    },
+    {
+      label: "超出大小上限",
+      content: Buffer.alloc(WRITEUP_MAX_BYTES + 1, "a"),
+      error: `writeup.md exceeds ${WRITEUP_MAX_BYTES} bytes`,
+    },
+  ])("rejects $label", async ({ content, error }) => {
+    const workspace = await mkdtemp(join(tmpdir(), "writeup-malformed-"))
+    roots.push(workspace)
+    await writeFile(join(workspace, "writeup.md"), content)
+
+    await expect(validateChallengeWriteup(workspace)).resolves.toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([error]),
+      size: content.length,
+    })
   })
 })

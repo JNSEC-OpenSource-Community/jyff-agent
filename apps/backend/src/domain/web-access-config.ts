@@ -95,9 +95,7 @@ function emptyConfiguration(): StoredWebAccessConfiguration {
   }
 }
 
-function isStoredConfiguration(
-  value: unknown,
-): value is StoredWebAccessConfiguration {
+function isStoredConfiguration(value: unknown): value is StoredWebAccessConfiguration {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
   const config = value as Record<string, unknown>
   if (config.version !== 1) return false
@@ -118,11 +116,7 @@ function normalizeProviders(value: unknown): string[] {
   for (const entry of value) {
     if (typeof entry !== "string") continue
     const provider = entry.trim().toLowerCase()
-    if (
-      !WEB_ACCESS_PROVIDERS.includes(
-        provider as (typeof WEB_ACCESS_PROVIDERS)[number],
-      )
-    ) {
+    if (!WEB_ACCESS_PROVIDERS.includes(provider as (typeof WEB_ACCESS_PROVIDERS)[number])) {
       throw new Error(`未知 web-access provider: ${entry}`)
     }
     if (seen.has(provider)) continue
@@ -136,11 +130,8 @@ function normalizeWorkflow(value: unknown): WebAccessWorkflow {
   return value === "auto-summary" ? "auto-summary" : "none"
 }
 
-function normalizeSummaryModel(
-  value: unknown,
-): { provider: string; id: string } | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return undefined
+function normalizeSummaryModel(value: unknown): { provider: string; id: string } | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const model = value as { provider?: unknown; id?: unknown }
   if (typeof model.provider !== "string" || typeof model.id !== "string") {
     return undefined
@@ -157,8 +148,7 @@ function normalizeStringArray(value: unknown): string[] {
 }
 
 function normalizeSsrf(value: unknown): StoredWebAccessConfiguration["ssrf"] {
-  const ssrf =
-    value && typeof value === "object" ? (value as Record<string, unknown>) : {}
+  const ssrf = value && typeof value === "object" ? (value as Record<string, unknown>) : {}
   return {
     allowRanges: normalizeStringArray(ssrf.allowRanges),
     trustEnvProxy: ssrf.trustEnvProxy === true,
@@ -171,9 +161,7 @@ export async function createFileWebAccessConfiguration(options: {
 }): Promise<WebAccessConfiguration> {
   let configuration: StoredWebAccessConfiguration
   try {
-    const parsed: unknown = JSON.parse(
-      await readFile(options.storagePath, "utf8"),
-    )
+    const parsed: unknown = JSON.parse(await readFile(options.storagePath, "utf8"))
     configuration = isStoredConfiguration(parsed)
       ? {
           ...parsed,
@@ -208,9 +196,7 @@ export async function createFileWebAccessConfiguration(options: {
     }
   }
 
-  function toView(
-    value: StoredWebAccessConfiguration,
-  ): WebAccessConfigurationView {
+  function toView(value: StoredWebAccessConfiguration): WebAccessConfigurationView {
     return {
       enabled: value.enabled,
       providers: WEB_ACCESS_PROVIDERS.map((provider) => ({
@@ -233,18 +219,13 @@ export async function createFileWebAccessConfiguration(options: {
     async update(input) {
       const next: StoredWebAccessConfiguration = {
         version: 1,
-        enabled:
-          input.enabled === undefined
-            ? configuration.enabled
-            : Boolean(input.enabled),
+        enabled: input.enabled === undefined ? configuration.enabled : Boolean(input.enabled),
         providers:
           input.providers === undefined
             ? configuration.providers
             : normalizeProviders(input.providers),
         workflow:
-          input.workflow === undefined
-            ? configuration.workflow
-            : normalizeWorkflow(input.workflow),
+          input.workflow === undefined ? configuration.workflow : normalizeWorkflow(input.workflow),
         summaryModel:
           input.summaryModel === undefined
             ? configuration.summaryModel
@@ -263,9 +244,7 @@ export async function createFileWebAccessConfiguration(options: {
                     : input.ssrf.trustEnvProxy === true,
               },
         ...(input.timeouts ? { timeouts: input.timeouts } : {}),
-        ...(input.providerConfig
-          ? { providerConfig: input.providerConfig }
-          : {}),
+        ...(input.providerConfig ? { providerConfig: input.providerConfig } : {}),
       }
       configuration = next
       await persist(next)
@@ -274,11 +253,7 @@ export async function createFileWebAccessConfiguration(options: {
 
     async setProviderKey(provider, apiKey) {
       const normalized = provider.trim().toLowerCase()
-      if (
-        !WEB_ACCESS_PROVIDERS.includes(
-          normalized as (typeof WEB_ACCESS_PROVIDERS)[number],
-        )
-      ) {
+      if (!WEB_ACCESS_PROVIDERS.includes(normalized as (typeof WEB_ACCESS_PROVIDERS)[number])) {
         throw new Error(`未知 web-access provider: ${provider}`)
       }
       await options.secretStore.set({
@@ -291,18 +266,14 @@ export async function createFileWebAccessConfiguration(options: {
         enabled: configuration.enabled,
         providers: configuration.providers,
         workflow: configuration.workflow,
-        ...(configuration.summaryModel
-          ? { summaryModel: configuration.summaryModel }
-          : {}),
+        ...(configuration.summaryModel ? { summaryModel: configuration.summaryModel } : {}),
         ssrf: configuration.ssrf,
         timeouts: {
           fetchMs: configuration.timeouts?.fetchMs ?? 30_000,
           searchMs: configuration.timeouts?.searchMs ?? 30_000,
           cloneMs: configuration.timeouts?.cloneMs ?? 30_000,
         },
-        ...(configuration.providerConfig
-          ? { providerConfig: configuration.providerConfig }
-          : {}),
+        ...(configuration.providerConfig ? { providerConfig: configuration.providerConfig } : {}),
       }
     },
   }

@@ -70,12 +70,7 @@ export class SseHub {
     client.queue.close()
   }
 
-  broadcast(
-    event: string,
-    data: string,
-    id?: string,
-    projectId?: string,
-  ): void {
+  broadcast(event: string, data: string, id?: string, projectId?: string): void {
     for (const client of this.clients) {
       if (client.projectId === projectId) {
         client.queue.push({ event, data, ...(id ? { id } : {}) })
@@ -91,6 +86,6 @@ export class SseHub {
   }
 
   close(): void {
-    for (const client of [...this.clients]) this.disconnect(client)
+    for (const client of this.clients) this.disconnect(client)
   }
 }

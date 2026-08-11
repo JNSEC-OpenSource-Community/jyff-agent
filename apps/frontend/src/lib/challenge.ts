@@ -19,14 +19,10 @@ export const ATTENTION_STATUSES: readonly DashboardChallengeStatus[] = [
 ]
 
 /** 状态 -> Badge 语义色。 */
-export function toneForStatus(
-  status: DashboardChallengeStatus | string,
-): StatusTone {
+export function toneForStatus(status: string): StatusTone {
   if (["solved", "completed"].includes(status)) return "positive"
-  if (ACTIVE_STATUSES.includes(status as DashboardChallengeStatus))
-    return "info"
-  if (ATTENTION_STATUSES.includes(status as DashboardChallengeStatus))
-    return "danger"
+  if (ACTIVE_STATUSES.includes(status as DashboardChallengeStatus)) return "info"
+  if (ATTENTION_STATUSES.includes(status as DashboardChallengeStatus)) return "danger"
   if (["queued", "pending"].includes(status)) return "warning"
   if (status === "excluded") return "neutral"
   return "neutral"
@@ -46,20 +42,10 @@ export function filterChallenges(
 ): DashboardChallenge[] {
   return challenges.filter((challenge) => {
     if (statusFilter !== "all") {
-      if (
-        statusFilter === "active" &&
-        !ACTIVE_STATUSES.includes(challenge.status)
-      )
+      if (statusFilter === "active" && !ACTIVE_STATUSES.includes(challenge.status)) return false
+      if (statusFilter === "attention" && !ATTENTION_STATUSES.includes(challenge.status))
         return false
-      if (
-        statusFilter === "attention" &&
-        !ATTENTION_STATUSES.includes(challenge.status)
-      )
-        return false
-      if (
-        !["active", "attention"].includes(statusFilter) &&
-        challenge.status !== statusFilter
-      )
+      if (!["active", "attention"].includes(statusFilter) && challenge.status !== statusFilter)
         return false
     }
     const normalized = query.trim().toLocaleLowerCase("zh-CN")
@@ -72,16 +58,12 @@ export function filterChallenges(
 }
 
 /** 题目列表排序：执行中的置顶，再按分值降序、标题升序。 */
-export function sortChallenges(
-  challenges: DashboardChallenge[],
-): DashboardChallenge[] {
+export function sortChallenges(challenges: DashboardChallenge[]): DashboardChallenge[] {
   return [...challenges].sort((left, right) => {
     const leftActive = left.status === "running"
     const rightActive = right.status === "running"
     if (leftActive !== rightActive) return leftActive ? -1 : 1
-    return (
-      right.score - left.score || left.title.localeCompare(right.title, "zh-CN")
-    )
+    return right.score - left.score || left.title.localeCompare(right.title, "zh-CN")
   })
 }
 
@@ -93,8 +75,7 @@ export function recentChallenges(
   return [...challenges]
     .sort(
       (left, right) =>
-        Date.parse(right.lastActivityAt ?? "0") -
-        Date.parse(left.lastActivityAt ?? "0"),
+        Date.parse(right.lastActivityAt ?? "0") - Date.parse(left.lastActivityAt ?? "0"),
     )
     .slice(0, limit)
 }
@@ -104,9 +85,7 @@ export function challengeCategoryMark(category: string): {
   text: string
   chinese: boolean
 } {
-  const han = [...category].find((character) =>
-    /\p{Script=Han}/u.test(character),
-  )
+  const han = Array.from(category).find((character) => /\p{Script=Han}/u.test(character))
   if (han) return { text: han, chinese: true }
   return { text: category.slice(0, 3).toUpperCase(), chinese: false }
 }

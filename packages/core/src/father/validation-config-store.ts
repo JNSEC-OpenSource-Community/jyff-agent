@@ -30,10 +30,7 @@ export class FatherValidationConfigStore {
           ]),
         ),
         secrets: Object.fromEntries(
-          stored.secretNames.map((name) => [
-            name,
-            this.secrets.get(this.key(sessionId, name)),
-          ]),
+          stored.secretNames.map((name) => [name, this.secrets.get(this.key(sessionId, name))]),
         ),
       }
     } catch (error) {
@@ -84,9 +81,7 @@ export class FatherValidationConfigStore {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
     }
     await this.secrets.set(
-      Object.fromEntries(
-        names.map((name) => [this.key(sessionId, name), undefined]),
-      ),
+      Object.fromEntries(names.map((name) => [this.key(sessionId, name), undefined])),
     )
     await rm(this.path(sessionId), { force: true })
   }
@@ -103,11 +98,7 @@ export class FatherValidationConfigStore {
   }
 
   private key(sessionId: string, name: string): string {
-    const prefix = createHash("sha256")
-      .update(sessionId)
-      .digest("hex")
-      .slice(0, 16)
-      .toUpperCase()
+    const prefix = createHash("sha256").update(sessionId).digest("hex").slice(0, 16).toUpperCase()
     const suffix = name
       .toUpperCase()
       .replace(/[^A-Z0-9_]/g, "_")

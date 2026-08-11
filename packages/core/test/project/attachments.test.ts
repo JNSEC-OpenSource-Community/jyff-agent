@@ -1,10 +1,6 @@
 import type { ChallengeCapability } from "@ctf-agent/platform"
-import type {
-  CommandResult,
-  Sandbox,
-  SandboxExecOptions,
-} from "@ctf-agent/sandbox"
-import { describe, expect, it, vi } from "vitest"
+import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
+import { describe, expect, it, vi } from "vite-plus/test"
 import {
   ChallengeAttachmentError,
   downloadChallengeAttachments,
@@ -15,10 +11,7 @@ class AttachmentSandbox implements Sandbox {
   readonly files = new Map<string, Buffer>()
   replaceCalls = 0
 
-  async exec(
-    args: string[],
-    options?: SandboxExecOptions,
-  ): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     if (args[0] !== "python3") return { code: 0, stdout: "", stderr: "" }
     const payload = JSON.parse(options?.input ?? "{}") as {
       op: string
@@ -142,8 +135,6 @@ describe("challenge attachments", () => {
     })
 
     expect(sandbox.replaceCalls).toBe(1)
-    expect(sandbox.files.get("/workspace/attachments/chall")?.toString()).toBe(
-      "new",
-    )
+    expect(sandbox.files.get("/workspace/attachments/chall")?.toString()).toBe("new")
   })
 })

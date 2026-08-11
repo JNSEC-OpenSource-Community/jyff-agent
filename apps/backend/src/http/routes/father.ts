@@ -16,18 +16,13 @@ import {
   parseJsonBody,
 } from "../schema.ts"
 import type { Services } from "../services.ts"
-import {
-  WORKSPACE_PREVIEW_MAX_BYTES,
-  workspacePreviewDescriptor,
-} from "../workspace-files.ts"
+import { WORKSPACE_PREVIEW_MAX_BYTES, workspacePreviewDescriptor } from "../workspace-files.ts"
 
 /** 全局 Clanker Father 多 Session、实时对话与插件 Gate。 */
 export function fatherRoutes(services: Services): App {
   const app = new Hono<AppEnv>()
 
-  app.get("/father/sessions", (c) =>
-    c.json({ sessions: services.requireFather().list() }),
-  )
+  app.get("/father/sessions", (c) => c.json({ sessions: services.requireFather().list() }))
 
   app.post("/father/sessions", async (c) => {
     const body = await parseJsonBody(c, fatherSessionCreateSchema, {
@@ -46,12 +41,7 @@ export function fatherRoutes(services: Services): App {
     const id = c.req.param("sessionId")
     const father = services.requireFather()
     const session = requireSession(services, id)
-    if (!session.gate)
-      throw new HttpError(
-        409,
-        "validation_not_requested",
-        "Father 尚未请求验证",
-      )
+    if (!session.gate) throw new HttpError(409, "validation_not_requested", "Father 尚未请求验证")
     const candidate = await services
       .requireExtensions()
       .describeCandidate(join(father.workspace(id), "output"))
@@ -60,9 +50,7 @@ export function fatherRoutes(services: Services): App {
       .read(id, candidate.schemaFingerprint)
     return c.json({
       candidate,
-      saved: saved
-        ? { config: saved.config, configuredSecrets: saved.configuredSecrets }
-        : null,
+      saved: saved ? { config: saved.config, configuredSecrets: saved.configuredSecrets } : null,
     })
   })
 
@@ -76,9 +64,7 @@ export function fatherRoutes(services: Services): App {
     requireSession(services, id)
     const path = father.sessionPath(id)
     return c.json(
-      existsSync(path)
-        ? services.exporters.readSessionConversation(path)
-        : { messages: [] },
+      existsSync(path) ? services.exporters.readSessionConversation(path) : { messages: [] },
     )
   })
 
@@ -107,10 +93,7 @@ export function fatherRoutes(services: Services): App {
       .requireExtensions()
       .readCandidateEntry(join(father.workspace(id), "output"))
     c.header("Content-Type", "text/typescript; charset=utf-8")
-    c.header(
-      "Content-Disposition",
-      `attachment; filename="${source.filename.replaceAll('"', "")}"`,
-    )
+    c.header("Content-Disposition", `attachment; filename="${source.filename.replaceAll('"', "")}"`)
     c.header("Cache-Control", "no-store")
     return c.body(new Uint8Array(source.content))
   })
@@ -135,15 +118,10 @@ export function fatherRoutes(services: Services): App {
     const id = c.req.param("sessionId")
     requireSession(services, id)
     const artifactPath = c.req.query("path")
-    if (!artifactPath)
-      throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
+    if (!artifactPath) throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
     const preview = workspacePreviewDescriptor(artifactPath)
     if (!preview) {
-      throw new HttpError(
-        415,
-        "workspace_preview_unsupported",
-        "该文件类型不支持预览",
-      )
+      throw new HttpError(415, "workspace_preview_unsupported", "该文件类型不支持预览")
     }
     const content = await readFatherWorkspaceFile(
       father.workspace(id),
@@ -154,11 +132,7 @@ export function fatherRoutes(services: Services): App {
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(content)
     } catch {
-      throw new HttpError(
-        415,
-        "workspace_preview_invalid_text",
-        "文件不是有效的 UTF-8 文本",
-      )
+      throw new HttpError(415, "workspace_preview_invalid_text", "文件不是有效的 UTF-8 文本")
     }
     c.header("Cache-Control", "no-store")
     return c.json({
@@ -174,12 +148,8 @@ export function fatherRoutes(services: Services): App {
     const id = c.req.param("sessionId")
     requireSession(services, id)
     const artifactPath = c.req.query("path")
-    if (!artifactPath)
-      throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
-    const content = await readFatherWorkspaceFile(
-      father.workspace(id),
-      artifactPath,
-    )
+    if (!artifactPath) throw new HttpError(400, "invalid_workspace_path", "缺少文件路径")
+    const content = await readFatherWorkspaceFile(father.workspace(id), artifactPath)
     const name = basename(artifactPath)
     c.header("Content-Type", "application/octet-stream")
     c.header(
@@ -206,11 +176,7 @@ export function fatherRoutes(services: Services): App {
       code: "invalid_father_message",
       maximumSize: 40_000,
     })
-    return c.json(
-      await services
-        .requireFather()
-        .send(c.req.param("sessionId"), body.message),
-    )
+    return c.json(await services.requireFather().send(c.req.param("sessionId"), body.message))
   })
 
   app.post("/father/sessions/:sessionId/stop", async (c) =>
@@ -230,13 +196,8 @@ export function fatherRoutes(services: Services): App {
     c.header("Connection", "keep-alive")
     c.header("X-Accel-Buffering", "no")
     return streamSSE(c, async (stream) => {
-      const queue = new AsyncEventQueue<
-        AgentStreamEvent | { heartbeat: true }
-      >()
-      const heartbeat = setInterval(
-        () => queue.push({ heartbeat: true }),
-        15_000,
-      )
+      const queue = new AsyncEventQueue<AgentStreamEvent | { heartbeat: true }>()
+      const heartbeat = setInterval(() => queue.push({ heartbeat: true }), 15_000)
       const unsubscribe = father.subscribe(id, (event) => queue.push(event))
       stream.onAbort(() => queue.close())
       try {
@@ -275,9 +236,7 @@ export function fatherRoutes(services: Services): App {
       maximumSize: 80_000,
     })
     const candidateDirectory = join(father.workspace(id), "output")
-    const candidate = await services
-      .requireExtensions()
-      .describeCandidate(candidateDirectory)
+    const candidate = await services.requireExtensions().describeCandidate(candidateDirectory)
     if (body.schemaFingerprint !== candidate.schemaFingerprint) {
       throw new HttpError(
         409,
@@ -297,8 +256,7 @@ export function fatherRoutes(services: Services): App {
       secretNames,
     })
     const saved = await configs.read(id, candidate.schemaFingerprint)
-    const requestedAt =
-      father.get(id)?.gate?.requestedAt ?? new Date().toISOString()
+    const requestedAt = father.get(id)?.gate?.requestedAt ?? new Date().toISOString()
     await father.setGateStatus(id, { status: "validating", requestedAt })
     const report = await services.requireExtensions().validate({
       sessionId: id,
@@ -324,11 +282,7 @@ export function fatherRoutes(services: Services): App {
     const father = services.requireFather()
     const current = requireSession(services, id)
     if (current.gate?.status !== "ready" || !current.gate.report) {
-      throw new HttpError(
-        409,
-        "father_validation_not_ready",
-        "候选插件尚未通过 Validation Gate",
-      )
+      throw new HttpError(409, "father_validation_not_ready", "候选插件尚未通过 Validation Gate")
     }
     const extension = await services.requireExtensions().activate({
       sessionId: id,
@@ -353,11 +307,7 @@ export function fatherRoutes(services: Services): App {
 function requireSession(services: Services, id: string) {
   const session = services.requireFather().get(id)
   if (!session) {
-    throw new HttpError(
-      404,
-      "father_session_not_found",
-      `Father Session 不存在: ${id}`,
-    )
+    throw new HttpError(404, "father_session_not_found", `Father Session 不存在: ${id}`)
   }
   return session
 }
@@ -371,14 +321,9 @@ async function readFatherWorkspaceFile(
     return await readWorkspaceArtifact(workspace, artifactPath, maximumBytes)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === "ENOENT")
-      throw new HttpError(404, "workspace_file_not_found", "文件不存在")
+    if (code === "ENOENT") throw new HttpError(404, "workspace_file_not_found", "文件不存在")
     if (error instanceof Error && error.message.includes("exceeds")) {
-      throw new HttpError(
-        413,
-        "workspace_preview_too_large",
-        "文件超过 256 KiB，无法在线预览",
-      )
+      throw new HttpError(413, "workspace_preview_too_large", "文件超过 256 KiB，无法在线预览")
     }
     if (
       error instanceof Error &&

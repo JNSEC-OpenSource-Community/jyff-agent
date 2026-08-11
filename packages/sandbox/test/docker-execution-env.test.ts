@@ -1,10 +1,6 @@
-import type {
-  CommandResult,
-  Sandbox,
-  SandboxExecOptions,
-} from "@ctf-agent/sandbox"
+import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
 import { DockerBashExecutionEnv, DockerExecutionEnv } from "@ctf-agent/sandbox"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 
 class FakeSandbox implements Sandbox {
   readonly id = "fake"
@@ -13,10 +9,7 @@ class FakeSandbox implements Sandbox {
   nativeFailuresRemaining = 0
   nextCommandResult: CommandResult | undefined
 
-  async exec(
-    args: string[],
-    options?: SandboxExecOptions,
-  ): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     this.calls.push({ args, options })
     if (args[0] !== "python3") {
       return this.nextCommandResult ?? { code: 0, stdout: "", stderr: "" }
@@ -72,9 +65,7 @@ describe("DockerExecutionEnv", () => {
 
     const call = sandbox.calls.at(-1)
     expect(call?.options?.timeoutMs).toBe(1_206_000)
-    expect(call?.args.join(" ")).toContain(
-      'timeout --kill-after=5s "$2"s bash -lc "$3"',
-    )
+    expect(call?.args.join(" ")).toContain('timeout --kill-after=5s "$2"s bash -lc "$3"')
     expect(call?.args.at(-2)).toBe("1201")
   })
 
@@ -98,10 +89,7 @@ describe("DockerExecutionEnv", () => {
     const sandbox = new FakeSandbox()
     sandbox.nativeFailuresRemaining = 2
 
-    const result = await new DockerExecutionEnv(sandbox).writeFile(
-      "/tmp/result.txt",
-      "ready",
-    )
+    const result = await new DockerExecutionEnv(sandbox).writeFile("/tmp/result.txt", "ready")
 
     expect(result.ok).toBe(true)
     expect(sandbox.helperOperations("write")).toBe(3)
@@ -117,9 +105,7 @@ describe("DockerExecutionEnv", () => {
 
     expect(result.ok).toBe(true)
     expect(sandbox.helperOperations("replace")).toBe(1)
-    expect(sandbox.files.get("/workspace/attachments/chall")?.toString()).toBe(
-      "new payload",
-    )
+    expect(sandbox.files.get("/workspace/attachments/chall")?.toString()).toBe("new payload")
   })
 
   it("将高频 bash 完整输出合并为少量容器写入", async () => {

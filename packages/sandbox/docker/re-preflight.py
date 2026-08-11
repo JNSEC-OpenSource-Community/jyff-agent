@@ -13,10 +13,10 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ def run_analysis(
                 result["status"] = "ok" if returncode == 0 else "failed"
             except subprocess.TimeoutExpired:
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    os.killpg(process.pid, signal.SIGKILL) # pyright: ignore[reportAttributeAccessIssue]
                 except ProcessLookupError:
                     pass
                 process.wait()

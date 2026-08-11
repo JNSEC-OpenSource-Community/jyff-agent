@@ -52,10 +52,7 @@ export interface ContextPressure {
 
 export interface CompactionLifecycleHooks {
   before?: (pressure: ContextPressure) => Promise<void> | void
-  after?: (
-    result: CompactResult,
-    pressure: ContextPressure,
-  ) => Promise<void> | void
+  after?: (result: CompactResult, pressure: ContextPressure) => Promise<void> | void
 }
 
 export interface BaseAgentRuntimeOptions {
@@ -65,9 +62,7 @@ export interface BaseAgentRuntimeOptions {
   compactionHooks?: CompactionLifecycleHooks
 }
 
-export async function prepareBaseAgent(
-  options: BaseAgentOptions,
-): Promise<PreparedBaseAgent> {
+export async function prepareBaseAgent(options: BaseAgentOptions): Promise<PreparedBaseAgent> {
   const tools = [...(options.tools ?? [])]
   const opened = await openAgentSession({
     session: options.session,
@@ -79,10 +74,7 @@ export async function prepareBaseAgent(
     initialMessages: options.initialMessages,
   })
   const skills = [...(options.skills ?? [])]
-  const systemPrompt = [
-    options.systemPrompt,
-    formatSkillsForSystemPrompt(skills),
-  ]
+  const systemPrompt = [options.systemPrompt, formatSkillsForSystemPrompt(skills)]
     .filter(Boolean)
     .join("\n\n")
   const messages = (await opened.session.buildContext()).messages
@@ -130,10 +122,7 @@ export abstract class BaseAgent {
   private queuedMessages = 0
   private queuedSteerMessages = 0
 
-  protected constructor(
-    prepared: PreparedBaseAgent,
-    options: BaseAgentRuntimeOptions = {},
-  ) {
+  protected constructor(prepared: PreparedBaseAgent, options: BaseAgentRuntimeOptions = {}) {
     this.harness = prepared.harness
     this.session = prepared.session
     this.sessionPath = prepared.sessionPath
@@ -154,15 +143,13 @@ export abstract class BaseAgent {
       if (event.type === "agent_start") this.state.isStreaming = true
       if (event.type === "message_end") this.state.messages.push(event.message)
       if (event.type === "agent_end") this.state.isStreaming = false
-      if (event.type === "thinking_level_update")
-        this.state.thinkingLevel = event.level
+      if (event.type === "thinking_level_update") this.state.thinkingLevel = event.level
       if (event.type === "model_update") this.state.model = event.model
       if (event.type === "tools_update")
         this.state.tools = this.harness.getTools() as unknown as AgentTool[]
       if (event.type === "queue_update") {
         this.queuedSteerMessages = event.steer.length
-        this.queuedMessages =
-          event.steer.length + event.followUp.length + event.nextTurn.length
+        this.queuedMessages = event.steer.length + event.followUp.length + event.nextTurn.length
       }
     })
   }
@@ -211,12 +198,7 @@ export abstract class BaseAgent {
       ? this.harness.steer(text, options)
       : this.harness.nextTurn(text, options)
   }
-  subscribe(
-    listener: (
-      event: AgentHarnessEvent,
-      signal?: AbortSignal,
-    ) => Promise<void> | void,
-  ) {
+  subscribe(listener: (event: AgentHarnessEvent, signal?: AbortSignal) => Promise<void> | void) {
     return this.harness.subscribe(listener)
   }
   async setThinkingLevel(level: ThinkingLevel): Promise<void> {
@@ -225,10 +207,7 @@ export abstract class BaseAgent {
   async setModel(model: Model<Api>): Promise<void> {
     await this.harness.setModel(model)
   }
-  async setTools(
-    tools: AgentTool[],
-    activeToolNames?: string[],
-  ): Promise<void> {
+  async setTools(tools: AgentTool[], activeToolNames?: string[]): Promise<void> {
     await this.harness.setTools(
       tools as unknown as Parameters<AgentHarness["setTools"]>[0],
       activeToolNames,
@@ -249,16 +228,13 @@ export abstract class BaseAgent {
       reserveTokens,
       usableContext,
       shouldCompact:
-        usableContext > 0 &&
-        shouldCompact(tokens, contextWindow, DEFAULT_COMPACTION_SETTINGS),
+        usableContext > 0 && shouldCompact(tokens, contextWindow, DEFAULT_COMPACTION_SETTINGS),
     }
   }
   async compact(customInstructions?: string): Promise<CompactResult> {
     const pressure = await this.contextPressure()
     await this.compactionHooks?.before?.(pressure)
-    const result = await this.harness.compact(
-      customInstructions ?? this.compactionInstructions,
-    )
+    const result = await this.harness.compact(customInstructions ?? this.compactionInstructions)
     await this.compactionHooks?.after?.(result, pressure)
     return result
   }

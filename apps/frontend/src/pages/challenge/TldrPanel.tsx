@@ -17,7 +17,7 @@ export function TldrPanel({
   projectId: string
   challengeId: string
   tldr: TldrRecord | null
-  onChanged(): Promise<void>
+  onChanged: () => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -27,10 +27,7 @@ export function TldrPanel({
     setError("")
     try {
       await apiMutation(
-        projectApi(
-          projectId,
-          `/api/challenges/${encodeURIComponent(challengeId)}/tldr/refresh`,
-        ),
+        projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/tldr/refresh`),
         "POST",
       )
       await onChanged()
@@ -53,20 +50,9 @@ export function TldrPanel({
           <Icon icon="lucide:file-text" width="14" />
         </span>
         <h3 className="flex-1 text-sm font-medium">TLDR 摘要</h3>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void refresh()}
-          disabled={busy}
-        >
+        <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={busy}>
           <Icon
-            icon={
-              busy
-                ? "lucide:loader-circle"
-                : tldr
-                  ? "lucide:rotate-ccw"
-                  : "lucide:sparkles"
-            }
+            icon={busy ? "lucide:loader-circle" : tldr ? "lucide:rotate-ccw" : "lucide:sparkles"}
             className={busy ? "animate-spin" : ""}
             width="14"
           />
@@ -81,9 +67,7 @@ export function TldrPanel({
       ) : null}
 
       {!tldr ? (
-        <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-          尚未生成摘要
-        </p>
+        <p className="px-4 py-6 text-center text-xs text-muted-foreground">尚未生成摘要</p>
       ) : tldr.error ? (
         <div className="p-4">
           <ErrorNotice message={`TLDR 生成失败：${tldr.error}`} />
@@ -99,9 +83,7 @@ export function TldrPanel({
               {tldr.model}
             </span>
             <span>{absoluteTime(tldr.updatedAt)}</span>
-            <span className="font-mono tabular-nums">
-              {tldr.inputTokens} input tokens
-            </span>
+            <span className="font-mono tabular-nums">{tldr.inputTokens} input tokens</span>
             {tldr.cacheReadTokens + tldr.cacheWriteTokens > 0 ? (
               <span className="font-mono tabular-nums">
                 缓存 {tldr.cacheReadTokens} 读 / {tldr.cacheWriteTokens} 写

@@ -21,13 +21,7 @@ import { errorMessage } from "../lib/format.ts"
 import { ConversationPanel } from "./challenge/ConversationPanel.tsx"
 import { WorkspaceFilesBrowser } from "./challenge/WorkspaceFilesPanel.tsx"
 
-type GateStatus =
-  | "requested"
-  | "configuring"
-  | "validating"
-  | "failed"
-  | "ready"
-  | "installed"
+type GateStatus = "requested" | "configuring" | "validating" | "failed" | "ready" | "installed"
 interface ValidationReport {
   status: "failed" | "read_only_verified" | "fully_verified"
   revision: string
@@ -68,11 +62,7 @@ const sessionDateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export function FatherPage(): React.ReactElement {
   const { sessionId } = useParams()
-  return sessionId ? (
-    <FatherConversation sessionId={sessionId} />
-  ) : (
-    <FatherSessions />
-  )
+  return sessionId ? <FatherConversation sessionId={sessionId} /> : <FatherSessions />
 }
 
 function FatherSessions(): React.ReactElement {
@@ -90,11 +80,8 @@ function FatherSessions(): React.ReactElement {
   async function create(): Promise<void> {
     setCreating(true)
     try {
-      const session = await apiMutation<FatherSession>(
-        "/api/father/sessions",
-        "POST",
-      )
-      navigate(`/father/sessions/${session.id}`)
+      const session = await apiMutation<FatherSession>("/api/father/sessions", "POST")
+      void navigate(`/father/sessions/${session.id}`)
     } catch (e) {
       setError(errorMessage(e))
       setCreating(false)
@@ -105,9 +92,7 @@ function FatherSessions(): React.ReactElement {
     setDeleting(true)
     try {
       await apiMutation(`/api/father/sessions/${deleteTarget.id}`, "DELETE")
-      setSessions((current) =>
-        current.filter(({ id }) => id !== deleteTarget.id),
-      )
+      setSessions((current) => current.filter(({ id }) => id !== deleteTarget.id))
       setDeleteTarget(undefined)
     } catch (e) {
       setError(errorMessage(e))
@@ -120,11 +105,7 @@ function FatherSessions(): React.ReactElement {
       <header className="mb-8 flex items-end justify-between gap-4">
         <div>
           <div className="mb-3 flex items-center gap-2 text-primary">
-            <Icon
-              icon="emojione-monotone:old-man"
-              width="22"
-              aria-hidden="true"
-            />
+            <Icon icon="emojione-monotone:old-man" width="22" aria-hidden="true" />
             <span className="text-xs font-semibold uppercase tracking-[0.16em]">
               Platform workshop
             </span>
@@ -150,7 +131,7 @@ function FatherSessions(): React.ReactElement {
           {sessions.map((session) => (
             <article
               key={session.id}
-              className="group grid min-h-28 grid-cols-[minmax(0,1fr)_2.75rem] overflow-hidden rounded-xl bg-card/70 shadow-[0_1px_0_rgba(255,255,255,0.025)_inset] ring-1 ring-inset ring-white/[0.055] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-card hover:shadow-[0_12px_32px_-22px_rgba(0,0,0,0.9),0_0_0_1px_rgba(94,106,210,0.28)_inset] focus-within:shadow-[0_0_0_2px_rgba(94,106,210,0.5)] motion-reduce:transform-none motion-reduce:transition-none"
+              className="group grid min-h-28 grid-cols-[minmax(0,1fr)_2.75rem] overflow-hidden rounded-xl border border-border bg-card/70 shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-primary/30 hover:bg-card hover:shadow-md focus-within:ring-2 focus-within:ring-primary/40 motion-reduce:transform-none motion-reduce:transition-none"
             >
               <Link
                 to={`/father/sessions/${session.id}`}
@@ -165,9 +146,7 @@ function FatherSessions(): React.ReactElement {
                 <div className="flex min-w-0 flex-col">
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-sm font-semibold">
-                        {session.title}
-                      </h2>
+                      <h2 className="truncate text-sm font-semibold">{session.title}</h2>
                       <p
                         className="mt-1! truncate font-mono text-[10px] text-muted-foreground"
                         translate="no"
@@ -178,10 +157,7 @@ function FatherSessions(): React.ReactElement {
                     <SessionBadge session={session} />
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-3 pt-4 text-[11px] text-muted-foreground">
-                    <time
-                      dateTime={session.updatedAt}
-                      className="truncate font-mono tabular-nums"
-                    >
+                    <time dateTime={session.updatedAt} className="truncate font-mono tabular-nums">
                       {sessionDateFormatter.format(new Date(session.updatedAt))}
                     </time>
                     <Icon
@@ -239,11 +215,7 @@ function FatherSessions(): React.ReactElement {
   )
 }
 
-function FatherConversation({
-  sessionId,
-}: {
-  sessionId: string
-}): React.ReactElement {
+function FatherConversation({ sessionId }: { sessionId: string }): React.ReactElement {
   const [session, setSession] = useState<FatherSession>()
   const [gate, setGate] = useState<GateView>()
   const [gateError, setGateError] = useState("")
@@ -252,15 +224,11 @@ function FatherConversation({
   const lastGateRequest = useRef("")
   const [error, setError] = useState("")
   const load = useCallback(async () => {
-    const next = await apiRequest<FatherSession>(
-      `/api/father/sessions/${sessionId}`,
-    )
+    const next = await apiRequest<FatherSession>(`/api/father/sessions/${sessionId}`)
     setSession(next)
     if (next.gate) {
       try {
-        setGate(
-          await apiRequest<GateView>(`/api/father/sessions/${sessionId}/gate`),
-        )
+        setGate(await apiRequest<GateView>(`/api/father/sessions/${sessionId}/gate`))
         setGateError("")
       } catch (cause) {
         setGate(undefined)
@@ -291,11 +259,7 @@ function FatherConversation({
         {error ? (
           <ErrorNotice message={error} />
         ) : (
-          <Icon
-            icon="lucide:loader-circle"
-            className="animate-spin"
-            aria-hidden="true"
-          />
+          <Icon icon="lucide:loader-circle" className="animate-spin" aria-hidden="true" />
         )}
       </div>
     )
@@ -309,9 +273,7 @@ function FatherConversation({
         </Button>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{session.title}</p>
-          <p className="truncate text-[10px] text-muted-foreground">
-            {session.modelId}
-          </p>
+          <p className="truncate text-[10px] text-muted-foreground">{session.modelId}</p>
         </div>
         <div className="ml-auto flex items-center gap-1">
           {session.gate ? (
@@ -385,7 +347,7 @@ function FatherWorkspaceDialog({
 }: {
   open: boolean
   sessionId: string
-  onOpenChange(open: boolean): void
+  onOpenChange: (open: boolean) => void
 }): React.ReactElement {
   const baseUrl = `/api/father/sessions/${sessionId}/workspace/files`
   return (
@@ -396,20 +358,13 @@ function FatherWorkspaceDialog({
             <Icon icon="lucide:folder-tree" width="16" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <DialogTitle className="text-sm font-semibold">
-              Father workspace
-            </DialogTitle>
+            <DialogTitle className="text-sm font-semibold">Father workspace</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               源码、研究记录、测试和候选输出
             </DialogDescription>
           </div>
           <DialogClose asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              aria-label="关闭文件列表"
-            >
+            <Button variant="ghost" size="icon" className="size-8" aria-label="关闭文件列表">
               <Icon icon="lucide:x" width="16" aria-hidden="true" />
             </Button>
           </DialogClose>
@@ -418,12 +373,8 @@ function FatherWorkspaceDialog({
           {open ? (
             <WorkspaceFilesBrowser
               listUrl={baseUrl}
-              previewUrl={(path) =>
-                `${baseUrl}/preview?path=${encodeURIComponent(path)}`
-              }
-              downloadUrl={(path) =>
-                `${baseUrl}/download?path=${encodeURIComponent(path)}`
-              }
+              previewUrl={(path) => `${baseUrl}/preview?path=${encodeURIComponent(path)}`}
+              downloadUrl={(path) => `${baseUrl}/download?path=${encodeURIComponent(path)}`}
               emptyDescription="Father 尚未在 workspace 中创建文件。"
             />
           ) : null}
@@ -445,8 +396,8 @@ function FatherGateDialog({
   session: FatherSession
   gate?: GateView
   error: string
-  onOpenChange(open: boolean): void
-  onChanged(): Promise<void>
+  onOpenChange: (open: boolean) => void
+  onChanged: () => Promise<void>
 }): React.ReactElement {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -464,12 +415,7 @@ function FatherGateDialog({
             </DialogDescription>
           </div>
           <DialogClose asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              aria-label="关闭测试配置"
-            >
+            <Button variant="ghost" size="icon" className="size-8" aria-label="关闭测试配置">
               <Icon icon="lucide:x" width="16" aria-hidden="true" />
             </Button>
           </DialogClose>
@@ -493,7 +439,7 @@ function GateCard({
 }: {
   session: FatherSession
   gate?: GateView
-  onChanged(): Promise<void>
+  onChanged: () => Promise<void>
 }): React.ReactElement {
   const [editing, setEditing] = useState(!gate?.saved)
   const [config, setConfig] = useState<Record<string, unknown>>(
@@ -578,11 +524,7 @@ function GateCard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">
-              {ready
-                ? "验证通过"
-                : gate.saved && !editing
-                  ? "测试配置已保存"
-                  : "填写测试配置"}
+              {ready ? "验证通过" : gate.saved && !editing ? "测试配置已保存" : "填写测试配置"}
             </p>
             <p className="mt-1! text-xs text-muted-foreground">
               {ready
@@ -594,19 +536,11 @@ function GateCard({
           </div>
           {gate.saved && !editing && !ready ? (
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setEditing(true)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
                 修改测试配置
               </Button>
               {session.gate?.status === "requested" ? (
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void validate()}
-                >
+                <Button size="sm" disabled={busy} onClick={() => void validate()}>
                   使用已保存配置验证
                 </Button>
               ) : null}
@@ -638,11 +572,7 @@ function GateCard({
             />
             <div className="flex justify-end gap-2">
               {gate.saved ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEditing(false)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
                   取消
                 </Button>
               ) : null}
@@ -679,11 +609,7 @@ function GateCard({
   )
 }
 
-function SessionBadge({
-  session,
-}: {
-  session: FatherSession
-}): React.ReactElement {
+function SessionBadge({ session }: { session: FatherSession }): React.ReactElement {
   const status =
     session.gate?.status === "installed"
       ? "已安装"
@@ -698,14 +624,8 @@ function SessionBadge({
               : "对话"
   return (
     <Badge
-      tone={
-        status === "已安装"
-          ? "positive"
-          : status === "需处理"
-            ? "warning"
-            : "neutral"
-      }
-      className="ml-auto shrink-0 text-[9px]"
+      tone={status === "已安装" ? "positive" : status === "需处理" ? "warning" : "neutral"}
+      className="ml-auto shrink-0"
     >
       {status}
     </Badge>

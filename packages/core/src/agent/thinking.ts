@@ -26,21 +26,14 @@ export function extractThinkingText(message: unknown): string {
     : []
   const parts: string[] = []
   for (const block of content) {
-    if (
-      block &&
-      typeof block === "object" &&
-      (block as ThinkingBlockLike).type === "thinking"
-    ) {
+    if (block && typeof block === "object" && (block as ThinkingBlockLike).type === "thinking") {
       const thinking = (block as ThinkingBlockLike).thinking
-      if (typeof thinking === "string" && thinking.length > 0)
-        parts.push(thinking)
+      if (typeof thinking === "string" && thinking.length > 0) parts.push(thinking)
     }
   }
   if (parts.length === 0) return ""
   const joined = parts.join("\n")
-  return joined.length > MAX_REASONING_CHARS
-    ? joined.slice(0, MAX_REASONING_CHARS)
-    : joined
+  return joined.length > MAX_REASONING_CHARS ? joined.slice(0, MAX_REASONING_CHARS) : joined
 }
 
 interface TextBlockLike {
@@ -60,11 +53,7 @@ export function extractAssistantText(message: unknown): string {
   const content = Array.isArray(candidate.content) ? candidate.content : []
   const parts: string[] = []
   for (const block of content) {
-    if (
-      block &&
-      typeof block === "object" &&
-      (block as TextBlockLike).type === "text"
-    ) {
+    if (block && typeof block === "object" && (block as TextBlockLike).type === "text") {
       const text = (block as TextBlockLike).text
       if (typeof text === "string" && text.length > 0) parts.push(text)
     }

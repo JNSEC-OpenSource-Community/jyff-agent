@@ -22,11 +22,7 @@ function normalize(value: string): string {
     .toLocaleLowerCase()
 }
 
-function editDistanceWithin(
-  left: string,
-  right: string,
-  maximum: number,
-): boolean {
+function editDistanceWithin(left: string, right: string, maximum: number): boolean {
   if (Math.abs(left.length - right.length) > maximum) return false
   let previous = Array.from({ length: right.length + 1 }, (_, index) => index)
   for (let i = 1; i <= left.length; i++) {
@@ -47,11 +43,7 @@ function editDistanceWithin(
   return (previous[right.length] ?? maximum + 1) <= maximum
 }
 
-function literalMatches(
-  text: string,
-  query: string,
-  caseInsensitive: boolean,
-): Match[] {
+function literalMatches(text: string, query: string, caseInsensitive: boolean): Match[] {
   const haystack = caseInsensitive ? text.toLocaleLowerCase() : text
   const needle = caseInsensitive ? query.toLocaleLowerCase() : query
   const matches: Match[] = []
@@ -72,24 +64,20 @@ function fuzzyMatches(text: string, query: string): Match[] {
   const paragraphs = /[^\n]+(?:\n(?!\n)[^\n]+)*/g
   for (const paragraph of text.matchAll(paragraphs)) {
     const paragraphText = paragraph[0]
-    if (paragraphText.trim().length === 0 || paragraph.index === undefined)
-      continue
+    if (paragraphText.trim().length === 0 || paragraph.index === undefined) continue
     const tokens = [...paragraphText.matchAll(/[\p{L}\p{N}]+/gu)]
     const matched = queryTokens.filter((queryToken) =>
       tokens.some((token) => {
         const candidate = normalize(token[0])
-        const maximum =
-          queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0
+        const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0
         return editDistanceWithin(queryToken, candidate, maximum)
       }),
     )
-    const required =
-      queryTokens.length === 1 ? 1 : Math.ceil(queryTokens.length * 0.6)
+    const required = queryTokens.length === 1 ? 1 : Math.ceil(queryTokens.length * 0.6)
     if (matched.length < required) continue
     const first = tokens.find((token) =>
       matched.some((queryToken) => {
-        const maximum =
-          queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0
+        const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0
         return editDistanceWithin(queryToken, normalize(token[0]), maximum)
       }),
     )
@@ -105,9 +93,7 @@ function fuzzyMatches(text: string, query: string): Match[] {
 
 function mergeRanges(textLength: number, matches: Match[]): Range[] {
   const ranges: Range[] = []
-  for (const match of [...matches].sort(
-    (left, right) => left.start - right.start,
-  )) {
+  for (const match of [...matches].sort((left, right) => left.start - right.start)) {
     const start = Math.max(0, match.start - CONTEXT_CHARS)
     const end = Math.min(textLength, match.end + CONTEXT_CHARS)
     const previous = ranges.at(-1)
@@ -131,9 +117,7 @@ export function findContent(
   returnedMatches: number
   queryResults: Array<{ query: string; matchCount: number }>
 } {
-  const normalizedQueries = [
-    ...new Set(queries.map((query) => query.trim()).filter(Boolean)),
-  ]
+  const normalizedQueries = [...new Set(queries.map((query) => query.trim()).filter(Boolean))]
   const matches = normalizedQueries.flatMap((query) =>
     mode === "fuzzy"
       ? fuzzyMatches(text, query)
@@ -145,9 +129,7 @@ export function findContent(
   }))
 
   const heading =
-    matches.length > 0
-      ? `Text matches (${mode})`
-      : `Text matches (${mode}): no matches`
+    matches.length > 0 ? `Text matches (${mode})` : `Text matches (${mode}): no matches`
   const sections = [heading]
   let formattedLength = heading.length
   let returnedMatches = 0
@@ -157,8 +139,7 @@ export function findContent(
     const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`
     const counts = [...new Set(range.matches.map((match) => match.query))]
       .map(
-        (query) =>
-          `"${query}" ×${range.matches.filter((match) => match.query === query).length}`,
+        (query) => `"${query}" ×${range.matches.filter((match) => match.query === query).length}`,
       )
       .join(", ")
     const section = `${sections.length}. ${counts}\n${snippet}`

@@ -33,19 +33,13 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   const host = options.host ?? "0.0.0.0"
   let server: ServerType
   const address = await new Promise<AddressInfo>((resolve, reject) => {
-    server = serve(
-      { fetch: app.fetch, hostname: host, port: options.port ?? 5454 },
-      resolve,
-    )
+    server = serve({ fetch: app.fetch, hostname: host, port: options.port ?? 5454 }, resolve)
     server.once("error", reject)
   })
   const url = `http://${host.includes(":") ? `[${host}]` : host}:${address.port}`
 
   const pollIntervalMs = options.pollIntervalMs ?? 15_000
-  const schedulerReconcileDelay = Math.max(
-    5_000,
-    options.schedulerReconcileIntervalMs ?? 30_000,
-  )
+  const schedulerReconcileDelay = Math.max(5_000, options.schedulerReconcileIntervalMs ?? 30_000)
   let closed = false
   let refreshTimer: NodeJS.Timeout | undefined
   let schedulerReconcileTimer: NodeJS.Timeout | undefined
@@ -76,8 +70,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       } catch {
         // refresh() 已记录失败并广播 degraded。
       } finally {
-        if (!closed)
-          scheduleRefresh(services.sync.nextPollDelay(pollIntervalMs))
+        if (!closed) scheduleRefresh(services.sync.nextPollDelay(pollIntervalMs))
       }
     }, delayMs)
     refreshTimer.unref()
@@ -93,9 +86,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
         // 单个归档 Project 清理失败不阻塞其他调度器。
       }
       const schedulers = options.controlPlane
-        ? options.controlPlane
-            .projectSnapshots()
-            .map(({ id }) => services.currentScheduler(id))
+        ? options.controlPlane.projectSnapshots().map(({ id }) => services.currentScheduler(id))
         : [services.currentScheduler()]
       for (const scheduler of schedulers) {
         if (!scheduler?.snapshot().autoEnabled) continue

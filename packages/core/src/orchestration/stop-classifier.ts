@@ -37,35 +37,20 @@ const NETWORK_CODES = new Set([
   "ETIMEDOUT",
 ])
 
-export function classifySolverStop(
-  input: ClassifySolverStopInput,
-): SolverStopClassification {
+export function classifySolverStop(input: ClassifySolverStopInput): SolverStopClassification {
   if (input.submitted) return classification("submitted", 0, false)
   if (input.operatorCancel) return classification("operator_cancel", 0, false)
   if (input.processShutdown) return classification("process_shutdown", 0, false)
   if (input.timedOut) return classification("timeout", 1, false)
 
   const facts = errorFacts(input.error)
-  if (
-    facts.status === 401 ||
-    facts.status === 403 ||
-    isConfigurationCode(facts.code)
-  ) {
-    return classification(
-      "authentication_or_configuration",
-      0,
-      false,
-      facts.detail,
-      true,
-    )
+  if (facts.status === 401 || facts.status === 403 || isConfigurationCode(facts.code)) {
+    return classification("authentication_or_configuration", 0, false, facts.detail, true)
   }
   if (facts.code && NETWORK_CODES.has(facts.code)) {
     return classification("network_transient", 0, true, facts.detail)
   }
-  if (
-    facts.status === 429 ||
-    (facts.status !== undefined && facts.status >= 500)
-  ) {
+  if (facts.status === 429 || (facts.status !== undefined && facts.status >= 500)) {
     return classification("provider_transient", 0, true, facts.detail)
   }
   if (facts.retryable === true) {
@@ -89,18 +74,8 @@ export function classifySolverStop(
   if (/\b(?:HTTP\s*)?(?:429|5\d\d)\b/i.test(facts.detail ?? "")) {
     return classification("provider_transient", 0, true, facts.detail)
   }
-  if (
-    /\b(?:unauthorized|forbidden|invalid api key|authentication)\b/i.test(
-      facts.detail ?? "",
-    )
-  ) {
-    return classification(
-      "authentication_or_configuration",
-      0,
-      false,
-      facts.detail,
-      true,
-    )
+  if (/\b(?:unauthorized|forbidden|invalid api key|authentication)\b/i.test(facts.detail ?? "")) {
+    return classification("authentication_or_configuration", 0, false, facts.detail, true)
   }
 
   if (input.stopReason === "stop") return classification("model_stop", 1, false)
@@ -131,18 +106,26 @@ function errorFacts(error: unknown): {
   detail?: string
 } {
   if (error === undefined || error === null) return {}
-  if (typeof error !== "object") return { detail: String(error) }
+  if (typeof error !== "object") return { detail: safeString(error) }
   const value = error as Record<string, unknown>
   const statusValue = value.status ?? value.statusCode
   return {
-    ...(typeof value.code === "string"
-      ? { code: value.code.toUpperCase() }
-      : {}),
+    ...(typeof value.code === "string" ? { code: value.code.toUpperCase() } : {}),
     ...(typeof statusValue === "number" ? { status: statusValue } : {}),
-    ...(typeof value.retryable === "boolean"
-      ? { retryable: value.retryable }
-      : {}),
-    detail: error instanceof Error ? error.message : String(error),
+    ...(typeof value.retryable === "boolean" ? { retryable: value.retryable } : {}),
+    detail: error instanceof Error ? error.message : safeString(error),
+  }
+}
+
+function safeString(value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value) ?? ""
+  } catch {
+    return "[unserializable]"
   }
 }
 

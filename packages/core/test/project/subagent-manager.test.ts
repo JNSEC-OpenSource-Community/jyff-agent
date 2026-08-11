@@ -8,15 +8,9 @@ import {
   type Sandbox,
 } from "@ctf-agent/agents"
 import type { CommandResult, SandboxExecOptions } from "@ctf-agent/sandbox"
-import type {
-  AgentHarnessEvent,
-  AgentOptions,
-} from "@earendil-works/pi-agent-core"
-import {
-  createFauxCore,
-  fauxAssistantMessage,
-} from "@earendil-works/pi-ai/providers/faux"
-import { afterEach, describe, expect, it } from "vitest"
+import type { AgentHarnessEvent, AgentOptions } from "@earendil-works/pi-agent-core"
+import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   CtfSubagentManager,
   createSubagentManagerTools,
@@ -26,19 +20,14 @@ import {
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 class MemorySandbox implements Sandbox {
   readonly id = "shared-container"
   readonly createdDirectories: string[] = []
 
-  async exec(
-    args: string[],
-    options?: SandboxExecOptions,
-  ): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     if (args[0] === "python3") {
       const payload = JSON.parse(options?.input ?? "{}") as {
         op?: string
@@ -145,11 +134,9 @@ describe("CtfSubagentManager", () => {
 
     const waiting = manager.waitForTool(created.id)
     let uninterruptedSettled = false
-    const uninterrupted = manager
-      .waitForTool(created.id, undefined, false)
-      .finally(() => {
-        uninterruptedSettled = true
-      })
+    const uninterrupted = manager.waitForTool(created.id, undefined, false).finally(() => {
+      uninterruptedSettled = true
+    })
     parent.queueSteer()
     await expect(waiting).resolves.toMatchObject({
       waitInterrupted: true,
@@ -215,9 +202,7 @@ describe("CtfSubagentManager", () => {
     })
     expect(result.containerCwd).toBe(`/workspace/subagents/${created.id}`)
     expect(sandbox.createdDirectories).toContain(result.containerCwd)
-    expect(events).toEqual(
-      expect.arrayContaining(["created", "started", "completed"]),
-    )
+    expect(events).toEqual(expect.arrayContaining(["created", "started", "completed"]))
     expect(manager.list()).toHaveLength(1)
 
     const steered = await manager.steer(created.id, "verify the follow-up")
@@ -280,10 +265,7 @@ describe("CtfSubagentManager", () => {
     })
     resumed.restore([completed])
 
-    const steered = await resumed.steer(
-      created.id,
-      "continue the investigation",
-    )
+    const steered = await resumed.steer(created.id, "continue the investigation")
     expect(steered).toMatchObject({
       id: created.id,
       status: "queued",
@@ -318,9 +300,7 @@ describe("CtfSubagentManager", () => {
       roles: discovered.roles,
     })
 
-    expect(
-      createSubagentManagerTools(manager).map((tool) => tool.name),
-    ).toEqual([
+    expect(createSubagentManagerTools(manager).map((tool) => tool.name)).toEqual([
       "Agent",
       "get_subagent_result",
       "steer_subagent",
@@ -378,14 +358,8 @@ describe("CtfSubagentManager", () => {
 
     expect(manager.get(records[1]?.id ?? "")?.status).toBe("queued")
     expect(manager.get(records[2]?.id ?? "")?.status).toBe("queued")
-    const results = await Promise.all(
-      records.map((record) => manager.wait(record.id)),
-    )
-    expect(results.map((record) => record.status)).toEqual([
-      "completed",
-      "completed",
-      "completed",
-    ])
+    const results = await Promise.all(records.map((record) => manager.wait(record.id)))
+    expect(results.map((record) => record.status)).toEqual(["completed", "completed", "completed"])
     expect(maximum).toBe(1)
     await manager.close()
   })
@@ -451,10 +425,7 @@ describe("CtfSubagentManager", () => {
   })
 })
 
-async function waitFor(
-  predicate: () => boolean,
-  timeoutMs = 1_000,
-): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("等待 SubAgent 状态超时")

@@ -1,22 +1,13 @@
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { FatherSessionManager } from "../../src/index.ts"
 
 const roots: string[] = []
 afterEach(async () =>
-  Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  ),
+  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
 )
 
 describe("FatherSessionManager", () => {
@@ -37,9 +28,7 @@ describe("FatherSessionManager", () => {
     expect(created.title).toMatch(/^[a-z]+-[a-z]+$/)
     expect(created.pluginId).toBeUndefined()
     expect(created.status).toBe("draft")
-    expect(
-      (await FatherSessionManager.open(options)).get(created.id)?.title,
-    ).toBe(created.title)
+    expect((await FatherSessionManager.open(options)).get(created.id)?.title).toBe(created.title)
     const workspace = manager.workspace(created.id)
     await manager.delete(created.id)
     expect(manager.get(created.id)).toBeUndefined()
@@ -193,10 +182,7 @@ describe("FatherSessionManager", () => {
       }),
     )
     expect(
-      await readFile(
-        join(manager.workspace(session.id), ".skills", "skill-1", "SKILL.md"),
-        "utf8",
-      ),
+      await readFile(join(manager.workspace(session.id), ".skills", "skill-1", "SKILL.md"), "utf8"),
     ).toContain("# Extension authoring")
     expect(
       await readFile(
@@ -212,13 +198,7 @@ describe("FatherSessionManager", () => {
     ).toBe("# Platform contract")
     expect(
       await readFile(
-        join(
-          manager.workspace(session.id),
-          "node_modules",
-          "@ctf-agent",
-          "platform",
-          "index.d.ts",
-        ),
+        join(manager.workspace(session.id), "node_modules", "@ctf-agent", "platform", "index.d.ts"),
         "utf8",
       ),
     ).toContain("interface PlatformPlugin")

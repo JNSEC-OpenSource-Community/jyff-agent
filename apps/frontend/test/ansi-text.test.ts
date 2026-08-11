@@ -1,6 +1,6 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { AnsiText, parseAnsi } from "../src/components/content/AnsiText.tsx"
 
 describe("AnsiText", () => {
@@ -25,13 +25,9 @@ describe("AnsiText", () => {
   })
 
   it("恢复上游移除 ESC 后残留的终端控制序列", () => {
-    const segments = parseAnsi(
-      "First chars: [?1049h[H[2J[?1000l[1;1H[0m[31mRED[0m[2;1Hdone",
-    )
+    const segments = parseAnsi("First chars: [?1049h[H[2J[?1000l[1;1H[0m[31mRED[0m[2;1Hdone")
 
-    expect(segments.map((segment) => segment.text).join("")).toBe(
-      "First chars: REDdone",
-    )
+    expect(segments.map((segment) => segment.text).join("")).toBe("First chars: REDdone")
     expect(segments).toContainEqual({
       text: "RED",
       style: { color: "#ef6b73" },

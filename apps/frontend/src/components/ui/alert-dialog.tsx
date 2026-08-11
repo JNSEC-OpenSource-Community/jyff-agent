@@ -9,9 +9,7 @@ const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 function AlertDialogContent({
   className,
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof AlertDialogPrimitive.Content
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>): React.ReactElement {
   return (
     <AlertDialogPrimitive.Portal>
       <AlertDialogPrimitive.Overlay
@@ -62,16 +60,11 @@ function AlertDialogFooter({
 function AlertDialogTitle({
   className,
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof AlertDialogPrimitive.Title
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title>): React.ReactElement {
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
-      className={cn(
-        "text-pretty text-base font-semibold leading-6 tracking-[-0.01em]",
-        className,
-      )}
+      className={cn("text-pretty text-base font-semibold leading-6 tracking-[-0.01em]", className)}
       {...props}
     />
   )
@@ -80,16 +73,11 @@ function AlertDialogTitle({
 function AlertDialogDescription({
   className,
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof AlertDialogPrimitive.Description
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Description>): React.ReactElement {
   return (
     <AlertDialogPrimitive.Description
       data-slot="alert-dialog-description"
-      className={cn(
-        "text-pretty text-sm leading-6 text-muted-foreground",
-        className,
-      )}
+      className={cn("text-pretty text-sm leading-6 text-muted-foreground", className)}
       {...props}
     />
   )
@@ -98,9 +86,7 @@ function AlertDialogDescription({
 function AlertDialogAction({
   className,
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof AlertDialogPrimitive.Action
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>): React.ReactElement {
   return (
     <AlertDialogPrimitive.Action
       data-slot="alert-dialog-action"
@@ -113,9 +99,7 @@ function AlertDialogAction({
 function AlertDialogCancel({
   className,
   ...props
-}: React.ComponentPropsWithoutRef<
-  typeof AlertDialogPrimitive.Cancel
->): React.ReactElement {
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Cancel>): React.ReactElement {
   return (
     <AlertDialogPrimitive.Cancel
       data-slot="alert-dialog-cancel"

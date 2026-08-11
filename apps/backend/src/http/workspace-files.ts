@@ -10,8 +10,7 @@ export function workspacePreviewDescriptor(
   if (["md", "markdown", "mdown"].includes(extension)) {
     return { kind: "markdown", language: "markdown" }
   }
-  const language =
-    WORKSPACE_CODE_LANGUAGES[extension] ?? WORKSPACE_FILE_LANGUAGES[name]
+  const language = WORKSPACE_CODE_LANGUAGES[extension] ?? WORKSPACE_FILE_LANGUAGES[name]
   if (language) return { kind: "code", language }
   if (["txt", "log", "csv", "tsv"].includes(extension)) {
     return { kind: "text", language: "text" }

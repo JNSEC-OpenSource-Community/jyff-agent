@@ -42,9 +42,7 @@ export function jsonRequest(
   )
 }
 
-export async function jsonOf(
-  response: Response,
-): Promise<Record<string, unknown>> {
+export async function jsonOf(response: Response): Promise<Record<string, unknown>> {
   return (await response.json()) as Record<string, unknown>
 }
 

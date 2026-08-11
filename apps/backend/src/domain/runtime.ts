@@ -144,10 +144,7 @@ function stringRecord(value: unknown): Record<string, string> {
     Object.entries(value)
       .map(
         ([key, entryValue]) =>
-          [
-            key.trim(),
-            typeof entryValue === "string" ? entryValue.trim() : "",
-          ] as const,
+          [key.trim(), typeof entryValue === "string" ? entryValue.trim() : ""] as const,
       )
       .filter(([key, entryValue]) => Boolean(key) && Boolean(entryValue)),
   )

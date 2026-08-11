@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import { createWebUiApp } from "../src/server.ts"
 import type { DashboardConversation } from "../src/types.ts"
 import { FakeDashboardProject } from "./fake-project.ts"
@@ -12,9 +12,7 @@ describe("Run 与 SubAgent 会话路由", () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toContain("text/event-stream")
-    expect(await readSseUntil(response, "event: ready")).toContain(
-      "event: ready",
-    )
+    expect(await readSseUntil(response, "event: ready")).toContain("event: ready")
     expect(project.agentStreamSubscriptions).toHaveLength(1)
 
     project.agentStreamSubscriptions[0]?.listener({
@@ -37,10 +35,7 @@ describe("Run 与 SubAgent 会话路由", () => {
     const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
 
     expect((await app.request("/api/runs/missing/events")).status).toBe(404)
-    expect(
-      (await app.request("/api/runs/run-pwn-1/subagents/missing/events"))
-        .status,
-    ).toBe(404)
+    expect((await app.request("/api/runs/run-pwn-1/subagents/missing/events")).status).toBe(404)
     expect(project.agentStreamSubscriptions).toHaveLength(0)
   })
 
@@ -62,12 +57,9 @@ describe("Run 与 SubAgent 会话路由", () => {
 
     expect(
       (
-        await jsonRequest(
-          app,
-          "/api/runs/run-pwn-1/subagents/worker-pwn-1/steer",
-          "POST",
-          { message: "   " },
-        )
+        await jsonRequest(app, "/api/runs/run-pwn-1/subagents/worker-pwn-1/steer", "POST", {
+          message: "   ",
+        })
       ).status,
     ).toBe(400)
 
@@ -102,9 +94,7 @@ describe("Run 与 SubAgent 会话路由", () => {
     expect(missingRun.status).toBe(404)
     expect(await jsonOf(missingRun)).toMatchObject({ error: "run_not_found" })
 
-    const missingSubagent = await app.request(
-      "/api/runs/run-pwn-1/subagents/nope/export",
-    )
+    const missingSubagent = await app.request("/api/runs/run-pwn-1/subagents/nope/export")
     expect(missingSubagent.status).toBe(404)
     expect(await jsonOf(missingSubagent)).toMatchObject({
       error: "subagent_not_found",
@@ -164,9 +154,7 @@ describe("Run 与 SubAgent 会话路由", () => {
     expect(runExport.headers.get("content-disposition")).toBeNull()
     expect(await runExport.text()).toContain("<title>Pi Session")
 
-    const subagentExport = await app.request(
-      "/api/runs/run-pwn-1/subagents/worker-pwn-1/export",
-    )
+    const subagentExport = await app.request("/api/runs/run-pwn-1/subagents/worker-pwn-1/export")
     expect(subagentExport.status).toBe(200)
     expect(await subagentExport.text()).toContain("<title>Pi Session")
     expect(sessionExports).toEqual([
@@ -226,9 +214,7 @@ describe("Run 与 SubAgent 会话路由", () => {
     })
 
     const run = await app.request("/api/runs/run-pwn-1/conversation")
-    const subagent = await app.request(
-      "/api/runs/run-pwn-1/subagents/worker-pwn-1/conversation",
-    )
+    const subagent = await app.request("/api/runs/run-pwn-1/subagents/worker-pwn-1/conversation")
 
     expect(run.status).toBe(200)
     expect(await jsonOf(run)).toMatchObject({
@@ -281,9 +267,7 @@ describe("Run 与 SubAgent 会话路由", () => {
       frontendDist: "/nonexistent",
     })
 
-    const response = await app.request(
-      `/api/runs/${encodeURIComponent('run"evil"1')}/export`,
-    )
+    const response = await app.request(`/api/runs/${encodeURIComponent('run"evil"1')}/export`)
     expect(response.status).toBe(200)
     // 内联页面不带下载文件名，因此平台/run 数据完全不会出现在响应头。
     expect(response.headers.get("content-disposition")).toBeNull()

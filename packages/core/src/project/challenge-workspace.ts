@@ -16,42 +16,21 @@ export interface WorkspaceArtifactListing {
 const DEFAULT_MAX_WORKSPACE_FILES = 2_000
 
 export function challengeWorkspaceKey(challengeId: string): string {
-  return createHash("sha256")
-    .update(challengeId, "utf8")
-    .digest("hex")
-    .slice(0, 32)
+  return createHash("sha256").update(challengeId, "utf8").digest("hex").slice(0, 32)
 }
 
-export function challengeWorkspacePath(
-  agentDirectory: string,
-  challengeId: string,
-): string {
-  return resolve(
-    agentDirectory,
-    "challenges",
-    challengeWorkspaceKey(challengeId),
-    "workspace",
-  )
+export function challengeWorkspacePath(agentDirectory: string, challengeId: string): string {
+  return resolve(agentDirectory, "challenges", challengeWorkspaceKey(challengeId), "workspace")
 }
 
-export function resolveWorkspaceArtifact(
-  workspace: string,
-  untrustedPath: string,
-): string {
-  if (
-    !untrustedPath ||
-    isAbsolute(untrustedPath) ||
-    untrustedPath.includes("\0")
-  ) {
+export function resolveWorkspaceArtifact(workspace: string, untrustedPath: string): string {
+  if (!untrustedPath || isAbsolute(untrustedPath) || untrustedPath.includes("\0")) {
     throw new Error("Workspace artifact path must be a non-empty relative path")
   }
   const root = resolve(workspace)
   const target = resolve(root, untrustedPath)
   const relation = relative(root, target)
-  if (
-    relation === ".." ||
-    relation.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
+  if (relation === ".." || relation.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
     throw new Error("Workspace artifact path escapes the challenge workspace")
   }
   return target
@@ -65,13 +44,8 @@ export async function assertWorkspaceArtifactContained(
   const root = await realpath(workspace)
   const target = await realpath(artifactPath)
   const relation = relative(root, target)
-  if (
-    relation === ".." ||
-    relation.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
-    throw new Error(
-      "Workspace artifact symlink escapes the challenge workspace",
-    )
+  if (relation === ".." || relation.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+    throw new Error("Workspace artifact symlink escapes the challenge workspace")
   }
 }
 
@@ -140,8 +114,6 @@ export async function readWorkspaceArtifact(
 function assertRealPathContained(root: string, target: string): void {
   const relation = relative(root, target)
   if (relation === ".." || relation.startsWith(`..${sep}`)) {
-    throw new Error(
-      "Workspace artifact symlink escapes the challenge workspace",
-    )
+    throw new Error("Workspace artifact symlink escapes the challenge workspace")
   }
 }

@@ -42,24 +42,22 @@ export async function runSolverPrompt(options: {
   )
   let timeout: NodeJS.Timeout | undefined
   let onAbort: (() => void) | undefined
-  const stop = new Promise<{ kind: "timeout" } | { kind: "cancelled" }>(
-    (resolve) => {
-      let remainingMs = timeoutMs
-      let observedAt = Date.now()
-      const tick = () => {
-        const now = Date.now()
-        if (!options.pauseTimeout?.()) remainingMs -= now - observedAt
-        observedAt = now
-        if (remainingMs <= 0) resolve({ kind: "timeout" })
-        else timeout = setTimeout(tick, Math.min(remainingMs, 250))
-      }
-      timeout = setTimeout(tick, Math.min(remainingMs, 250))
-      if (signal) {
-        onAbort = () => resolve({ kind: "cancelled" })
-        signal.addEventListener("abort", onAbort, { once: true })
-      }
-    },
-  )
+  const stop = new Promise<{ kind: "timeout" } | { kind: "cancelled" }>((resolve) => {
+    let remainingMs = timeoutMs
+    let observedAt = Date.now()
+    const tick = () => {
+      const now = Date.now()
+      if (!options.pauseTimeout?.()) remainingMs -= now - observedAt
+      observedAt = now
+      if (remainingMs <= 0) resolve({ kind: "timeout" })
+      else timeout = setTimeout(tick, Math.min(remainingMs, 250))
+    }
+    timeout = setTimeout(tick, Math.min(remainingMs, 250))
+    if (signal) {
+      onAbort = () => resolve({ kind: "cancelled" })
+      signal.addEventListener("abort", onAbort, { once: true })
+    }
+  })
 
   const outcome = await Promise.race([settled, stop])
   if (timeout) clearTimeout(timeout)
@@ -70,9 +68,7 @@ export async function runSolverPrompt(options: {
       : {
           kind: "interrupted",
           stopReason: outcome.response.stopReason,
-          ...(outcome.response.errorMessage
-            ? { error: outcome.response.errorMessage }
-            : {}),
+          ...(outcome.response.errorMessage ? { error: outcome.response.errorMessage } : {}),
         }
   }
   if (outcome.kind === "failed") {
@@ -84,17 +80,12 @@ export async function runSolverPrompt(options: {
   }
 
   await solver.abort()
-  await Promise.race([
-    settled,
-    new Promise((resolve) => setTimeout(resolve, abortGraceMs)),
-  ])
+  await Promise.race([settled, new Promise((resolve) => setTimeout(resolve, abortGraceMs))])
   if (outcome.kind === "cancelled") throw new ContestRunnerCancelledError()
   throw new ChallengeTimeoutError(timeoutMs)
 }
 
-export async function latestAgentError(
-  solver: CtfSolverAgent,
-): Promise<string | undefined> {
+export async function latestAgentError(solver: CtfSolverAgent): Promise<string | undefined> {
   const messages = await solver.transcript()
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
@@ -109,10 +100,7 @@ export async function latestAgentError(
 }
 
 export function hasTerminalSubmission(solver: CtfSolverAgent): boolean {
-  return (
-    solver.submission?.status === "accepted" ||
-    solver.submission?.status === "already_solved"
-  )
+  return solver.submission?.status === "accepted" || solver.submission?.status === "already_solved"
 }
 
 export function sessionInterruptionMessage(

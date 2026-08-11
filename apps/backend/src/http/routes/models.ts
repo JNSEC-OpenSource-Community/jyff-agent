@@ -14,9 +14,7 @@ import {
 import type { Services } from "../services.ts"
 
 /** 包装模型登录动作：统一映射为 400 invalid_model_authentication。 */
-async function modelAuthenticationAction<T>(
-  action: () => Promise<T>,
-): Promise<T> {
+async function modelAuthenticationAction<T>(action: () => Promise<T>): Promise<T> {
   try {
     return await action()
   } catch (error) {
@@ -62,9 +60,7 @@ export function modelsRoutes(services: Services): App {
       code: "invalid_model_provider",
     })
     return c.json({
-      configuration: await modelProviderAction(() =>
-        modelConfiguration.addCustomProvider(body),
-      ),
+      configuration: await modelProviderAction(() => modelConfiguration.addCustomProvider(body)),
     })
   })
 
@@ -75,10 +71,7 @@ export function modelsRoutes(services: Services): App {
     })
     return c.json({
       configuration: await modelProviderAction(() =>
-        modelConfiguration.updateCustomProvider(
-          c.req.param("providerId"),
-          body,
-        ),
+        modelConfiguration.updateCustomProvider(c.req.param("providerId"), body),
       ),
     })
   })
@@ -97,9 +90,7 @@ export function modelsRoutes(services: Services): App {
     const modelConfiguration = services.requireModelConfiguration()
     return c.json({
       models: await modelProviderAction(() =>
-        modelConfiguration.discoverCustomProviderModels(
-          c.req.param("providerId"),
-        ),
+        modelConfiguration.discoverCustomProviderModels(c.req.param("providerId")),
       ),
     })
   })
@@ -143,9 +134,7 @@ export function modelsRoutes(services: Services): App {
     })
     return c.json(
       await modelAuthenticationAction(() =>
-        Promise.resolve(
-          authentication.submitPrompt(c.req.param("sessionId"), body.value),
-        ),
+        Promise.resolve(authentication.submitPrompt(c.req.param("sessionId"), body.value)),
       ),
     )
   })
@@ -166,9 +155,7 @@ export function modelsRoutes(services: Services): App {
     const authentication = await modelAuthenticationAction(() =>
       modelAuthentication.logout(c.req.param("provider")),
     )
-    const configuration = await services.reconcileModelAvailability(
-      services.currentScheduler(),
-    )
+    const configuration = await services.reconcileModelAvailability(services.currentScheduler())
     return c.json({
       authentication,
       configuration,
@@ -182,12 +169,8 @@ export function modelsRoutes(services: Services): App {
       code: "invalid_model_authentication",
       maximumSize: 262_144,
     })
-    const imported = await modelAuthenticationAction(() =>
-      authentication.importJson(body.json),
-    )
-    const configuration = await services.reconcileModelAvailability(
-      services.currentScheduler(),
-    )
+    const imported = await modelAuthenticationAction(() => authentication.importJson(body.json))
+    const configuration = await services.reconcileModelAvailability(services.currentScheduler())
     return c.json({
       imported,
       authentication: await authentication.snapshot(),
@@ -199,12 +182,8 @@ export function modelsRoutes(services: Services): App {
   app.post("/model-auth/import-file", async (c) => {
     const authentication = services.requireModelAuthentication()
     await readJsonBody(c)
-    const imported = await modelAuthenticationAction(() =>
-      authentication.importFile(),
-    )
-    const configuration = await services.reconcileModelAvailability(
-      services.currentScheduler(),
-    )
+    const imported = await modelAuthenticationAction(() => authentication.importFile())
+    const configuration = await services.reconcileModelAvailability(services.currentScheduler())
     return c.json({
       imported,
       authentication: await authentication.snapshot(),

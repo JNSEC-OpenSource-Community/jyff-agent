@@ -3,7 +3,7 @@
 import { render, screen } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { AppProvider } from "../src/app/AppProvider.tsx"
 import { GlobalSettingsPage } from "../src/pages/settings/GlobalSettingsPage.tsx"
 
@@ -21,7 +21,7 @@ describe("全局供应商设置", () => {
 
   it("先显示三种添加入口，再按选择展开配置表单", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
-      const url = String(input)
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       if (url === "/api/auth") {
         return jsonResponse({
           enabled: false,
@@ -98,18 +98,12 @@ describe("全局供应商设置", () => {
 
     const user = userEvent.setup()
     expect(await screen.findByText("Internal Gateway")).toBeTruthy()
-    expect(
-      screen.getByRole("button", { name: /Subscription 登录/ }),
-    ).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Subscription 登录/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /配置 API Key/ })).toBeTruthy()
-    expect(
-      screen.getByRole("button", { name: /添加自定义 Provider/ }),
-    ).toBeTruthy()
+    expect(screen.getByRole("button", { name: /添加自定义 Provider/ })).toBeTruthy()
     expect(screen.queryByLabelText("Base URL")).toBeNull()
 
-    await user.click(
-      screen.getByRole("button", { name: /添加自定义 Provider/ }),
-    )
+    await user.click(screen.getByRole("button", { name: /添加自定义 Provider/ }))
     expect(screen.getByLabelText("供应商名称")).toBeTruthy()
     expect(screen.getByLabelText("Base URL")).toBeTruthy()
 

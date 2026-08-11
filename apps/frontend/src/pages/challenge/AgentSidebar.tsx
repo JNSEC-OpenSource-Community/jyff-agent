@@ -27,19 +27,13 @@ export function AgentSidebar({
   details: ChallengeDetails
   selectedRunId: string
   selectedSubagentId: string | null
-  onSelectSubagent(id: string | null): void
+  onSelectSubagent: (id: string | null) => void
 }) {
   const c = details.challenge
-  const run =
-    details.runs.find((r) => r.id === selectedRunId) ?? details.runs[0]
-  const selectedSubagent = run?.subagents.find(
-    (subagent) => subagent.id === selectedSubagentId,
-  )
+  const run = details.runs.find((r) => r.id === selectedRunId) ?? details.runs[0]
+  const selectedSubagent = run?.subagents.find((subagent) => subagent.id === selectedSubagentId)
   const selectedAgentName = selectedSubagent?.displayName ?? "Solver"
-  const cache = useMemo(
-    () => selectedAgentCache(run, selectedSubagent),
-    [run, selectedSubagent],
-  )
+  const cache = useMemo(() => selectedAgentCache(run, selectedSubagent), [run, selectedSubagent])
 
   return (
     <aside className="flex min-w-0 flex-1 flex-col gap-4">
@@ -48,7 +42,7 @@ export function AgentSidebar({
           <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted">
             <span className="flex items-center gap-2.5">
               <Icon icon="lucide:scan-search" width="15" />
-              状态
+              运行信息
             </span>
             <Icon
               icon="lucide:chevron-down"
@@ -62,31 +56,7 @@ export function AgentSidebar({
               <Row label="尝试" value={c.attempts} />
               <Row label="中断" value={c.sessionInterruptions} />
               <Row label="当前 Agent" value={selectedAgentName} />
-              <Row
-                label="实时缓存率"
-                value={
-                  cache.cacheRate === null
-                    ? "—"
-                    : `${Math.round(cache.cacheRate * 100)}%`
-                }
-              />
-              {run ? (
-                <>
-                  <Row label="输入" value={tokenLabel(cache.inputTokens)} />
-                  <Row
-                    label="缓存读取"
-                    value={tokenLabel(cache.cacheReadTokens)}
-                  />
-                  <Row
-                    label="缓存写入"
-                    value={tokenLabel(cache.cacheWriteTokens)}
-                  />
-                </>
-              ) : null}
-              <Row
-                label="平台"
-                value={c.platformSolved ? "Solved" : "Unsolved"}
-              />
+              <Row label="平台" value={c.platformSolved ? "Solved" : "Unsolved"} />
               <Row label="环境" value={environmentLabel(details, c.needsEnv)} />
               {details.environment?.endpoint ? (
                 <EnvironmentEndpoint
@@ -94,6 +64,7 @@ export function AgentSidebar({
                   endpoint={details.environment.endpoint}
                 />
               ) : null}
+              {run ? <UsageDetails cache={cache} /> : null}
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -121,11 +92,7 @@ export function AgentSidebar({
               key={s.id}
               icon="lucide:waypoints"
               title={s.displayName}
-              sub={
-                s.activeTool
-                  ? toolLabel(s.activeTool)
-                  : `${s.turns}t · ${s.totalTokens}tk`
-              }
+              sub={s.activeTool ? toolLabel(s.activeTool) : `${s.turns}t · ${s.totalTokens}tk`}
               status={s.status}
               active={selectedSubagentId === s.id}
               onClick={() => onSelectSubagent(s.id)}
@@ -188,9 +155,7 @@ function environmentLabel(
 }
 
 function EnvironmentEndpoint({ endpoint }: { endpoint: string }) {
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  )
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle")
   const copy = async () => {
     try {
       await copyText(endpoint)
@@ -225,13 +190,7 @@ function EnvironmentEndpoint({ endpoint }: { endpoint: string }) {
                 ? "复制环境 URL 失败，点击重试"
                 : "复制环境 URL"
           }
-          title={
-            copyStatus === "copied"
-              ? "已复制"
-              : copyStatus === "failed"
-                ? "复制失败"
-                : "复制"
-          }
+          title={copyStatus === "copied" ? "已复制" : copyStatus === "failed" ? "复制失败" : "复制"}
         >
           <Icon
             icon={
@@ -275,23 +234,12 @@ async function copyText(value: string): Promise<void> {
   if (!copied) throw new Error("Clipboard unavailable")
 }
 
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: string | number
-  mono?: boolean
-}) {
+function Row({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
     <div className="flex min-w-0 justify-between gap-2">
       <span className="shrink-0 text-muted-foreground">{label}</span>
       <strong
-        className={cn(
-          "min-w-0 truncate text-right text-xs",
-          mono && "font-mono",
-        )}
+        className={cn("min-w-0 truncate text-right text-xs", mono && "font-mono")}
         title={String(value)}
       >
         {value}
@@ -311,9 +259,9 @@ function AR({
   icon: string
   title: string
   sub: string
-  status: DashboardSubagent["status"] | string | null
+  status: DashboardRun["status"] | DashboardSubagent["status"] | null
   active: boolean
-  onClick(): void
+  onClick: () => void
 }) {
   return (
     <button
@@ -321,9 +269,7 @@ function AR({
       onClick={onClick}
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150",
-        active
-          ? "bg-primary/10 text-primary shadow-[0_0_0_1px_rgba(94,106,210,0.12)_inset]"
-          : "hover:bg-muted",
+        active ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/15" : "hover:bg-muted",
       )}
     >
       <span
@@ -341,10 +287,34 @@ function AR({
         <p className="truncate text-xs text-muted-foreground">{sub}</p>
       </span>
       {status ? (
-        <Badge tone={toneForStatus(status)} className="shrink-0 text-[10px]">
+        <Badge tone={toneForStatus(status)} className="shrink-0">
           {STATUS_LABELS[status] ?? status}
         </Badge>
       ) : null}
     </button>
+  )
+}
+
+function UsageDetails({ cache }: { cache: AgentCacheStats }) {
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="group mt-1 flex w-full items-center justify-between border-t border-border pt-2 text-xs text-muted-foreground hover:text-foreground">
+        用量详情
+        <Icon
+          icon="lucide:chevron-down"
+          width="13"
+          className="transition-transform duration-200 group-data-[state=open]:rotate-180"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-2 pt-2 text-sm">
+        <Row
+          label="缓存命中"
+          value={cache.cacheRate === null ? "—" : `${Math.round(cache.cacheRate * 100)}%`}
+        />
+        <Row label="输入" value={tokenLabel(cache.inputTokens)} />
+        <Row label="缓存读取" value={tokenLabel(cache.cacheReadTokens)} />
+        <Row label="缓存写入" value={tokenLabel(cache.cacheWriteTokens)} />
+      </CollapsibleContent>
+    </Collapsible>
   )
 }

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
 import { createWebUiApp } from "../src/server.ts"
 import { FakeDashboardProject, FakeModelConfiguration } from "./fake-project.ts"
@@ -12,9 +12,7 @@ describe("模型配置与模型鉴权路由", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks()
-    await Promise.all(
-      roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-    )
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
   })
 
   async function appWithAuth() {
@@ -86,17 +84,12 @@ describe("模型配置与模型鉴权路由", () => {
       frontendDist: "/nonexistent",
     })
 
-    const created = await jsonRequest(
-      app,
-      "/api/model-config/providers",
-      "POST",
-      {
-        name: "Internal Gateway",
-        api: "openai-responses",
-        baseUrl: "https://models.example.test/v1/",
-        apiKey: "provider-secret",
-      },
-    )
+    const created = await jsonRequest(app, "/api/model-config/providers", "POST", {
+      name: "Internal Gateway",
+      api: "openai-responses",
+      baseUrl: "https://models.example.test/v1/",
+      apiKey: "provider-secret",
+    })
     expect(created.status).toBe(200)
     const createdBody = await jsonOf(created)
     expect(createdBody).toMatchObject({
@@ -236,14 +229,9 @@ describe("模型配置与模型鉴权路由", () => {
     expect(listedBody).toContain('"credentialType":"api_key"')
     expect(listedBody).not.toContain("server-test-secret")
 
-    const removed = await jsonRequest(
-      app,
-      "/api/model-auth/providers/openai/logout",
-      "POST",
-      {},
-    )
+    const removed = await jsonRequest(app, "/api/model-auth/providers/openai/logout", "POST", {})
     expect(removed.status).toBe(200)
-    expect(await authentication.hasCredential("openai")).toBe(false)
+    expect(authentication.hasCredential("openai")).toBe(false)
   })
 
   it("允许无需预输入凭据的浏览器和 Device Code 登录", async () => {
@@ -286,33 +274,27 @@ describe("模型配置与模型鉴权路由", () => {
       prompt: { type: "secret", message: "输入 code" },
       updatedAt: "2026-08-04T00:00:00.000Z",
     }))
-    const loginSession = vi
-      .spyOn(authentication, "loginSession")
-      .mockReturnValue({
-        id: "session-1",
-        provider: "openai-codex",
-        method: "oauth_browser",
-        status: "running",
-        updatedAt: "2026-08-04T00:00:00.000Z",
-      })
-    const submitPrompt = vi
-      .spyOn(authentication, "submitPrompt")
-      .mockReturnValue({
-        id: "session-1",
-        provider: "openai-codex",
-        method: "oauth_browser",
-        status: "running",
-        updatedAt: "2026-08-04T00:00:00.000Z",
-      })
-    const cancelLogin = vi
-      .spyOn(authentication, "cancelLogin")
-      .mockReturnValue({
-        id: "session-1",
-        provider: "openai-codex",
-        method: "oauth_browser",
-        status: "cancelled",
-        updatedAt: "2026-08-04T00:00:00.000Z",
-      })
+    const loginSession = vi.spyOn(authentication, "loginSession").mockReturnValue({
+      id: "session-1",
+      provider: "openai-codex",
+      method: "oauth_browser",
+      status: "running",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+    })
+    const submitPrompt = vi.spyOn(authentication, "submitPrompt").mockReturnValue({
+      id: "session-1",
+      provider: "openai-codex",
+      method: "oauth_browser",
+      status: "running",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+    })
+    const cancelLogin = vi.spyOn(authentication, "cancelLogin").mockReturnValue({
+      id: "session-1",
+      provider: "openai-codex",
+      method: "oauth_browser",
+      status: "cancelled",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+    })
 
     const login = await jsonRequest(app, "/api/model-auth/login", "POST", {
       provider: "openai-codex",
@@ -325,21 +307,13 @@ describe("模型配置与模型鉴权路由", () => {
     expect(polled.status).toBe(200)
     expect(await jsonOf(polled)).toMatchObject({ status: "running" })
 
-    const prompt = await jsonRequest(
-      app,
-      "/api/model-auth/login/session-1/prompt",
-      "POST",
-      { value: "1234" },
-    )
+    const prompt = await jsonRequest(app, "/api/model-auth/login/session-1/prompt", "POST", {
+      value: "1234",
+    })
     expect(prompt.status).toBe(200)
     expect(submitPrompt).toHaveBeenCalledWith("session-1", "1234")
 
-    const cancelled = await jsonRequest(
-      app,
-      "/api/model-auth/login/session-1/cancel",
-      "POST",
-      {},
-    )
+    const cancelled = await jsonRequest(app, "/api/model-auth/login/session-1/cancel", "POST", {})
     expect(cancelled.status).toBe(200)
     expect(await jsonOf(cancelled)).toMatchObject({ status: "cancelled" })
     expect(cancelLogin).toHaveBeenCalledWith("session-1")
@@ -368,29 +342,24 @@ describe("模型配置与模型鉴权路由", () => {
       frontendDist: "/nonexistent",
     })
 
-    const saved = await jsonRequest(
-      app,
-      "/api/projects/alpha/model-config",
-      "POST",
-      {
-        solverModelId: "solver",
-        tldrModelId: "solver",
-        subagentModels: {},
-        models: [
-          {
-            id: "solver",
-            provider: "openai",
-            modelId: "gpt-4o",
-            baseUrl: "https://api.openai.com/v1",
-            contextWindow: 128_000,
-            thinkingEnabled: false,
-            reasoningEffort: "off",
-            passthroughThinking: false,
-            apiKey: "sk-secret-1",
-          },
-        ],
-      },
-    )
+    const saved = await jsonRequest(app, "/api/projects/alpha/model-config", "POST", {
+      solverModelId: "solver",
+      tldrModelId: "solver",
+      subagentModels: {},
+      models: [
+        {
+          id: "solver",
+          provider: "openai",
+          modelId: "gpt-4o",
+          baseUrl: "https://api.openai.com/v1",
+          contextWindow: 128_000,
+          thinkingEnabled: false,
+          reasoningEffort: "off",
+          passthroughThinking: false,
+          apiKey: "sk-secret-1",
+        },
+      ],
+    })
     expect(saved.status).toBe(200)
     expect(await jsonOf(saved)).toMatchObject({
       configuration: { solverModelId: "solver" },

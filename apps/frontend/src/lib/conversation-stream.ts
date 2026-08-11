@@ -1,7 +1,4 @@
-import {
-  type AgentStreamEvent,
-  appendAgentMessageDelta,
-} from "@ctf-agent/core/agent-stream"
+import { type AgentStreamEvent, appendAgentMessageDelta } from "@ctf-agent/core/agent-stream"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import type { DashboardConversation } from "../types.ts"
 
@@ -41,8 +38,7 @@ export function mergeCanonicalConversation(
     (item) =>
       item.entryId.startsWith("live:") &&
       !canonical.messages.some(
-        (persisted) =>
-          JSON.stringify(persisted.message) === JSON.stringify(item.message),
+        (persisted) => JSON.stringify(persisted.message) === JSON.stringify(item.message),
       ),
   )
   return { messages: [...canonical.messages, ...live] }
@@ -57,9 +53,7 @@ export function applyAgentStreamEvent(
   if (event.type === "message_started") {
     upsertLiveMessage(messages, event.messageId, event.message, event.createdAt)
   } else if (event.type === "text_delta" || event.type === "thinking_delta") {
-    const index = messages.findIndex(
-      (item) => item.entryId === liveEntryId(event.messageId),
-    )
+    const index = messages.findIndex((item) => item.entryId === liveEntryId(event.messageId))
     if (index >= 0) {
       const current = messages[index]
       if (current) {
@@ -74,10 +68,7 @@ export function applyAgentStreamEvent(
         }
       }
     }
-  } else if (
-    event.type === "message_updated" ||
-    event.type === "message_completed"
-  ) {
+  } else if (event.type === "message_updated" || event.type === "message_completed") {
     upsertLiveMessage(messages, event.messageId, event.message, event.createdAt)
   }
   return { messages }
@@ -187,8 +178,7 @@ export function reduceAgentActivity(
 export function shouldRefreshAgentView(event: AgentStreamEvent): boolean {
   return (
     event.type === "agent_finished" ||
-    (event.type === "tool_completed" &&
-      event.toolName === "father_request_test_access")
+    (event.type === "tool_completed" && event.toolName === "father_request_test_access")
   )
 }
 

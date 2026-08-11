@@ -46,10 +46,7 @@ interface YouTubeConfig {
   preferredModel: string
 }
 
-function normalizePreferredModel(
-  value: string | undefined,
-  fallback: string,
-): string {
+function normalizePreferredModel(value: string | undefined, fallback: string): string {
   if (value === undefined) return fallback
   const normalized = value.trim()
   return normalized.length > 0 ? normalized : fallback
@@ -106,9 +103,7 @@ export async function extractYouTube(
 ): Promise<ExtractedContent | null> {
   const config = loadYouTubeConfig()
   const { videoId } = isYouTubeURL(url)
-  const canonicalUrl = videoId
-    ? `https://www.youtube.com/watch?v=${videoId}`
-    : url
+  const canonicalUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : url
   const effectivePrompt = prompt ?? YOUTUBE_PROMPT
   const effectiveModel = model ?? config.preferredModel
 
@@ -119,13 +114,8 @@ export async function extractYouTube(
   const attemptErrors: string[] = []
 
   const result =
-    (await tryGeminiApi(
-      canonicalUrl,
-      effectivePrompt,
-      effectiveModel,
-      signal,
-      attemptErrors,
-    )) ?? (await tryPerplexity(url, effectivePrompt, signal, attemptErrors))
+    (await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)) ??
+    (await tryPerplexity(url, effectivePrompt, signal, attemptErrors))
 
   if (result) {
     result.url = url
@@ -159,13 +149,11 @@ type StreamResult = StreamInfo | { error: string }
 
 function mapYtDlpError(err: unknown): string {
   const { code, stderr, message } = readExecError(err)
-  if (code === "ENOENT")
-    return "yt-dlp is not installed. Install with: brew install yt-dlp"
+  if (code === "ENOENT") return "yt-dlp is not installed. Install with: brew install yt-dlp"
   if (isTimeoutError(err)) return "yt-dlp timed out fetching video info"
   const lower = stderr.toLowerCase()
   if (lower.includes("private")) return "Video is private or unavailable"
-  if (lower.includes("sign in"))
-    return "Video is age-restricted and requires authentication"
+  if (lower.includes("sign in")) return "Video is age-restricted and requires authentication"
   if (lower.includes("not available"))
     return "Video is unavailable in your region or has been removed"
   if (lower.includes("live")) return "Cannot extract frames from a live stream"
@@ -173,18 +161,11 @@ function mapYtDlpError(err: unknown): string {
   return snippet ? `yt-dlp failed: ${snippet}` : "yt-dlp failed"
 }
 
-export async function getYouTubeStreamInfo(
-  videoId: string,
-): Promise<StreamResult> {
+export async function getYouTubeStreamInfo(videoId: string): Promise<StreamResult> {
   try {
     const output = execFileSync(
       "yt-dlp",
-      [
-        "--print",
-        "duration",
-        "-g",
-        `https://www.youtube.com/watch?v=${videoId}`,
-      ],
+      ["--print", "duration", "-g", `https://www.youtube.com/watch?v=${videoId}`],
       { timeout: 15000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim()
     const lines = output.split(/\r?\n/)
@@ -200,10 +181,7 @@ export async function getYouTubeStreamInfo(
   }
 }
 
-async function extractFrameFromStream(
-  streamUrl: string,
-  seconds: number,
-): Promise<FrameResult> {
+async function extractFrameFromStream(streamUrl: string, seconds: number): Promise<FrameResult> {
   try {
     const buffer = execFileSync(
       "ffmpeg",
@@ -274,12 +252,9 @@ export async function fetchYouTubeThumbnail(
   videoId: string,
 ): Promise<{ data: string; mimeType: string } | null> {
   try {
-    const res = await fetch(
-      `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-      {
-        signal: AbortSignal.timeout(5000),
-      },
-    )
+    const res = await fetch(`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, {
+      signal: AbortSignal.timeout(5000),
+    })
     if (!res.ok) return null
     const buffer = Buffer.from(await res.arrayBuffer())
     if (buffer.length === 0) return null

@@ -1,15 +1,7 @@
 import { activityMonitor } from "./activity.ts"
 import { redactCredential } from "./credential-source.ts"
-import type {
-  SearchOptions,
-  SearchResponse,
-  SearchResult,
-} from "./perplexity.ts"
-import {
-  type ModelAuthResolver,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts"
+import { type ModelAuthResolver, providerOption, resolveProviderKey } from "./runtime.ts"
 
 // xAI's Agent Tools API: a hosted `web_search` tool on an OpenAI-compatible
 // Responses endpoint. The search runs inside xAI's own inference, so — unlike
@@ -34,11 +26,7 @@ const SEARCH_TIMEOUT_MS = 60_000
 // Ordered best-first. pi's builtin xai catalog is small and xAI retires models
 // briskly, so this is a preference list, not an assumption: the first one the
 // registry actually knows wins, and an unknown id is skipped rather than sent.
-const AUTH_MODEL_CANDIDATES = [
-  "grok-4.5",
-  "grok-4.3",
-  "grok-build-0.1",
-] as const
+const AUTH_MODEL_CANDIDATES = ["grok-4.5", "grok-4.3", "grok-build-0.1"] as const
 
 type ProviderHeaders = Record<string, string | null>
 
@@ -51,9 +39,7 @@ interface XaiAuth {
 function resolveConfiguredSearchModel(value: unknown): string | undefined {
   if (value == null) return undefined
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(
-      `xaiSearchModel in the WebUI plugins settings must be a non-empty string`,
-    )
+    throw new Error(`xaiSearchModel in the WebUI plugins settings must be a non-empty string`)
   }
   return value.trim()
 }
@@ -96,9 +82,7 @@ export async function resolveXaiAuth(
   ctx?: ModelAuthResolver,
   _signal?: AbortSignal,
 ): Promise<XaiAuth | undefined> {
-  const modelOverride = resolveConfiguredSearchModel(
-    providerOption("xai", "searchModel"),
-  )
+  const modelOverride = resolveConfiguredSearchModel(providerOption("xai", "searchModel"))
   if (ctx) {
     const auth = await resolvePiAuth(ctx, modelOverride)
     if (auth) return auth
@@ -113,9 +97,7 @@ export async function resolveXaiAuth(
   }
 }
 
-export async function isXaiSearchAvailable(
-  ctx?: ModelAuthResolver,
-): Promise<boolean> {
+export async function isXaiSearchAvailable(ctx?: ModelAuthResolver): Promise<boolean> {
   if (ctx && (await resolvePiAuth(ctx))) return true
   return !!resolveProviderKey("xai")
 }
@@ -126,9 +108,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -164,9 +144,7 @@ function buildInput(query: string, options: SearchOptions): string {
     Number.isFinite(options.numResults) &&
     options.numResults > 0
   ) {
-    lines.push(
-      `Prefer around ${Math.min(Math.floor(options.numResults), 20)} distinct sources.`,
-    )
+    lines.push(`Prefer around ${Math.min(Math.floor(options.numResults), 20)} distinct sources.`)
   }
 
   const allowed: string[] = []
@@ -177,8 +155,7 @@ function buildInput(query: string, options: SearchOptions): string {
     const target = raw.trim().startsWith("-") ? blocked : allowed
     if (!target.includes(domain)) target.push(domain)
   }
-  if (allowed.length > 0)
-    lines.push(`Only use sources from: ${allowed.slice(0, 100).join(", ")}.`)
+  if (allowed.length > 0) lines.push(`Only use sources from: ${allowed.slice(0, 100).join(", ")}.`)
   if (blocked.length > 0)
     lines.push(`Do not use sources from: ${blocked.slice(0, 100).join(", ")}.`)
 
@@ -202,11 +179,7 @@ function addResult(
   })
 }
 
-function extractSnippetAround(
-  text: string,
-  start: unknown,
-  end: unknown,
-): string {
+function extractSnippetAround(text: string, start: unknown, end: unknown): string {
   if (typeof start !== "number" || typeof end !== "number" || !text) return ""
   const before = Math.max(0, start - 100)
   const after = Math.min(text.length, end + 100)
@@ -220,11 +193,7 @@ function extractSnippetAround(
 function extractAnswer(output: unknown[]): string {
   const parts: string[] = []
   for (const item of output) {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      (item as { type?: unknown }).type !== "message"
-    )
+    if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message")
       continue
     const content = (item as { content?: unknown }).content
     if (!Array.isArray(content)) continue
@@ -244,28 +213,19 @@ function extractAnswer(output: unknown[]): string {
  * `web_search_call` visited. A third-party extension that reads `data.citations`
  * silently returns answers with no sources at all — hence both paths here.
  */
-function extractSearchResults(
-  output: unknown[],
-  numResults: number | undefined,
-): SearchResult[] {
+function extractSearchResults(output: unknown[], numResults: number | undefined): SearchResult[] {
   const results: SearchResult[] = []
   const seenUrls = new Set<string>()
 
   for (const item of output) {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      (item as { type?: unknown }).type !== "message"
-    )
+    if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message")
       continue
     const content = (item as { content?: unknown }).content
     if (!Array.isArray(content)) continue
     for (const part of content) {
       if (!part || typeof part !== "object") continue
       const text =
-        typeof (part as { text?: unknown }).text === "string"
-          ? (part as { text: string }).text
-          : ""
+        typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""
       const annotations = (part as { annotations?: unknown }).annotations
       if (!Array.isArray(annotations)) continue
       for (const annotation of annotations) {
@@ -317,11 +277,7 @@ function extractSearchResults(
     }
   }
 
-  if (
-    typeof numResults === "number" &&
-    Number.isFinite(numResults) &&
-    numResults > 0
-  ) {
+  if (typeof numResults === "number" && Number.isFinite(numResults) && numResults > 0) {
     return results.slice(0, Math.min(Math.floor(numResults), 20))
   }
   return results
@@ -354,19 +310,14 @@ export async function searchWithXai(
         tools: [{ type: "web_search" }],
       }),
       signal: options.signal
-        ? AbortSignal.any([
-            AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-            options.signal,
-          ])
+        ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
         : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     })
 
     if (!response.ok) {
       activityMonitor.logError(activityId, `HTTP ${response.status}`)
       const errorText = redactCredential(await response.text(), auth.apiKey)
-      throw new Error(
-        `xAI API error ${response.status}: ${errorText.slice(0, 300)}`,
-      )
+      throw new Error(`xAI API error ${response.status}: ${errorText.slice(0, 300)}`)
     }
 
     let parsed: Record<string, unknown>

@@ -1,8 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
-import {
-  createBlackboardTools,
-  serializeBlackboard,
-} from "../../src/collaboration/blackboard.js"
+import { describe, expect, it, vi } from "vite-plus/test"
+import { createBlackboardTools, serializeBlackboard } from "../../src/collaboration/blackboard.js"
 import type { RunStore } from "../../src/persistence/run-store.js"
 
 describe("serializeBlackboard", () => {
@@ -106,11 +103,7 @@ describe("createBlackboardTools", () => {
           concludedAt: "now",
         },
       }),
-      updateEvidence: (
-        _challengeId: string,
-        evidenceId: number,
-        description: string,
-      ) => ({
+      updateEvidence: (_challengeId: string, evidenceId: number, description: string) => ({
         id: evidenceId,
         challengeId: "c1",
         description,
@@ -186,10 +179,7 @@ describe("createBlackboardTools", () => {
       evidence: { description: "new finding" },
     })
     expect((result.details as Record<string, unknown>).evidence).toBeDefined()
-    expect(
-      ((result.details as Record<string, unknown>).evidence as { id: number })
-        .id,
-    ).toBe(1)
+    expect(((result.details as Record<string, unknown>).evidence as { id: number }).id).toBe(1)
   })
 
   it("record 工具全空参数抛出错误", async () => {
@@ -243,30 +233,22 @@ describe("createBlackboardTools", () => {
     expect(details.evidence).toBeDefined()
     expect(details.opportunity).toBeDefined()
     expect(details.concluded).toBeDefined()
-    expect(concludeOpportunity).toHaveBeenCalledWith(
-      "c1",
-      2,
-      "结论",
-      "r1",
-      "dead_end",
-    )
+    expect(concludeOpportunity).toHaveBeenCalledWith("c1", 2, "结论", "r1", "dead_end")
   })
 
   it("manage 工具按 ID 更新与删除条目", async () => {
-    const updateOpportunity = vi.fn(
-      (_challengeId: string, opportunityId: number) => ({
-        id: opportunityId,
-        challengeId: "c1",
-        description: "updated",
-        status: "open" as const,
-        resolution: null,
-        runId: "r1",
-        sourceEvidenceIds: [2],
-        targetEvidenceId: null,
-        createdAt: "now",
-        concludedAt: null,
-      }),
-    )
+    const updateOpportunity = vi.fn((_challengeId: string, opportunityId: number) => ({
+      id: opportunityId,
+      challengeId: "c1",
+      description: "updated",
+      status: "open" as const,
+      resolution: null,
+      runId: "r1",
+      sourceEvidenceIds: [2],
+      targetEvidenceId: null,
+      createdAt: "now",
+      concludedAt: null,
+    }))
     const deleteEvidence = vi.fn(() => {
       throw new Error("Evidence 1 is referenced")
     })
@@ -297,8 +279,6 @@ describe("createBlackboardTools", () => {
       action: "delete_evidence",
       evidenceId: 1,
     })
-    expect((rejected.details as { error?: string }).error).toContain(
-      "is referenced",
-    )
+    expect((rejected.details as { error?: string }).error).toContain("is referenced")
   })
 })

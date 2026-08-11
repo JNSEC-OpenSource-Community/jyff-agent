@@ -1,4 +1,5 @@
 import type { ChallengeInfo } from "@ctf-agent/platform"
+import { xml } from "./utils.ts"
 
 export function challengeContextPrompt(
   challenge: ChallengeInfo,
@@ -33,21 +34,6 @@ export function challengeContextPrompt(
 
 function needsEnvironmentValue(value: boolean | undefined): string {
   return value === undefined ? "unknown" : String(value)
-}
-
-function xml(value: string): string {
-  let sanitized = ""
-  for (const character of value) {
-    const code = character.codePointAt(0) ?? 0
-    sanitized +=
-      code < 32 && code !== 9 && code !== 10 && code !== 13 ? "�" : character
-  }
-  return sanitized
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;")
 }
 
 export function challengeAnnouncementsPrompt(

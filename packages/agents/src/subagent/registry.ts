@@ -4,10 +4,7 @@ import { basename, join } from "node:path"
 import { SUBAGENT_SHARED_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { parse } from "yaml"
-import {
-  DEFAULT_SUBAGENT_THINKING_LEVEL,
-  isThinkingLevel,
-} from "../base-agent/thinking.ts"
+import { DEFAULT_SUBAGENT_THINKING_LEVEL, isThinkingLevel } from "../base-agent/thinking.ts"
 
 export interface SubagentRole {
   name: string
@@ -73,15 +70,10 @@ const DEFAULT_ROLES: readonly SubagentRole[] = [
 ]
 
 /** Load built-ins and project overrides from .agents/agents and .pi/agents. */
-export async function discoverSubagentRoles(
-  root: string,
-): Promise<DiscoveredSubagentRoles> {
+export async function discoverSubagentRoles(root: string): Promise<DiscoveredSubagentRoles> {
   const roles = new Map(DEFAULT_ROLES.map((role) => [role.name, role]))
   const diagnostics: SubagentRoleDiagnostic[] = []
-  for (const directory of [
-    join(root, ".agents", "agents"),
-    join(root, ".pi", "agents"),
-  ]) {
+  for (const directory of [join(root, ".agents", "agents"), join(root, ".pi", "agents")]) {
     let entries: Dirent[]
     try {
       entries = await readdir(directory, { withFileTypes: true })
@@ -90,9 +82,7 @@ export async function discoverSubagentRoles(
       diagnostics.push({ path: directory, message: errorText(error) })
       continue
     }
-    for (const entry of entries.sort((left, right) =>
-      left.name.localeCompare(right.name),
-    )) {
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue
       const path = join(directory, entry.name)
       try {
@@ -121,40 +111,30 @@ export function resolveSubagentRole(
   return matches.length === 1 ? matches[0] : undefined
 }
 
-export function availableSubagentRoles(
-  roles: ReadonlyMap<string, SubagentRole>,
-): SubagentRole[] {
+export function availableSubagentRoles(roles: ReadonlyMap<string, SubagentRole>): SubagentRole[] {
   return [...roles.values()]
     .filter((role) => role.enabled)
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
 function parseRole(name: string, source: string): SubagentRole {
-  const frontmatter = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(
-    source,
-  )
+  const frontmatter = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(source)
   const values = frontmatter ? parse(frontmatter[1] ?? "") : {}
   if (!isRecord(values)) throw new Error("SubAgent frontmatter 必须是对象")
-  const systemPrompt = (
-    frontmatter ? source.slice(frontmatter[0].length) : source
-  ).trim()
+  const systemPrompt = (frontmatter ? source.slice(frontmatter[0].length) : source).trim()
   const thinking = stringValue(values.thinking)
   if (thinking && !isThinkingLevel(thinking)) {
     throw new Error(`不支持的 thinking 档位: ${thinking}`)
   }
   const thinkingLevel: ThinkingLevel =
-    thinking && isThinkingLevel(thinking)
-      ? thinking
-      : DEFAULT_SUBAGENT_THINKING_LEVEL
+    thinking && isThinkingLevel(thinking) ? thinking : DEFAULT_SUBAGENT_THINKING_LEVEL
   const tools = listValue(values.tools)
   const model = stringValue(values.model)
   return {
     name,
     displayName: stringValue(values.display_name) ?? name,
     description: stringValue(values.description) ?? name,
-    systemPrompt: [SUBAGENT_SHARED_SYSTEM_PROMPT, systemPrompt]
-      .filter(Boolean)
-      .join("\n\n"),
+    systemPrompt: [SUBAGENT_SHARED_SYSTEM_PROMPT, systemPrompt].filter(Boolean).join("\n\n"),
     ...(tools ? { tools } : {}),
     ...(model ? { model } : {}),
     thinkingLevel,
@@ -173,9 +153,7 @@ function listValue(value: unknown): string[] | undefined {
     ?.filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean)
-  return normalized && normalized.length > 0
-    ? [...new Set(normalized)]
-    : undefined
+  return normalized && normalized.length > 0 ? [...new Set(normalized)] : undefined
 }
 
 function stringValue(value: unknown): string | undefined {

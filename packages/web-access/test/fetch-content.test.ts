@@ -1,11 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { createWebAccessTools, type WebAccessConfig } from "../src/index.ts"
 
 function tools(overrides: Partial<WebAccessConfig> = {}) {
   return createWebAccessTools({
     providers: ["brave"],
-    resolveSecret: (provider) =>
-      provider === "brave" ? "test-brave-key" : undefined,
+    resolveSecret: (provider) => (provider === "brave" ? "test-brave-key" : undefined),
     ...overrides,
   })
 }
@@ -38,9 +37,7 @@ afterEach(() => {
 
 describe("fetch_content SSRF 防护", () => {
   it("阻止私网地址 169.254.169.254", async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response("<html>leaked</html>", { status: 200 }),
-    )
+    vi.mocked(fetch).mockResolvedValue(new Response("<html>leaked</html>", { status: 200 }))
     const tool = fetchTool()
     const result = await tool.execute(
       "call-1",
@@ -51,9 +48,7 @@ describe("fetch_content SSRF 防护", () => {
     expect(details.successful).toBe(0)
     expect(details.error).toMatch(/blocked|internal/i)
     // 不应真正发起对私网地址的请求。
-    expect(fetch).not.toHaveBeenCalledWith(
-      expect.stringContaining("169.254.169.254"),
-    )
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("169.254.169.254"))
   })
 
   it("allowRanges 放行的 CIDR 可以被访问", async () => {
@@ -82,15 +77,9 @@ describe("fetch_content SSRF 防护", () => {
     const tool = fetchTool()
     vi.mocked(fetch).mockImplementation(() => {
       controller.abort()
-      return Promise.reject(
-        Object.assign(new Error("Aborted"), { name: "AbortError" }),
-      )
+      return Promise.reject(Object.assign(new Error("Aborted"), { name: "AbortError" }))
     })
-    const result = await tool.execute(
-      "call-1",
-      { url: "https://example.com/" },
-      controller.signal,
-    )
+    const result = await tool.execute("call-1", { url: "https://example.com/" }, controller.signal)
     const details = result.details as { error?: string }
     expect(details.error).toBeTruthy()
   })
@@ -99,11 +88,7 @@ describe("fetch_content SSRF 防护", () => {
 describe("fetch_content 本地路径能力", () => {
   it("workspaceHostPath 缺省时 GitHub clone 禁用", async () => {
     const tool = fetchTool({ lookup: publicLookup() }) // 无 workspaceHostPath
-    const result = await tool.execute(
-      "call-1",
-      { url: "https://github.com/owner/repo" },
-      undefined,
-    )
+    const result = await tool.execute("call-1", { url: "https://github.com/owner/repo" }, undefined)
     const details = result.details as { error?: string; successful?: number }
     expect(details.successful).toBe(0)
     expect(details.error).toMatch(/clone disabled/i)
@@ -138,11 +123,7 @@ describe("fetch_content 本地路径能力", () => {
       lookup: publicLookup(),
       workspaceHostPath: "/tmp/sandbox-workspace",
     })
-    const result = await tool.execute(
-      "call-1",
-      { url: "https://example.com/" },
-      undefined,
-    )
+    const result = await tool.execute("call-1", { url: "https://example.com/" }, undefined)
     const details = result.details as {
       error?: string
       successful?: number

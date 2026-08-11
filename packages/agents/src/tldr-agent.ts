@@ -1,11 +1,7 @@
 import { dirname } from "node:path"
 import type { ChallengeInfo } from "@ctf-agent/platform"
 import { TLDR_SYSTEM_PROMPT } from "@ctf-agent/prompts"
-import type {
-  AgentMessage,
-  AgentOptions,
-  AgentTool,
-} from "@earendil-works/pi-agent-core"
+import type { AgentMessage, AgentOptions, AgentTool } from "@earendil-works/pi-agent-core"
 import {
   BaseAgent,
   modelsFromAgentOptions,
@@ -28,10 +24,7 @@ export class CtfTldrAgent extends BaseAgent {
   readonly challenge: ChallengeInfo
   readonly sessionPath: string
 
-  private constructor(
-    options: CreateTldrAgentOptions,
-    prepared: PreparedBaseAgent,
-  ) {
+  private constructor(options: CreateTldrAgentOptions, prepared: PreparedBaseAgent) {
     super(prepared, { compaction: true })
     this.projectId = options.projectId
     this.challenge = options.challenge
@@ -57,8 +50,7 @@ export class CtfTldrAgent extends BaseAgent {
       systemPrompt: TLDR_SYSTEM_PROMPT,
       thinkingLevel: "off",
       tools: options.tools,
-      initialMessages:
-        options.initialMessages ?? options.agent.initialState?.messages,
+      initialMessages: options.initialMessages ?? options.agent.initialState?.messages,
       compaction: true,
     })
     return new CtfTldrAgent(options, prepared)

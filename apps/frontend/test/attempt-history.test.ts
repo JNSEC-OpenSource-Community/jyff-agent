@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { createElement } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { AttemptHistory } from "../src/pages/challenge/AttemptHistory.tsx"
 import type { DashboardRun } from "../src/types.ts"
 
@@ -49,8 +49,6 @@ describe("AttemptHistory", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "查看运行事件" }))
     expect(screen.getByText("创建 Solver 失败")).toBeTruthy()
-    expect(
-      screen.getByText("运行失败原因：Docker daemon 无法连接"),
-    ).toBeTruthy()
+    expect(screen.getByText("运行失败原因：Docker daemon 无法连接")).toBeTruthy()
   })
 })

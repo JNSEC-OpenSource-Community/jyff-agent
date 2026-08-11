@@ -5,21 +5,14 @@ import type { AppEnv } from "./context.ts"
 import { errorText, HttpError } from "./errors.ts"
 
 /** 思考强度档位全集（与 pi ThinkingLevel 一致，不含 off——off 由 thinkingEnabled 表达）。 */
-export const THINKING_LEVELS = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-] as const
+export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const
 
 export const projectArchiveSchema = z.object({ archived: z.boolean() })
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 function hasControlCharacter(value: string): boolean {
-  return [...value].some((character) => {
+  return Array.from(value).some((character) => {
     const code = character.charCodeAt(0)
     return code <= 0x1f || code === 0x7f
   })
@@ -61,11 +54,7 @@ export const modelPoolEntrySchema = z.object({
     .refine((value) => !hasControlCharacter(value), {
       message: "Model ID 不能包含控制字符",
     }),
-  contextWindow: z
-    .number({ message: "Context Window 必须是整数" })
-    .int()
-    .min(1)
-    .max(2_000_000),
+  contextWindow: z.number({ message: "Context Window 必须是整数" }).int().min(1).max(2_000_000),
   thinkingEnabled: z.boolean(),
   passthroughThinking: z.boolean(),
   reasoningEffort: z.enum([...THINKING_LEVELS, "off"], {
@@ -122,34 +111,20 @@ export const modelConfigurationUpdateSchema = z
       .optional(),
   })
   .superRefine((value, ctx) => {
-    const {
-      models,
-      solverModelId,
-      tldrModelId,
-      fatherModelId,
-      subagentModels = {},
-    } = value
+    const { models, solverModelId, tldrModelId, fatherModelId, subagentModels = {} } = value
     const ids = new Set(models.map((model) => model.id))
     const issue = (message: string) => ctx.addIssue({ code: "custom", message })
 
     if (ids.size !== models.length) issue("模型配置 ID 不能重复")
     if (models.length === 0) {
-      if (
-        solverModelId ||
-        tldrModelId ||
-        fatherModelId ||
-        Object.keys(subagentModels).length > 0
-      ) {
+      if (solverModelId || tldrModelId || fatherModelId || Object.keys(subagentModels).length > 0) {
         issue("空模型池不能包含 Agent 模型绑定")
       }
       return
     }
-    if (solverModelId && !ids.has(solverModelId))
-      issue(`Solver 模型不存在: ${solverModelId}`)
-    if (tldrModelId && !ids.has(tldrModelId))
-      issue(`TLDR 模型不存在: ${tldrModelId}`)
-    if (fatherModelId && !ids.has(fatherModelId))
-      issue(`Father 模型不存在: ${fatherModelId}`)
+    if (solverModelId && !ids.has(solverModelId)) issue(`Solver 模型不存在: ${solverModelId}`)
+    if (tldrModelId && !ids.has(tldrModelId)) issue(`TLDR 模型不存在: ${tldrModelId}`)
+    if (fatherModelId && !ids.has(fatherModelId)) issue(`Father 模型不存在: ${fatherModelId}`)
     for (const [role, modelId] of Object.entries(subagentModels)) {
       if (!ids.has(modelId)) issue(`SubAgent ${role} 的模型不存在: ${modelId}`)
     }
@@ -191,16 +166,8 @@ export const projectRuntimeConfigurationSchema = z
     solverModelId: optionalBinding("Solver Model"),
     tldrModelId: optionalBinding("TLDR Model"),
     subagentModels: subagentModelsSchema,
-    maxConcurrent: z
-      .number({ message: "调度并发量必须是整数" })
-      .int()
-      .min(1)
-      .max(64),
-    maxRemoteEnvironments: z
-      .number({ message: "远程环境并发量必须是整数" })
-      .int()
-      .min(1)
-      .max(64),
+    maxConcurrent: z.number({ message: "调度并发量必须是整数" }).int().min(1).max(64),
+    maxRemoteEnvironments: z.number({ message: "远程环境并发量必须是整数" }).int().min(1).max(64),
   })
   .transform((value) => ({
     ...value,
@@ -209,11 +176,7 @@ export const projectRuntimeConfigurationSchema = z
 
 /** 调度并发量。 */
 export const schedulerConcurrencySchema = z.object({
-  maxConcurrent: z
-    .number({ message: "调度并发量必须是整数" })
-    .int()
-    .min(1)
-    .max(64),
+  maxConcurrent: z.number({ message: "调度并发量必须是整数" }).int().min(1).max(64),
 })
 
 /** 队列重排（position/expectedVersion 需要各自独立的错误码）。 */
@@ -277,8 +240,7 @@ export const thinkingLevelSchema = z.object({
     .max(32, { message: "Level 长度不能超过 32" })
     .refine(
       (value) =>
-        THINKING_LEVELS.includes(value as (typeof THINKING_LEVELS)[number]) ||
-        value === "off",
+        THINKING_LEVELS.includes(value as (typeof THINKING_LEVELS)[number]) || value === "off",
       {
         message: `思考强度必须是 ${[...THINKING_LEVELS, "off"].join("/")} 之一`,
       },
@@ -327,14 +289,10 @@ export const webUiLoginSchema = z.object({
 export const projectSetupSchema = z.object({
   config: z
     .unknown()
-    .refine(
-      (value) =>
-        typeof value === "object" && value !== null && !Array.isArray(value),
-      { message: "config 必须是对象" },
-    ),
-  secrets: z
-    .record(z.string(), z.string(), { message: "secrets 必须是字符串键值对象" })
-    .optional(),
+    .refine((value) => typeof value === "object" && value !== null && !Array.isArray(value), {
+      message: "config 必须是对象",
+    }),
+  secrets: z.record(z.string(), z.string(), { message: "secrets 必须是字符串键值对象" }).optional(),
 })
 
 export interface ProjectSetupInput {
@@ -343,9 +301,7 @@ export interface ProjectSetupInput {
 }
 
 /** 解析平台连接配置：ProjectConfig 解析失败 → 400 invalid_project_config。 */
-export function parseProjectSetup(
-  body: Record<string, unknown>,
-): ProjectSetupInput {
+export function parseProjectSetup(body: Record<string, unknown>): ProjectSetupInput {
   let config: import("@ctf-agent/core").ProjectConfig
   try {
     config = parseProjectConfig(body.config)
@@ -353,11 +309,7 @@ export function parseProjectSetup(
     throw new HttpError(400, "invalid_project_config", errorText(error))
   }
   if (body.secrets === undefined) return { config }
-  if (
-    typeof body.secrets !== "object" ||
-    body.secrets === null ||
-    Array.isArray(body.secrets)
-  ) {
+  if (typeof body.secrets !== "object" || body.secrets === null || Array.isArray(body.secrets)) {
     throw new HttpError(400, "invalid_secrets", "secrets 必须是字符串键值对象")
   }
   const secrets: Record<string, string | undefined> = {}
@@ -417,9 +369,7 @@ export const webAccessConfigurationSchema = z
         trustEnvProxy: z.boolean().optional(),
       })
       .optional(),
-    providerConfig: z
-      .record(z.string(), z.record(z.string(), z.string()))
-      .optional(),
+    providerConfig: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   })
   .strict()
 
@@ -447,22 +397,14 @@ export function parseSchema<T>(
   const first = result.error.issues[0]
   const path = first?.path[0]
   const fieldCode = typeof path === "string" ? perFieldCodes?.[path] : undefined
-  throw new HttpError(
-    400,
-    fieldCode ?? code,
-    first?.message ?? "请求体校验失败",
-  )
+  throw new HttpError(400, fieldCode ?? code, first?.message ?? "请求体校验失败")
 }
 
 /** 要求 JSON Content-Type。 */
 export function requireJson(c: Context<AppEnv>): void {
   const contentType = c.req.header("content-type") ?? ""
   if (!contentType.toLowerCase().startsWith("application/json")) {
-    throw new HttpError(
-      415,
-      "unsupported_media_type",
-      "控制操作必须使用 application/json",
-    )
+    throw new HttpError(415, "unsupported_media_type", "控制操作必须使用 application/json")
   }
 }
 

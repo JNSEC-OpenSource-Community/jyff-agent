@@ -12,10 +12,7 @@ import {
   sessionInterruptionMessage,
 } from "./solver-attempt.ts"
 
-export {
-  ChallengeTimeoutError,
-  ContestRunnerCancelledError,
-} from "./solver-attempt.ts"
+export { ChallengeTimeoutError, ContestRunnerCancelledError } from "./solver-attempt.ts"
 
 export interface ContestRunnerAttemptContext {
   challenge: ChallengeSummary
@@ -36,22 +33,13 @@ export interface ContestRunnerOptions {
   /** 可重试失败之间的等待时间。 */
   retryDelayMs?: number
   /** 为每个题目和 attempt 创建独立 AgentOptions。 */
-  createAgentOptions(
-    context: ContestRunnerAttemptContext,
-  ): AgentOptions | Promise<AgentOptions>
+  createAgentOptions(context: ContestRunnerAttemptContext): AgentOptions | Promise<AgentOptions>
   compaction?: CreateSolverOptions["compaction"]
-  prompt?:
-    | string
-    | ((context: ContestRunnerAttemptContext) => string | Promise<string>)
+  prompt?: string | ((context: ContestRunnerAttemptContext) => string | Promise<string>)
   selectChallenge?: (challenge: ChallengeSummary) => boolean | Promise<boolean>
 }
 
-export type ChallengeRunStatus =
-  | "solved"
-  | "failed"
-  | "cancelled"
-  | "blocked"
-  | "skipped"
+export type ChallengeRunStatus = "solved" | "failed" | "cancelled" | "blocked" | "skipped"
 
 export interface ChallengeRunResult {
   challengeId: string
@@ -59,12 +47,7 @@ export interface ChallengeRunResult {
   attempts: number
   runIds: string[]
   error?: string
-  reason?:
-    | "platform_solved"
-    | "store_solved"
-    | "filtered"
-    | "attempts_exhausted"
-    | "blocked"
+  reason?: "platform_solved" | "store_solved" | "filtered" | "attempts_exhausted" | "blocked"
 }
 
 export interface ContestRunSummary {
@@ -104,14 +87,8 @@ export class ContestRunner {
   ) {
     positiveInteger(options.maxConcurrent, "maxConcurrent")
     positiveInteger(options.maxAttempts ?? 1, "maxAttempts")
-    positiveInteger(
-      options.maxSessionInterruptions ?? 3,
-      "maxSessionInterruptions",
-    )
-    positiveInteger(
-      options.challengeTimeoutMs ?? 30 * 60_000,
-      "challengeTimeoutMs",
-    )
+    positiveInteger(options.maxSessionInterruptions ?? 3, "maxSessionInterruptions")
+    positiveInteger(options.challengeTimeoutMs ?? 30 * 60_000, "challengeTimeoutMs")
     nonNegativeInteger(options.abortGraceMs ?? 5_000, "abortGraceMs")
     nonNegativeInteger(options.retryDelayMs ?? 0, "retryDelayMs")
   }
@@ -124,9 +101,7 @@ export class ContestRunner {
     return [...this.activeChallenges]
   }
 
-  async run(
-    runOptions: ContestRunnerRunOptions = {},
-  ): Promise<ContestRunSummary> {
+  async run(runOptions: ContestRunnerRunOptions = {}): Promise<ContestRunSummary> {
     if (this.running) throw new Error("ContestRunner 已在运行")
     this.running = true
     const startedAt = new Date().toISOString()
@@ -164,10 +139,7 @@ export class ContestRunner {
           })
           continue
         }
-        if (
-          this.options.selectChallenge &&
-          !(await this.options.selectChallenge(challenge))
-        ) {
+        if (this.options.selectChallenge && !(await this.options.selectChallenge(challenge))) {
           results.push({
             challengeId: challenge.id,
             status: "skipped",
@@ -215,10 +187,7 @@ export class ContestRunner {
       )
     } finally {
       runOptions.signal?.removeEventListener("abort", forwardAbort)
-      await this.closeActiveSolvers(
-        "cancelled",
-        "ContestRunner 结束时仍有活跃 Solver",
-      )
+      await this.closeActiveSolvers("cancelled", "ContestRunner 结束时仍有活跃 Solver")
       this.controller = undefined
       this.running = false
     }
@@ -309,8 +278,7 @@ export class ContestRunner {
             prompt,
             timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
             abortGraceMs: this.options.abortGraceMs ?? 5_000,
-            pauseTimeout: () =>
-              this.project.isWaitingForRemoteEnvironment(promptRunId),
+            pauseTimeout: () => this.project.isWaitingForRemoteEnvironment(promptRunId),
             signal,
           })
 
@@ -325,8 +293,7 @@ export class ContestRunner {
             }
           }
 
-          const interruptionCount =
-            this.project.sessionInterruptionCount(challenge.id) + 1
+          const interruptionCount = this.project.sessionInterruptionCount(challenge.id) + 1
           const maximum = this.options.maxSessionInterruptions ?? 3
           const blocked = interruptionCount > maximum
           lastError = sessionInterruptionMessage(
@@ -398,26 +365,15 @@ export class ContestRunner {
     }
   }
 
-  private async closeActiveSolvers(
-    reason: SolverCloseReason,
-    error: string,
-  ): Promise<void> {
+  private async closeActiveSolvers(reason: SolverCloseReason, error: string): Promise<void> {
     const solvers = [...this.activeSolvers.values()]
-    const results = await Promise.allSettled(
-      solvers.map((solver) => solver.close(reason, error)),
-    )
+    const results = await Promise.allSettled(solvers.map((solver) => solver.close(reason, error)))
     this.activeSolvers.clear()
     const failures = results
-      .filter(
-        (result): result is PromiseRejectedResult =>
-          result.status === "rejected",
-      )
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
       .map((result) => result.reason)
     if (failures.length > 0)
-      throw new AggregateError(
-        failures,
-        "ContestRunner 无法回收全部 Solver 资源",
-      )
+      throw new AggregateError(failures, "ContestRunner 无法回收全部 Solver 资源")
   }
 }
 
@@ -426,15 +382,12 @@ function countsAgainstAttemptBudget(status: RunStatus): boolean {
 }
 
 function closeReason(error: unknown, signal: AbortSignal): SolverCloseReason {
-  if (signal.aborted || error instanceof ContestRunnerCancelledError)
-    return "cancelled"
+  if (signal.aborted || error instanceof ContestRunnerCancelledError) return "cancelled"
   if (error instanceof ChallengeTimeoutError) return "timed_out"
   return "failed"
 }
 
-function deduplicateChallenges(
-  challenges: readonly ChallengeSummary[],
-): ChallengeSummary[] {
+function deduplicateChallenges(challenges: readonly ChallengeSummary[]): ChallengeSummary[] {
   const unique = new Map<string, ChallengeSummary>()
   for (const challenge of challenges)
     if (!unique.has(challenge.id)) unique.set(challenge.id, challenge)
@@ -449,8 +402,7 @@ function summarize(
   const positions = new Map(order.map((id, index) => [id, index]))
   results.sort(
     (left, right) =>
-      (positions.get(left.challengeId) ?? 0) -
-      (positions.get(right.challengeId) ?? 0),
+      (positions.get(left.challengeId) ?? 0) - (positions.get(right.challengeId) ?? 0),
   )
   return {
     startedAt,
@@ -466,14 +418,9 @@ function summarize(
   }
 }
 
-function abortableDelay(
-  milliseconds: number,
-  signal?: AbortSignal,
-): Promise<void> {
+function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
   if (milliseconds === 0)
-    return signal?.aborted
-      ? Promise.reject(new ContestRunnerCancelledError())
-      : Promise.resolve()
+    return signal?.aborted ? Promise.reject(new ContestRunnerCancelledError()) : Promise.resolve()
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new ContestRunnerCancelledError())
@@ -494,13 +441,11 @@ function abortableDelay(
 }
 
 function positiveInteger(value: number, label: string): void {
-  if (!Number.isInteger(value) || value <= 0)
-    throw new Error(`${label} 必须是正整数`)
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${label} 必须是正整数`)
 }
 
 function nonNegativeInteger(value: number, label: string): void {
-  if (!Number.isInteger(value) || value < 0)
-    throw new Error(`${label} 必须是非负整数`)
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${label} 必须是非负整数`)
 }
 
 function errorText(error: unknown): string {

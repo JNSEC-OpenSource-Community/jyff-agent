@@ -1,10 +1,6 @@
 import type { ChallengeCapability, FlagSubmission } from "@ctf-agent/platform"
-import type {
-  CommandResult,
-  Sandbox,
-  SandboxExecOptions,
-} from "@ctf-agent/sandbox"
-import { describe, expect, it } from "vitest"
+import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
+import { describe, expect, it } from "vite-plus/test"
 import {
   createReadonlySandboxTools,
   createSolverTools,
@@ -19,10 +15,7 @@ class FakeSandbox implements Sandbox {
 
   constructor(private readonly mainOutputChunks = ["sandbox output"]) {}
 
-  async exec(
-    args: string[],
-    options?: SandboxExecOptions,
-  ): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     this.calls.push({ args, input: options?.input })
     if (args[0] === "python3") {
       const payload = JSON.parse(options?.input ?? "{}") as {
@@ -49,10 +42,8 @@ class FakeSandbox implements Sandbox {
     }
     if (args[0] === "bash") {
       const command = args.at(-1)
-      if (command === "rtk --version")
-        return { code: 0, stdout: "rtk 1", stderr: "" }
-      if (command?.startsWith("rtk rewrite "))
-        return { code: 0, stdout: "rg MOCK", stderr: "" }
+      if (command === "rtk --version") return { code: 0, stdout: "rtk 1", stderr: "" }
+      if (command?.startsWith("rtk rewrite ")) return { code: 0, stdout: "rg MOCK", stderr: "" }
       for (const chunk of this.mainOutputChunks) options?.onStdout?.(chunk)
       return { code: 0, stdout: "sandbox output", stderr: "" }
     }
@@ -124,21 +115,10 @@ describe("Solver tools", () => {
       onTerminalSubmission: () => {},
     })
     expect(tools.map((item) => item.name)).toEqual(
-      expect.arrayContaining([
-        "read",
-        "write",
-        "edit",
-        "list",
-        "bash",
-        "ctf_submit_flag",
-      ]),
+      expect.arrayContaining(["read", "write", "edit", "list", "bash", "ctf_submit_flag"]),
     )
     expect(tools.map((item) => item.name)).not.toEqual(
-      expect.arrayContaining([
-        "ctf_instance_start",
-        "ctf_instance_status",
-        "ctf_instance_destroy",
-      ]),
+      expect.arrayContaining(["ctf_instance_start", "ctf_instance_status", "ctf_instance_destroy"]),
     )
   })
 
@@ -149,11 +129,7 @@ describe("Solver tools", () => {
       onTerminalSubmission: () => {},
     })
     expect(tools.map((item) => item.name)).toEqual(
-      expect.arrayContaining([
-        "ctf_instance_start",
-        "ctf_instance_status",
-        "ctf_instance_destroy",
-      ]),
+      expect.arrayContaining(["ctf_instance_start", "ctf_instance_status", "ctf_instance_destroy"]),
     )
   })
 
@@ -173,11 +149,7 @@ describe("Solver tools", () => {
       command: "grep MOCK flag.txt",
     })
 
-    expect(sandbox.calls[0]?.args).toEqual([
-      "python3",
-      "-c",
-      expect.any(String),
-    ])
+    expect(sandbox.calls[0]?.args).toEqual(["python3", "-c", expect.any(String)])
     const fileCalls = sandbox.calls
       .filter((call) => call.args[0] === "python3")
       .map((call) => JSON.parse(call.input ?? "{}"))
@@ -202,9 +174,7 @@ describe("Solver tools", () => {
   })
 
   it("高频 bash 输出使用批量文件 helper 持久化完整日志", async () => {
-    const sandbox = new FakeSandbox(
-      Array.from({ length: 1_000 }, () => `${"x".repeat(1_024)}\n`),
-    )
+    const sandbox = new FakeSandbox(Array.from({ length: 1_000 }, () => `${"x".repeat(1_024)}\n`))
     const tools = createSolverTools({
       capability: capability(),
       sandbox,
@@ -229,10 +199,9 @@ describe("Solver tools", () => {
     })
 
     const info = await tool("ctf_challenge_info", tools).execute("info", {})
-    const downloaded = await tool("ctf_download_attachment", tools).execute(
-      "download",
-      { attachmentId: "attachment-1" },
-    )
+    const downloaded = await tool("ctf_download_attachment", tools).execute("download", {
+      attachmentId: "attachment-1",
+    })
 
     expect(info.details).toMatchObject({ id: "only", description: "desc" })
     expect(downloaded.details).toMatchObject({
@@ -294,9 +263,9 @@ describe("Solver tools", () => {
     for (let index = 0; index < 5; index++) {
       await submit.execute(`submit-${index}`, { flag: `FLAG-${index}` })
     }
-    await expect(
-      submit.execute("submit-6", { flag: "FLAG-6" }),
-    ).rejects.toBeInstanceOf(FlagSubmissionRateLimitError)
+    await expect(submit.execute("submit-6", { flag: "FLAG-6" })).rejects.toBeInstanceOf(
+      FlagSubmissionRateLimitError,
+    )
     expect(calls).toBe(5)
 
     now += 60_000

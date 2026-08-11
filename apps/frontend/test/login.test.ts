@@ -4,7 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { AppProvider } from "../src/app/AppProvider.tsx"
 import { LoginPage } from "../src/pages/LoginPage.tsx"
 
@@ -23,7 +23,7 @@ describe("登录流程", () => {
   it("登录后先刷新比赛列表再进入首页", async () => {
     let authenticated = false
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      const url = String(input)
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       if (url === "/api/auth/login" && init?.method === "POST") {
         authenticated = true
         return jsonResponse({ authenticated: true })
@@ -72,9 +72,7 @@ describe("登录流程", () => {
 
     expect(await screen.findByText("比赛首页")).toBeTruthy()
     await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some(([url]) => url === "/api/projects"),
-      ).toBe(true),
+      expect(fetchMock.mock.calls.some(([url]) => url === "/api/projects")).toBe(true),
     )
   })
 })

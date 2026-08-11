@@ -3,8 +3,19 @@ packages:
   - apps/*
 
 allowBuilds:
-  '@parcel/watcher': false
+  "@parcel/watcher": false
   esbuild: true
 
-minimumReleaseAgeExclude:
-  - hono@4.13.1
+catalog:
+  vite-plus: 0.2.8
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.8
+
+# pnpm-workspace.yaml
+overrides:
+  typescript: npm:typescript-native-bridge
+  vite: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"

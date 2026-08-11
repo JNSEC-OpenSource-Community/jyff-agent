@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { createWebUiApp, startWebUi } from "../src/server.ts"
 import { FakeDashboardProject } from "./fake-project.ts"
 import { jsonOf } from "./helpers.ts"
@@ -34,11 +34,11 @@ describe("WebUI 服务集成", () => {
   it("静态资源：dist 产物按单斜杠路径提供，index.html 映射到 /", async () => {
     const { mkdtemp, writeFile } = await import("node:fs/promises")
     const { tmpdir } = await import("node:os")
-    const { join } = await import("node:path")
-    const dist = await mkdtemp(join(tmpdir(), "webui-dist-"))
-    await writeFile(join(dist, "index.html"), "<html>index</html>")
-    await writeFile(join(dist, "app.js"), "console.log(1)")
-    await writeFile(join(dist, "app.css"), "body{}")
+    const path = await import("node:path")
+    const dist = await mkdtemp(path.join(tmpdir(), "webui-dist-"))
+    await writeFile(path.join(dist, "index.html"), "<html>index</html>")
+    await writeFile(path.join(dist, "app.js"), "console.log(1)")
+    await writeFile(path.join(dist, "app.css"), "body{}")
     const { app } = createWebUiApp({
       project: new FakeDashboardProject(),
       frontendDist: dist,

@@ -10,20 +10,10 @@ import {
   rmSync,
   statSync,
 } from "node:fs"
-import {
-  extname,
-  join,
-  sep as pathSep,
-  resolve as resolvePath,
-} from "node:path"
+import { extname, join, sep as pathSep, resolve as resolvePath } from "node:path"
 import { activityMonitor } from "./activity.ts"
 import type { ExtractedContent } from "./extract.ts"
-import {
-  checkGhAvailable,
-  checkRepoSize,
-  fetchViaApi,
-  showGhHint,
-} from "./github-api.ts"
+import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts"
 import { getRuntime, providerOption } from "./runtime.ts"
 
 const BINARY_EXTENSIONS = new Set([
@@ -243,12 +233,7 @@ function cacheKey(owner: string, repo: string, ref?: string): string {
   return ref ? `${owner}/${repo}@${ref}` : `${owner}/${repo}`
 }
 
-function cloneDir(
-  config: GitHubCloneConfig,
-  owner: string,
-  repo: string,
-  ref?: string,
-): string {
+function cloneDir(config: GitHubCloneConfig, owner: string, repo: string, ref?: string): string {
   const dirName = ref ? `${repo}@${ref}` : repo
   return join(config.clonePath, owner, dirName)
 }
@@ -420,16 +405,11 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function resolveWithinRepo(
-  rootPath: string,
-  relativePath: string,
-): string | null {
+function resolveWithinRepo(rootPath: string, relativePath: string): string | null {
   const normalizedRoot = resolvePath(rootPath)
   const candidate = resolvePath(normalizedRoot, relativePath)
   if (candidate !== normalizedRoot) {
-    const rootPrefix = normalizedRoot.endsWith(pathSep)
-      ? normalizedRoot
-      : normalizedRoot + pathSep
+    const rootPrefix = normalizedRoot.endsWith(pathSep) ? normalizedRoot : normalizedRoot + pathSep
     if (!candidate.startsWith(rootPrefix)) return null
   }
 
@@ -439,9 +419,7 @@ function resolveWithinRepo(
     const realRoot = realpathSync(normalizedRoot)
     const realCandidate = realpathSync(candidate)
     if (realCandidate === realRoot) return candidate
-    const realRootPrefix = realRoot.endsWith(pathSep)
-      ? realRoot
-      : realRoot + pathSep
+    const realRootPrefix = realRoot.endsWith(pathSep) ? realRoot : realRoot + pathSep
     return realCandidate.startsWith(realRootPrefix) ? candidate : null
   } catch {
     return null
@@ -545,13 +523,7 @@ function buildDirListing(rootPath: string, subPath: string): string {
 }
 
 function readReadme(localPath: string): string | null {
-  const candidates = [
-    "README.md",
-    "readme.md",
-    "README",
-    "README.txt",
-    "README.rst",
-  ]
+  const candidates = ["README.md", "readme.md", "README", "README.txt", "README.rst"]
   for (const name of candidates) {
     const readmePath = join(localPath, name)
     if (existsSync(readmePath)) {
@@ -583,9 +555,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
       lines.push("")
     }
 
-    lines.push(
-      "Use `read` and `bash` tools at the path above to explore further.",
-    )
+    lines.push("Use `read` and `bash` tools at the path above to explore further.")
     return lines.join("\n")
   }
 
@@ -594,9 +564,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
     const fullDirPath = resolveWithinRepo(localPath, dirPath)
 
     if (!fullDirPath || !existsSync(fullDirPath)) {
-      lines.push(
-        `Path \`${dirPath}\` not found in clone. Showing repository root instead.`,
-      )
+      lines.push(`Path \`${dirPath}\` not found in clone. Showing repository root instead.`)
       lines.push("")
       lines.push("## Structure")
       lines.push(buildTree(localPath))
@@ -606,9 +574,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
     }
 
     lines.push("")
-    lines.push(
-      "Use `read` and `bash` tools at the path above to explore further.",
-    )
+    lines.push("Use `read` and `bash` tools at the path above to explore further.")
     return lines.join("\n")
   }
 
@@ -617,16 +583,12 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
     const fullFilePath = resolveWithinRepo(localPath, filePath)
 
     if (!fullFilePath || !existsSync(fullFilePath)) {
-      lines.push(
-        `Path \`${filePath}\` not found in clone. Showing repository root instead.`,
-      )
+      lines.push(`Path \`${filePath}\` not found in clone. Showing repository root instead.`)
       lines.push("")
       lines.push("## Structure")
       lines.push(buildTree(localPath))
       lines.push("")
-      lines.push(
-        "Use `read` and `bash` tools at the path above to explore further.",
-      )
+      lines.push("Use `read` and `bash` tools at the path above to explore further.")
       return lines.join("\n")
     }
 
@@ -637,9 +599,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
       const message = err instanceof Error ? err.message : String(err)
       lines.push(`Could not inspect \`${filePath}\`: ${message}`)
       lines.push("")
-      lines.push(
-        "Use `read` and `bash` tools at the path above to explore further.",
-      )
+      lines.push("Use `read` and `bash` tools at the path above to explore further.")
       return lines.join("\n")
     }
 
@@ -647,9 +607,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
       lines.push(`## ${filePath || "/"}`)
       lines.push(buildDirListing(localPath, filePath))
       lines.push("")
-      lines.push(
-        "Use `read` and `bash` tools at the path above to explore further.",
-      )
+      lines.push("Use `read` and `bash` tools at the path above to explore further.")
       return lines.join("\n")
     }
 
@@ -666,9 +624,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
     if (content === null) {
       lines.push(`Could not read \`${filePath}\` as UTF-8 text.`)
       lines.push("")
-      lines.push(
-        "Use `read` and `bash` tools at the path above to explore further.",
-      )
+      lines.push("Use `read` and `bash` tools at the path above to explore further.")
       return lines.join("\n")
     }
     lines.push(`## ${filePath}`)
@@ -682,9 +638,7 @@ function generateContent(localPath: string, info: GitHubUrlInfo): string {
     }
 
     lines.push("")
-    lines.push(
-      "Use `read` and `bash` tools at the path above to explore further.",
-    )
+    lines.push("Use `read` and `bash` tools at the path above to explore further.")
     return lines.join("\n")
   }
 
@@ -704,9 +658,7 @@ async function awaitCachedClone(
   if (signal?.aborted) return null
   if (result) {
     const content = generateContent(result, info)
-    const title = info.path
-      ? `${owner}/${repo} - ${info.path}`
-      : `${owner}/${repo}`
+    const title = info.path ? `${owner}/${repo} - ${info.path}` : `${owner}/${repo}`
     return { url, title, content, error: null }
   }
   return fetchViaApi(url, owner, repo, info)
@@ -724,9 +676,7 @@ export async function extractGitHub(
 
   const config = loadGitHubConfig()
   if (!config.enabled) {
-    throw new Error(
-      "GitHub clone disabled (no sandbox-visible workspace path).",
-    )
+    throw new Error("GitHub clone disabled (no sandbox-visible workspace path).")
   }
 
   const { owner, repo } = info
@@ -768,10 +718,7 @@ export async function extractGitHub(
           activityMonitor.logComplete(activityId, 200)
           return apiView
         }
-        activityMonitor.logError(
-          activityId,
-          "api fallback unavailable for oversized repository",
-        )
+        activityMonitor.logError(activityId, "api fallback unavailable for oversized repository")
         return null
       }
     }
@@ -833,9 +780,7 @@ export async function extractGitHub(
 
   activityMonitor.logComplete(activityId, 200)
   const content = generateContent(result, info)
-  const title = info.path
-    ? `${owner}/${repo} - ${info.path}`
-    : `${owner}/${repo}`
+  const title = info.path ? `${owner}/${repo} - ${info.path}` : `${owner}/${repo}`
   return { url, title, content, error: null }
 }
 

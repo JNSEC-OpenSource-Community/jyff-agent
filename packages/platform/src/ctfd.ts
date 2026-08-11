@@ -30,8 +30,7 @@ export const ctfdConfig: PlatformConfig<CTFdPlatformConfig> = {
     }
     const raw = value as Record<string, unknown>
     for (const key of Object.keys(raw)) {
-      if (!allowedKeys.has(key))
-        throw new Error(`CTFd 平台配置包含未知字段: ${key}`)
+      if (!allowedKeys.has(key)) throw new Error(`CTFd 平台配置包含未知字段: ${key}`)
     }
 
     const baseUrl = requiredText(raw.baseUrl, "baseUrl").replace(/\/+$/, "")
@@ -44,9 +43,7 @@ export const ctfdConfig: PlatformConfig<CTFdPlatformConfig> = {
     }
 
     const tokenSecret =
-      raw.tokenSecret === undefined
-        ? "CTFD_TOKEN"
-        : requiredText(raw.tokenSecret, "tokenSecret")
+      raw.tokenSecret === undefined ? "CTFD_TOKEN" : requiredText(raw.tokenSecret, "tokenSecret")
     const timeoutMs = raw.timeoutMs === undefined ? 15_000 : raw.timeoutMs
     if (
       !Number.isInteger(timeoutMs) ||
@@ -55,10 +52,7 @@ export const ctfdConfig: PlatformConfig<CTFdPlatformConfig> = {
     ) {
       throw new Error("CTFd timeoutMs 必须是 1000 到 120000 之间的整数")
     }
-    if (
-      raw.name !== undefined &&
-      (typeof raw.name !== "string" || raw.name.trim() === "")
-    ) {
+    if (raw.name !== undefined && (typeof raw.name !== "string" || raw.name.trim() === "")) {
       throw new Error("CTFd name 必须是非空字符串")
     }
 
@@ -177,9 +171,7 @@ export class CTFdClient {
     }
     const sameOrigin = url.origin === this.baseUrl.origin
     const response = await this.send(url, {
-      headers: sameOrigin
-        ? { Authorization: `Token ${this.token}` }
-        : undefined,
+      headers: sameOrigin ? { Authorization: `Token ${this.token}` } : undefined,
     })
     if (!response.ok) {
       throw new CTFdApiError(
@@ -193,17 +185,16 @@ export class CTFdClient {
 
   private async api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const url = new URL(`api/v1/${path.replace(/^\/+/, "")}`, this.baseUrl)
+    const headers = new Headers(init.headers)
+    headers.set("Accept", headers.get("Accept") ?? "application/json")
+    headers.set("Authorization", headers.get("Authorization") ?? `Token ${this.token}`)
+    headers.set("Content-Type", headers.get("Content-Type") ?? "application/json")
     const response = await this.send(url, {
       ...init,
       redirect: "manual",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Token ${this.token}`,
-        // CTFd's token middleware only inspects Authorization when Flask
-        // considers the request JSON, including bodyless GET requests.
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
+      // CTFd's token middleware only inspects Authorization when Flask
+      // considers the request JSON, including bodyless GET requests.
+      headers,
     })
 
     if (response.status >= 300 && response.status < 400) {
@@ -227,18 +218,13 @@ export class CTFdClient {
     try {
       envelope = (await response.json()) as CTFdEnvelope<T>
     } catch (error) {
-      throw new CTFdApiError(
-        "无法解析 CTFd API 响应",
-        "protocol",
-        response.status,
-        undefined,
-        { cause: error },
-      )
+      throw new CTFdApiError("无法解析 CTFd API 响应", "protocol", response.status, undefined, {
+        cause: error,
+      })
     }
 
     // CTFd 的 attempt API 会用 403/429 携带 success:true 的业务状态。
-    if (envelope.success === true && envelope.data !== undefined)
-      return envelope.data
+    if (envelope.success === true && envelope.data !== undefined) return envelope.data
     if (!response.ok || envelope.success !== true) {
       throw new CTFdApiError(
         apiErrorMessage(envelope.errors, response.status),
@@ -247,11 +233,7 @@ export class CTFdClient {
         envelope.errors,
       )
     }
-    throw new CTFdApiError(
-      "CTFd API 成功响应缺少 data",
-      "protocol",
-      response.status,
-    )
+    throw new CTFdApiError("CTFd API 成功响应缺少 data", "protocol", response.status)
   }
 
   private async send(url: URL, init: RequestInit): Promise<Response> {
@@ -261,8 +243,7 @@ export class CTFdClient {
         signal: AbortSignal.timeout(this.timeoutMs),
       })
     } catch (error) {
-      const timeout =
-        error instanceof DOMException && error.name === "TimeoutError"
+      const timeout = error instanceof DOMException && error.name === "TimeoutError"
       throw new CTFdApiError(
         timeout ? `CTFd 请求超过 ${this.timeoutMs}ms` : "无法连接 CTFd",
         "network",
@@ -285,21 +266,18 @@ function kindForStatus(status: number): CTFdApiError["kind"] {
 function apiErrorMessage(errors: unknown, status: number): string {
   if (typeof errors === "string" && errors) return errors
   if (Array.isArray(errors)) {
-    const messages = errors.filter(
-      (item): item is string => typeof item === "string",
-    )
+    const messages = errors.filter((item): item is string => typeof item === "string")
     if (messages.length > 0) return messages.join("; ")
   }
   if (typeof errors === "object" && errors !== null) {
-    const messages = Object.entries(errors as Record<string, unknown>).flatMap(
-      ([field, value]) =>
-        Array.isArray(value)
-          ? value
-              .filter((item): item is string => typeof item === "string")
-              .map((item) => `${field}: ${item}`)
-          : typeof value === "string"
-            ? [`${field}: ${value}`]
-            : [],
+    const messages = Object.entries(errors as Record<string, unknown>).flatMap(([field, value]) =>
+      Array.isArray(value)
+        ? value
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => `${field}: ${item}`)
+        : typeof value === "string"
+          ? [`${field}: ${value}`]
+          : [],
     )
     if (messages.length > 0) return messages.join("; ")
   }
@@ -369,11 +347,7 @@ class CTFdChallengeCapability implements ChallengeCapability {
       submission: flag,
     })
     if (attempt.status === "authentication_required") {
-      throw new CTFdApiError(
-        attempt.message ?? "CTFd 需要有效身份",
-        "authentication",
-        403,
-      )
+      throw new CTFdApiError(attempt.message ?? "CTFd 需要有效身份", "authentication", 403)
     }
     if (attempt.status === "correct") {
       return { status: "accepted", message: attempt.message ?? "Correct" }
@@ -424,8 +398,7 @@ class CTFdProject implements PlatformProject {
   }
 
   async listAnnouncements(): Promise<Announcement[]> {
-    const notifications =
-      await this.client.get<CTFdNotification[]>("notifications")
+    const notifications = await this.client.get<CTFdNotification[]>("notifications")
     return notifications.map((item) => ({
       id: String(item.id),
       title: item.title,
@@ -462,13 +435,8 @@ export class CTFdPlatformPlugin implements PlatformPlugin {
   async connect(options: PlatformConnectOptions): Promise<PlatformProject> {
     const config = this.config.parse(options.config)
     const token = options.resolveSecret(config.tokenSecret)?.trim()
-    if (!token)
-      throw new Error(`缺少 CTFd access token secret: ${config.tokenSecret}`)
-    return new CTFdProject(
-      options.project,
-      config,
-      new CTFdClient(config, token),
-    )
+    if (!token) throw new Error(`缺少 CTFd access token secret: ${config.tokenSecret}`)
+    return new CTFdProject(options.project, config, new CTFdClient(config, token))
   }
 }
 
@@ -488,12 +456,8 @@ function mapChallengeInfo(challenge: CTFdChallenge): ChallengeInfo {
   return {
     ...mapChallengeSummary(challenge),
     description: challenge.description ?? "",
-    attachments: fileBindings(challenge.files ?? []).map(
-      (item) => item.attachment,
-    ),
-    ...(challenge.connection_info
-      ? { environmentGuide: challenge.connection_info }
-      : {}),
+    attachments: fileBindings(challenge.files ?? []).map((item) => item.attachment),
+    ...(challenge.connection_info ? { environmentGuide: challenge.connection_info } : {}),
   }
 }
 

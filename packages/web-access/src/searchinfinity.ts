@@ -3,8 +3,7 @@ import { redactCredential } from "./credential-source.ts"
 import type { SearchOptions, SearchResponse } from "./perplexity.ts"
 import { providerKeyConfigured, resolveProviderKey } from "./runtime.ts"
 
-const SEARCHINFINITY_SEARCH_URL =
-  "https://torchlight.byteintlapi.com/search_api/web_search"
+const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search"
 // API Key authenticated requests time out server-side after 30 seconds.
 const SEARCH_TIMEOUT_MS = 30_000
 
@@ -57,10 +56,7 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function requestSignal(
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): AbortSignal {
+function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
@@ -76,9 +72,7 @@ function normalizeDomain(value: string): string | null {
   if (input.startsWith("-")) input = input.slice(1).trim()
   if (!input) return null
   try {
-    const parsed = input.includes("://")
-      ? new URL(input)
-      : new URL(`https://${input}`)
+    const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`)
     input = parsed.hostname
   } catch {
     input = input.split("/")[0]?.split(":")[0] ?? ""
@@ -87,9 +81,7 @@ function normalizeDomain(value: string): string | null {
   return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null
 }
 
-function mapRecencyFilter(
-  recency: SearchOptions["recencyFilter"],
-): string | undefined {
+function mapRecencyFilter(recency: SearchOptions["recencyFilter"]): string | undefined {
   if (recency === "day") return "OneDay"
   if (recency === "week") return "OneWeek"
   if (recency === "month") return "OneMonth"
@@ -135,8 +127,7 @@ function businessErrorStatus(
   if (codeN === 700429 || code === "700429") return 429
   if (codeN === 10400 || code === "10400") return 400
   if (codeN === 10500 || code === "10500") return 500
-  if (codeN === 10403 || code === "10403")
-    return /quota|exhaust/i.test(message) ? 429 : 403
+  if (codeN === 10403 || code === "10403") return /quota|exhaust/i.test(message) ? 429 : 403
   return undefined
 }
 
@@ -175,25 +166,19 @@ async function searchinfinityJsonRequest(
   try {
     data = JSON.parse(raw) as SearchinfinitySearchResponse
   } catch (err) {
-    throw new Error(
-      `Searchinfinity Search API returned invalid JSON: ${errorMessage(err)}`,
-    )
+    throw new Error(`Searchinfinity Search API returned invalid JSON: ${errorMessage(err)}`)
   }
   const businessError = data.ResponseMetadata?.Error
   if (businessError && (businessError.Code || businessError.Message)) {
     const code =
-      typeof businessError.Code === "string" && businessError.Code
-        ? businessError.Code
-        : "unknown"
+      typeof businessError.Code === "string" && businessError.Code ? businessError.Code : "unknown"
     const message =
       typeof businessError.Message === "string" && businessError.Message
         ? businessError.Message
         : "unknown error"
     const status = businessErrorStatus(businessError.CodeN, code, message)
     const codeLabel =
-      typeof businessError.CodeN === "number"
-        ? `${businessError.CodeN} ${code}`
-        : code
+      typeof businessError.CodeN === "number" ? `${businessError.CodeN} ${code}` : code
     throw new Error(
       `Searchinfinity Search API error ${status ?? "unknown"}: ${message} (code ${codeLabel})`,
     )
@@ -205,28 +190,16 @@ function mapSearchResults(
   results: SearchinfinityWebResult[] | undefined,
 ): SearchResponse["results"] {
   if (!Array.isArray(results)) {
-    throw new Error(
-      "Searchinfinity Search API returned an unexpected response shape",
-    )
+    throw new Error("Searchinfinity Search API returned an unexpected response shape")
   }
   return results.flatMap((item) => {
-    if (!item || typeof item.Url !== "string" || item.Url.trim().length === 0)
-      return []
+    if (!item || typeof item.Url !== "string" || item.Url.trim().length === 0) return []
     const url = item.Url.trim()
-    const summary =
-      typeof item.Summary === "string"
-        ? item.Summary.replace(/\s+/g, " ").trim()
-        : ""
-    const snippet =
-      typeof item.Snippet === "string"
-        ? item.Snippet.replace(/\s+/g, " ").trim()
-        : ""
+    const summary = typeof item.Summary === "string" ? item.Summary.replace(/\s+/g, " ").trim() : ""
+    const snippet = typeof item.Snippet === "string" ? item.Snippet.replace(/\s+/g, " ").trim() : ""
     return [
       {
-        title:
-          typeof item.Title === "string" && item.Title.trim()
-            ? item.Title.trim()
-            : url,
+        title: typeof item.Title === "string" && item.Title.trim() ? item.Title.trim() : url,
         url,
         snippet: summary || snippet,
       },
@@ -237,8 +210,7 @@ function mapSearchResults(
 function buildAnswer(results: SearchResponse["results"]): string {
   return results
     .map((result) => {
-      if (result.snippet)
-        return `${result.snippet}\nSource: ${result.title} (${result.url})`
+      if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`
       return `Source: ${result.title} (${result.url})`
     })
     .join("\n\n")
@@ -268,8 +240,7 @@ export async function searchWithSearchinfinity(
   } catch (err) {
     const message = errorMessage(err)
     const redactedMessage = redactCredential(message, apiKey)
-    if (redactedMessage.toLowerCase().includes("abort"))
-      activityMonitor.logComplete(activityId, 0)
+    if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0)
     else activityMonitor.logError(activityId, redactedMessage)
     if (redactedMessage === message) throw err
     const redactedError = new Error(redactedMessage)

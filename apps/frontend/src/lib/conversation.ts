@@ -11,9 +11,9 @@ export function textContent(content: unknown): string {
     .filter((part): part is TextPart =>
       Boolean(
         part &&
-          typeof part === "object" &&
-          (part as { type?: unknown }).type === "text" &&
-          typeof (part as { text?: unknown }).text === "string",
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "text" &&
+        typeof (part as { text?: unknown }).text === "string",
       ),
     )
     .map((part) => part.text)

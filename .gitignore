@@ -1,11 +1,33 @@
-node_modules
-*.env
-.ctf-agent/
-dev-log.md
+# 依赖与 Vite+ 本地缓存
+node_modules/
+node_modules-broken*/
+.pnpm-store/
+.vite/
+.vite-temp/
+.vite-hooks/
+.vp/
 
-# Trellis runtime(会话状态,不入库)
+# 构建与测试产物
+apps/frontend/dist/
+dist/
+coverage/
+*.tsbuildinfo
+
+# 本地配置、日志与运行时数据
+.env
+.env.*
+*.env
+!.env.example
+*.log
+dev-log.md
+.ctf-agent/
 .trellis/
 
-# 任意层级的 .pi/ 下仅保留被跟踪的 ctf-config*.json,其余运行时文件(如 pi sessions)一律不入库
+# Pi 会话只保留显式跟踪的 CTF 配置
 **/.pi/*
 !**/.pi/ctf-config*.json
+
+# 操作系统与编辑器文件
+.DS_Store
+Thumbs.db
+*.swp

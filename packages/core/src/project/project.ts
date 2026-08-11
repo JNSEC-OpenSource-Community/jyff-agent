@@ -35,10 +35,7 @@ import {
   newRunId,
   type Sandbox,
 } from "@ctf-agent/sandbox"
-import {
-  createWebAccessTools,
-  type WebAccessConfig,
-} from "@ctf-agent/web-access"
+import { createWebAccessTools, type WebAccessConfig } from "@ctf-agent/web-access"
 import type {
   AgentHarnessEvent,
   AgentMessage,
@@ -230,9 +227,7 @@ export class Project {
     config: ProjectConfig,
     agentDirectory: string,
     private readonly platform: PlatformProject,
-    private readonly sandboxFactory: (
-      options: DockerSandboxOptions,
-    ) => Promise<Sandbox>,
+    private readonly sandboxFactory: (options: DockerSandboxOptions) => Promise<Sandbox>,
     private readonly skills: readonly AgentSkill[],
     private readonly subagentRoles: ReadonlyMap<string, SubagentRole>,
     private readonly runStore: RunStore,
@@ -261,9 +256,7 @@ export class Project {
     const config = options.config
       ? parseProjectConfig(options.config)
       : await loadProjectConfig(root)
-    const plugin = options.platforms.find(
-      (candidate) => candidate.id === config.platform.plugin,
-    )
+    const plugin = options.platforms.find((candidate) => candidate.id === config.platform.plugin)
     if (!plugin) throw new Error(`未注册平台插件: ${config.platform.plugin}`)
     const platformConfig = plugin.config.parse(config.platform.config)
     const platform = await plugin.connect({
@@ -282,13 +275,7 @@ export class Project {
     const config = options.config
       ? parseProjectConfig(options.config)
       : await loadProjectConfig(root)
-    return await Project.initialize(
-      options,
-      root,
-      config,
-      unavailablePlatform(),
-      true,
-    )
+    return await Project.initialize(options, root, config, unavailablePlatform(), true)
   }
 
   private static async initialize(
@@ -304,9 +291,7 @@ export class Project {
         discoverProjectSkillsWithDiagnostics(root, options.skillPaths),
         discoverSubagentRoles(root),
       ])
-      const agentDirectory = resolve(
-        options.stateDirectory ?? join(root, ".ctf-agent"),
-      )
+      const agentDirectory = resolve(options.stateDirectory ?? join(root, ".ctf-agent"))
       await mkdir(agentDirectory, { recursive: true })
       runStore = await RunStore.open(join(agentDirectory, "runs.sqlite"))
       // Project.open 只可能发生在新进程/新控制面中；遗留活跃记录不可继续信任。
@@ -316,15 +301,13 @@ export class Project {
         options.remoteEnvironments?.maxConcurrent ?? 1,
         runStore,
       )
-      const environmentDiagnostics = localOnly
-        ? []
-        : await remoteEnvironments.reconcile(platform)
+      const environmentDiagnostics = localOnly ? [] : await remoteEnvironments.reconcile(platform)
       return new Project(
         root,
         config,
         agentDirectory,
         platform,
-        options.sandboxFactory ?? DockerSandbox.create,
+        options.sandboxFactory ?? ((sandboxOptions) => DockerSandbox.create(sandboxOptions)),
         discovered.skills,
         discoveredSubagents.roles,
         runStore,
@@ -334,10 +317,7 @@ export class Project {
         options.webAccessConfig,
         {
           level: options.telemetry?.level ?? "safe",
-          maxTextLength: Math.max(
-            240,
-            options.telemetry?.maxTextLength ?? 8_000,
-          ),
+          maxTextLength: Math.max(240, options.telemetry?.maxTextLength ?? 8_000),
         },
         {
           maxConcurrent: Math.max(1, options.subagents?.maxConcurrent ?? 4),
@@ -368,10 +348,7 @@ export class Project {
         failures.push(cleanupError)
       }
       if (failures.length > 1)
-        throw new AggregateError(
-          failures,
-          "Project 初始化失败，且资源回收不完整",
-        )
+        throw new AggregateError(failures, "Project 初始化失败，且资源回收不完整")
       throw error
     }
   }
@@ -381,10 +358,7 @@ export class Project {
   }
 
   /** 订阅某个 Solver 或 SubAgent 的瞬时 Pi 事件；持久化对话仍以 JSONL 为准。 */
-  subscribeAgentStream(
-    target: AgentStreamTarget,
-    listener: AgentStreamListener,
-  ): () => void {
+  subscribeAgentStream(target: AgentStreamTarget, listener: AgentStreamListener): () => void {
     const subscription = { target: { ...target }, listener }
     this.agentStreamListeners.add(subscription)
     const key = `${target.runId}\u0000${target.subagentId ?? "solver"}`
@@ -402,9 +376,7 @@ export class Project {
     }
     return () => this.agentStreamListeners.delete(subscription)
   }
-  async runSessionExportMetadata(
-    runId: string,
-  ): Promise<RunSessionExportMetadata | undefined> {
+  async runSessionExportMetadata(runId: string): Promise<RunSessionExportMetadata | undefined> {
     const activeSolver = [...this.solvers].find(
       (solver) => solver.runId === runId && !solver.isClosed,
     )
@@ -412,12 +384,7 @@ export class Project {
 
     try {
       const source = await readFile(
-        join(
-          this.agentDirectory,
-          "runs",
-          runId,
-          "session-export-metadata.json",
-        ),
+        join(this.agentDirectory, "runs", runId, "session-export-metadata.json"),
         "utf8",
       )
       return parseSessionExportMetadata(JSON.parse(source))
@@ -434,16 +401,9 @@ export class Project {
     return this.runStore.upsertTldr(input)
   }
   tldrSessionPath(challengeId: string): string {
-    return join(
-      challengeWorkspacePath(this.agentDirectory, challengeId),
-      "tldr",
-      "session.jsonl",
-    )
+    return join(challengeWorkspacePath(this.agentDirectory, challengeId), "tldr", "session.jsonl")
   }
-  async refreshTldr(
-    challengeId: string,
-    agent: AgentOptions,
-  ): Promise<TldrRecord> {
+  async refreshTldr(challengeId: string, agent: AgentOptions): Promise<TldrRecord> {
     const active = this.tldrRefreshes.get(challengeId)
     if (active) return active
     const refresh = this.generateTldr(challengeId, agent)
@@ -457,10 +417,7 @@ export class Project {
     }
   }
 
-  private async generateTldr(
-    challengeId: string,
-    agent: AgentOptions,
-  ): Promise<TldrRecord> {
+  private async generateTldr(challengeId: string, agent: AgentOptions): Promise<TldrRecord> {
     const model = agent.initialState?.model
     if (!model) throw new Error("TLDR Agent 缺少可用模型")
     const workspace = challengeWorkspacePath(this.agentDirectory, challengeId)
@@ -482,10 +439,7 @@ export class Project {
               id: attachment.id,
               name: attachment.name,
               size: attachment.size ?? 0,
-              path: challengeAttachmentPath(attachment.name).replace(
-                /^\/workspace\//,
-                "",
-              ),
+              path: challengeAttachmentPath(attachment.name).replace(/^\/workspace\//, ""),
             })),
           ),
           timestamp: Date.now(),
@@ -559,18 +513,11 @@ export class Project {
     }
   }
 
-  challengeWorkspaceFiles(
-    challengeId: string,
-  ): Promise<WorkspaceArtifactListing> {
-    return listWorkspaceArtifacts(
-      challengeWorkspacePath(this.agentDirectory, challengeId),
-    )
+  challengeWorkspaceFiles(challengeId: string): Promise<WorkspaceArtifactListing> {
+    return listWorkspaceArtifacts(challengeWorkspacePath(this.agentDirectory, challengeId))
   }
 
-  challengeWorkspaceFile(
-    challengeId: string,
-    artifactPath: string,
-  ): Promise<Uint8Array> {
+  challengeWorkspaceFile(challengeId: string, artifactPath: string): Promise<Uint8Array> {
     return readWorkspaceArtifact(
       challengeWorkspacePath(this.agentDirectory, challengeId),
       artifactPath,
@@ -590,8 +537,7 @@ export class Project {
           id: this.config.project.id,
           name: this.config.project.name,
           challenges: this.localChallenges().length,
-          announcements:
-            this.runStore.platformViewCache().announcements?.length ?? 0,
+          announcements: this.runStore.platformViewCache().announcements?.length ?? 0,
         }
       )
     }
@@ -606,8 +552,7 @@ export class Project {
     return challenges
   }
   async announcements(): Promise<Announcement[]> {
-    if (this.localOnly)
-      return this.runStore.platformViewCache().announcements ?? []
+    if (this.localOnly) return this.runStore.platformViewCache().announcements ?? []
     const announcements = await this.platform.listAnnouncements()
     this.runStore.cachePlatformView("announcements", announcements)
     return announcements
@@ -617,10 +562,7 @@ export class Project {
     linked: number
     steered: number
   }> {
-    const [announcements, challenges] = await Promise.all([
-      this.announcements(),
-      this.challenges(),
-    ])
+    const [announcements, challenges] = await Promise.all([this.announcements(), this.challenges()])
     let linked = 0
     let steered = 0
     for (const announcement of announcements) {
@@ -636,16 +578,11 @@ export class Project {
         content: announcement.content,
         publishedAt: announcement.publishedAt,
         kind: classification.kind,
-        classificationReason: classification.ignored
-          ? classification.reason
-          : keywordFilter.reason,
+        classificationReason: classification.ignored ? classification.reason : keywordFilter.reason,
         ignored,
       })
       if (ignored) continue
-      for (const match of matchAnnouncementChallenges(
-        announcement,
-        challenges,
-      )) {
+      for (const match of matchAnnouncementChallenges(announcement, challenges)) {
         const created = this.runStore.linkChallengeAnnouncement({
           challengeId: match.challengeId,
           announcementKey: revision.key,
@@ -657,11 +594,7 @@ export class Project {
         if (options.steerActive === false) continue
         const candidate = this.runStore
           .announcementCandidates()
-          .find(
-            (item) =>
-              item.challengeId === match.challengeId &&
-              item.key === revision.key,
-          )
+          .find((item) => item.challengeId === match.challengeId && item.key === revision.key)
         if (candidate?.approvalStatus === "approved") {
           steered += await this.deliverAnnouncement(candidate)
         }
@@ -681,9 +614,7 @@ export class Project {
       !this.runStore
         .announcementCandidates()
         .some(
-          (candidate) =>
-            candidate.challengeId === challengeId &&
-            candidate.key === announcementKey,
+          (candidate) => candidate.challengeId === challengeId && candidate.key === announcementKey,
         )
     ) {
       throw announcementCandidateNotFound(challengeId, announcementKey)
@@ -697,12 +628,10 @@ export class Project {
     return reviewed
   }
 
-  private async deliverAnnouncement(
-    announcement: ChallengeAnnouncementRecord,
-  ): Promise<number> {
+  private async deliverAnnouncement(announcement: ChallengeAnnouncementRecord): Promise<number> {
     const message = challengeAnnouncementsPrompt([announcement])
     let delivered = 0
-    for (const solver of [...this.solvers]) {
+    for (const solver of this.solvers) {
       if (solver.challenge.id !== announcement.challengeId || solver.isClosed) {
         continue
       }
@@ -741,8 +670,7 @@ export class Project {
     return this.skills
   }
   async environments(): Promise<RemoteEnvironment[]> {
-    if (this.localOnly)
-      return this.runStore.platformViewCache().environments ?? []
+    if (this.localOnly) return this.runStore.platformViewCache().environments ?? []
     const environments = await this.platform.listRemoteEnvironments()
     this.runStore.cachePlatformView("environments", environments)
     return environments
@@ -772,9 +700,7 @@ export class Project {
       ...this.runStore.listRuns().map((run) => run.challengeId),
       ...this.runStore.getBlackboardStats().map((stats) => stats.challengeId),
       ...this.runStore.schedulerQueue().map((item) => item.challengeId),
-      ...this.runStore
-        .challengeSchedulingOverrides()
-        .map((item) => item.challengeId),
+      ...this.runStore.challengeSchedulingOverrides().map((item) => item.challengeId),
     ])
     const localOnly = [...challengeIds]
       .filter((challengeId) => !cachedIds.has(challengeId))
@@ -783,9 +709,7 @@ export class Project {
         title: challengeId,
         category: "本地记录",
         score: 0,
-        solved: this.runStore
-          .listRuns({ challengeId })
-          .some((run) => run.status === "solved"),
+        solved: this.runStore.listRuns({ challengeId }).some((run) => run.status === "solved"),
       }))
     return [...cached, ...localOnly]
   }
@@ -807,8 +731,7 @@ export class Project {
       throw new Error(`Run ${runId} 缺少 compact 恢复所需的题目上下文`)
     }
     const blackboard = injectBlackboard(this.runStore, challengeId)
-    const subagents =
-      this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
+    const subagents = this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
     const announcements = this.runStore.challengeAnnouncements(challengeId)
     return [
       challengeContext,
@@ -818,23 +741,14 @@ export class Project {
     ].join("\n\n")
   }
   availableSubagents(): SubagentRole[] {
-    return [...this.configuredSubagentRoles().values()].filter(
-      (role) => role.enabled,
-    )
+    return [...this.configuredSubagentRoles().values()].filter((role) => role.enabled)
   }
-  async steerSubagent(
-    runId: string,
-    subagentId: string,
-    message: string,
-  ): Promise<SubagentRecord> {
+  async steerSubagent(runId: string, subagentId: string, message: string): Promise<SubagentRecord> {
     const manager = this.subagentManagers.get(runId)
     if (!manager) throw subagentUnavailable(runId)
     return manager.steer(subagentId, message)
   }
-  async cancelSubagent(
-    runId: string,
-    subagentId: string,
-  ): Promise<SubagentRecord> {
+  async cancelSubagent(runId: string, subagentId: string): Promise<SubagentRecord> {
     const manager = this.subagentManagers.get(runId)
     if (!manager) throw subagentUnavailable(runId)
     return manager.cancel(subagentId)
@@ -846,9 +760,7 @@ export class Project {
     )
   }
   isChallengeSchedulingExcluded(challengeId: string): boolean {
-    return (
-      this.runStore.challengeSchedulingDisposition(challengeId) === "excluded"
-    )
+    return this.runStore.challengeSchedulingDisposition(challengeId) === "excluded"
   }
   challengeSchedulingDisposition(challengeId: string) {
     return this.runStore.challengeSchedulingDisposition(challengeId)
@@ -857,10 +769,7 @@ export class Project {
     challengeId: string,
     disposition: ChallengeSchedulingDisposition | null,
   ) {
-    return this.runStore.setChallengeSchedulingDisposition(
-      challengeId,
-      disposition,
-    )
+    return this.runStore.setChallengeSchedulingDisposition(challengeId, disposition)
   }
   nextAttempt(challengeId: string): number {
     return this.runStore.nextAttempt(challengeId)
@@ -874,9 +783,7 @@ export class Project {
   isChallengeBlocked(challengeId: string): boolean {
     return this.runStore.isChallengeBlocked(challengeId)
   }
-  forceChallengeBlocked(
-    input: Parameters<RunStore["forceChallengeBlocked"]>[0],
-  ): void {
+  forceChallengeBlocked(input: Parameters<RunStore["forceChallengeBlocked"]>[0]): void {
     this.runStore.forceChallengeBlocked(input)
   }
   resetSessionInterruptions(challengeId: string): void {
@@ -885,9 +792,7 @@ export class Project {
   schedulerQueue(): SchedulerQueueRecord[] {
     return this.runStore.schedulerQueue()
   }
-  enqueueSchedulerChallenge(
-    input: EnqueueSchedulerChallenge,
-  ): SchedulerQueueRecord {
+  enqueueSchedulerChallenge(input: EnqueueSchedulerChallenge): SchedulerQueueRecord {
     return this.runStore.enqueueSchedulerChallenge(input)
   }
   moveSchedulerChallenge(input: MoveSchedulerChallenge): SchedulerQueueRecord {
@@ -902,9 +807,7 @@ export class Project {
   challengeRuntimeState(challengeId: string) {
     return this.runStore.challengeRuntimeState(challengeId)
   }
-  recordChallengeBlockEvent(
-    input: Parameters<RunStore["recordChallengeBlockEvent"]>[0],
-  ) {
+  recordChallengeBlockEvent(input: Parameters<RunStore["recordChallengeBlockEvent"]>[0]) {
     return this.runStore.recordChallengeBlockEvent(input)
   }
   challengeBlockEvents(challengeId: string) {
@@ -954,10 +857,7 @@ export class Project {
    * 无活跃 solver → 抛 code:"no_active_run";空文本 → 抛 code:"invalid_message"。
    * 整个临界区同步完成(appendEvent 与 steer 均为同步调用),杜绝检查与注入之间的交错。
    */
-  async sendMessage(
-    challengeId: string,
-    text: string,
-  ): Promise<{ runId: string }> {
+  async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
     const trimmed = text.trim()
     if (!trimmed) {
       throw Object.assign(new Error("消息不能为空"), {
@@ -987,12 +887,9 @@ export class Project {
    * 事件经 appendEvent 旁路(RunStore 透传),不走 solver 事件流(裸 Agent 空闲时
    * processEvents 抛错)。无活跃 solver → 抛 code:"no_active_run";非法档位 → code:"invalid_level"。
    */
-  async setThinkingLevel(
-    challengeId: string,
-    level: ThinkingLevel,
-  ): Promise<{ runId: string }> {
+  async setThinkingLevel(challengeId: string, level: ThinkingLevel): Promise<{ runId: string }> {
     if (!isThinkingLevel(level)) {
-      throw Object.assign(new Error(`不支持的思考强度: ${level}`), {
+      throw Object.assign(new Error("不支持的思考强度"), {
         code: "invalid_level",
       })
     }
@@ -1013,10 +910,7 @@ export class Project {
     throw noActiveRunError()
   }
 
-  async createSolver(
-    challengeId: string,
-    options: CreateSolverOptions,
-  ): Promise<CtfSolverAgent> {
+  async createSolver(challengeId: string, options: CreateSolverOptions): Promise<CtfSolverAgent> {
     return this.createSolverForRun(challengeId, options)
   }
 
@@ -1028,14 +922,7 @@ export class Project {
     const run = this.runStore.getRun(runId)
     if (
       !run ||
-      ![
-        "failed",
-        "timed_out",
-        "cancelled",
-        "closed",
-        "interrupted",
-        "blocked",
-      ].includes(run.status)
+      !["failed", "timed_out", "cancelled", "closed", "interrupted", "blocked"].includes(run.status)
     ) {
       throw new Error(`Run ${runId} 不存在或当前不可恢复`)
     }
@@ -1050,13 +937,8 @@ export class Project {
     if (this.closed) throw new Error("Project 已关闭")
     const runId = resumed?.id ?? newRunId()
     const runDirectory = join(this.agentDirectory, "runs", runId)
-    const workspace =
-      resumed?.workspace ??
-      challengeWorkspacePath(this.agentDirectory, challengeId)
-    const attempt =
-      resumed?.attempt ??
-      options.attempt ??
-      this.runStore.nextAttempt(challengeId)
+    const workspace = resumed?.workspace ?? challengeWorkspacePath(this.agentDirectory, challengeId)
+    const attempt = resumed?.attempt ?? options.attempt ?? this.runStore.nextAttempt(challengeId)
     // Run session 与题目级持久 workspace 分离；后者跨复活复用。
     await Promise.all([
       mkdir(runDirectory, { recursive: true }),
@@ -1073,9 +955,7 @@ export class Project {
       await this.persistRecord(record, runDirectory)
     }
 
-    let capability:
-      | Awaited<ReturnType<PlatformProject["bindChallenge"]>>
-      | undefined
+    let capability: Awaited<ReturnType<PlatformProject["bindChallenge"]>> | undefined
     let sandbox: Sandbox | undefined
     let subagentManager: CtfSubagentManager | undefined
     try {
@@ -1095,9 +975,7 @@ export class Project {
         },
         onRevoked: async (message) => {
           if (!solver || solver.isClosed) return
-          await solver.steer(
-            `<environment_revoked>${escapeXml(message)}</environment_revoked>`,
-          )
+          await solver.steer(`<environment_revoked>${escapeXml(message)}</environment_revoked>`)
         },
       })
 
@@ -1106,8 +984,7 @@ export class Project {
         !resumed && blackboardInject
           ? [{ role: "user", content: blackboardInject, timestamp: Date.now() }]
           : []
-      const persistedAnnouncements =
-        this.runStore.challengeAnnouncements(challengeId)
+      const persistedAnnouncements = this.runStore.challengeAnnouncements(challengeId)
       const announcementMessages: AgentMessage[] =
         !resumed && persistedAnnouncements.length > 0
           ? [
@@ -1139,10 +1016,7 @@ export class Project {
         attachments: challenge.attachments,
         sandbox,
       })
-      const challengeContext = challengeContextPrompt(
-        challenge,
-        downloadedAttachments,
-      )
+      const challengeContext = challengeContextPrompt(challenge, downloadedAttachments)
       this.runChallengeContexts.set(runId, challengeContext)
       const challengeMessages: AgentMessage[] = resumed
         ? []
@@ -1159,10 +1033,7 @@ export class Project {
       const webAccessSignal = new AbortController()
       let webAccessTools: AgentTool[] = []
       if (this.webAccessConfig) {
-        const config = await this.webAccessConfig(
-          workspace,
-          webAccessSignal.signal,
-        )
+        const config = await this.webAccessConfig(workspace, webAccessSignal.signal)
         if (config) webAccessTools = createWebAccessTools(config)
       }
 
@@ -1227,9 +1098,7 @@ export class Project {
               }),
               ...createSubagentManagerTools(subagentManager),
             ],
-            systemPrompt: [options.agent.initialState?.systemPrompt]
-              .filter(Boolean)
-              .join("\n\n"),
+            systemPrompt: [options.agent.initialState?.systemPrompt].filter(Boolean).join("\n\n"),
             messages: [
               ...(options.agent.initialState?.messages ?? []),
               ...challengeMessages,
@@ -1264,9 +1133,7 @@ export class Project {
               closeReason: details.reason,
               error: details.error ?? null,
               cleanupError:
-                details.cleanupErrors.length > 0
-                  ? details.cleanupErrors.join("\n")
-                  : null,
+                details.cleanupErrors.length > 0 ? details.cleanupErrors.join("\n") : null,
               finishedAt: new Date().toISOString(),
             },
             eventType,
@@ -1276,10 +1143,7 @@ export class Project {
         },
       })
       subagentManager.attachParent(solver)
-      const telemetryCalls = new Map<
-        string,
-        { toolName: string; args: unknown }
-      >()
+      const telemetryCalls = new Map<string, { toolName: string; args: unknown }>()
       // pi 在 message_end 中提供完整的 thinking block。按 turn 持久化一条，避免
       // reasoning token 逐片写入 SQLite，导致事件表/WAL 和 Dashboard 查询爆炸。
       solver.subscribe((event) => {
@@ -1326,9 +1190,7 @@ export class Project {
               output: usage.output,
               cacheRead: usage.cacheRead,
               cacheWrite: usage.cacheWrite,
-              ...(usage.reasoning === undefined
-                ? {}
-                : { reasoning: usage.reasoning }),
+              ...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
               totalTokens: usage.totalTokens,
               cost: usage.cost,
               ts: new Date().toISOString(),
@@ -1387,10 +1249,7 @@ export class Project {
           cleanupErrors.push(`Sandbox 关闭失败: ${errorText(cleanupError)}`)
         }
       }
-      const failures: unknown[] = [
-        error,
-        ...cleanupErrors.map((message) => new Error(message)),
-      ]
+      const failures: unknown[] = [error, ...cleanupErrors.map((message) => new Error(message))]
       const attachmentFailure = error instanceof ChallengeAttachmentError
       const blockImmediately = !resumed && attempt === 1 && !attachmentFailure
       const retryable = attachmentFailure
@@ -1406,8 +1265,7 @@ export class Project {
             status: blockImmediately ? "blocked" : "failed",
             closeReason: blockImmediately ? "blocked" : "failed",
             error: errorText(error),
-            cleanupError:
-              cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
+            cleanupError: cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
             finishedAt: new Date().toISOString(),
           },
           blockImmediately ? "run_creation_blocked" : "run_creation_failed",
@@ -1423,24 +1281,14 @@ export class Project {
         failures.push(persistenceError)
       }
       const cause =
-        failures.length > 1
-          ? new AggregateError(failures, `无法创建 Solver ${runId}`)
-          : error
-      throw new SolverCreationError(
-        runId,
-        attachmentFailure,
-        blockImmediately,
-        retryable,
-        cause,
-      )
+        failures.length > 1 ? new AggregateError(failures, `无法创建 Solver ${runId}`) : error
+      throw new SolverCreationError(runId, attachmentFailure, blockImmediately, retryable, cause)
     }
   }
 
   private relativeWorkspace(challengeId: string): string {
     const relative = `challenges/${challengeWorkspaceKey(challengeId)}/workspace`
-    return this.workspaceNamespace
-      ? `${this.workspaceNamespace}/${relative}`
-      : relative
+    return this.workspaceNamespace ? `${this.workspaceNamespace}/${relative}` : relative
   }
 
   private configuredSubagentRoles(): ReadonlyMap<string, SubagentRole> {
@@ -1464,8 +1312,7 @@ export class Project {
     const solverResults = await Promise.allSettled(
       [...this.solvers].map((solver) => solver.close("manual")),
     )
-    for (const result of solverResults)
-      if (result.status === "rejected") errors.push(result.reason)
+    for (const result of solverResults) if (result.status === "rejected") errors.push(result.reason)
     try {
       await this.remoteEnvironments.close()
     } catch (error) {
@@ -1481,8 +1328,7 @@ export class Project {
     } catch (error) {
       errors.push(error)
     }
-    if (errors.length > 0)
-      throw new AggregateError(errors, "Project 关闭时发生错误")
+    if (errors.length > 0) throw new AggregateError(errors, "Project 关闭时发生错误")
   }
 
   private publishAgentEvent(
@@ -1518,8 +1364,7 @@ export class Project {
       const current = this.activeStreamSnapshots.get(key)
       const update = event.assistantMessageEvent
       const message =
-        current &&
-        (update.type === "text_delta" || update.type === "thinking_delta")
+        current && (update.type === "text_delta" || update.type === "thinking_delta")
           ? appendAgentMessageDelta(
               current.message,
               update.contentIndex,
@@ -1572,10 +1417,7 @@ export class Project {
         type: "tool_updated",
         toolCallId: event.toolCallId,
         toolName: event.toolName,
-        partialResult: tracedValue(
-          event.partialResult,
-          this.telemetry.maxTextLength,
-        ),
+        partialResult: tracedValue(event.partialResult, this.telemetry.maxTextLength),
       }
     } else if (event.type === "tool_execution_end") {
       payload = {
@@ -1588,8 +1430,7 @@ export class Project {
     } else if (event.type === "queue_update") {
       payload = {
         type: "queue_updated",
-        queued:
-          event.steer.length + event.followUp.length + event.nextTurn.length,
+        queued: event.steer.length + event.followUp.length + event.nextTurn.length,
       }
     } else if (event.type === "session_before_compact") {
       payload = { type: "status_changed", status: "compacting" }
@@ -1614,10 +1455,7 @@ export class Project {
       createdAt: new Date().toISOString(),
     } as AgentStreamEvent
     for (const subscription of this.agentStreamListeners) {
-      if (
-        subscription.target.runId !== runId ||
-        subscription.target.subagentId !== subagentId
-      )
+      if (subscription.target.runId !== runId || subscription.target.subagentId !== subagentId)
         continue
       try {
         subscription.listener(envelope)
@@ -1627,10 +1465,7 @@ export class Project {
     }
   }
 
-  private async persistRecord(
-    record: RunRecord,
-    runDirectory: string,
-  ): Promise<void> {
+  private async persistRecord(record: RunRecord, runDirectory: string): Promise<void> {
     const target = join(runDirectory, "run.json")
     const temporary = `${target}.tmp-${process.pid}`
     await writeFile(temporary, JSON.stringify(record, null, 2))
@@ -1643,18 +1478,11 @@ export class Project {
   ): Promise<void> {
     const target = join(runDirectory, "session-export-metadata.json")
     const temporary = `${target}.tmp-${process.pid}`
-    await writeFile(
-      temporary,
-      JSON.stringify(solverExportMetadata(solver), null, 2),
-    )
+    await writeFile(temporary, JSON.stringify(solverExportMetadata(solver), null, 2))
     await rename(temporary, target)
   }
 
-  private recordDiagnostic(
-    code: ProjectDiagnostic["code"],
-    error: unknown,
-    runId?: string,
-  ): void {
+  private recordDiagnostic(code: ProjectDiagnostic["code"], error: unknown, runId?: string): void {
     if (this.diagnosticLog.length >= 100) this.diagnosticLog.shift()
     this.diagnosticLog.push({
       code,
@@ -1665,9 +1493,7 @@ export class Project {
   }
 }
 
-function solverExportMetadata(
-  solver: CtfSolverAgent,
-): RunSessionExportMetadata {
+function solverExportMetadata(solver: CtfSolverAgent): RunSessionExportMetadata {
   return {
     systemPrompt: solver.state.systemPrompt,
     tools: solver.tools.map(({ name, description, parameters }) => ({
@@ -1678,18 +1504,13 @@ function solverExportMetadata(
   }
 }
 
-function parseSessionExportMetadata(
-  value: unknown,
-): RunSessionExportMetadata | undefined {
+function parseSessionExportMetadata(value: unknown): RunSessionExportMetadata | undefined {
   if (!value || typeof value !== "object") return undefined
   const candidate = value as {
     systemPrompt?: unknown
     tools?: unknown
   }
-  if (
-    typeof candidate.systemPrompt !== "string" ||
-    !Array.isArray(candidate.tools)
-  )
+  if (typeof candidate.systemPrompt !== "string" || !Array.isArray(candidate.tools))
     return undefined
   const tools = candidate.tools.flatMap((tool) => {
     if (!tool || typeof tool !== "object") return []
@@ -1705,9 +1526,7 @@ function parseSessionExportMetadata(
         ...(typeof candidateTool.description === "string"
           ? { description: candidateTool.description }
           : {}),
-        ...(candidateTool.parameters === undefined
-          ? {}
-          : { parameters: candidateTool.parameters }),
+        ...(candidateTool.parameters === undefined ? {} : { parameters: candidateTool.parameters }),
       },
     ]
   })
@@ -1738,10 +1557,7 @@ function errorText(error: unknown): string {
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 }
 
 /** 该题无活跃 solver 的错误契约:webui server 层按 code 映射 409(跨包不依赖错误类型)。 */
@@ -1752,22 +1568,15 @@ function noActiveRunError(): Error {
 }
 
 function subagentUnavailable(runId: string): Error {
-  return Object.assign(
-    new Error(`Run ${runId} 当前没有活跃的 SubAgent manager`),
-    {
-      code: "subagent_unavailable",
-    },
-  )
+  return Object.assign(new Error(`Run ${runId} 当前没有活跃的 SubAgent manager`), {
+    code: "subagent_unavailable",
+  })
 }
 
-function announcementCandidateNotFound(
-  challengeId: string,
-  announcementKey: string,
-): Error {
-  return Object.assign(
-    new Error(`公告候选不存在: ${challengeId}/${announcementKey}`),
-    { code: "announcement_candidate_not_found" },
-  )
+function announcementCandidateNotFound(challengeId: string, announcementKey: string): Error {
+  return Object.assign(new Error(`公告候选不存在: ${challengeId}/${announcementKey}`), {
+    code: "announcement_candidate_not_found",
+  })
 }
 
 function injectBlackboard(runStore: RunStore, challengeId: string): string {
@@ -1826,10 +1635,7 @@ function progressEvents(
           toolCallId: event.toolCallId,
           flag:
             telemetry.level === "full"
-              ? clippedText(
-                  field(started?.args, "flag"),
-                  telemetry.maxTextLength,
-                )
+              ? clippedText(field(started?.args, "flag"), telemetry.maxTextLength)
               : "[redacted]",
           status: submission?.status ?? "unknown",
           message: submission?.message ?? "",
@@ -1846,23 +1652,17 @@ function tracedToolArgs(
   args: unknown,
   telemetry: Required<ProjectTelemetryOptions>,
 ): Record<string, unknown> {
-  const input =
-    typeof args === "object" && args !== null
-      ? (args as Record<string, unknown>)
-      : {}
+  const input = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}
   if (telemetry.level === "full") {
-    return tracedValue(
-      input,
-      telemetry.maxTextLength,
-      toolName === "ctf_submit_flag",
-    ) as Record<string, unknown>
+    return tracedValue(input, telemetry.maxTextLength, toolName === "ctf_submit_flag") as Record<
+      string,
+      unknown
+    >
   }
   if (toolName === "ctf_submit_flag") return { flag: "[redacted]" }
   if (toolName === "bash") return { command: "[omitted]" }
-  if (toolName === "write")
-    return { path: clippedText(input.path, 240), content: "[omitted]" }
-  if (toolName === "edit")
-    return { path: clippedText(input.path, 240), edits: "[omitted]" }
+  if (toolName === "write") return { path: clippedText(input.path, 240), content: "[omitted]" }
+  if (toolName === "edit") return { path: clippedText(input.path, 240), edits: "[omitted]" }
   if (toolName === "blackboard_record") {
     return {
       operations: ["evidence", "opportunity", "concludeOpportunity"].filter(
@@ -1891,37 +1691,25 @@ function tracedToolArgs(
 
 function clippedValue(value: unknown, maxLength: number): unknown {
   if (typeof value === "string") return clippedText(value, maxLength)
-  if (typeof value === "number" || typeof value === "boolean" || value === null)
-    return value
-  if (Array.isArray(value))
-    return value.slice(0, 8).map((item) => clippedValue(item, maxLength))
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value
+  if (Array.isArray(value)) return value.slice(0, 8).map((item) => clippedValue(item, maxLength))
   return value === undefined ? undefined : "[object]"
 }
 
 function clippedText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return ""
-  return value.length <= maxLength
-    ? value
-    : `${value.slice(0, Math.max(0, maxLength - 3))}...`
+  return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 3))}...`
 }
 
-function tracedValue(
-  value: unknown,
-  maxTextLength: number,
-  allowFlag = false,
-  depth = 0,
-): unknown {
+function tracedValue(value: unknown, maxTextLength: number, allowFlag = false, depth = 0): unknown {
   if (typeof value === "string") return clippedText(value, maxTextLength)
-  if (typeof value === "number" || typeof value === "boolean" || value === null)
-    return value
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value
   if (value === undefined) return undefined
   if (depth >= 5) return "[max-depth]"
   if (Array.isArray(value)) {
-    return value
-      .slice(0, 64)
-      .map((item) => tracedValue(item, maxTextLength, allowFlag, depth + 1))
+    return value.slice(0, 64).map((item) => tracedValue(item, maxTextLength, allowFlag, depth + 1))
   }
-  if (typeof value !== "object") return String(value)
+  if (typeof value !== "object") return String(value as string | number | boolean | bigint)
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .slice(0, 64)
@@ -1935,9 +1723,7 @@ function tracedValue(
   )
 }
 
-function flagSubmission(
-  value: unknown,
-): { status?: string; message?: string } | undefined {
+function flagSubmission(value: unknown): { status?: string; message?: string } | undefined {
   if (typeof value !== "object" || value === null) return undefined
   const result = value as Record<string, unknown>
   const details =
@@ -1946,9 +1732,7 @@ function flagSubmission(
       : result
   return {
     ...(typeof details.status === "string" ? { status: details.status } : {}),
-    ...(typeof details.message === "string"
-      ? { message: details.message }
-      : {}),
+    ...(typeof details.message === "string" ? { message: details.message } : {}),
   }
 }
 
@@ -1995,9 +1779,7 @@ function unavailablePlatform(): PlatformProject {
   }
 }
 
-function normalizeWorkspaceNamespace(
-  value: string | undefined,
-): string | undefined {
+function normalizeWorkspaceNamespace(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   const normalized = value.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "")
   if (
@@ -2006,9 +1788,7 @@ function normalizeWorkspaceNamespace(
       .split("/")
       .some(
         (segment) =>
-          segment === "." ||
-          segment === ".." ||
-          !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(segment),
+          segment === "." || segment === ".." || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(segment),
       )
   ) {
     throw new Error("workspaceNamespace 必须是安全的相对路径")

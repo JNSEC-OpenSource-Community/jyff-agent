@@ -1,14 +1,5 @@
 import { createHash } from "node:crypto"
-import {
-  cp,
-  lstat,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  unlink,
-  writeFile,
-} from "node:fs/promises"
+import { cp, lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import {
@@ -83,9 +74,7 @@ export class PlatformExtensionStore {
     return store
   }
 
-  async describeCandidate(
-    candidateDirectory: string,
-  ): Promise<PlatformCandidateView> {
+  async describeCandidate(candidateDirectory: string): Promise<PlatformCandidateView> {
     const candidate = await inspectCandidate(candidateDirectory)
     const setup = candidate.manifest.setup
     if (!setup) throw new Error("候选插件必须在 extension.json 中声明 setup")
@@ -94,9 +83,7 @@ export class PlatformExtensionStore {
       name: candidate.manifest.name,
       version: candidate.manifest.version,
       contentHash: candidate.contentHash,
-      schemaFingerprint: createHash("sha256")
-        .update(stableJson(setup))
-        .digest("hex"),
+      schemaFingerprint: createHash("sha256").update(stableJson(setup)).digest("hex"),
       setup,
     }
   }
@@ -107,29 +94,18 @@ export class PlatformExtensionStore {
     profile: PlatformValidationProfile
   }): Promise<PlatformValidationReport> {
     const candidate = await inspectCandidate(input.candidateDirectory)
-    if (!candidate.manifest.setup)
-      throw new Error("候选插件必须在 extension.json 中声明 setup")
-    if (!this.validationSandbox)
-      throw new Error("Platform validation sandbox 未配置")
+    if (!candidate.manifest.setup) throw new Error("候选插件必须在 extension.json 中声明 setup")
+    if (!this.validationSandbox) throw new Error("Platform validation sandbox 未配置")
     const rawReport = await validateInSandbox({
       sandbox: this.validationSandbox,
       sessionId: input.sessionId,
       candidate,
       profile: input.profile,
     })
-    const report = redactReport(
-      rawReport,
-      Object.values(input.profile.secrets ?? {}),
-    )
+    const report = redactReport(rawReport, Object.values(input.profile.secrets ?? {}))
     this.reports.set(input.sessionId, report)
-    await atomicWrite(
-      this.validationReportPath(input.sessionId),
-      JSON.stringify(report, null, 2),
-    )
-    const reportPath = join(
-      dirname(input.candidateDirectory),
-      "validation-report.json",
-    )
+    await atomicWrite(this.validationReportPath(input.sessionId), JSON.stringify(report, null, 2))
+    const reportPath = join(dirname(input.candidateDirectory), "validation-report.json")
     await atomicWrite(reportPath, JSON.stringify(report, null, 2))
     return report
   }
@@ -143,10 +119,7 @@ export class PlatformExtensionStore {
       this.reports.get(input.sessionId) ??
       (await this.readValidationReport(input.sessionId)) ??
       input.validationReport
-    if (
-      !report ||
-      !["read_only_verified", "fully_verified"].includes(report.status)
-    ) {
+    if (!report || !["read_only_verified", "fully_verified"].includes(report.status)) {
       throw new Error("候选插件尚未通过 Validation Gate")
     }
     if (report.authorSessionId !== input.sessionId) {
@@ -166,10 +139,7 @@ export class PlatformExtensionStore {
       throw new Error("候选 manifest 与验证报告插件 ID 不一致")
     }
     this.reports.set(input.sessionId, report)
-    await atomicWrite(
-      this.validationReportPath(input.sessionId),
-      JSON.stringify(report, null, 2),
-    )
+    await atomicWrite(this.validationReportPath(input.sessionId), JSON.stringify(report, null, 2))
     const revision = report.revision
     const target = this.revisionDirectory(candidate.manifest.id, revision)
     try {
@@ -182,10 +152,7 @@ export class PlatformExtensionStore {
         errorOnExist: true,
         force: false,
       })
-      await atomicWrite(
-        join(target, "validation-report.json"),
-        JSON.stringify(report, null, 2),
-      )
+      await atomicWrite(join(target, "validation-report.json"), JSON.stringify(report, null, 2))
       await atomicWrite(
         join(target, "author.json"),
         JSON.stringify({ sessionId: input.sessionId }, null, 2),
@@ -235,9 +202,7 @@ export class PlatformExtensionStore {
         name: manifest.name,
         version: manifest.version,
         activeRevision: revision,
-        ...(registration.authorSessionId
-          ? { authorSessionId: registration.authorSessionId }
-          : {}),
+        ...(registration.authorSessionId ? { authorSessionId: registration.authorSessionId } : {}),
         ...(validation ? { validation } : {}),
       })
     }
@@ -254,9 +219,7 @@ export class PlatformExtensionStore {
     }
     return {
       filename: `${candidate.manifest.id}.ts`,
-      content: await readFile(
-        join(candidate.directory, candidate.manifest.entry),
-      ),
+      content: await readFile(join(candidate.directory, candidate.manifest.entry)),
     }
   }
 
@@ -270,22 +233,16 @@ export class PlatformExtensionStore {
   private async loadInstalled(): Promise<void> {
     const entries = await readdir(this.root, { withFileTypes: true })
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name === VALIDATION_REPORTS_DIRECTORY)
-        continue
+      if (!entry.isDirectory() || entry.name === VALIDATION_REPORTS_DIRECTORY) continue
       try {
         const extensionDirectory = this.extensionDirectory(entry.name)
         const active = JSON.parse(
           await readFile(join(extensionDirectory, "active.json"), "utf8"),
         ) as { revision?: unknown }
         if (typeof active.revision !== "string") continue
-        const revisionDirectory = this.revisionDirectory(
-          entry.name,
-          active.revision,
-        )
+        const revisionDirectory = this.revisionDirectory(entry.name, active.revision)
         const manifest = parseManifest(
-          JSON.parse(
-            await readFile(join(revisionDirectory, "extension.json"), "utf8"),
-          ),
+          JSON.parse(await readFile(join(revisionDirectory, "extension.json"), "utf8")),
         )
         const author = JSON.parse(
           await readFile(join(revisionDirectory, "author.json"), "utf8"),
@@ -346,16 +303,12 @@ async function inspectCandidate(directory: string): Promise<{
   if (total > MAX_EXTENSION_BYTES) throw new Error("候选插件超过 2 MiB")
   const manifestFile = files.find(({ path }) => path === "extension.json")
   if (!manifestFile) throw new Error("候选插件缺少 extension.json")
-  const manifest = parseManifest(
-    JSON.parse(manifestFile.content.toString("utf8")),
-  )
+  const manifest = parseManifest(JSON.parse(manifestFile.content.toString("utf8")))
   if (!files.some(({ path }) => path === manifest.entry)) {
     throw new Error(`候选入口不存在: ${manifest.entry}`)
   }
   const hash = createHash("sha256")
-  for (const file of files.sort((left, right) =>
-    left.path.localeCompare(right.path),
-  )) {
+  for (const file of files.sort((left, right) => left.path.localeCompare(right.path))) {
     hash.update(file.path)
     hash.update("\0")
     hash.update(file.content)
@@ -371,13 +324,10 @@ async function walk(
 ): Promise<void> {
   const directory = suffix ? join(root, suffix) : root
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const relativePath = suffix
-      ? `${suffix.replaceAll("\\", "/")}/${entry.name}`
-      : entry.name
+    const relativePath = suffix ? `${suffix.replaceAll("\\", "/")}/${entry.name}` : entry.name
     const target = join(root, relativePath)
     const stat = await lstat(target)
-    if (stat.isSymbolicLink())
-      throw new Error(`候选插件禁止 symlink: ${relativePath}`)
+    if (stat.isSymbolicLink()) throw new Error(`候选插件禁止 symlink: ${relativePath}`)
     if (stat.isDirectory()) {
       await walk(root, relativePath, files)
     } else if (stat.isFile()) {
@@ -392,45 +342,26 @@ async function walk(
 }
 
 function parseManifest(value: unknown): PlatformExtensionManifest {
-  if (!value || typeof value !== "object")
-    throw new Error("extension.json 无效")
+  if (!value || typeof value !== "object") throw new Error("extension.json 无效")
   const manifest = value as Record<string, unknown>
   const keys = Object.keys(manifest)
-  const allowed = new Set([
-    "schemaVersion",
-    "id",
-    "name",
-    "version",
-    "entry",
-    "setup",
-  ])
-  if (keys.some((key) => !allowed.has(key)))
-    throw new Error("extension.json 包含未知字段")
-  if (manifest.schemaVersion !== 2)
-    throw new Error("只支持 extension schema v2")
-  if (
-    typeof manifest.id !== "string" ||
-    !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(manifest.id)
-  ) {
+  const allowed = new Set(["schemaVersion", "id", "name", "version", "entry", "setup"])
+  if (keys.some((key) => !allowed.has(key))) throw new Error("extension.json 包含未知字段")
+  if (manifest.schemaVersion !== 2) throw new Error("只支持 extension schema v2")
+  if (typeof manifest.id !== "string" || !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(manifest.id)) {
     throw new Error("extension ID 无效")
   }
   if (RESERVED_IDS.has(manifest.id)) throw new Error("不能覆盖内置插件 ID")
   if (typeof manifest.name !== "string" || !manifest.name.trim())
     throw new Error("extension name 无效")
-  if (
-    typeof manifest.version !== "string" ||
-    !/^\d+\.\d+\.\d+$/.test(manifest.version)
-  ) {
+  if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+$/.test(manifest.version)) {
     throw new Error("extension version 必须使用 semver")
   }
-  if (typeof manifest.entry !== "string")
-    throw new Error("extension entry 无效")
+  if (typeof manifest.entry !== "string") throw new Error("extension entry 无效")
   const normalizedEntry = manifest.entry.replaceAll("\\", "/")
   if (
     normalizedEntry.startsWith("/") ||
-    normalizedEntry
-      .split("/")
-      .some((segment) => !segment || segment === "." || segment === "..") ||
+    normalizedEntry.split("/").some((segment) => !segment || segment === "." || segment === "..") ||
     !/\.(?:js|mjs|ts)$/.test(normalizedEntry)
   ) {
     throw new Error("extension entry 必须是目录内的 JS/TS 文件")
@@ -460,13 +391,13 @@ async function validateInSandbox(input: {
       join(runtime, "validation-runner.ts"),
     ),
     cp(
-      fileURLToPath(
-        new URL("../../../platform/src/validation.ts", import.meta.url),
-      ),
+      fileURLToPath(new URL("../../../platform/src/validation.ts", import.meta.url)),
       join(runtime, "platform-validation.ts"),
     ),
   ])
-  const sandbox = await (input.sandbox.sandboxFactory ?? DockerSandbox.create)({
+  const sandboxFactory =
+    input.sandbox.sandboxFactory ?? ((sandboxOptions) => DockerSandbox.create(sandboxOptions))
+  const sandbox = await sandboxFactory({
     projectId: "father-validation",
     runId: `${input.sessionId.slice("father-".length, 26)}-${Date.now()}`,
     image: input.sandbox.image,
@@ -486,11 +417,7 @@ async function validateInSandbox(input: {
   })
   try {
     const result = await sandbox.exec(
-      [
-        "node",
-        "--experimental-strip-types",
-        "/workspace/.father-runtime/validation-runner.ts",
-      ],
+      ["node", "--experimental-strip-types", "/workspace/.father-runtime/validation-runner.ts"],
       {
         input: JSON.stringify({
           entry: `/workspace/output/${input.candidate.manifest.entry}`,
@@ -510,9 +437,7 @@ async function validateInSandbox(input: {
     const marker = "__FATHER_REPORT__"
     const offset = result.stdout.lastIndexOf(marker)
     if (offset < 0) throw new Error("Docker validation did not return a report")
-    return JSON.parse(
-      result.stdout.slice(offset + marker.length),
-    ) as PlatformValidationReport
+    return JSON.parse(result.stdout.slice(offset + marker.length)) as PlatformValidationReport
   } finally {
     await sandbox.close().catch(() => undefined)
   }
@@ -546,20 +471,15 @@ async function loadPlugin(
 ): Promise<PlatformPlugin> {
   const entry = resolve(directory, manifest.entry)
   const suffix = relative(resolve(directory), entry)
-  if (
-    suffix === ".." ||
-    suffix.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
+  if (suffix === ".." || suffix.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
     throw new Error("extension entry 逃逸候选目录")
   }
   const module = (await import(
     `${pathToFileURL(entry).href}?revision=${Date.now()}-${Math.random()}`
   )) as { default?: unknown; platformPlugin?: unknown }
   const plugin = module.platformPlugin ?? module.default
-  if (!isPlatformPlugin(plugin))
-    throw new Error("入口未导出有效 PlatformPlugin")
-  if (plugin.id !== manifest.id)
-    throw new Error("manifest ID 与插件导出 ID 不一致")
+  if (!isPlatformPlugin(plugin)) throw new Error("入口未导出有效 PlatformPlugin")
+  if (plugin.id !== manifest.id) throw new Error("manifest ID 与插件导出 ID 不一致")
   return plugin
 }
 

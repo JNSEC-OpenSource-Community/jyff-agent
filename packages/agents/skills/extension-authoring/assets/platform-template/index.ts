@@ -1,7 +1,4 @@
-import type {
-  PlatformPlugin,
-  PlatformSetupDescriptor,
-} from "@ctf-agent/platform"
+import type { PlatformPlugin, PlatformSetupDescriptor } from "@ctf-agent/platform"
 
 const setup = {
   label: "Example Platform",

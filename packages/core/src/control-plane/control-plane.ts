@@ -10,11 +10,7 @@ import { AnnouncementPoller } from "../orchestration/announcement-poller.ts"
 import type { ContestScheduler } from "../orchestration/contest-scheduler.ts"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 import { type OpenProjectOptions, Project } from "../project/project.ts"
-import {
-  ProjectConfigStore,
-  projectStorageKey,
-  type StoredProjectConfig,
-} from "./config-store.ts"
+import { ProjectConfigStore, projectStorageKey, type StoredProjectConfig } from "./config-store.ts"
 import { FileSecretStore, type SecretStore } from "./secret-store.ts"
 
 export type ControlPlanePhase =
@@ -76,12 +72,7 @@ export interface ControlPlaneOptions {
   secretStore?: SecretStore
   project?: Omit<
     OpenProjectOptions,
-    | "root"
-    | "config"
-    | "stateDirectory"
-    | "workspaceNamespace"
-    | "platforms"
-    | "resolveSecret"
+    "root" | "config" | "stateDirectory" | "workspaceNamespace" | "platforms" | "resolveSecret"
   >
   createProjectOptions?: (context: {
     projectId: string
@@ -89,12 +80,7 @@ export interface ControlPlaneOptions {
   }) =>
     | Omit<
         OpenProjectOptions,
-        | "root"
-        | "config"
-        | "stateDirectory"
-        | "workspaceNamespace"
-        | "platforms"
-        | "resolveSecret"
+        "root" | "config" | "stateDirectory" | "workspaceNamespace" | "platforms" | "resolveSecret"
       >
     | Promise<
         Omit<
@@ -128,9 +114,7 @@ interface ManagedProjectRuntime {
 /** Owns the global Project registry and one isolated runtime per configured Project. */
 export class ControlPlane {
   readonly root: string
-  private readonly platformSource:
-    | readonly PlatformPlugin[]
-    | PlatformPluginRegistry
+  private readonly platformSource: readonly PlatformPlugin[] | PlatformPluginRegistry
   private readonly configStore: ProjectConfigStore
   private readonly secretStore: SecretStore
   private readonly options: ControlPlaneOptions
@@ -151,8 +135,7 @@ export class ControlPlane {
   static async create(options: ControlPlaneOptions): Promise<ControlPlane> {
     const root = resolve(options.root)
     const secretStore =
-      options.secretStore ??
-      (await FileSecretStore.open(join(root, ".ctf-agent", "secrets.json")))
+      options.secretStore ?? (await FileSecretStore.open(join(root, ".ctf-agent", "secrets.json")))
     const control = new ControlPlane(options, secretStore)
     try {
       const records = await control.configStore.list()
@@ -177,11 +160,7 @@ export class ControlPlane {
     const projects = this.projectSnapshots()
     if (!runtime) {
       return {
-        phase: this.closing
-          ? "closing"
-          : this.loadError
-            ? "degraded"
-            : "unconfigured",
+        phase: this.closing ? "closing" : this.loadError ? "degraded" : "unconfigured",
         configured: projects.length > 0,
         projectId: null,
         projectName: null,
@@ -190,9 +169,7 @@ export class ControlPlane {
         updatedAt:
           projects.reduce<string | undefined>(
             (latest, item) =>
-              !latest || item.updatedAt.localeCompare(latest) > 0
-                ? item.updatedAt
-                : latest,
+              !latest || item.updatedAt.localeCompare(latest) > 0 ? item.updatedAt : latest,
             undefined,
           ) ?? new Date().toISOString(),
         selectedProjectId: this.selectedProjectId ?? null,
@@ -214,9 +191,7 @@ export class ControlPlane {
   }
 
   projectSnapshots(): ControlPlaneProjectSnapshot[] {
-    return [...this.runtimes.values()].map((runtime) =>
-      this.runtimeSnapshot(runtime),
-    )
+    return [...this.runtimes.values()].map((runtime) => this.runtimeSnapshot(runtime))
   }
 
   configuration(projectId?: string): ProjectConfig | undefined {
@@ -230,9 +205,7 @@ export class ControlPlane {
     )
     const names = new Set(
       platforms.flatMap(({ setup }) =>
-        setup.authStrategies.flatMap((strategy) =>
-          strategy.secrets.map((secret) => secret.name),
-        ),
+        setup.authStrategies.flatMap((strategy) => strategy.secrets.map((secret) => secret.name)),
       ),
     )
     const resolvedProjectId = this.resolveProjectId(projectId)
@@ -245,9 +218,7 @@ export class ControlPlane {
           name,
           {
             configured: this.hasProjectSecret(resolvedProjectId, name),
-            source: this.hasProjectSecret(resolvedProjectId, name)
-              ? "store"
-              : "none",
+            source: this.hasProjectSecret(resolvedProjectId, name) ? "store" : "none",
           },
         ]),
       ),
@@ -275,20 +246,17 @@ export class ControlPlane {
     const runtime = this.resolveRuntime(projectId)
     const scheduler = runtime?.scheduler?.snapshot()
     if (!runtime || !scheduler) return false
-    return (
-      scheduler.active.length > 0 ||
-      (!runtime.record.archived && scheduler.autoEnabled)
-    )
+    return scheduler.active.length > 0 || (!runtime.record.archived && scheduler.autoEnabled)
   }
 
   canStartSolver(projectId?: string): boolean {
     const runtime = this.resolveRuntime(projectId)
     return Boolean(
       runtime &&
-        !runtime.record.archived &&
-        !runtime.localOnly &&
-        runtime.phase === "ready" &&
-        runtime.scheduler,
+      !runtime.record.archived &&
+      !runtime.localOnly &&
+      runtime.phase === "ready" &&
+      runtime.scheduler,
     )
   }
 
@@ -302,12 +270,7 @@ export class ControlPlane {
 
   reportPlatformSuccess(projectId?: string): void {
     const runtime = this.resolveRuntime(projectId)
-    if (
-      !runtime ||
-      runtime.localOnly ||
-      runtime.record.archived ||
-      runtime.phase !== "degraded"
-    ) {
+    if (!runtime || runtime.localOnly || runtime.record.archived || runtime.phase !== "degraded") {
       return
     }
     runtime.lastError = null
@@ -352,9 +315,7 @@ export class ControlPlane {
     })
   }
 
-  async testConnection(
-    input: ApplyControlPlaneSetup,
-  ): Promise<PlatformConnectionTest> {
+  async testConnection(input: ApplyControlPlaneSetup): Promise<PlatformConnectionTest> {
     const config = this.validateConfig(input.config)
     const plugin = this.plugin(config.platform.plugin)
     const platform = await plugin.connect({
@@ -365,9 +326,7 @@ export class ControlPlane {
     return await inspectAndClose(platform)
   }
 
-  async applySetup(
-    input: ApplyControlPlaneSetup,
-  ): Promise<ControlPlaneSnapshot> {
+  async applySetup(input: ApplyControlPlaneSetup): Promise<ControlPlaneSnapshot> {
     return await this.enqueueTransition(async () => {
       const config = this.validateConfig(input.config)
       await this.testConnection({ config, secrets: input.secrets })
@@ -375,9 +334,7 @@ export class ControlPlane {
         await this.performDisconnect(config.project.id)
       }
       if (input.secrets) {
-        await this.secretStore.set(
-          namespaceProjectSecrets(config.project.id, input.secrets),
-        )
+        await this.secretStore.set(namespaceProjectSecrets(config.project.id, input.secrets))
       }
       const record = await this.configStore.saveProject(config)
       this.runtimes.set(config.project.id, {
@@ -421,10 +378,7 @@ export class ControlPlane {
       )
       await this.secretStore.set(
         Object.fromEntries(
-          [...secretNames].map((name) => [
-            projectSecretName(projectId, name),
-            undefined,
-          ]),
+          [...secretNames].map((name) => [projectSecretName(projectId, name), undefined]),
         ),
       )
       this.runtimes.delete(projectId)
@@ -447,10 +401,7 @@ export class ControlPlane {
     })
   }
 
-  async archiveProject(
-    projectId: string,
-    archived: boolean,
-  ): Promise<ControlPlaneSnapshot> {
+  async archiveProject(projectId: string, archived: boolean): Promise<ControlPlaneSnapshot> {
     return await this.enqueueTransition(async () => {
       const runtime = this.runtimes.get(projectId)
       if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
@@ -534,10 +485,7 @@ export class ControlPlane {
     if (failures.length > 0) {
       runtime.lastError = failures.map(errorText).join("\n")
       this.setRuntimePhase(runtime, "degraded")
-      throw new AggregateError(
-        failures,
-        `Project ${projectId} 断开时资源清理失败`,
-      )
+      throw new AggregateError(failures, `Project ${projectId} 断开时资源清理失败`)
     }
   }
 
@@ -663,36 +611,23 @@ export class ControlPlane {
     projectId: string,
     overrides: Readonly<Record<string, string | undefined>> = {},
   ): (name: string) => string | undefined {
-    return (name) =>
-      overrides[name] ??
-      this.secretStore.get(projectSecretName(projectId, name))
+    return (name) => overrides[name] ?? this.secretStore.get(projectSecretName(projectId, name))
   }
 
-  private hasProjectSecret(
-    projectId: string | undefined,
-    name: string,
-  ): boolean {
-    return Boolean(
-      Boolean(
-        projectId && this.secretStore.has(projectSecretName(projectId, name)),
-      ),
-    )
+  private hasProjectSecret(projectId: string | undefined, name: string): boolean {
+    return Boolean(projectId && this.secretStore.has(projectSecretName(projectId, name)))
   }
 
   private resolveProjectId(projectId?: string): string | undefined {
     return projectId ?? this.selectedProjectId
   }
 
-  private resolveRuntime(
-    projectId?: string,
-  ): ManagedProjectRuntime | undefined {
+  private resolveRuntime(projectId?: string): ManagedProjectRuntime | undefined {
     const id = this.resolveProjectId(projectId)
     return id ? this.runtimes.get(id) : undefined
   }
 
-  private runtimeSnapshot(
-    runtime: ManagedProjectRuntime,
-  ): ControlPlaneProjectSnapshot {
+  private runtimeSnapshot(runtime: ManagedProjectRuntime): ControlPlaneProjectSnapshot {
     return {
       id: runtime.record.config.project.id,
       name: runtime.record.config.project.name,
@@ -741,16 +676,11 @@ function namespaceProjectSecrets(
   values: Readonly<Record<string, string | undefined>>,
 ): Record<string, string | undefined> {
   return Object.fromEntries(
-    Object.entries(values).map(([name, value]) => [
-      projectSecretName(projectId, name),
-      value,
-    ]),
+    Object.entries(values).map(([name, value]) => [projectSecretName(projectId, name), value]),
   )
 }
 
-async function inspectAndClose(
-  platform: PlatformProject,
-): Promise<PlatformConnectionTest> {
+async function inspectAndClose(platform: PlatformProject): Promise<PlatformConnectionTest> {
   let result: PlatformConnectionTest | undefined
   let failure: unknown
   try {

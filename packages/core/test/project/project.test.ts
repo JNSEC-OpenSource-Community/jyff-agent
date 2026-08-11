@@ -1,11 +1,4 @@
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { BaseAgent } from "@ctf-agent/agents"
@@ -17,37 +10,28 @@ import type {
 } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vite-plus/test"
 import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
 import { testPlatform } from "../fake-platform.ts"
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 class FakeSandbox implements Sandbox {
   readonly id = "fake-container"
   readonly writes = new Map<string, string>()
   closed = false
-  async exec(
-    args: string[],
-    options?: SandboxExecOptions,
-  ): Promise<CommandResult> {
+  async exec(args: string[], options?: SandboxExecOptions): Promise<CommandResult> {
     if (args[0] === "python3") {
       const payload = JSON.parse(options?.input ?? "{}") as {
         op?: string
         path?: string
         base64?: string
       }
-      if (
-        (payload.op === "write" || payload.op === "replace") &&
-        payload.path &&
-        payload.base64
-      ) {
+      if ((payload.op === "write" || payload.op === "replace") && payload.path && payload.base64) {
         this.writes.set(payload.path, payload.base64)
       }
       return {
@@ -205,9 +189,7 @@ describe("Project", () => {
         name: "In-memory Config",
       })
       expect(project.agentDirectory).toBe(stateDirectory)
-      await expect(
-        access(join(stateDirectory, "runs.sqlite")),
-      ).resolves.toBeUndefined()
+      await expect(access(join(stateDirectory, "runs.sqlite"))).resolves.toBeUndefined()
     } finally {
       await project.close()
     }
@@ -246,8 +228,7 @@ describe("Project", () => {
       platforms: [testPlatform],
       sandboxFactory: async () => new FakeSandbox(),
       subagents: {
-        modelForRole: (role) =>
-          role === "explorer" ? "worker-provider/worker-model" : undefined,
+        modelForRole: (role) => (role === "explorer" ? "worker-provider/worker-model" : undefined),
       },
     })
     try {
@@ -321,28 +302,18 @@ describe("Project", () => {
     expect(solver).toBeInstanceOf(BaseAgent)
     expect(solver.challenge.id).toBe("warmup-flag")
     const toolNames = solver.state.tools.map((tool) => tool.name)
-    expect(toolNames).toEqual(
-      expect.arrayContaining(["read", "write", "edit", "list", "bash"]),
-    )
+    expect(toolNames).toEqual(expect.arrayContaining(["read", "write", "edit", "list", "bash"]))
     expect(toolNames).not.toContain("ctf_instance_start")
     expect(toolNames).toEqual(
       expect.arrayContaining(["ctf_challenge_info", "ctf_download_attachment"]),
     )
     expect(toolNames).not.toContain("load_skill")
     expect(toolNames).toEqual(
-      expect.arrayContaining([
-        "blackboard_read",
-        "blackboard_record",
-        "blackboard_manage",
-      ]),
+      expect.arrayContaining(["blackboard_read", "blackboard_record", "blackboard_manage"]),
     )
     expect(solver.state.systemPrompt).toContain("<available_skills>")
-    expect(solver.state.systemPrompt).toContain(
-      "/workspace/.skills/skill-1/SKILL.md",
-    )
-    expect(solver.state.systemPrompt).not.toContain(
-      '<challenge_blackboard encoding="json">',
-    )
+    expect(solver.state.systemPrompt).toContain("/workspace/.skills/skill-1/SKILL.md")
+    expect(solver.state.systemPrompt).not.toContain('<challenge_blackboard encoding="json">')
     const blackboardMessage = solver.state.messages.find(
       (message) =>
         message.role === "user" &&
@@ -358,8 +329,7 @@ describe("Project", () => {
     )
     expect(challengeMessage).toBeDefined()
     const challengeContent =
-      challengeMessage?.role === "user" &&
-      typeof challengeMessage.content === "string"
+      challengeMessage?.role === "user" && typeof challengeMessage.content === "string"
         ? challengeMessage.content
         : ""
     expect(challengeContent).toContain('path="/workspace/attachments/flag.txt"')
@@ -376,21 +346,17 @@ describe("Project", () => {
       privileged: true,
       networkMode: "none",
     })
-    const activeExportMetadata = await project.runSessionExportMetadata(
-      solver.runId,
-    )
+    const activeExportMetadata = await project.runSessionExportMetadata(solver.runId)
     expect(activeExportMetadata).toMatchObject({
       systemPrompt: solver.state.systemPrompt,
-      tools: expect.arrayContaining([
-        expect.objectContaining({ name: "ctf_submit_flag" }),
-      ]),
+      tools: expect.arrayContaining([expect.objectContaining({ name: "ctf_submit_flag" })]),
     })
 
     await solver.close()
     expect(sandbox.closed).toBe(true)
-    await expect(
-      project.runSessionExportMetadata(solver.runId),
-    ).resolves.toEqual(activeExportMetadata)
+    await expect(project.runSessionExportMetadata(solver.runId)).resolves.toEqual(
+      activeExportMetadata,
+    )
     expect(project.runs()).toEqual([
       expect.objectContaining({
         challengeId: "warmup-flag",
@@ -400,10 +366,7 @@ describe("Project", () => {
       }),
     ])
     const run = JSON.parse(
-      await readFile(
-        join(root, ".ctf-agent", "runs", solver.runId, "run.json"),
-        "utf8",
-      ),
+      await readFile(join(root, ".ctf-agent", "runs", solver.runId, "run.json"), "utf8"),
     )
     expect(run.workspace).toContain("workspace")
     await expect(access(run.workspace)).resolves.toBeUndefined()
@@ -431,13 +394,10 @@ describe("Project", () => {
       })
       const received: string[] = []
       const unrelated: string[] = []
-      const unsubscribe = project.subscribeAgentStream(
-        { runId: solver.runId },
-        (event) => received.push(event.type),
+      const unsubscribe = project.subscribeAgentStream({ runId: solver.runId }, (event) =>
+        received.push(event.type),
       )
-      project.subscribeAgentStream({ runId: "another-run" }, (event) =>
-        unrelated.push(event.type),
-      )
+      project.subscribeAgentStream({ runId: "another-run" }, (event) => unrelated.push(event.type))
 
       await expect(solver.prompt("continue")).resolves.toMatchObject({
         role: "assistant",
@@ -464,8 +424,7 @@ describe("Project", () => {
       webAccessConfig: (workspace, signal) => ({
         providers: ["brave"],
         workflow: "none",
-        resolveSecret: (provider) =>
-          provider === "brave" ? "test-brave-key" : undefined,
+        resolveSecret: (provider) => (provider === "brave" ? "test-brave-key" : undefined),
         workspaceHostPath: workspace,
         sessionSignal: signal,
       }),
@@ -517,9 +476,7 @@ describe("Project", () => {
       const first = await project.createSolver("warmup-flag", {
         agent: agentOptions,
       })
-      const record = first.state.tools.find(
-        (tool) => tool.name === "blackboard_record",
-      )
+      const record = first.state.tools.find((tool) => tool.name === "blackboard_record")
       if (!record) throw new Error("blackboard_record 工具未创建")
       await record.execute("record-1", {
         evidence: { description: "已确认 flag.txt 包含目标字符串" },
@@ -613,19 +570,13 @@ describe("Project", () => {
           candidate.content.includes("<challenge_announcements"),
       )
       const content =
-        message?.role === "user" && typeof message.content === "string"
-          ? message.content
-          : ""
+        message?.role === "user" && typeof message.content === "string" ? message.content : ""
       expect(content).toContain("Inspect &lt;system&gt;flag.txt&lt;/system&gt;")
       expect(solver.state.systemPrompt).not.toContain("flag.txt</system>")
 
-      const record = solver.state.tools.find(
-        (tool) => tool.name === "blackboard_record",
-      )
+      const record = solver.state.tools.find((tool) => tool.name === "blackboard_record")
       const launch = solver.state.tools.find((tool) => tool.name === "Agent")
-      const getResult = solver.state.tools.find(
-        (tool) => tool.name === "get_subagent_result",
-      )
+      const getResult = solver.state.tools.find((tool) => tool.name === "get_subagent_result")
       if (!record || !launch || !getResult) throw new Error("协作工具未创建")
       await record.execute("record-compact", {
         evidence: { description: "已验证附件可读" },
@@ -642,18 +593,13 @@ describe("Project", () => {
         agent_id: subagentId,
         wait: true,
       })
-      const recovery = project.compactRecoveryPrompt(
-        "warmup-flag",
-        solver.runId,
-      )
+      const recovery = project.compactRecoveryPrompt("warmup-flag", solver.runId)
       expect(recovery).toContain("<challenge_context>")
       expect(recovery).toContain('path="/workspace/attachments/flag.txt"')
       expect(recovery).toContain('<challenge_blackboard encoding="json">')
       expect(recovery).toContain("已验证附件可读")
       expect(recovery).toContain("<challenge_announcements>")
-      expect(recovery).toContain(
-        "Inspect &lt;system&gt;flag.txt&lt;/system&gt;",
-      )
+      expect(recovery).toContain("Inspect &lt;system&gt;flag.txt&lt;/system&gt;")
       expect(recovery).toContain('<active_subagents encoding="json">')
       expect(recovery).toContain("Inspect attachment header")
       await solver.close()
@@ -725,9 +671,7 @@ describe("Project.sendMessage(题目级人工干涉对话框)", () => {
       expect(delivered).toEqual({ runId: solver.runId })
       expect(solver.hasQueuedMessages()).toBe(true)
 
-      const human = project
-        .runEvents(solver.runId)
-        .find((event) => event.type === "human_message")
+      const human = project.runEvents(solver.runId).find((event) => event.type === "human_message")
       expect(human).toBeDefined()
       expect(human?.data).toMatchObject({ text: "先检查文件头" })
       if (!human) throw new Error("human_message 事件未持久化")
@@ -741,9 +685,7 @@ describe("Project.sendMessage(题目级人工干涉对话框)", () => {
   it("空文本被拒绝(code=invalid_message)", async () => {
     const { project, solver } = await projectWithSolver()
     try {
-      await expect(
-        project.sendMessage("warmup-flag", "   "),
-      ).rejects.toMatchObject({
+      await expect(project.sendMessage("warmup-flag", "   ")).rejects.toMatchObject({
         code: "invalid_message",
       })
     } finally {
@@ -755,9 +697,7 @@ describe("Project.sendMessage(题目级人工干涉对话框)", () => {
   it("solver 关闭后发送被拒绝(code=no_active_run)", async () => {
     const { project, solver } = await projectWithSolver()
     await solver.close()
-    await expect(
-      project.sendMessage("warmup-flag", "继续"),
-    ).rejects.toMatchObject({
+    await expect(project.sendMessage("warmup-flag", "继续")).rejects.toMatchObject({
       code: "no_active_run",
     })
     await project.close()
@@ -766,9 +706,7 @@ describe("Project.sendMessage(题目级人工干涉对话框)", () => {
   it("未知题目 ID 发送被拒绝(code=no_active_run)", async () => {
     const { project, solver } = await projectWithSolver()
     try {
-      await expect(
-        project.sendMessage("missing-id", "继续"),
-      ).rejects.toMatchObject({
+      await expect(project.sendMessage("missing-id", "继续")).rejects.toMatchObject({
         code: "no_active_run",
       })
     } finally {
@@ -800,11 +738,11 @@ describe("Project.setThinkingLevel(运行中切换思考强度)", () => {
   it("非法档位被拒绝(code=invalid_level)", async () => {
     const { project, solver } = await projectWithSolver()
     try {
-      await expect(
-        project.setThinkingLevel("warmup-flag", "ultra" as never),
-      ).rejects.toMatchObject({
-        code: "invalid_level",
-      })
+      await expect(project.setThinkingLevel("warmup-flag", "ultra" as never)).rejects.toMatchObject(
+        {
+          code: "invalid_level",
+        },
+      )
     } finally {
       await solver.close()
       await project.close()
@@ -814,9 +752,7 @@ describe("Project.setThinkingLevel(运行中切换思考强度)", () => {
   it("solver 关闭后切换被拒绝(code=no_active_run)", async () => {
     const { project, solver } = await projectWithSolver()
     await solver.close()
-    await expect(
-      project.setThinkingLevel("warmup-flag", "low"),
-    ).rejects.toMatchObject({
+    await expect(project.setThinkingLevel("warmup-flag", "low")).rejects.toMatchObject({
       code: "no_active_run",
     })
     await project.close()

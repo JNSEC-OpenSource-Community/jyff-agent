@@ -18,9 +18,7 @@ export async function extractPDFViaGemini(
   options: GeminiPDFExtractOptions,
 ): Promise<string> {
   const pagesToExtract =
-    options.pages === undefined
-      ? options.maxPages
-      : Math.min(options.pages, options.maxPages)
+    options.pages === undefined ? options.maxPages : Math.min(options.pages, options.maxPages)
   const prompt = buildPrompt(pagesToExtract, options.pages !== undefined)
   const result = await queryGeminiApiWithInlineData(
     prompt,
@@ -77,14 +75,8 @@ function stripEnclosingMarkdownFence(value: string): string {
   return (match?.[1] ?? trimmed).trim()
 }
 
-function validatePageMarkers(
-  markdown: string,
-  maxPages: number,
-  exactPageCount: boolean,
-): void {
-  const markers = [...markdown.matchAll(PAGE_MARKER_PATTERN)].map((match) =>
-    Number(match[1]),
-  )
+function validatePageMarkers(markdown: string, maxPages: number, exactPageCount: boolean): void {
+  const markers = [...markdown.matchAll(PAGE_MARKER_PATTERN)].map((match) => Number(match[1]))
   if (markers.length === 0) {
     throw new Error("Gemini PDF extraction returned no page markers")
   }
@@ -101,17 +93,14 @@ function validatePageMarkers(
   for (let index = 0; index < markers.length; index += 1) {
     const expected = index + 1
     if (markers[index] !== expected) {
-      throw new Error(
-        `Gemini PDF extraction page markers are out of sequence at page ${expected}`,
-      )
+      throw new Error(`Gemini PDF extraction page markers are out of sequence at page ${expected}`)
     }
   }
 }
 
 function removeDuplicateInitialTitle(markdown: string, title: string): string {
   const match = markdown.match(/^(<!-- Page 1 -->\s*\n+)#\s+(.+?)\s*\n+/)
-  if (!match || normalizeTitle(match[2]!) !== normalizeTitle(title))
-    return markdown
+  if (!match || normalizeTitle(match[2]!) !== normalizeTitle(title)) return markdown
   return `${match[1]}${markdown.slice(match[0].length)}`.trim()
 }
 

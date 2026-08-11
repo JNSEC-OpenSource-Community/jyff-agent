@@ -1,6 +1,6 @@
 import type { AgentStreamEvent, AgentStreamPayload } from "@ctf-agent/core"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vite-plus/test"
 import {
   applyAgentStreamEvent,
   INITIAL_AGENT_ACTIVITY,
@@ -172,10 +172,8 @@ describe("shouldRefreshAgentView", () => {
     )
     expect(compacting.phase).toBe("compacting")
     expect(
-      reduceAgentActivity(
-        compacting,
-        streamEvent({ type: "status_changed", status: "active" }),
-      ).phase,
+      reduceAgentActivity(compacting, streamEvent({ type: "status_changed", status: "active" }))
+        .phase,
     ).toBe("responding")
   })
 })

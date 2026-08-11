@@ -1,12 +1,5 @@
 import { randomUUID } from "node:crypto"
-import {
-  chmod,
-  mkdir,
-  readFile,
-  rename,
-  stat,
-  writeFile,
-} from "node:fs/promises"
+import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type {
   AuthPrompt,
@@ -361,9 +354,7 @@ const PROVIDERS: ReadonlyArray<{
   },
 ]
 
-const PROVIDER_IDS = new Set<ModelAuthProviderId>(
-  PROVIDERS.map((provider) => provider.id),
-)
+const PROVIDER_IDS = new Set<ModelAuthProviderId>(PROVIDERS.map((provider) => provider.id))
 
 export interface FileModelAuthenticationOptions {
   storagePath: string
@@ -656,9 +647,7 @@ class PersistentModelAuthentication implements DashboardModelAuthentication {
     }
     const credentials = parseCredentialImport(parsed)
     if (credentials.size === 0) {
-      throw new Error(
-        "未识别到 Codex、OpenAI 或 Claude 凭据；请检查 auth.json 格式",
-      )
+      throw new Error("未识别到 Codex、OpenAI 或 Claude 凭据；请检查 auth.json 格式")
     }
     const imported: ModelAuthImportResult["imported"] = []
     for (const [provider, credential] of credentials) {
@@ -668,14 +657,9 @@ class PersistentModelAuthentication implements DashboardModelAuthentication {
     return { imported, source }
   }
 
-  private answerPrompt(
-    session: LoginSession,
-    prompt: AuthPrompt,
-  ): Promise<string> {
+  private answerPrompt(session: LoginSession, prompt: AuthPrompt): Promise<string> {
     if (prompt.type === "select" && session.view.provider === "openai-codex") {
-      return Promise.resolve(
-        session.view.method === "oauth_device" ? "device_code" : "browser",
-      )
+      return Promise.resolve(session.view.method === "oauth_device" ? "device_code" : "browser")
     }
     if (prompt.type === "secret" && session.initialSecret !== undefined) {
       const secret = session.initialSecret
@@ -687,9 +671,7 @@ class PersistentModelAuthentication implements DashboardModelAuthentication {
     session.view.prompt = {
       type: prompt.type,
       message: prompt.message,
-      ...("placeholder" in prompt && prompt.placeholder
-        ? { placeholder: prompt.placeholder }
-        : {}),
+      ...("placeholder" in prompt && prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
       ...(prompt.type === "select"
         ? { options: prompt.options.map((option) => ({ ...option })) }
         : {}),
@@ -758,15 +740,10 @@ class PersistentModelAuthentication implements DashboardModelAuthentication {
   }
 }
 
-export function parseCredentialImport(
-  value: unknown,
-): Map<ModelAuthProviderId, Credential> {
+export function parseCredentialImport(value: unknown): Map<ModelAuthProviderId, Credential> {
   if (!isRecord(value)) return new Map()
   const result = new Map<ModelAuthProviderId, Credential>()
-  const put = (
-    provider: ModelAuthProviderId,
-    credential: Credential | undefined,
-  ) => {
+  const put = (provider: ModelAuthProviderId, credential: Credential | undefined) => {
     if (credential) result.set(provider, credential)
   }
 
@@ -813,25 +790,15 @@ export function parseCredentialImport(
     put(
       "anthropic",
       oauthCredential({
-        access:
-          claudeOauth.accessToken ??
-          claudeOauth.access_token ??
-          claudeOauth.access,
-        refresh:
-          claudeOauth.refreshToken ??
-          claudeOauth.refresh_token ??
-          claudeOauth.refresh,
-        expires:
-          claudeOauth.expiresAt ??
-          claudeOauth.expires_at ??
-          claudeOauth.expires,
+        access: claudeOauth.accessToken ?? claudeOauth.access_token ?? claudeOauth.access,
+        refresh: claudeOauth.refreshToken ?? claudeOauth.refresh_token ?? claudeOauth.refresh,
+        expires: claudeOauth.expiresAt ?? claudeOauth.expires_at ?? claudeOauth.expires,
         extras: claudeOauth,
       }),
     )
   }
   const anthropicBearer =
-    stringValue(value.CLAUDE_CODE_OAUTH_TOKEN) ??
-    stringValue(value.ANTHROPIC_AUTH_TOKEN)
+    stringValue(value.CLAUDE_CODE_OAUTH_TOKEN) ?? stringValue(value.ANTHROPIC_AUTH_TOKEN)
   if (anthropicBearer && !result.has("anthropic")) {
     put("anthropic", bearerTokenCredential(anthropicBearer))
   }
@@ -859,10 +826,7 @@ function credentialFromUnknown(value: unknown): Credential | undefined {
     extras: value,
   })
   if (oauth) return oauth
-  const key =
-    stringValue(value.key) ??
-    stringValue(value.apiKey) ??
-    stringValue(value.api_key)
+  const key = stringValue(value.key) ?? stringValue(value.apiKey) ?? stringValue(value.api_key)
   return key ? { type: "api_key", key } : undefined
 }
 
@@ -928,9 +892,7 @@ function jwtExpiry(token: string | undefined): number | undefined {
   const encoded = token.split(".")[1]
   if (!encoded) return undefined
   try {
-    const payload = JSON.parse(
-      Buffer.from(encoded, "base64url").toString("utf8"),
-    ) as unknown
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown
     if (!isRecord(payload)) return undefined
     return timestampFromUnknown(payload.exp)
   } catch {
@@ -955,9 +917,7 @@ function supportedMethod(
   return method.id
 }
 
-async function readCredentialFile(
-  path: string,
-): Promise<Map<string, Credential>> {
+async function readCredentialFile(path: string): Promise<Map<string, Credential>> {
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(path, "utf8"))
@@ -991,15 +951,11 @@ async function persistCredentials(
   await rename(temporary, path)
 }
 
-function cloneCredential(
-  value: Credential | undefined,
-): Credential | undefined {
+function cloneCredential(value: Credential | undefined): Credential | undefined {
   return value ? structuredClone(value) : undefined
 }
 
-function cloneSessionView(
-  value: ModelAuthLoginSessionView,
-): ModelAuthLoginSessionView {
+function cloneSessionView(value: ModelAuthLoginSessionView): ModelAuthLoginSessionView {
   return structuredClone(value)
 }
 

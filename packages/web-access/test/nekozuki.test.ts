@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { createWebAccessTools, type WebAccessConfig } from "../src/index.ts"
 
 function tools(overrides: Partial<WebAccessConfig> = {}) {
@@ -49,11 +49,7 @@ describe("nekozuki RAG provider", () => {
       ]),
     )
     const tool = nekozukiTool()
-    const result = await tool.execute(
-      "call-1",
-      { query: "blind sql injection" },
-      undefined,
-    )
+    const result = await tool.execute("call-1", { query: "blind sql injection" }, undefined)
     const text = (result.content[0] as { text: string }).text
     expect(text).toContain("sql_injection")
     expect(text).toContain("SLEEP")
@@ -61,7 +57,8 @@ describe("nekozuki RAG provider", () => {
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit]
     expect(url).toContain("localhost:8000/api/rag/query")
     expect(init.method).toBe("POST")
-    expect(JSON.parse(String(init.body))).toEqual({
+    if (typeof init.body !== "string") throw new Error("Nekozuki request body must be JSON text")
+    expect(JSON.parse(init.body)).toEqual({
       query: "blind sql injection",
       top_k: 5,
     })
@@ -83,9 +80,7 @@ describe("nekozuki RAG provider", () => {
   })
 
   it("请求失败时返回错误结果", async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response("index not built", { status: 503 }),
-    )
+    vi.mocked(fetch).mockResolvedValue(new Response("index not built", { status: 503 }))
     const tool = nekozukiTool()
     const result = await tool.execute("call-1", { query: "x" }, undefined)
     const text = (result.content[0] as { text: string }).text

@@ -5,10 +5,7 @@ import { useEffect, useRef } from "react"
  * handlers 的 key 为事件名（"message" 表示默认事件），回调收到解析后的 JSON 数据。
  * 组件卸载或 url 变化时自动断开。
  */
-export function useSse(
-  url: string,
-  handlers: Record<string, (data: unknown) => void>,
-): void {
+export function useSse(url: string, handlers: Record<string, (data: unknown) => void>): void {
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
 

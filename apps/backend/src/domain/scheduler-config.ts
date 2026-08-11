@@ -41,11 +41,10 @@ async function persist(path: string, maxConcurrent: number): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   const temporary = `${path}.${process.pid}.tmp`
   try {
-    await writeFile(
-      temporary,
-      `${JSON.stringify({ maxConcurrent }, null, 2)}\n`,
-      { encoding: "utf8", mode: 0o600 },
-    )
+    await writeFile(temporary, `${JSON.stringify({ maxConcurrent }, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    })
     await rename(temporary, path)
     await chmod(path, 0o600)
   } finally {
@@ -60,9 +59,5 @@ function validateMaxConcurrent(value: unknown): void {
 }
 
 function hasCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === code
-  )
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code
 }

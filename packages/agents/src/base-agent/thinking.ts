@@ -16,15 +16,10 @@ const THINKING_LEVELS = new Set<ThinkingLevel>([
 ])
 
 export function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return (
-    typeof value === "string" && THINKING_LEVELS.has(value as ThinkingLevel)
-  )
+  return typeof value === "string" && THINKING_LEVELS.has(value as ThinkingLevel)
 }
 
 /** Apply Pi's model-specific thinking-level support and mapping rules. */
-export function resolveThinkingLevel(
-  model: Model<Api>,
-  requested: ThinkingLevel,
-): ThinkingLevel {
+export function resolveThinkingLevel(model: Model<Api>, requested: ThinkingLevel): ThinkingLevel {
   return clampThinkingLevel(model, requested)
 }

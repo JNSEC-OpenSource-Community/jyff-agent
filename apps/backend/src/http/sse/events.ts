@@ -35,9 +35,7 @@ export function sseRoute(
   return streamSSE(c, async (stream) => {
     stream.onAbort(() => hub.disconnect(client))
     try {
-      const snapshot = projectId
-        ? await sync.refreshProject(projectId)
-        : await sync.refresh()
+      const snapshot = projectId ? await sync.refreshProject(projectId) : await sync.refresh()
       await stream.write(": connected\n\n")
       await stream.writeSSE({
         event: "snapshot",

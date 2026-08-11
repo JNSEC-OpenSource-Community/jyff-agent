@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vite-plus/test"
 import type { DashboardFather } from "../src/types.ts"
 import { createTestApp, jsonOf, jsonRequest } from "./helpers.ts"
 
@@ -20,12 +20,7 @@ describe("Father HTTP", () => {
     const father = { list: () => [], create } as unknown as DashboardFather
     const test = await createTestApp({ father, frontendDist: "/nonexistent" })
     try {
-      const response = await jsonRequest(
-        test.app,
-        "/api/father/sessions",
-        "POST",
-        {},
-      )
+      const response = await jsonRequest(test.app, "/api/father/sessions", "POST", {})
       expect(response.status).toBe(201)
       expect(await jsonOf(response)).toMatchObject({ createdBy: "local" })
       expect(create).toHaveBeenCalledWith({ createdBy: "local" })
@@ -63,16 +58,10 @@ describe("Father HTTP", () => {
       exportSessionHtml: async () => Buffer.from("<html>father</html>"),
     })
     try {
-      const exported = await test.app.request(
-        "/api/father/sessions/father-1/export",
-      )
+      const exported = await test.app.request("/api/father/sessions/father-1/export")
       expect(exported.status).toBe(200)
       expect(await exported.text()).toContain("father")
-      const deleted = await jsonRequest(
-        test.app,
-        "/api/father/sessions/father-1",
-        "DELETE",
-      )
+      const deleted = await jsonRequest(test.app, "/api/father/sessions/father-1", "DELETE")
       expect(deleted.status).toBe(200)
       expect(removeValidationConfig).toHaveBeenCalledWith("father-1")
       expect(remove).toHaveBeenCalledWith("father-1")
@@ -86,12 +75,7 @@ describe("Father HTTP", () => {
     const father = { stop } as unknown as DashboardFather
     const test = await createTestApp({ father, frontendDist: "/nonexistent" })
     try {
-      const response = await jsonRequest(
-        test.app,
-        "/api/father/sessions/father-1/stop",
-        "POST",
-        {},
-      )
+      const response = await jsonRequest(test.app, "/api/father/sessions/father-1/stop", "POST", {})
       expect(response.status).toBe(200)
       expect(await jsonOf(response)).toMatchObject({ status: "stopped" })
       expect(stop).toHaveBeenCalledWith("father-1")
@@ -195,18 +179,12 @@ describe("Father HTTP", () => {
       frontendDist: "/nonexistent",
     })
     try {
-      const response = await test.app.request(
-        "/api/father/sessions/father-1/plugin.ts",
-      )
+      const response = await test.app.request("/api/father/sessions/father-1/plugin.ts")
       expect(response.status).toBe(200)
       expect(response.headers.get("content-type")).toContain("text/typescript")
-      expect(response.headers.get("content-disposition")).toContain(
-        "demo-platform.ts",
-      )
+      expect(response.headers.get("content-disposition")).toContain("demo-platform.ts")
       expect(await response.text()).toBe("export default {}")
-      expect(readCandidateEntry).toHaveBeenCalledWith(
-        join("/father/workspace", "output"),
-      )
+      expect(readCandidateEntry).toHaveBeenCalledWith(join("/father/workspace", "output"))
     } finally {
       await test.cleanup()
     }
@@ -215,10 +193,7 @@ describe("Father HTTP", () => {
   it("列出、预览并下载 Father workspace 文件", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "father-workspace-"))
     await mkdir(join(workspace, "plugin"), { recursive: true })
-    await writeFile(
-      join(workspace, "plugin", "index.ts"),
-      "export const id = 'demo'\n",
-    )
+    await writeFile(join(workspace, "plugin", "index.ts"), "export const id = 'demo'\n")
     await writeFile(join(workspace, "fixture.bin"), Buffer.from([0, 1, 2]))
     const record = {
       id: "father-1",
@@ -239,9 +214,7 @@ describe("Father HTTP", () => {
       frontendDist: "/nonexistent",
     })
     try {
-      const listing = await test.app.request(
-        "/api/father/sessions/father-1/workspace/files",
-      )
+      const listing = await test.app.request("/api/father/sessions/father-1/workspace/files")
       expect(listing.status).toBe(200)
       expect(await jsonOf(listing)).toMatchObject({
         truncated: false,
@@ -267,9 +240,7 @@ describe("Father HTTP", () => {
         "/api/father/sessions/father-1/workspace/files/download?path=fixture.bin",
       )
       expect(download.status).toBe(200)
-      expect(new Uint8Array(await download.arrayBuffer())).toEqual(
-        new Uint8Array([0, 1, 2]),
-      )
+      expect(new Uint8Array(await download.arrayBuffer())).toEqual(new Uint8Array([0, 1, 2]))
 
       const traversal = await test.app.request(
         "/api/father/sessions/father-1/workspace/files/download?path=..%2Fsecret.txt",

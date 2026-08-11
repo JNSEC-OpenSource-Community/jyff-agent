@@ -1,11 +1,6 @@
 import { createServer, type Server } from "node:http"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import {
-  type CTFdApiError,
-  CTFdClient,
-  CTFdPlatformPlugin,
-  ctfdConfig,
-} from "../src/index.ts"
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test"
+import { type CTFdApiError, CTFdClient, CTFdPlatformPlugin, ctfdConfig } from "../src/index.ts"
 
 const TOKEN = "test-token"
 let server: Server
@@ -27,9 +22,7 @@ beforeAll(async () => {
       requests.push({
         method: request.method ?? "GET",
         url: request.url ?? "/",
-        ...(request.headers.authorization
-          ? { authorization: request.headers.authorization }
-          : {}),
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
         ...(request.headers["content-type"]
           ? { contentType: request.headers["content-type"] }
           : {}),
@@ -37,8 +30,7 @@ beforeAll(async () => {
       })
       if (
         request.headers.authorization !== `Token ${TOKEN}` ||
-        (request.url?.startsWith("/api/") &&
-          request.headers["content-type"] !== "application/json")
+        (request.url?.startsWith("/api/") && request.headers["content-type"] !== "application/json")
       ) {
         json(response, 403, { success: false, errors: ["unauthorized"] })
         return
@@ -88,18 +80,12 @@ beforeAll(async () => {
         })
         return
       }
-      if (
-        request.method === "GET" &&
-        request.url?.startsWith("/files/hash/evidence%20one.bin")
-      ) {
+      if (request.method === "GET" && request.url?.startsWith("/files/hash/evidence%20one.bin")) {
         response.writeHead(200, { "Content-Type": "application/octet-stream" })
         response.end(Buffer.from([0, 255, 1]))
         return
       }
-      if (
-        request.method === "POST" &&
-        request.url === "/api/v1/challenges/attempt"
-      ) {
+      if (request.method === "POST" && request.url === "/api/v1/challenges/attempt") {
         const submission = JSON.parse(body) as {
           challenge_id: number
           submission: string
@@ -123,8 +109,7 @@ beforeAll(async () => {
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const address = server.address()
-  if (!address || typeof address === "string")
-    throw new Error("test server did not bind")
+  if (!address || typeof address === "string") throw new Error("test server did not bind")
   baseUrl = `http://127.0.0.1:${address.port}`
 })
 
@@ -141,9 +126,7 @@ describe("CTFd platform plugin", () => {
       tokenSecret: "CTFD_TOKEN",
       timeoutMs: 15_000,
     })
-    expect(() => ctfdConfig.parse({ baseUrl, token: "plaintext" })).toThrow(
-      "未知字段: token",
-    )
+    expect(() => ctfdConfig.parse({ baseUrl, token: "plaintext" })).toThrow("未知字段: token")
     await expect(
       new CTFdPlatformPlugin().connect({
         project: { id: "demo", name: "Demo" },
@@ -236,16 +219,13 @@ describe("CTFd demo live contract", () => {
       const challenges = await platform.listChallenges()
       expect(challenges.length).toBeGreaterThan(0)
       const withFile =
-        challenges.find((challenge) => challenge.title === "The Lost Park") ??
-        challenges[0]
+        challenges.find((challenge) => challenge.title === "The Lost Park") ?? challenges[0]
       if (!withFile) throw new Error("CTFd demo 未返回题目")
       const capability = await platform.bindChallenge(withFile.id)
       const info = await capability.getInfo()
       expect(info.title).toBe(withFile.title)
       if (info.attachments[0]) {
-        const downloaded = await capability.downloadAttachment(
-          info.attachments[0].id,
-        )
+        const downloaded = await capability.downloadAttachment(info.attachments[0].id)
         expect(downloaded.content.byteLength).toBeGreaterThan(0)
       }
       await platform.close()
@@ -261,11 +241,7 @@ async function connect() {
   })
 }
 
-function json(
-  response: import("node:http").ServerResponse,
-  status: number,
-  body: unknown,
-): void {
+function json(response: import("node:http").ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json" })
   response.end(JSON.stringify(body))
 }

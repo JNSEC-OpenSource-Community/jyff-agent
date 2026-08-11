@@ -1,19 +1,12 @@
 import { redactCredential } from "./credential-source.ts"
-import {
-  providerKeyConfigured,
-  providerOption,
-  resolveProviderKey,
-} from "./runtime.ts"
+import { providerKeyConfigured, providerOption, resolveProviderKey } from "./runtime.ts"
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com"
 const API_VERSION = "v1beta"
 export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`
 export const DEFAULT_MODEL = "gemini-3.6-flash"
 
-function withTimeout(
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): AbortSignal {
+function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
@@ -39,9 +32,7 @@ export async function getApiKey(_signal?: AbortSignal): Promise<string | null> {
 }
 
 export function getApiHost(): string {
-  return (
-    normalizeBaseUrl(providerOption("gemini", "baseUrl")) ?? DEFAULT_API_HOST
-  )
+  return normalizeBaseUrl(providerOption("gemini", "baseUrl")) ?? DEFAULT_API_HOST
 }
 
 export function getVersionedApiBase(): string {
@@ -56,9 +47,7 @@ function getLegacyCloudflareApiKey(): string | null {
   return normalizeApiKey(providerOption("gemini", "cloudflareApiKey"))
 }
 
-async function resolveCloudflareApiKey(
-  _signal?: AbortSignal,
-): Promise<string | null> {
+async function resolveCloudflareApiKey(_signal?: AbortSignal): Promise<string | null> {
   return providerOption("gemini", "cloudflareApiKey") ?? null
 }
 
@@ -67,10 +56,7 @@ export function getCloudflareApiKey(): string | null {
 }
 
 export function isGatewayConfigured(): boolean {
-  return (
-    isCloudflareGateway() &&
-    providerOption("gemini", "cloudflareApiKey") !== undefined
-  )
+  return isCloudflareGateway() && providerOption("gemini", "cloudflareApiKey") !== undefined
 }
 
 export function buildAuthHeaders(
@@ -78,9 +64,7 @@ export function buildAuthHeaders(
   cloudflareApiKey: string | null = getLegacyCloudflareApiKey(),
 ): Record<string, string> {
   if (!isCloudflareGateway()) return apiKey ? { "x-goog-api-key": apiKey } : {}
-  return cloudflareApiKey
-    ? { "cf-aig-authorization": `Bearer ${cloudflareApiKey}` }
-    : {}
+  return cloudflareApiKey ? { "cf-aig-authorization": `Bearer ${cloudflareApiKey}` } : {}
 }
 
 function redactGeminiCredentials(
@@ -105,11 +89,7 @@ export function redactGeminiApiResponse(
   apiKey?: string | null,
 ): string {
   const credentials = responseCredentials.get(response)
-  return redactGeminiCredentials(
-    text,
-    credentials?.apiKey ?? apiKey,
-    credentials?.cloudflareApiKey,
-  )
+  return redactGeminiCredentials(text, credentials?.apiKey ?? apiKey, credentials?.cloudflareApiKey)
 }
 
 export async function fetchGeminiApi(
@@ -123,27 +103,18 @@ export async function fetchGeminiApi(
       throw new Error("Gemini API credential query parameters are not allowed")
     }
   }
-  const resolvedApiKey =
-    apiKey === undefined ? await getApiKey(init.signal ?? undefined) : apiKey
+  const resolvedApiKey = apiKey === undefined ? await getApiKey(init.signal ?? undefined) : apiKey
   const cloudflareApiKey = isCloudflareGateway()
     ? await resolveCloudflareApiKey(init.signal ?? undefined)
     : null
-  const allowedOrigins = new Set([
-    new URL(getApiHost()).origin,
-    new URL(DEFAULT_API_HOST).origin,
-  ])
-  if (
-    (resolvedApiKey || isGatewayConfigured()) &&
-    !allowedOrigins.has(parsedUrl.origin)
-  ) {
+  const allowedOrigins = new Set([new URL(getApiHost()).origin, new URL(DEFAULT_API_HOST).origin])
+  if ((resolvedApiKey || isGatewayConfigured()) && !allowedOrigins.has(parsedUrl.origin)) {
     throw new Error("Gemini API request host is not allowed")
   }
   const headers = new Headers(init.headers)
   headers.delete("x-goog-api-key")
   headers.delete("cf-aig-authorization")
-  for (const [name, value] of Object.entries(
-    buildAuthHeaders(resolvedApiKey, cloudflareApiKey),
-  )) {
+  for (const [name, value] of Object.entries(buildAuthHeaders(resolvedApiKey, cloudflareApiKey))) {
     headers.set(name, value)
   }
   try {
@@ -155,11 +126,7 @@ export async function fetchGeminiApi(
     return response
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const redactedMessage = redactGeminiCredentials(
-      message,
-      resolvedApiKey,
-      cloudflareApiKey,
-    )
+    const redactedMessage = redactGeminiCredentials(message, resolvedApiKey, cloudflareApiKey)
     if (redactedMessage === message) throw error
     const redactedError = new Error(redactedMessage)
     if (error instanceof Error) redactedError.name = error.name
@@ -223,9 +190,7 @@ export async function queryGeminiApiWithInlineData(
 
   if (!res.ok) {
     const errorText = redactGeminiApiResponse(res, await res.text(), apiKey)
-    throw new Error(
-      `Gemini API error ${res.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`)
   }
 
   const response = (await res.json()) as GenerateContentResponse
@@ -233,16 +198,12 @@ export async function queryGeminiApiWithInlineData(
   const text =
     candidate?.content?.parts
       ?.map((part) => part.text)
-      .filter(
-        (part): part is string => typeof part === "string" && part.length > 0,
-      )
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
       .join("\n") ?? ""
 
   return {
     text,
-    ...(candidate?.finishReason
-      ? { finishReason: candidate.finishReason }
-      : {}),
+    ...(candidate?.finishReason ? { finishReason: candidate.finishReason } : {}),
     ...(response.promptFeedback?.blockReason
       ? { blockReason: response.promptFeedback.blockReason }
       : {}),
@@ -290,9 +251,7 @@ export async function queryGeminiApiWithVideo(
 
   if (!res.ok) {
     const errorText = redactGeminiApiResponse(res, await res.text(), apiKey)
-    throw new Error(
-      `Gemini API error ${res.status}: ${errorText.slice(0, 300)}`,
-    )
+    throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`)
   }
 
   const data = (await res.json()) as GenerateContentResponse

@@ -24,9 +24,7 @@ export class MemorySecretStore implements SecretStore {
     return this.values.has(name)
   }
 
-  async set(
-    values: Readonly<Record<string, string | undefined>>,
-  ): Promise<void> {
+  async set(values: Readonly<Record<string, string | undefined>>): Promise<void> {
     for (const [name, value] of Object.entries(values)) {
       validateSecretName(name)
       if (value === undefined || value === "") this.values.delete(name)
@@ -70,9 +68,7 @@ export class FileSecretStore implements SecretStore {
     return this.values.has(name)
   }
 
-  async set(
-    values: Readonly<Record<string, string | undefined>>,
-  ): Promise<void> {
+  async set(values: Readonly<Record<string, string | undefined>>): Promise<void> {
     const next = new Map(this.values)
     for (const [name, value] of Object.entries(values)) {
       validateSecretName(name)
@@ -81,11 +77,10 @@ export class FileSecretStore implements SecretStore {
     }
     await mkdir(dirname(this.path), { recursive: true })
     const temporary = `${this.path}.${process.pid}.${Date.now()}.tmp`
-    await writeFile(
-      temporary,
-      `${JSON.stringify(Object.fromEntries(next), null, 2)}\n`,
-      { encoding: "utf8", mode: 0o600 },
-    )
+    await writeFile(temporary, `${JSON.stringify(Object.fromEntries(next), null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    })
     await chmod(temporary, 0o600)
     await rename(temporary, this.path)
     this.values.clear()
