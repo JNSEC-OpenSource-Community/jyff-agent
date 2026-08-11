@@ -10,7 +10,12 @@ import {
   PlatformExtensionStore,
   webAccessSecretName,
 } from "@ctf-agent/core"
-import { ctfdPlatform, gzctfPlatform, PlatformPluginRegistry } from "@ctf-agent/platform"
+import {
+  ctfdPlatform,
+  gzctfPlatform,
+  PlatformPluginRegistry,
+  ret2shellPlatform,
+} from "@ctf-agent/platform"
 import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
@@ -61,7 +66,11 @@ const projectRuntimeConfigurations = new Map<
   string,
   Awaited<ReturnType<typeof createFileProjectRuntimeConfiguration>>
 >()
-const platformRegistry = new PlatformPluginRegistry([ctfdPlatform, gzctfPlatform])
+const platformRegistry = new PlatformPluginRegistry([
+  ctfdPlatform,
+  gzctfPlatform,
+  ret2shellPlatform,
+])
 const extensions = await PlatformExtensionStore.open({
   root: options.root,
   registry: platformRegistry,

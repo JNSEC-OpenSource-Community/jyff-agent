@@ -324,7 +324,7 @@ export class CtfSubagentManager {
     if (!managed.agent || managed.record.status !== "running") {
       throw new Error(`SubAgent ${id} 当前不可接收 steer`)
     }
-    await managed.agent.steer(nextMessage)
+    await managed.agent.promptOrSteer(nextMessage)
     managed.record.updatedAt = new Date().toISOString()
     this.emit(managed, "steered")
     return snapshot(managed.record)
@@ -566,7 +566,7 @@ export class CtfSubagentManager {
       status: record.status,
       output: (record.result ?? record.error ?? "No output").slice(0, 16_000),
     }
-    await parent.steer(subagentCompletionNotificationPrompt(notification))
+    await parent.promptOrSteer(subagentCompletionNotificationPrompt(notification))
   }
 }
 

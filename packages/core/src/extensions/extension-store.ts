@@ -14,7 +14,7 @@ import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
 
 const MAX_EXTENSION_FILES = 200
 const MAX_EXTENSION_BYTES = 2 * 1024 * 1024
-const RESERVED_IDS = new Set(["ctfd", "gzctf"])
+const RESERVED_IDS = new Set(["ctfd", "gzctf", "ret2shell"])
 const VALIDATION_REPORTS_DIRECTORY = ".validation-reports"
 
 export interface PlatformExtensionManifest {
@@ -234,6 +234,10 @@ export class PlatformExtensionStore {
     const entries = await readdir(this.root, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name === VALIDATION_REPORTS_DIRECTORY) continue
+      if (this.registry.resolve(entry.name)) {
+        console.warn(`[extensions] 跳过已内置的平台扩展: ${entry.name}`)
+        continue
+      }
       try {
         const extensionDirectory = this.extensionDirectory(entry.name)
         const active = JSON.parse(

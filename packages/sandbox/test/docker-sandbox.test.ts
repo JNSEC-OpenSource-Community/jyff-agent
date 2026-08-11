@@ -145,4 +145,44 @@ describe("DockerSandbox resources", () => {
     expect(execute).toHaveBeenCalledTimes(2)
     expect(execute.mock.calls[1]?.[0]).not.toContain("--storage-opt")
   })
+
+  it("旧版 Docker 不支持 volume-subpath 时以兼容工作目录重试", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute
+      .mockResolvedValueOnce(
+        result(125, {
+          stderr: "unexpected key 'volume-subpath' in 'volume-subpath=father/sessions/a/workspace'",
+        }),
+      )
+      .mockResolvedValueOnce(result(0, { stdout: "container-id\n" }))
+      .mockResolvedValueOnce(result(0))
+      .mockResolvedValueOnce(result(0))
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const sandbox = await DockerSandbox.create(
+      {
+        ...options,
+        workspaceMount: {
+          type: "volume",
+          source: "ctf-agent-data",
+          subpath: "father/sessions/a/workspace",
+        },
+      },
+      execute,
+    )
+    await sandbox.close()
+
+    const retry = execute.mock.calls[1]?.[0] ?? []
+    expect(valueAfter(retry, "--mount")).toBe(
+      "type=volume,src=ctf-agent-data,dst=/ctf-agent-volume",
+    )
+    expect(retry).toEqual(
+      expect.arrayContaining([
+        "sh",
+        "-c",
+        "mkdir -p /ctf-agent-volume/father/sessions/a/workspace && rm -rf /workspace && ln -s /ctf-agent-volume/father/sessions/a/workspace /workspace && exec sleep infinity",
+      ]),
+    )
+    expect(warning).toHaveBeenCalledOnce()
+  })
 })

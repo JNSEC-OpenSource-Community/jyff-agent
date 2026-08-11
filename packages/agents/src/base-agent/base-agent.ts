@@ -186,6 +186,10 @@ export abstract class BaseAgent {
   steer(text: string, options?: { images?: ImageContent[] }) {
     return this.harness.steer(text, options)
   }
+  /** Deliver an asynchronous system notice even if its original turn has already ended. */
+  promptOrSteer(text: string, options?: { images?: ImageContent[] }) {
+    return this.state.isStreaming ? this.harness.steer(text, options) : this.prompt(text, options)
+  }
   followUp(text: string, options?: { images?: ImageContent[] }) {
     return this.harness.followUp(text, options)
   }

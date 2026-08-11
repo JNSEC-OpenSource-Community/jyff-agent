@@ -93,6 +93,42 @@ async function fixture(): Promise<string> {
 }
 
 describe("Project", () => {
+  it("需要控制面本地代理的平台让 Solver 共享控制面网络", async () => {
+    const root = await fixture()
+    let received: DockerSandboxOptions | undefined
+    const proxyPlatform = {
+      id: testPlatform.id,
+      config: testPlatform.config,
+      async connect(options: Parameters<typeof testPlatform.connect>[0]) {
+        const platform = await testPlatform.connect(options)
+        Object.defineProperty(platform, "solverSandboxNetwork", {
+          value: "control_plane",
+        })
+        return platform
+      },
+    }
+    const project = await Project.open({
+      root,
+      config: {
+        version: 1,
+        project: { id: "proxy-project", name: "Proxy Project" },
+        platform: { plugin: "test", config: {} },
+        sandbox: { image: "test-image", privileged: false, networkMode: "bridge" },
+      },
+      platforms: [proxyPlatform],
+      sandboxFactory: async (options) => {
+        received = options
+        return new FakeSandbox()
+      },
+    })
+    try {
+      await project.createSolver("warmup-flag", { agent: agentOptions })
+      expect(received?.networkMode).toMatch(/^(host|container:[a-f0-9]+)$/)
+    } finally {
+      await project.close()
+    }
+  })
+
   it("本地只读模式从 SQLite 合成题目并保留 Run session 路径", async () => {
     const root = await fixture()
     const stateDirectory = join(root, "local-state")

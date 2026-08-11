@@ -65,6 +65,12 @@ export interface ChallengeCapability {
 
 /** Full contest control plane. This capability must never be passed to an agent. */
 export interface PlatformProject {
+  /**
+   * Some platforms expose an environment through a loopback-only proxy owned
+   * by the control plane. Solver sandboxes must then share that network
+   * namespace instead of receiving their configured isolated network.
+   */
+  readonly solverSandboxNetwork?: "control_plane"
   refresh(): Promise<ContestOverview>
   getOverview(): Promise<ContestOverview>
   listChallenges(): Promise<ChallengeSummary[]>
@@ -263,5 +269,6 @@ export function isRetryablePlatformError(error: unknown): boolean {
 
 export * from "./ctfd.ts"
 export * from "./gzctf.ts"
+export * from "./ret2shell.ts"
 export * from "./registry.ts"
 export * from "./validation.ts"

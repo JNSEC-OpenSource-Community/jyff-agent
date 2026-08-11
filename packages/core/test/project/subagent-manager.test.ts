@@ -453,6 +453,9 @@ function fakeParent(): {
     async steer(message: string) {
       steered.push(message)
     },
+    async promptOrSteer(message: string) {
+      steered.push(message)
+    },
     async followUp(message: string) {
       followedUp.push(message)
     },

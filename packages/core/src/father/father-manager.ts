@@ -153,7 +153,7 @@ export class FatherSessionManager {
     const text = requiredText(message, "消息", 32_000)
     await this.exclusive(async () => {
       const active = await this.ensureActive(id)
-      if (active.agent.state.isStreaming || active.turn) {
+      if (active.agent.state.isStreaming) {
         await active.agent.steer(text)
       } else {
         const turn = active.agent.prompt(text).then(
@@ -353,7 +353,7 @@ export class FatherSessionManager {
     record.updatedAt = new Date().toISOString()
     await this.persist()
     const active = await this.ensureActive(id)
-    await active.agent.steer(
+    await active.agent.promptOrSteer(
       `<plugin_validation_result>${escapeXml(JSON.stringify(report))}</plugin_validation_result>`,
     )
   }

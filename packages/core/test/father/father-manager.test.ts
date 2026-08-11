@@ -67,6 +67,40 @@ describe("FatherSessionManager", () => {
     await expect(access(manager.workspace(session.id))).resolves.toBeUndefined()
   })
 
+  it("验证结果抵达空闲 Father 时启动新的 prompt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "father-validation-notice-"))
+    roots.push(root)
+    const promptOrSteer = vi.fn(async () => undefined)
+    const fakeAgent = {
+      state: { isStreaming: false },
+      prompt: vi.fn(async () => undefined),
+      promptOrSteer,
+      steer: vi.fn(),
+      close: vi.fn(async () => undefined),
+      subscribe: vi.fn(),
+    }
+    const manager = await FatherSessionManager.open({
+      root,
+      image: "unused",
+      createAgentOptions: () =>
+        ({
+          initialState: { model: { provider: "test", id: "model" } },
+        }) as AgentOptions,
+      sandboxFactory: vi.fn(async () => ({ close: vi.fn() })) as never,
+      agentFactory: vi.fn(async () => fakeAgent) as never,
+    })
+    const session = await manager.create({ createdBy: "nick" })
+    await manager.notifyValidation(session.id, {
+      status: "failed",
+      pluginId: "example",
+    } as never)
+
+    expect(promptOrSteer).toHaveBeenCalledWith(
+      expect.stringContaining("<plugin_validation_result>"),
+    )
+    expect(fakeAgent.steer).not.toHaveBeenCalled()
+  })
+
   it("每个 Father 工作回合结束后回收 sandbox，并在修复时按需重建", async () => {
     const root = await mkdtemp(join(tmpdir(), "father-recycle-"))
     roots.push(root)

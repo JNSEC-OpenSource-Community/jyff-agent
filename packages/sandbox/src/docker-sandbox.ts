@@ -48,7 +48,7 @@ export interface DockerSandboxOptions {
   workspace: string
   workspaceMount?: DockerWorkspaceMount
   privileged: boolean
-  networkMode: "none" | "bridge" | "host"
+  networkMode: "none" | "bridge" | "host" | `container:${string}`
   resources?: Partial<DockerSandboxResources>
 }
 
@@ -183,14 +183,31 @@ export class DockerSandbox implements Sandbox {
     options: DockerSandboxOptions,
     executeCommand: DockerCommandExecutor = execute,
   ): Promise<DockerSandbox> {
-    let args = dockerSandboxCreateArguments(options)
+    let usesVolumeSubpath = true
+    let args = dockerSandboxCreateArguments(options, { usesVolumeSubpath })
     let created = await executeCommand(args)
-    if (created.code !== 0 && isUnsupportedStorageQuota(created)) {
-      console.warn(
-        `[sandbox] Docker 不支持可写层配额，Project ${options.projectId} Run ${options.runId} 将不带 --storage-opt 重试`,
-      )
-      args = withoutStorageQuota(args)
-      created = await executeCommand(args)
+    let usesStorageQuota = true
+    while (created.code !== 0) {
+      if (usesStorageQuota && isUnsupportedStorageQuota(created)) {
+        console.warn(
+          `[sandbox] Docker 不支持可写层配额，Project ${options.projectId} Run ${options.runId} 将不带 --storage-opt 重试`,
+        )
+        usesStorageQuota = false
+        args = withoutStorageQuota(args)
+        created = await executeCommand(args)
+        continue
+      }
+      if (usesVolumeSubpath && isUnsupportedVolumeSubpath(created)) {
+        console.warn(
+          `[sandbox] Docker 不支持 volume-subpath，Project ${options.projectId} Run ${options.runId} 将以兼容挂载重试`,
+        )
+        usesVolumeSubpath = false
+        args = dockerSandboxCreateArguments(options, { usesVolumeSubpath })
+        if (!usesStorageQuota) args = withoutStorageQuota(args)
+        created = await executeCommand(args)
+        continue
+      }
+      break
     }
 
     if (created.code !== 0) throw commandFailure("create", created)
@@ -226,13 +243,17 @@ export class DockerSandbox implements Sandbox {
   }
 }
 
-export function dockerSandboxCreateArguments(options: DockerSandboxOptions): string[] {
+export function dockerSandboxCreateArguments(
+  options: DockerSandboxOptions,
+  { usesVolumeSubpath = true }: { usesVolumeSubpath?: boolean } = {},
+): string[] {
   const name = `ctf-solver-${options.runId}`
   const workspaceMount = dockerMount(
     options.workspaceMount ?? {
       type: "bind",
       source: options.workspace,
     },
+    usesVolumeSubpath,
   )
   const resources = resolveDockerSandboxResources(options.resources)
   const args = [
@@ -261,7 +282,7 @@ export function dockerSandboxCreateArguments(options: DockerSandboxOptions): str
     workspaceMount,
   ]
   if (options.privileged) args.push("--privileged")
-  args.push(options.image, "sleep", "infinity")
+  args.push(options.image, ...workspaceContainerCommand(options.workspaceMount, usesVolumeSubpath))
   return args
 }
 
@@ -284,13 +305,22 @@ function isUnsupportedStorageQuota(result: CommandResult): boolean {
   ].some((message) => output.includes(message))
 }
 
+function isUnsupportedVolumeSubpath(result: CommandResult): boolean {
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase()
+  return (
+    output.includes("unexpected key 'volume-subpath'") ||
+    output.includes("unknown key: volume-subpath") ||
+    output.includes("unknown flag: volume-subpath")
+  )
+}
+
 function withoutStorageQuota(args: readonly string[]): string[] {
   const index = args.indexOf("--storage-opt")
   if (index < 0) return [...args]
   return [...args.slice(0, index), ...args.slice(index + 2)]
 }
 
-function dockerMount(mount: DockerWorkspaceMount): string {
+function dockerMount(mount: DockerWorkspaceMount, usesVolumeSubpath: boolean): string {
   if (mount.type === "bind") {
     if (!mount.source || mount.source.includes(","))
       throw new Error("Invalid Docker bind workspace path")
@@ -299,20 +329,45 @@ function dockerMount(mount: DockerWorkspaceMount): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(mount.source)) {
     throw new Error("Invalid Docker workspace volume name")
   }
-  const fields = ["type=volume", `src=${mount.source}`, "dst=/workspace"]
-  if (mount.subpath) {
-    const normalized = mount.subpath.replaceAll("\\", "/")
-    if (
-      normalized.startsWith("/") ||
-      normalized
-        .split("/")
-        .some((segment) => !segment || segment === "." || segment === ".." || segment.includes(","))
-    ) {
-      throw new Error("Invalid Docker workspace volume subpath")
-    }
-    fields.push(`volume-subpath=${normalized}`)
-  }
+  const normalized = mount.subpath ? normalizedVolumeSubpath(mount.subpath) : undefined
+  const fields = [
+    "type=volume",
+    `src=${mount.source}`,
+    `dst=${normalized && !usesVolumeSubpath ? "/ctf-agent-volume" : "/workspace"}`,
+  ]
+  if (normalized && usesVolumeSubpath) fields.push(`volume-subpath=${normalized}`)
   return fields.join(",")
+}
+
+function workspaceContainerCommand(
+  mount: DockerWorkspaceMount | undefined,
+  usesVolumeSubpath: boolean,
+): string[] {
+  if (mount?.type !== "volume" || !mount.subpath || usesVolumeSubpath) {
+    return ["sleep", "infinity"]
+  }
+  const subpath = normalizedVolumeSubpath(mount.subpath)
+  // Older Docker releases cannot mount a volume subdirectory. Mount the whole
+  // volume away from /workspace, then point the image's conventional workspace
+  // at the requested directory before the sandbox accepts any exec commands.
+  return [
+    "sh",
+    "-c",
+    `mkdir -p /ctf-agent-volume/${subpath} && rm -rf /workspace && ln -s /ctf-agent-volume/${subpath} /workspace && exec sleep infinity`,
+  ]
+}
+
+function normalizedVolumeSubpath(subpath: string): string {
+  const normalized = subpath.replaceAll("\\", "/")
+  if (
+    normalized.startsWith("/") ||
+    normalized
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === ".." || segment.includes(","))
+  ) {
+    throw new Error("Invalid Docker workspace volume subpath")
+  }
+  return normalized
 }
 
 function resolveDockerSandboxResources(

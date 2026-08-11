@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
@@ -642,7 +643,7 @@ export class Project {
       })
       if (!queued) continue
       try {
-        await solver.steer(message)
+        await solver.promptOrSteer(message)
         this.runStore.observeAnnouncementDelivery({
           challengeId: announcement.challengeId,
           announcementKey: announcement.key,
@@ -975,7 +976,9 @@ export class Project {
         },
         onRevoked: async (message) => {
           if (!solver || solver.isClosed) return
-          await solver.steer(`<environment_revoked>${escapeXml(message)}</environment_revoked>`)
+          await solver.promptOrSteer(
+            `<environment_revoked>${escapeXml(message)}</environment_revoked>`,
+          )
         },
       })
 
@@ -1009,7 +1012,7 @@ export class Project {
           relativeWorkspace: this.relativeWorkspace(challengeId),
         }),
         privileged: this.config.sandbox.privileged,
-        networkMode: this.config.sandbox.networkMode,
+        networkMode: solverSandboxNetworkMode(this.platform, this.config.sandbox.networkMode),
       })
       const downloadedAttachments = await downloadChallengeAttachments({
         capability,
@@ -1777,6 +1780,22 @@ function unavailablePlatform(): PlatformProject {
     bindChallenge: unavailable,
     close: async () => undefined,
   }
+}
+
+function solverSandboxNetworkMode(
+  platform: PlatformProject,
+  configured: ProjectConfig["sandbox"]["networkMode"],
+): DockerSandboxOptions["networkMode"] {
+  if (platform.solverSandboxNetwork !== "control_plane") return configured
+  if (configured === "none") {
+    throw new Error("该平台的远程环境通过控制面本地代理访问，sandbox.networkMode 不能为 none")
+  }
+  const containerId = process.env.HOSTNAME
+  if (containerId && /^[a-f0-9]{12,64}$/i.test(containerId) && existsSync("/.dockerenv")) {
+    return `container:${containerId}`
+  }
+  // 控制面直接运行在 Linux 主机时，host 网络让 Solver 访问同一回环代理。
+  return "host"
 }
 
 function normalizeWorkspaceNamespace(value: string | undefined): string | undefined {
