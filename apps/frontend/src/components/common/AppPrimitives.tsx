@@ -180,11 +180,13 @@ function SettingsSection({
   return (
     <section className="grid gap-4 border-t border-border py-5 first:border-t-0 first:pt-0 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
       <header className="min-w-0">
-        <h2 className={cn("text-sm font-semibold tracking-tight", danger && "text-danger")}>
-          {title}
-        </h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className={cn("text-sm font-semibold tracking-tight", danger && "text-danger")}>
+            {title}
+          </h2>
+          {meta ? <div className="shrink-0">{meta}</div> : null}
+        </div>
         <p className="mt-1.5! text-xs leading-5 text-muted-foreground">{description}</p>
-        {meta ? <div className="mt-3">{meta}</div> : null}
       </header>
       <div className="min-w-0">{children}</div>
     </section>

@@ -104,7 +104,7 @@ export function AppShell() {
       <main className="main-mobile relative min-w-0 flex-1 overflow-y-auto">
         <button
           type="button"
-          className="mobile-menu-trigger absolute z-40 size-10 items-center justify-center rounded-md border border-border bg-card text-foreground"
+          className="mobile-menu-trigger fixed z-40 size-9 items-center justify-center rounded-full border border-foreground/10 bg-foreground/5 text-foreground/60 opacity-70 backdrop-blur-sm transition-[background-color,border-color,color,opacity,transform] duration-200 hover:border-foreground/20 hover:bg-foreground/10 hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-95"
           onClick={() => setMobileOpen(true)}
           aria-label="菜单"
         >

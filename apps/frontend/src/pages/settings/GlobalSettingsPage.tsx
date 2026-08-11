@@ -352,7 +352,7 @@ export function GlobalSettingsPage() {
               </section>
 
               {auth ? (
-                <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <Card className="flex flex-wrap items-start justify-between gap-3 p-4">
                   <div className="flex items-center gap-3">
                     <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
                       <Icon icon="lucide:file-key-2" width="16" />
@@ -364,7 +364,7 @@ export function GlobalSettingsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex w-full justify-end gap-2 sm:w-auto">
                     <Button size="sm" variant="secondary" asChild>
                       <label className="cursor-pointer">
                         <Icon icon="lucide:upload" width="13" />
@@ -634,21 +634,23 @@ function ProviderSetupOption({
       type="button"
       aria-pressed={selected}
       className={cn(
-        "group flex min-h-28 flex-col items-start p-4 text-left transition-colors duration-150 active:translate-y-px",
+        "group flex w-full min-h-20 items-center gap-3 p-3 text-left transition-colors duration-150 active:translate-y-px sm:min-h-28 sm:flex-col sm:items-start sm:gap-0 sm:p-4",
         selected ? "bg-foreground/[0.07] text-foreground" : "hover:bg-muted/50",
       )}
       onClick={onClick}
     >
       <span
         className={cn(
-          "mb-3 flex size-7 items-center justify-center text-muted-foreground transition-colors",
+          "mb-0 flex size-7 shrink-0 items-center justify-center text-muted-foreground transition-colors sm:mb-3",
           selected && "text-foreground",
         )}
       >
         <Icon icon={icon} width="17" />
       </span>
-      <span className="text-sm font-semibold">{label}</span>
-      <span className="mt-1! text-xs leading-5 text-muted-foreground">{description}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{label}</span>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+      </span>
     </button>
   )
 }
