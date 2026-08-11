@@ -287,7 +287,7 @@ export function ProjectSettingsPage() {
                           : c,
                       )
                     }
-                    className="h-8 text-xs"
+                    className="h-9 text-sm"
                   />
                 </div>
               </div>

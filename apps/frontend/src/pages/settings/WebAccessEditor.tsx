@@ -324,14 +324,14 @@ export function WebAccessEditor({
             <div className="mb-3">
               <h3 className="text-sm font-semibold">搜索工作流</h3>
             </div>
-            <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
+            <div className="grid max-w-xl gap-2 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
               <div className="space-y-1">
                 <Label>摘要模式</Label>
                 <Select
                   value={workflow}
                   onValueChange={(value) => setWorkflow(value as "none" | "auto-summary")}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -347,7 +347,7 @@ export function WebAccessEditor({
                   onValueChange={setSummaryModel}
                   disabled={summaryModelOptions.length === 0}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue
                       placeholder={
                         summaryModelOptions.length === 0

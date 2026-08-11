@@ -119,9 +119,9 @@ function FatherSessions(): React.ReactElement {
           </Button>
         }
       />
-      {error ? <ErrorNotice message={error} className="mb-5" /> : null}
+      {error ? <ErrorNotice message={error} className="mb-6" /> : null}
       {sessions.length ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           {sessions.map((session) => (
             <article
               key={session.id}
@@ -129,7 +129,7 @@ function FatherSessions(): React.ReactElement {
             >
               <Link
                 to={`/father/sessions/${session.id}`}
-                className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] gap-3 p-4 pr-3 outline-none"
+                className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] gap-3 p-5 pr-4 outline-none"
               >
                 <span
                   className="flex size-10 items-center justify-center rounded-lg bg-primary/8 text-primary ring-1 ring-inset ring-primary/10 transition-colors group-hover:bg-primary/12"
@@ -150,7 +150,7 @@ function FatherSessions(): React.ReactElement {
                     </div>
                     <SessionBadge session={session} />
                   </div>
-                  <div className="mt-auto flex items-end justify-between gap-3 pt-4 text-[11px] text-muted-foreground">
+                  <div className="mt-auto flex items-end justify-between gap-3 pt-5 text-[11px] text-muted-foreground">
                     <time dateTime={session.updatedAt} className="truncate font-mono tabular-nums">
                       {sessionDateFormatter.format(new Date(session.updatedAt))}
                     </time>
@@ -179,7 +179,7 @@ function FatherSessions(): React.ReactElement {
           ))}
         </div>
       ) : (
-        <Card className="grid min-h-52 place-items-center border-dashed p-6 text-center">
+        <Card className="grid min-h-60 place-items-center border-dashed p-8 text-center">
           <div>
             <Icon
               icon="emojione-monotone:old-man"
@@ -259,7 +259,7 @@ function FatherConversation({ sessionId }: { sessionId: string }): React.ReactEl
     )
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4 sm:px-5">
         <Button variant="ghost" size="icon" className="size-8" asChild>
           <Link to="/father" aria-label="返回会话列表">
             <Icon icon="lucide:arrow-left" width="16" aria-hidden="true" />
@@ -347,7 +347,7 @@ function FatherWorkspaceDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <header className="flex min-h-14 items-center gap-3 border-b border-border px-4">
+        <header className="flex min-h-14 items-center gap-3 border-b border-border px-4 sm:px-5">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
             <Icon icon="lucide:folder-tree" width="16" aria-hidden="true" />
           </span>
@@ -363,7 +363,7 @@ function FatherWorkspaceDialog({
             </Button>
           </DialogClose>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
           {open ? (
             <WorkspaceFilesBrowser
               listUrl={baseUrl}
@@ -396,7 +396,7 @@ function FatherGateDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:h-auto sm:max-h-[88dvh] sm:w-[min(92vw,58rem)]">
-        <header className="flex min-h-14 items-center gap-3 border-b border-border px-3 sm:px-4">
+        <header className="flex min-h-14 items-center gap-3 border-b border-border px-4 sm:px-5">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
             <Icon icon="lucide:flask-conical" width="17" aria-hidden="true" />
           </span>
@@ -414,7 +414,7 @@ function FatherGateDialog({
             </Button>
           </DialogClose>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
           {error ? (
             <ErrorNotice message={`无法生成测试表单：${error}`} />
           ) : (

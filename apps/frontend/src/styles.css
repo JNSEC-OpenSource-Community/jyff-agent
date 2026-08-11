@@ -159,7 +159,7 @@ body {
   width: 100%;
   max-width: 88rem;
   margin-inline: auto;
-  padding: 1.5rem 1rem 2.5rem;
+  padding: 2rem 1.25rem 3rem;
 }
 
 /* AppShell 的主滚动容器位于浏览器最外侧，不显示其滚动条。 */
@@ -171,9 +171,15 @@ body {
   display: none;
 }
 
+.main-outlet {
+  height: 100%;
+  min-width: 0;
+  min-height: 100%;
+}
+
 @media (min-width: 768px) {
   .page-container {
-    padding: 2rem 1.5rem 3rem;
+    padding: 2.5rem 2rem 3.5rem;
   }
 }
 
@@ -542,11 +548,36 @@ p {
   display: flex;
 }
 
+.mobile-menu-bar,
 .mobile-menu-trigger {
   display: none;
 }
 
 @media (max-width: 63.999rem) {
+  .main-mobile {
+    display: flex;
+    flex-direction: column;
+    scroll-padding-top: calc(4rem + env(safe-area-inset-top));
+  }
+  .mobile-menu-bar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    flex: 0 0 auto;
+    height: calc(4rem + env(safe-area-inset-top));
+    align-items: center;
+    justify-content: flex-end;
+    padding-top: env(safe-area-inset-top);
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    background: var(--bg);
+  }
+  .main-outlet {
+    height: auto;
+    min-height: 0;
+    flex: 1;
+  }
   .sidebar-desktop {
     display: none !important;
   }
