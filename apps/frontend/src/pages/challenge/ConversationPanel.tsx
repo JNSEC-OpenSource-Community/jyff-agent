@@ -207,7 +207,7 @@ export function ConversationPanel({
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col" aria-label="Agent 对话">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-card/70 px-4 py-3 backdrop-blur-sm max-lg:px-3">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/70 text-primary">
             <Icon
@@ -279,7 +279,7 @@ export function ConversationPanel({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 max-lg:px-3 max-lg:py-4"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 max-lg:px-3 max-lg:py-3"
         style={{ scrollbarGutter: "stable" }}
       >
         <div className="mx-auto w-full max-w-5xl">
@@ -297,7 +297,7 @@ export function ConversationPanel({
               />
             )
           ) : null}
-          <div className="flex flex-col gap-6" aria-live="polite" aria-relevant="additions text">
+          <div className="flex flex-col gap-5" aria-live="polite" aria-relevant="additions text">
             {messages.map(({ entryId, message: item, timestamp }, index) => {
               const streaming = entryId === `live:${activity.streamingMessageId ?? ""}`
               return (
@@ -306,7 +306,7 @@ export function ConversationPanel({
                   className={cn(
                     "group/message relative min-w-0",
                     item.role === "user"
-                      ? "ml-auto max-w-[88%] overflow-hidden rounded-xl border border-border/80 bg-muted/70 px-4 py-3"
+                      ? "ml-auto max-w-[88%] overflow-hidden rounded-lg border border-border/80 bg-muted/70 px-3 py-2.5"
                       : "w-full pl-5 before:absolute before:top-1 before:bottom-1 before:left-0 before:w-px before:bg-border",
                   )}
                 >
@@ -326,11 +326,11 @@ export function ConversationPanel({
       </div>
 
       {awayFromBottom ? (
-        <div className="relative z-20 flex mb-3! h-0 shrink-0 items-center justify-center">
+        <div className="relative z-20 mb-2 flex h-0 shrink-0 items-center justify-center">
           <button
             type="button"
             onClick={scrollToBottom}
-            className="animate-in fade-in-0 slide-in-from-bottom-2 relative inline-flex size-9 -translate-y-5 items-center justify-center rounded-full border border-border/80 bg-card/80 text-foreground opacity-80 shadow-md backdrop-blur-sm transition-[transform,opacity,border-color,background-color] duration-200 hover:-translate-y-[1.375rem] hover:border-primary/40 hover:bg-card hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:animate-none motion-reduce:transition-none"
+            className="animate-in fade-in-0 slide-in-from-bottom-2 relative inline-flex size-9 -translate-y-5 items-center justify-center rounded-full border border-border bg-card text-foreground opacity-90 shadow-sm transition-[transform,opacity,border-color,background-color] duration-200 hover:-translate-y-5.5 hover:border-primary/40 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:animate-none motion-reduce:transition-none"
             aria-label={newBelow > 0 ? `回到底部，${newBelow} 条新内容` : "回到底部"}
           >
             <Icon icon="lucide:arrow-down" width="15" aria-hidden="true" />
@@ -346,10 +346,10 @@ export function ConversationPanel({
       {notice}
       {!readOnly ? (
         <form
-          className="shrink-0 border-t border-border/80 bg-card/80 p-3 backdrop-blur-sm max-lg:p-2"
+          className="shrink-0 border-t border-border bg-card p-2.5"
           onSubmit={(event) => void onSubmit(event)}
         >
-          <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-xl border border-border bg-background/70 p-1.5 transition-colors focus-within:border-primary/45">
+          <div className="mx-auto flex max-w-5xl items-end gap-2 rounded-md border border-border bg-background p-1 transition-colors focus-within:border-primary/45">
             <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}

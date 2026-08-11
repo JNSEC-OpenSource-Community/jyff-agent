@@ -58,7 +58,7 @@ export function ProviderCredentialCard({
     <div className={cn("min-w-0", !editingConfigured && "py-1")}>
       {!editingConfigured ? (
         <div className="flex items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-primary">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-primary">
             <Icon icon="lucide:key-round" width="16" />
           </span>
           <div className="min-w-0 flex-1">
@@ -74,7 +74,7 @@ export function ProviderCredentialCard({
       {error ? <ErrorNotice message={error} className="mt-3" /> : null}
 
       {provider.configured && !editingConfigured ? (
-        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <span>{provider.credentialType === "oauth" ? "OAuth" : "API Key"} 已保存</span>
           <Button
             size="sm"
@@ -97,7 +97,7 @@ export function ProviderCredentialCard({
           </Button>
         </div>
       ) : (
-        <div className="mt-4 flex flex-1 flex-col justify-between gap-3">
+        <div className="mt-3 flex flex-1 flex-col justify-between gap-3">
           {provider.methods.length > 1 ? (
             <div>
               <label
@@ -198,7 +198,7 @@ export function ProviderCredentialCard({
       )}
 
       {session && session.status !== "success" ? (
-        <div className="mt-4 space-y-3 border-t border-border pt-4">
+        <div className="mt-3 space-y-3 border-t border-border pt-3">
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <Icon
               icon={session.status === "error" ? "lucide:circle-x" : "lucide:loader-circle"}
@@ -218,7 +218,7 @@ export function ProviderCredentialCard({
             </a>
           ) : null}
           {session.deviceCode ? (
-            <div className="rounded-lg border border-dashed border-border px-3 py-2 font-mono text-xs">
+            <div className="rounded-md border border-dashed border-border px-3 py-2 font-mono text-xs">
               <p className="text-muted-foreground">{session.deviceCode.verificationUri}</p>
               <p className="text-lg font-bold tracking-wider text-primary">
                 {session.deviceCode.userCode}

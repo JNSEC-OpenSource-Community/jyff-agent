@@ -15,6 +15,7 @@ import {
   EmptyState,
   ErrorNotice,
   Input,
+  PageHeader,
   PlatformSetupForm,
   Spinner,
 } from "../components/index.ts"
@@ -69,29 +70,25 @@ export function ProjectsPage() {
 
   return (
     <div className="page-container">
-      <header className="mb-10 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            Workspaces
-          </p>
-          <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">比赛列表</h1>
-          <p className="hero-desc mt-3! max-w-xl text-sm text-muted-foreground">
-            CTFs to be slopped or already slopped.
-          </p>
-        </div>
-        <Button asChild>
-          <Link to="/projects/new">
-            <Icon icon="lucide:plus" width="15" />
-            新建比赛
-          </Link>
-        </Button>
-      </header>
+      <PageHeader
+        eyebrow="比赛管理"
+        title="比赛列表"
+        description="连接平台、同步题目，然后从队列开始解题。"
+        actions={
+          <Button asChild>
+            <Link to="/projects/new">
+              <Icon icon="lucide:plus" width="15" />
+              新建比赛
+            </Link>
+          </Button>
+        }
+      />
 
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
 
       {projects.length === 0 ? (
-        <Card className="relative overflow-hidden py-24">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+        <Card className="relative overflow-hidden py-12">
+          <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/60 to-transparent" />
           <EmptyState
             icon="lucide:radar"
             title="暂无比赛"
@@ -106,7 +103,7 @@ export function ProjectsPage() {
       ) : (
         <>
           {running.length > 0 ? (
-            <section className="mb-10">
+            <section className="mb-8">
               <div className="mb-4 flex items-center gap-3">
                 <span className="flex size-6 items-center justify-center rounded-md bg-green/10 text-green">
                   <Icon icon="lucide:play" width="13" />
@@ -115,7 +112,7 @@ export function ProjectsPage() {
                   进行中的比赛 · {running.length}
                 </h2>
               </div>
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {running.map((p) => (
                   <ProjectCard
                     key={p.id}
@@ -142,7 +139,7 @@ export function ProjectsPage() {
                   已归档 · {archivedList.length}
                 </h2>
               </div>
-              <div className="grid grid-cols-1 gap-5 opacity-60 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 opacity-60 md:grid-cols-2 xl:grid-cols-3">
                 {archivedList.map((p) => (
                   <ProjectCard
                     key={p.id}
@@ -193,15 +190,15 @@ function ProjectCard({
   const ready = !isArchived && project.phase === "ready" && !project.lastError
   return (
     <Card className="surface-hover group relative flex flex-col overflow-hidden p-0">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-      <Link to={`/projects/${encodeURIComponent(project.id)}`} className="block flex-1 p-5">
+      <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+      <Link to={`/projects/${encodeURIComponent(project.id)}`} className="block flex-1 p-4">
         <div className="flex items-start justify-between gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
             {project.platformId}
           </span>
         </div>
-        <h3 className="mt-5 truncate text-[17px] font-semibold tracking-tight">{project.name}</h3>
-        <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 border-t border-border/70 pt-3 text-xs">
+        <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{project.name}</h3>
+        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 border-t border-border/70 pt-3 text-xs">
           <span className="text-muted-foreground">解题进度</span>
           <strong className="text-right font-mono tabular-nums">
             {project.solved} / {project.total}
@@ -215,7 +212,7 @@ function ProjectCard({
           </time>
         </div>
       </Link>
-      <div className="flex items-center justify-between border-t border-border bg-muted px-5 py-3">
+      <div className="flex items-center justify-between border-t border-border bg-muted px-4 py-2.5">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span
             className={cn("size-1.5 rounded-full", ready ? "bg-green animate-pulse" : "bg-amber")}
@@ -368,28 +365,24 @@ export function NewProjectPage() {
 
   return (
     <div className="page-container">
-      <header className="mb-8">
-        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          New Workspace
-        </p>
-        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">连接比赛平台</h1>
-        <p className="hero-desc mt-3! max-w-xl text-sm text-muted-foreground">
-          Show your token power.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="添加比赛"
+        title="连接比赛平台"
+        description="连接 CTFd 或 GZCTF，准备好模型后开始调度。"
+      />
 
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
 
       <div className="space-y-4">
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-border bg-muted px-6 py-4">
+          <div className="border-b border-border bg-muted px-4 py-3">
             <div className="flex items-center gap-3">
               <StepBadge n={1} active={true} />
               <h2 className="font-semibold">平台类型</h2>
             </div>
             <p className="mt-1! pl-10 text-sm text-muted-foreground">选择要接入的比赛平台插件。</p>
           </div>
-          <div className="p-6">
+          <div className="p-4">
             <Combobox
               value={platId}
               onChange={(id) => {
@@ -414,7 +407,7 @@ export function NewProjectPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-border bg-muted px-6 py-4">
+          <div className="border-b border-border bg-muted px-4 py-3">
             <div className="flex items-center gap-3">
               <StepBadge n={2} active={Boolean(platId)} />
               <h2 className="font-semibold">连接信息</h2>
@@ -423,7 +416,7 @@ export function NewProjectPage() {
               填写站点、认证和比赛信息，并验证连接。
             </p>
           </div>
-          <section className="space-y-5 p-6">
+          <section className="space-y-4 p-4">
             {plat ? (
               <PlatformSetupForm
                 platform={plat}
@@ -457,7 +450,7 @@ export function NewProjectPage() {
             </Button>
 
             {testR ? (
-              <div className="flex items-center gap-3 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm text-green">
+              <div className="flex items-center gap-3 rounded-md border border-green/30 bg-green/5 px-3 py-2.5 text-sm text-green">
                 <Icon icon="lucide:circle-check" width="17" />
                 <span>
                   <strong>{testR.overview.name}</strong> · {testR.overview.challenges} 题 ·{" "}
@@ -469,7 +462,7 @@ export function NewProjectPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-border bg-muted px-6 py-4">
+          <div className="border-b border-border bg-muted px-4 py-3">
             <div className="flex items-center gap-3">
               <StepBadge n={3} active={testR !== null} />
               <h2 className="font-semibold">比赛标识</h2>
@@ -478,7 +471,7 @@ export function NewProjectPage() {
               输入比赛名称，浏览器会实时生成对应的拼音 ID。
             </p>
           </div>
-          <section className="p-6">
+          <section className="p-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label
@@ -506,7 +499,7 @@ export function NewProjectPage() {
             </div>
           </section>
 
-          <div className="flex justify-end gap-3 border-t border-border bg-muted px-6 py-4">
+          <div className="flex justify-end gap-3 border-t border-border bg-muted px-4 py-3">
             <Button
               onClick={() => void submit()}
               disabled={!testR || !pid.trim() || !pname.trim() || busy !== null}

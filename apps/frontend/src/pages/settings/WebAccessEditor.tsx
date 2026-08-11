@@ -184,7 +184,7 @@ export function WebAccessEditor({
     <div>
       {err ? <ErrorNotice message={err} /> : null}
 
-      <section className="flex items-center gap-3 pb-5">
+      <section className="flex items-center gap-3 pb-4">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold">Web Access</h3>
           <p className="mt-1! text-xs text-muted-foreground">
@@ -196,7 +196,7 @@ export function WebAccessEditor({
 
       {enabled ? (
         <>
-          <section className="border-t border-border py-5">
+          <section className="border-t border-border py-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Providers</h3>
               <span className="text-xs text-muted-foreground">
@@ -216,13 +216,13 @@ export function WebAccessEditor({
               emptyText="已全部添加"
             />
             {selected.length > 0 ? (
-              <ul className="mt-3 overflow-hidden rounded-lg border border-border">
+              <ul className="mt-3 overflow-hidden rounded-md border border-border">
                 {selected.map((provider) => {
                   const hasKey = configured.has(provider)
                   return (
                     <li
                       key={provider}
-                      className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(10rem,0.55fr)_minmax(16rem,1fr)_auto] lg:items-center"
+                      className="grid gap-3 border-b border-border px-3 py-2.5 last:border-b-0 lg:grid-cols-[minmax(10rem,0.55fr)_minmax(16rem,1fr)_auto] lg:items-center"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <Icon
@@ -320,11 +320,11 @@ export function WebAccessEditor({
             ) : null}
           </section>
 
-          <section className="border-t border-border py-5">
+          <section className="border-t border-border py-4">
             <div className="mb-3">
               <h3 className="text-sm font-semibold">搜索工作流</h3>
             </div>
-            <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
+            <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>摘要模式</Label>
                 <Select
@@ -368,7 +368,7 @@ export function WebAccessEditor({
             </div>
           </section>
 
-          <section className="border-t border-border py-5">
+          <section className="border-t border-border py-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">SSRF / 网络策略</h3>
               <div className="flex items-center gap-2">

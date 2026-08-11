@@ -24,6 +24,7 @@ import {
   Card,
   ErrorNotice,
   Input,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
@@ -66,11 +67,11 @@ function QueueItem({
       {...attributes}
       {...listeners}
       className={cn(
-        "flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm transition-all",
+        "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm transition-[background-color,border-color]",
         disabled
           ? "cursor-default opacity-75"
           : "cursor-grab hover:border-primary/30 hover:cursor-grab active:cursor-grabbing",
-        isDragging && "cursor-grabbing border-dashed border-primary/40 opacity-60 shadow-lg",
+        isDragging && "cursor-grabbing border-dashed border-primary/40 bg-muted opacity-60",
       )}
     >
       <Icon icon="lucide:grip-vertical" width="14" className="shrink-0 text-muted-foreground" />
@@ -109,9 +110,9 @@ function ProgressOverview({
 }) {
   const progress = total > 0 ? Math.round((solved / total) * 100) : 0
   return (
-    <Card className="mb-6 p-0 shadow-none">
+    <Card className="mb-4 p-0">
       <div className="grid md:grid-cols-[minmax(18rem,1fr)_auto] md:items-stretch">
-        <div className="min-w-0 px-5 pt-4 pb-5 sm:px-6">
+        <div className="min-w-0 px-4 pt-3 pb-4 sm:px-4">
           <div className="flex items-baseline gap-3">
             <h2 className="text-sm font-semibold tracking-tight">解题进度</h2>
             <span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -138,7 +139,7 @@ function ProgressOverview({
             已解出 {solved} 题，剩余 {Math.max(0, total - solved)} 题
           </p>
         </div>
-        <dl className="grid grid-cols-3 border-t border-border md:min-w-[27rem] md:border-t-0 md:border-l">
+        <dl className="grid grid-cols-3 border-t border-border md:min-w-108 md:border-t-0 md:border-l">
           <ProgressMetric label="正在解题" value={active} />
           <ProgressMetric label="等待处理" value={queued} />
           <ProgressMetric label="需要处理" value={failed} tone="danger" />
@@ -150,7 +151,7 @@ function ProgressOverview({
 
 function ProgressMetric({ label, value, tone }: { label: string; value: number; tone?: "danger" }) {
   return (
-    <div className="flex min-w-0 flex-col justify-center border-l border-border px-4 py-3 first:border-l-0 md:px-5">
+    <div className="flex min-w-0 flex-col justify-center border-l border-border px-3 py-2.5 first:border-l-0 md:px-4">
       <dd
         className={cn(
           "font-mono text-lg font-semibold leading-none tabular-nums",
@@ -322,57 +323,50 @@ export function ProjectPage() {
 
   return (
     <div className="page-container">
-      {/* Header */}
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            {snapshot.overview.id} · {operationsAvailable ? "可调度" : "只读"}
-          </p>
-          <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">
-            {snapshot.overview.name}
-          </h1>
-          <p className="hero-desc mt-3! text-sm text-muted-foreground">
-            {snapshot.overview.challenges} 题 · {relativeTime(snapshot.generatedAt)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => void action("/api/refresh")}
-            disabled={busy || !operationsAvailable}
-            size="sm"
-          >
-            <Icon icon="lucide:refresh-cw" className={busy ? "animate-spin" : ""} width="14" />
-            同步
-          </Button>
-          <Button
-            size="sm"
-            onClick={() =>
-              void action(
-                snapshot.scheduler?.autoEnabled
-                  ? "/api/scheduler/auto/pause"
-                  : "/api/scheduler/auto/start",
-              )
-            }
-            disabled={busy || !snapshot.scheduler?.available}
-          >
-            <Icon
-              icon={snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"}
-              width="14"
-            />
-            {snapshot.scheduler?.autoEnabled ? "暂停调度" : "启动调度"}
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={`${snapshot.overview.id} · ${operationsAvailable ? "可调度" : "只读"}`}
+        title={snapshot.overview.name}
+        description={`${snapshot.overview.challenges} 题 · ${relativeTime(snapshot.generatedAt)}`}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => void action("/api/refresh")}
+              disabled={busy || !operationsAvailable}
+              size="sm"
+            >
+              <Icon icon="lucide:refresh-cw" className={busy ? "animate-spin" : ""} width="14" />
+              同步
+            </Button>
+            <Button
+              size="sm"
+              onClick={() =>
+                void action(
+                  snapshot.scheduler?.autoEnabled
+                    ? "/api/scheduler/auto/pause"
+                    : "/api/scheduler/auto/start",
+                )
+              }
+              disabled={busy || !snapshot.scheduler?.available}
+            >
+              <Icon
+                icon={snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"}
+                width="14"
+              />
+              {snapshot.scheduler?.autoEnabled ? "暂停调度" : "启动调度"}
+            </Button>
+          </>
+        }
+      />
 
-      {error ? <ErrorNotice message={error} className="mb-6" /> : null}
+      {error ? <ErrorNotice message={error} className="mb-4" /> : null}
 
       <ProgressOverview {...snapshot.stats} />
 
       {/* ── Announcement candidates ── */}
       {pendingAnnouncements.length > 0 ? (
-        <Card className="mb-6 p-0">
-          <div className="flex items-center justify-between border-b border-border px-5 py-3">
+        <Card className="mb-4 p-0">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 公告审核
@@ -403,7 +397,7 @@ export function ProjectPage() {
             {pendingAnnouncements.map((candidate) => (
               <div
                 key={`${candidate.challengeId}:${candidate.key}`}
-                className="flex flex-wrap items-start justify-between gap-3 px-5 py-3"
+                className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -450,10 +444,10 @@ export function ProjectPage() {
       ) : null}
 
       {/* ── Two columns ── */}
-      <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_1.5fr]">
+      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_1.5fr]">
         {/* Queue */}
         <Card className="flex min-h-0 flex-col p-0">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 调度队列
@@ -464,14 +458,14 @@ export function ProjectPage() {
               {snapshot.scheduler?.autoEnabled ? "自动" : "手动"}
             </Badge>
           </div>
-          <div className="flex flex-1 flex-col p-3">
+          <div className="flex flex-1 flex-col p-2.5">
             {queue.length > 0 ? (
               <DndContext sensors={sensors} onDragEnd={(event) => void onDragEnd(event)}>
                 <SortableContext
                   items={queue.map((i) => i.challengeId)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="flex max-h-[32rem] flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1">
+                  <div className="flex max-h-128 flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
                     {queue.map((e) => (
                       <QueueItem
                         key={e.challengeId}
@@ -497,7 +491,7 @@ export function ProjectPage() {
 
         {/* 最近活动 */}
         <Card className="flex min-h-0 flex-col p-0">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 最近活动
@@ -515,7 +509,7 @@ export function ProjectPage() {
                 <Link
                   key={c.id}
                   to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
-                  className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted"
+                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted"
                 >
                   <span
                     className={cn(
@@ -550,7 +544,7 @@ export function ProjectPage() {
             {snapshot.challenges.length > 5 && (
               <a
                 href="#all"
-                className="flex items-center justify-center gap-1.5 px-5 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center justify-center gap-1.5 px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
                 全部 {snapshot.challenges.length} 题 <Icon icon="lucide:arrow-down" width="13" />
               </a>
@@ -561,14 +555,14 @@ export function ProjectPage() {
 
       {/* ── All challenges table ── */}
       <Card id="all" className="p-0">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
               题目列表
             </p>
             <h2 className="mt-0.5 font-semibold">全部题目</h2>
           </div>
-          <div className="flex w-full items-center gap-1 rounded-lg border border-border bg-background/40 p-1 sm:w-auto">
+          <div className="flex w-full items-center gap-1 rounded-md border border-border bg-background p-0.5 sm:w-auto">
             <div className="flex min-w-0 flex-1 items-center gap-2 px-2 sm:w-52">
               <Icon icon="lucide:search" width="14" className="text-muted-foreground" />
               <Input
@@ -603,7 +597,7 @@ export function ProjectPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                   <th className="py-3 pl-5 pr-3 font-medium">题目</th>
                   <th className="hidden py-3 px-3 font-medium md:table-cell">分类</th>
                   <th className="hidden py-3 px-3 font-medium sm:table-cell">分值</th>

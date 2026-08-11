@@ -81,7 +81,7 @@ export function WorkspaceFilePreviewDialog({
     <Dialog open={file !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
             <Icon icon="lucide:file-search" width="16" />
           </span>
           <div className="min-w-0 flex-1">
@@ -106,25 +106,25 @@ export function WorkspaceFilePreviewDialog({
           </DialogClose>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-background/45">
+        <div className="min-h-0 flex-1 overflow-auto bg-background">
           {loading ? (
             <div className="flex h-full min-h-48 items-center justify-center">
               <Spinner label="加载文件预览" />
             </div>
           ) : error ? (
-            <div className="p-4 sm:p-6">
+            <div className="p-4 sm:p-5">
               <ErrorNotice message={error} />
             </div>
           ) : preview?.kind === "markdown" ? (
-            <MarkdownContent className="mx-auto max-w-4xl p-4 sm:p-6">
+            <MarkdownContent className="mx-auto max-w-4xl p-4 sm:p-5">
               {preview.content}
             </MarkdownContent>
           ) : preview?.kind === "code" ? (
-            <pre className="min-h-full min-w-full w-max p-4 font-mono text-xs leading-6 sm:p-6">
+            <pre className="min-h-full min-w-full w-max p-4 font-mono text-xs leading-6 sm:p-5">
               <SyntaxHighlightedCode code={preview.content} language={preview.language} />
             </pre>
           ) : preview ? (
-            <pre className="min-h-full min-w-full w-max whitespace-pre p-4 font-mono text-xs leading-6 text-foreground/90 sm:p-6">
+            <pre className="min-h-full min-w-full w-max whitespace-pre p-4 font-mono text-xs leading-6 text-foreground/90 sm:p-5">
               {preview.content}
             </pre>
           ) : null}

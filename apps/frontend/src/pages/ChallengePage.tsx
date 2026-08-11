@@ -95,12 +95,12 @@ export function ChallengePage() {
   return (
     <div className="flex h-full min-w-0 overflow-hidden max-lg:flex-col">
       {/* ── Main content ── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4 max-lg:p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-3 max-lg:p-2">
         <Card className="flex min-h-0 flex-1 flex-col border-border p-0">
           {error ? <ErrorNotice message={error} className="m-3 shrink-0" /> : null}
 
           <Tabs defaultValue="conversation" className="flex min-h-0 flex-1 flex-col">
-            <div className="hidden shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2.5 lg:flex">
+            <div className="hidden shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2 lg:flex">
               <TabsList>
                 <TabsTrigger value="conversation">对话</TabsTrigger>
                 <TabsTrigger value="intelligence">情报</TabsTrigger>
@@ -205,7 +205,7 @@ export function ChallengePage() {
               )}
             </TabsContent>
 
-            <TabsContent value="intelligence" className="flex-1 overflow-y-auto p-5">
+            <TabsContent value="intelligence" className="flex-1 overflow-y-auto p-4">
               <IntelligencePanel
                 projectId={projectId}
                 challengeId={challengeId}
@@ -215,17 +215,17 @@ export function ChallengePage() {
               />
             </TabsContent>
 
-            <TabsContent value="attempts" className="flex-1 overflow-y-auto p-5">
+            <TabsContent value="attempts" className="flex-1 overflow-y-auto p-4">
               <AttemptHistory projectId={projectId} runs={details.runs} onChanged={reload} />
             </TabsContent>
 
-            <TabsContent value="files" className="flex-1 overflow-y-auto p-5">
+            <TabsContent value="files" className="flex-1 overflow-y-auto p-4">
               <WorkspaceFilesPanel projectId={projectId} challengeId={challengeId} />
             </TabsContent>
 
-            <TabsContent value="writeup" className="flex-1 overflow-y-auto p-5">
+            <TabsContent value="writeup" className="flex-1 overflow-y-auto p-4">
               {details.writeup.content ? (
-                <div className="rounded-lg border border-border bg-muted/30 p-5">
+                <div className="rounded-md border border-border bg-muted/30 p-4">
                   <MarkdownContent>{details.writeup.content}</MarkdownContent>
                 </div>
               ) : (
@@ -241,17 +241,17 @@ export function ChallengePage() {
       </div>
 
       {/* ── Sidebar with header info ── */}
-      <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4 max-lg:hidden">
+      <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3 max-lg:hidden">
         {/* Challenge header moved into sidebar */}
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-border px-4 py-3">
+          <div className="border-b border-border px-3 py-2.5">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
               {c.category}
             </p>
             <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">{c.title}</h1>
             <p className="mt-1! text-xs text-muted-foreground">{c.score} PTS</p>
           </div>
-          <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center justify-between px-3 py-2.5">
             <Badge tone={toneForStatus(c.status)}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
             <Button
               variant={active ? "danger" : "primary"}
@@ -279,19 +279,19 @@ export function ChallengePage() {
       </aside>
 
       <Sheet open={mobileDetailsOpen} onOpenChange={setMobileDetailsOpen}>
-        <SheetContent side="bottom" className="p-0 lg:hidden">
+        <SheetContent side="bottom" className="solver-details-sheet p-0 lg:hidden">
           <SheetTitle className="sr-only">题目与 Agents</SheetTitle>
-          <div className="mx-auto mt-2! h-1 w-10 rounded-full bg-border" />
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pt-3">
+          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border" />
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 pt-2">
             <Card className="overflow-hidden p-0">
-              <div className="border-b border-border px-4 py-3 pr-12">
+              <div className="border-b border-border px-3 py-2.5 pr-12">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
                   {c.category} · {c.score} PTS
                 </p>
                 <h1 className="hero-title mt-1 text-lg font-bold tracking-tight">{c.title}</h1>
                 <p className="mt-1! text-xs text-muted-foreground">{c.progress}</p>
               </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="flex items-center justify-between px-3 py-2.5">
                 <Badge tone={toneForStatus(c.status)}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
                 <Button
                   variant={active ? "danger" : "primary"}

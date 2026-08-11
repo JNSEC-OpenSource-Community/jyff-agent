@@ -8,6 +8,7 @@ import {
   Combobox,
   ErrorNotice,
   Input,
+  PageHeader,
   SettingsSection,
   Spinner,
   Switch,
@@ -214,20 +215,16 @@ export function GlobalSettingsPage() {
 
   return (
     <div className="page-container">
-      <header className="mb-8">
-        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          Global Config
-        </p>
-        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">全局配置</h1>
-        <p className="hero-desc mt-3! max-w-2xl text-sm text-muted-foreground">
-          充值 648 以升级你的军火库。
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="系统设置"
+        title="全局配置"
+        description="管理模型供应商、共享模型和 WebUI 登录。"
+      />
 
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
 
       <Tabs defaultValue="providers">
-        <TabsList className="mb-6">
+        <TabsList className="mb-4">
           <TabsTrigger value="providers">供应商</TabsTrigger>
           <TabsTrigger value="models">模型</TabsTrigger>
           <TabsTrigger value="plugins">插件</TabsTrigger>
@@ -245,7 +242,7 @@ export function GlobalSettingsPage() {
               </Badge>
             }
           >
-            <div className="space-y-5">
+            <div className="space-y-4">
               <section>
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-sm font-semibold">已有供应商</h3>
@@ -255,7 +252,7 @@ export function GlobalSettingsPage() {
                     个
                   </span>
                 </div>
-                <ul className="overflow-hidden rounded-xl border border-border bg-card/40">
+                <ul className="overflow-hidden rounded-md border border-border bg-card">
                   {configuredProviders.map((p) => (
                     <li key={p.id} className="border-b border-border last:border-b-0">
                       <div className="flex min-h-16 items-center gap-3 px-4 py-3">
@@ -406,7 +403,7 @@ export function GlobalSettingsPage() {
                       订阅账号使用官方登录；按量计费或兼容端点使用 API Key。
                     </p>
                   </div>
-                  <div className="divide-y divide-border overflow-hidden rounded-lg border border-border sm:grid sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                  <div className="divide-y divide-border overflow-hidden rounded-md border border-border sm:grid sm:grid-cols-3 sm:divide-x sm:divide-y-0">
                     <ProviderSetupOption
                       icon="lucide:badge-check"
                       label="Subscription 登录"
@@ -534,7 +531,7 @@ export function GlobalSettingsPage() {
           >
             <Card className="w-full overflow-hidden p-0">
               <form onSubmit={(e) => void saveAuth(e)}>
-                <div className="flex items-center justify-between gap-6 px-6 py-5">
+                <div className="flex items-center justify-between gap-4 px-4 py-4">
                   <div>
                     <p className="text-sm font-medium">WebUI 登录</p>
                     <p className="mt-1! text-xs text-muted-foreground">
@@ -544,7 +541,7 @@ export function GlobalSettingsPage() {
                   <Switch checked={on} onCheckedChange={setOn} aria-label="启用 WebUI 登录" />
                 </div>
                 {on ? (
-                  <div className="grid gap-4 border-t border-border bg-muted/20 px-6 py-5 sm:grid-cols-2">
+                  <div className="grid gap-4 border-t border-border bg-muted/20 px-4 py-4 sm:grid-cols-2">
                     <div>
                       <label
                         htmlFor="auth-username"
@@ -574,7 +571,7 @@ export function GlobalSettingsPage() {
                     </div>
                   </div>
                 ) : null}
-                <div className="flex justify-end border-t border-border px-6 py-4">
+                <div className="flex justify-end border-t border-border px-4 py-3">
                   <Button
                     type="submit"
                     disabled={busy || (on && (!uname || (!g.authentication.enabled && !pw)))}

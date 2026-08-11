@@ -13,6 +13,7 @@ import {
   DialogDescription,
   DialogTitle,
   ErrorNotice,
+  PageHeader,
   PlatformSetupForm,
   type PlatformSetupOption,
 } from "../components/index.ts"
@@ -102,43 +103,36 @@ function FatherSessions(): React.ReactElement {
   }
   return (
     <div className="page-container max-w-5xl">
-      <header className="mb-8 flex items-end justify-between gap-4">
-        <div>
-          <div className="mb-3 flex items-center gap-2 text-primary">
-            <Icon icon="emojione-monotone:old-man" width="22" aria-hidden="true" />
-            <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-              Platform workshop
-            </span>
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight">Clanker Father</h1>
-          <p className="mt-2! text-sm text-muted-foreground">
-            创建平台插件，或回到一段旧对话继续修复。
-          </p>
-        </div>
-        <Button onClick={() => void create()} disabled={creating}>
-          <Icon
-            icon={creating ? "lucide:loader-circle" : "lucide:plus"}
-            className={creating ? "animate-spin" : ""}
-            width="15"
-            aria-hidden="true"
-          />
-          新建会话
-        </Button>
-      </header>
+      <PageHeader
+        eyebrow="平台插件"
+        title="Clanker Father"
+        description="创建平台插件，或回到一段旧对话继续修复。"
+        actions={
+          <Button onClick={() => void create()} disabled={creating}>
+            <Icon
+              icon={creating ? "lucide:loader-circle" : "lucide:plus"}
+              className={creating ? "animate-spin" : ""}
+              width="15"
+              aria-hidden="true"
+            />
+            新建会话
+          </Button>
+        }
+      />
       {error ? <ErrorNotice message={error} className="mb-5" /> : null}
       {sessions.length ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {sessions.map((session) => (
             <article
               key={session.id}
-              className="group grid min-h-28 grid-cols-[minmax(0,1fr)_2.75rem] overflow-hidden rounded-xl border border-border bg-card/70 shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-primary/30 hover:bg-card hover:shadow-md focus-within:ring-2 focus-within:ring-primary/40 motion-reduce:transform-none motion-reduce:transition-none"
+              className="group grid min-h-28 grid-cols-[minmax(0,1fr)_2.75rem] overflow-hidden rounded-md border border-border bg-card transition-[background-color,border-color] hover:border-muted-foreground/50 hover:bg-muted/30 focus-within:ring-2 focus-within:ring-primary/40 motion-reduce:transition-none"
             >
               <Link
                 to={`/father/sessions/${session.id}`}
                 className="grid min-w-0 grid-cols-[2.5rem_minmax(0,1fr)] gap-3 p-4 pr-3 outline-none"
               >
                 <span
-                  className="flex size-10 items-center justify-center rounded-lg bg-primary/[0.08] text-primary ring-1 ring-inset ring-primary/10 transition-colors group-hover:bg-primary/[0.12]"
+                  className="flex size-10 items-center justify-center rounded-lg bg-primary/8 text-primary ring-1 ring-inset ring-primary/10 transition-colors group-hover:bg-primary/12"
                   aria-hidden="true"
                 >
                   <Icon icon="emojione-monotone:old-man" width="19" />
@@ -169,7 +163,7 @@ function FatherSessions(): React.ReactElement {
                   </div>
                 </div>
               </Link>
-              <div className="flex items-center justify-center border-l border-white/[0.045] bg-white/[0.012]">
+              <div className="flex items-center justify-center border-l border-border bg-muted/30">
                 <Button
                   type="button"
                   variant="ghost"
@@ -185,7 +179,7 @@ function FatherSessions(): React.ReactElement {
           ))}
         </div>
       ) : (
-        <Card className="grid min-h-64 place-items-center border-dashed p-8 text-center">
+        <Card className="grid min-h-52 place-items-center border-dashed p-6 text-center">
           <div>
             <Icon
               icon="emojione-monotone:old-man"
@@ -369,7 +363,7 @@ function FatherWorkspaceDialog({
             </Button>
           </DialogClose>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
           {open ? (
             <WorkspaceFilesBrowser
               listUrl={baseUrl}
@@ -402,7 +396,7 @@ function FatherGateDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:h-auto sm:max-h-[88dvh] sm:w-[min(92vw,58rem)]">
-        <header className="flex min-h-16 items-center gap-3 border-b border-border px-4 sm:px-6">
+        <header className="flex min-h-14 items-center gap-3 border-b border-border px-3 sm:px-4">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
             <Icon icon="lucide:flask-conical" width="17" aria-hidden="true" />
           </span>
@@ -420,7 +414,7 @@ function FatherGateDialog({
             </Button>
           </DialogClose>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
           {error ? (
             <ErrorNotice message={`无法生成测试表单：${error}`} />
           ) : (

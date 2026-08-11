@@ -5,7 +5,7 @@ function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>): Re
   return (
     <div
       data-slot="card"
-      className={cn("surface-elevated text-card-foreground overflow-hidden", className)}
+      className={cn("surface text-card-foreground overflow-hidden", className)}
       {...props}
     />
   )
@@ -16,7 +16,7 @@ function CardHeader({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
   return (
-    <div data-slot="card-header" className={cn("grid gap-1.5 px-5 pt-5", className)} {...props} />
+    <div data-slot="card-header" className={cn("grid gap-1.5 px-4 pt-4", className)} {...props} />
   )
 }
 
@@ -50,7 +50,7 @@ function CardContent({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
-  return <div data-slot="card-content" className={cn("px-5", className)} {...props} />
+  return <div data-slot="card-content" className={cn("px-4", className)} {...props} />
 }
 
 function CardFooter({
@@ -60,7 +60,7 @@ function CardFooter({
   return (
     <div
       data-slot="card-footer"
-      className={cn("flex items-center px-5 pb-5", className)}
+      className={cn("flex items-center px-4 pb-4", className)}
       {...props}
     />
   )

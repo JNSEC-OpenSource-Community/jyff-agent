@@ -67,7 +67,7 @@ function Combobox({
           id={id}
           aria-expanded={open}
           className={cn(
-            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background/40 px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-all hover:border-border focus-visible:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-[background-color,border-color,box-shadow] hover:border-muted-foreground/50 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50",
             !selected && "text-muted-foreground/60",
             className,
           )}
@@ -87,7 +87,7 @@ function Combobox({
           align="start"
           sideOffset={4}
           className={cn(
-            "z-50 w-[--radix-popover-trigger-width] rounded-md border border-border bg-popover text-popover-foreground shadow-lg",
+            "z-50 w-[--radix-popover-trigger-width] rounded-md border border-border bg-popover text-popover-foreground shadow-md",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           )}
         >

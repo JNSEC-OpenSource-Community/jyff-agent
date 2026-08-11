@@ -152,7 +152,7 @@ export function ModelPoolEditor({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {err ? <ErrorNotice message={err} /> : null}
       <section>
         <div className="mb-3">
@@ -172,7 +172,7 @@ export function ModelPoolEditor({
           placeholder="选择 Father 模型"
         />
       </section>
-      <section className="border-t border-border pt-5">
+      <section className="border-t border-border pt-4">
         <div className="mb-3 flex items-end justify-between gap-4">
           <div>
             <h3 className="text-sm font-semibold">模型池</h3>
@@ -184,13 +184,13 @@ export function ModelPoolEditor({
             {models.length} 个
           </span>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {models.map((m, i) => {
             const prov = authentication.providers.find((p) => p.id === m.provider)
             const customProvider = configuration.customProviders.find((p) => p.id === m.provider)
             const discoveredModels = customProvider ? customModelIds[customProvider.id] : undefined
             return (
-              <article key={m.uiKey} className="overflow-hidden rounded-lg border border-border">
+              <article key={m.uiKey} className="overflow-hidden rounded-md border border-border">
                 <div className="flex items-center gap-3 border-b border-border bg-muted px-4 py-2.5">
                   <span className="flex size-6 items-center justify-center rounded-md bg-muted font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
                     {String(i + 1).padStart(2, "0")}
@@ -211,7 +211,7 @@ export function ModelPoolEditor({
                     <Icon icon="lucide:trash-2" width="13" />
                   </Button>
                 </div>
-                <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="供应商">
                     <Combobox
                       value={m.provider}
@@ -308,7 +308,7 @@ export function ModelPoolEditor({
                     </Select>
                   </Field>
                 </div>
-                <div className="flex flex-wrap gap-4 border-t border-border bg-muted/30 px-4 py-2.5">
+                <div className="flex flex-wrap gap-3 border-t border-border bg-muted/30 px-3 py-2.5">
                   <label
                     htmlFor={`${m.uiKey}-thinking`}
                     className="flex items-center gap-2 text-xs text-muted-foreground"

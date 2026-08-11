@@ -4,11 +4,11 @@ import type * as React from "react"
 import { cn } from "#lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform,opacity] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 active:scale-[0.98] active:translate-y-[1px]",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform,opacity] outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 active:scale-[0.98] active:translate-y-px",
   {
     variants: {
       variant: {
-        primary: "bg-primary text-primary-foreground shadow-sm hover:bg-primary/85",
+        primary: "bg-primary text-primary-foreground hover:bg-primary/85",
         secondary:
           "bg-muted text-foreground border border-border hover:border-muted-foreground/30 hover:bg-foreground/[0.06]",
         ghost: "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -18,8 +18,8 @@ const buttonVariants = cva(
           "border border-border bg-transparent text-foreground hover:border-muted-foreground/30 hover:bg-muted/50",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5 text-xs",
+        default: "h-9 px-3.5 py-2 has-[>svg]:px-3",
+        sm: "h-8 rounded-md gap-1.5 px-2.5 has-[>svg]:px-2 text-xs",
         icon: "size-9",
       },
     },

@@ -21,15 +21,16 @@ function SheetContent({
     <SheetPrimitive.Portal>
       <SheetPrimitive.Overlay
         data-slot="sheet-overlay"
-        className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 bg-black/60 fixed inset-0 z-50 backdrop-blur-sm"
+        className="sheet-overlay fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]"
       />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        data-side={side}
         className={cn(
-          "bg-sidebar data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col border-border shadow-xl outline-none",
+          "sheet-content fixed z-50 flex min-h-0 flex-col border-border bg-sidebar outline-none",
           side === "left"
-            ? "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 w-72 border-r"
-            : "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t",
+            ? "inset-y-0 left-0 w-[min(18rem,calc(100vw-1rem))] border-r"
+            : "inset-x-0 bottom-0 h-[min(85dvh,42rem)] max-h-[85dvh] overflow-hidden rounded-t-xl border-t",
           className,
         )}
         {...props}
@@ -48,7 +49,7 @@ function SheetCloseButton({
     <SheetPrimitive.Close
       data-slot="sheet-close"
       className={cn(
-        "text-muted-foreground hover:text-foreground absolute top-3 right-3 flex size-8 items-center justify-center rounded-lg opacity-70 transition-all hover:bg-muted hover:opacity-100",
+        "absolute top-3 right-3 flex size-8 items-center justify-center rounded-md text-foreground/70 transition-colors hover:bg-muted hover:text-foreground",
         className,
       )}
       {...props}

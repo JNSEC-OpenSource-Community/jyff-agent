@@ -41,18 +41,16 @@ export function LoginPage() {
           <span className="text-foreground/50">AGENT</span>
         </div>
         <div className="relative z-10">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
-            Operations Console
-          </p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">CTF 控制台</p>
           <h1 className="mt-4 max-w-md text-4xl font-bold leading-tight tracking-tight lg:text-5xl">
             进入 JYFF Agent
           </h1>
           <p className="mt-4! max-w-sm text-sm leading-relaxed text-muted-foreground">
-            Burning money and win the game.
+            连接比赛平台，管理题目与 Agent。
           </p>
         </div>
         <div
-          className="relative z-10 flex items-center gap-10 font-mono text-[80px] font-extralight leading-none tracking-tighter text-foreground/[0.03] lg:text-[96px]"
+          className="relative z-10 flex items-center gap-10 font-mono text-[80px] font-extralight leading-none tracking-tighter text-foreground/3 lg:text-[96px]"
           aria-hidden
         >
           ∞<span className="text-primary/20">SL</span>OP
@@ -60,10 +58,10 @@ export function LoginPage() {
       </div>
 
       {/* Login form */}
-      <div className="flex flex-1 items-center justify-center p-8">
-        <form className="w-full max-w-sm space-y-6" onSubmit={(e) => void submit(e)}>
+      <div className="flex flex-1 items-center justify-center p-6 sm:p-8">
+        <form className="w-full max-w-sm space-y-5" onSubmit={(e) => void submit(e)}>
           <div className="flex items-center gap-4">
-            <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-card text-primary shadow-sm">
+            <span className="flex size-10 items-center justify-center rounded-md border border-border bg-card text-foreground">
               <Icon icon="lucide:fingerprint" width="20" />
             </span>
             <div>
@@ -118,7 +116,7 @@ export function LoginPage() {
           </Button>
 
           <p className="text-center text-xs text-muted-foreground lg:hidden">
-            <span className="font-semibold text-primary">JYFF</span> Agent · Operations Console
+            <span className="font-semibold text-primary">JYFF</span> Agent · CTF 控制台
           </p>
         </form>
       </div>

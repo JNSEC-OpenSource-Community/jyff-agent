@@ -33,7 +33,7 @@ describe("情报面板", () => {
     const tldrCard = screen.getByRole("heading", { name: "TLDR 摘要" }).closest("section")
     const evidenceCard = screen.getByRole("heading", { name: "已确认事实" }).closest("section")
     for (const card of [tldrCard, evidenceCard]) {
-      expect(card?.className).toContain("rounded-xl")
+      expect(card?.className).toContain("rounded-md")
       expect(card?.className).toContain("border-border")
       expect(card?.className).toContain("bg-card")
     }

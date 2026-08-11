@@ -151,7 +151,7 @@ function WorkspaceDirectoryNode({
     <li>
       <button
         type="button"
-        className="grid min-h-12 w-full grid-cols-[14px_20px_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_4.25rem]"
+        className="grid min-h-10 w-full grid-cols-[14px_20px_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_4.25rem]"
         aria-expanded={open}
         aria-label={`${open ? "折叠" : "展开"} ${directory.path}`}
         onClick={() => setOpen((current) => !current)}
@@ -206,7 +206,7 @@ function WorkspaceFileRow({
 }) {
   const name = file.path.split("/").pop() ?? file.path
   return (
-    <li className="grid min-h-12 grid-cols-[14px_20px_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 py-1.5 hover:bg-muted/25 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_4.25rem]">
+    <li className="grid min-h-10 grid-cols-[14px_20px_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 py-1 hover:bg-muted/25 sm:grid-cols-[14px_20px_minmax(0,1fr)_9rem_4.25rem]">
       <span />
       <span className="flex size-5 items-center justify-center text-muted-foreground">
         <Icon icon={fileIcon(name)} width="15" />

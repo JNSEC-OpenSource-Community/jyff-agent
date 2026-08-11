@@ -13,15 +13,15 @@ import {
 import { cn } from "../lib/utils.ts"
 
 const iconBtn =
-  "group flex size-9 items-center justify-center rounded-md text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 active:translate-y-px"
+  "group flex size-10 items-center justify-center rounded-md text-foreground/90 transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:translate-y-px"
 const iconLink = cn(
   iconBtn,
-  "aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary aria-[current=page]:ring-1 aria-[current=page]:ring-inset aria-[current=page]:ring-primary/20",
+  "aria-[current=page]:bg-foreground/8 aria-[current=page]:text-foreground aria-[current=page]:ring-1 aria-[current=page]:ring-inset aria-[current=page]:ring-foreground/15",
 )
 
 const navItem =
-  "flex items-center gap-2.5 rounded-lg text-sm font-medium transition-all duration-200 px-2.5 py-2"
-const navItemActive = "bg-primary/10 text-primary ring-1 ring-inset ring-primary/15"
+  "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors duration-150"
+const navItemActive = "bg-foreground/[0.08] text-foreground ring-1 ring-inset ring-foreground/15"
 const navItemIdle = "text-muted-foreground hover:text-foreground hover:bg-muted/50"
 
 function SidebarNavLink({
@@ -41,7 +41,7 @@ function SidebarNavLink({
       end={end}
       className={({ isActive }) => cn(navItem, isActive ? navItemActive : navItemIdle)}
     >
-      <Icon icon={icon} width={16} className="shrink-0" />
+      <Icon icon={icon} width={17} className="shrink-0" />
       {children}
     </NavLink>
   )
@@ -73,8 +73,8 @@ export function AppShell() {
       {/* ── Unified sidebar (wide) ── */}
       <aside
         className={cn(
-          "hide-sidebar flex shrink-0 flex-col border-r border-border bg-sidebar transition-all duration-300",
-          collapsed ? "w-[56px]" : "w-60",
+          "sidebar-desktop shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-200",
+          collapsed ? "w-16" : "w-60",
         )}
       >
         <SidebarContent
@@ -104,7 +104,7 @@ export function AppShell() {
       <main className="main-mobile relative min-w-0 flex-1 overflow-y-auto">
         <button
           type="button"
-          className="show-mobile-menu fixed right-3 top-3 z-40 hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm"
+          className="mobile-menu-trigger fixed top-3 right-3 z-40 size-10 items-center justify-center rounded-md border border-border bg-card text-foreground"
           onClick={() => setMobileOpen(true)}
           aria-label="菜单"
         >
@@ -139,12 +139,12 @@ function SidebarContent({
 
   if (collapsed) {
     return (
-      <div className="flex h-full flex-col items-center gap-1.5 px-2 py-4">
+      <div className="flex h-full flex-col items-center gap-1 px-3 py-4">
         {/* Logo */}
         <NavLink
           to="/"
           end
-          className="mb-3 flex size-9 items-center justify-center rounded-xl text-primary transition-colors hover:bg-primary/5"
+          className="mb-3 flex size-10 items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted"
           aria-label="首页"
         >
           <Icon icon="unjs:automd" width={20} />
@@ -214,7 +214,7 @@ function SidebarContent({
             <Tooltip label="展开侧栏">
               <button
                 type="button"
-                className={cn(iconBtn, "text-muted-foreground/50 hover:text-muted-foreground")}
+                className={cn(iconBtn, "text-muted-foreground hover:text-foreground")}
                 onClick={onToggle}
                 aria-label="展开侧栏"
               >
@@ -230,11 +230,11 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Logo + project info */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
         <NavLink
           to="/"
           end
-          className="flex size-8 shrink-0 items-center justify-center rounded-xl text-primary transition-colors hover:bg-primary/5"
+          className="flex size-9 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted"
           aria-label="首页"
         >
           <Icon icon="unjs:automd" width={18} />
@@ -258,7 +258,7 @@ function SidebarContent({
       </div>
 
       {/* Nav items */}
-      <nav className="flex shrink-0 flex-col gap-0.5 border-b border-border px-2.5 py-2">
+      <nav className="flex shrink-0 flex-col gap-0.5 border-b border-border px-2 py-2">
         <SidebarNavLink to="/" end icon="lucide:blocks">
           比赛列表
         </SidebarNavLink>
@@ -275,7 +275,7 @@ function SidebarContent({
 
       {/* Project-specific nav */}
       {projectId ? (
-        <nav className="flex shrink-0 flex-col gap-0.5 border-b border-border px-2.5 py-2">
+        <nav className="flex shrink-0 flex-col gap-0.5 border-b border-border px-2 py-2">
           <SidebarNavLink
             to={`/projects/${encodeURIComponent(projectId)}`}
             end
@@ -296,13 +296,13 @@ function SidebarContent({
       <div className="flex min-h-0 flex-1 flex-col">
         {projects.length > 0 ? (
           <>
-            <div className="flex shrink-0 items-baseline justify-between px-5 pb-2 pt-3">
+            <div className="flex shrink-0 items-baseline justify-between px-4 pb-2 pt-3">
               <span className="text-[11px] font-medium text-muted-foreground">快速切换</span>
               <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
                 {projects.length}
               </span>
             </div>
-            <nav aria-label="切换比赛" className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
+            <nav aria-label="切换比赛" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
               <div className="flex flex-col gap-1">
                 {projects.map((p) => (
                   <NavLink
@@ -317,7 +317,7 @@ function SidebarContent({
                       )
                     }
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 font-mono text-[10px] font-medium text-muted-foreground transition-colors group-aria-[current=page]:border-foreground/15 group-aria-[current=page]:bg-foreground/[0.06] group-aria-[current=page]:text-foreground">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 font-mono text-[10px] font-medium text-muted-foreground transition-colors group-aria-[current=page]:border-foreground/15 group-aria-[current=page]:bg-foreground/6 group-aria-[current=page]:text-foreground">
                       {p.name[0]?.toUpperCase()}
                     </span>
                     <span className="truncate font-medium">{p.name}</span>
@@ -327,7 +327,7 @@ function SidebarContent({
             </nav>
           </>
         ) : (
-          <div className="flex flex-1 items-center justify-center px-5 py-6">
+          <div className="flex flex-1 items-center justify-center px-4 py-5">
             <p className="text-center text-xs text-muted-foreground">
               暂无比赛，点击上方「创建比赛」开始
             </p>
@@ -336,7 +336,7 @@ function SidebarContent({
       </div>
 
       {/* Bottom bar */}
-      <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3">
+      <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-2.5">
         {authEnabled ? (
           <button
             type="button"
@@ -353,7 +353,7 @@ function SidebarContent({
           <Tooltip label={theme === "dark" ? "切换到亮色" : "切换到暗色"}>
             <button
               type="button"
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="flex size-8 items-center justify-center rounded-md text-foreground/90 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               onClick={onToggleTheme}
               aria-label={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
             >
@@ -363,7 +363,7 @@ function SidebarContent({
           {!inMobile ? (
             <button
               type="button"
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground"
+              className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               onClick={onToggle}
               aria-label="收起侧栏"
             >

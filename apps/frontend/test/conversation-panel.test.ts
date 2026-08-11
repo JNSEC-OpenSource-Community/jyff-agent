@@ -76,7 +76,7 @@ describe("ConversationPanel scroll affordance", () => {
     fireEvent.scroll(scroller)
     const button = screen.getByRole("button", { name: "回到底部" })
     expect(button.className).toContain("size-9")
-    expect(button.className).toContain("opacity-80")
+    expect(button.className).toContain("opacity-90")
     expect(button.className).toContain("animate-in")
     expect(button.textContent).toBe("")
     expect(button.parentElement?.className).toContain("justify-center")

@@ -36,10 +36,10 @@ export function AgentSidebar({
   const cache = useMemo(() => selectedAgentCache(run, selectedSubagent), [run, selectedSubagent])
 
   return (
-    <aside className="flex min-w-0 flex-1 flex-col gap-4">
+    <aside className="flex min-w-0 flex-1 flex-col gap-3">
       <Card className="overflow-hidden p-0">
         <Collapsible defaultOpen>
-          <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted">
+          <CollapsibleTrigger className="group flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-muted">
             <span className="flex items-center gap-2.5">
               <Icon icon="lucide:scan-search" width="15" />
               运行信息
@@ -50,7 +50,7 @@ export function AgentSidebar({
               className="transition-transform duration-200 group-data-[state=open]:rotate-180"
             />
           </CollapsibleTrigger>
-          <CollapsibleContent className="border-t border-border px-4 py-3 text-sm">
+          <CollapsibleContent className="border-t border-border px-3 py-2.5 text-sm">
             <div className="space-y-2">
               <Row label="ID" value={c.id} mono />
               <Row label="尝试" value={c.attempts} />
@@ -71,14 +71,14 @@ export function AgentSidebar({
       </Card>
 
       <Card className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
           <span className="flex items-center gap-2.5 text-sm font-medium">
             <Icon icon="lucide:network" width="15" />
             Agents
           </span>
           <Badge className="text-[10px]">{run?.subagents.length ?? 0}</Badge>
         </div>
-        <div className="flex flex-col gap-1 overflow-y-auto p-2">
+        <div className="flex flex-col gap-0.5 overflow-y-auto p-1.5">
           <AR
             icon="lucide:bot"
             title="Solver"
@@ -268,13 +268,13 @@ function AR({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150",
+        "flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150",
         active ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/15" : "hover:bg-muted",
       )}
     >
       <span
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-full border transition-colors",
+          "flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors",
           active
             ? "border-primary/30 bg-primary/5 text-primary"
             : "border-border bg-muted text-muted-foreground",

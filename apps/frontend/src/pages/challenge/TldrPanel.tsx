@@ -41,12 +41,12 @@ export function TldrPanel({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card transition-opacity",
+        "overflow-hidden rounded-md border border-border bg-card transition-opacity",
         busy && "opacity-70",
       )}
     >
-      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-        <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+        <span className="flex size-6 items-center justify-center rounded-sm bg-primary/10 text-primary">
           <Icon icon="lucide:file-text" width="14" />
         </span>
         <h3 className="flex-1 text-sm font-medium">TLDR 摘要</h3>
@@ -61,23 +61,23 @@ export function TldrPanel({
       </div>
 
       {error ? (
-        <div className="px-4 pt-4">
+        <div className="px-3 pt-3">
           <ErrorNotice message={error} />
         </div>
       ) : null}
 
       {!tldr ? (
-        <p className="px-4 py-6 text-center text-xs text-muted-foreground">尚未生成摘要</p>
+        <p className="px-3 py-5 text-center text-xs text-muted-foreground">尚未生成摘要</p>
       ) : tldr.error ? (
-        <div className="p-4">
+        <div className="p-3">
           <ErrorNotice message={`TLDR 生成失败：${tldr.error}`} />
         </div>
       ) : (
         <>
-          <div className="p-4">
+          <div className="p-3">
             <MarkdownContent>{tldr.content}</MarkdownContent>
           </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <Icon icon="lucide:bot" width="12" />
               {tldr.model}

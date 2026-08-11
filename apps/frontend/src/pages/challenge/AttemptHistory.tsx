@@ -50,7 +50,7 @@ export function AttemptHistory({
 
   if (runs.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-muted/30 py-12 text-center text-sm text-muted-foreground">
+      <div className="rounded-md border border-dashed border-border bg-muted/30 py-8 text-center text-sm text-muted-foreground">
         该题目还没有任何 Attempt 记录。
       </div>
     )
@@ -61,7 +61,7 @@ export function AttemptHistory({
       {error ? <ErrorNotice message={error} /> : null}
       {runs.map((run) => (
         <Card key={run.id} className="p-0">
-          <div className="p-4">
+          <div className="p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3">
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">
@@ -79,7 +79,7 @@ export function AttemptHistory({
               </Badge>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
               <Metric value={run.events.length} label="事件" />
               <Metric value={run.subagents.length} label="SubAgents" />
               <Metric value={run.cache.inputTokens} label="输入 tokens" />
@@ -128,7 +128,7 @@ export function AttemptHistory({
             </Collapsible>
           </div>
 
-          <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-4 py-3">
+          <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-3 py-2.5">
             <Input
               value={prompts[run.id] ?? ""}
               onChange={(event) =>
@@ -169,7 +169,7 @@ function eventFailureMessage(data: unknown): string | null {
 
 function Metric({ value, label }: { value: string | number; label: string }) {
   return (
-    <div className="rounded-lg border border-border bg-muted px-3 py-2">
+    <div className="rounded-md border border-border bg-muted px-2.5 py-2">
       <span className="block font-mono text-sm font-semibold tabular-nums text-foreground">
         {value}
       </span>

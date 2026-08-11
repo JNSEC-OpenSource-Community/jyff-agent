@@ -12,6 +12,7 @@ import {
   ErrorNotice,
   Input,
   Label,
+  PageHeader,
   PlatformSetupForm,
   SettingsSection,
   Spinner,
@@ -119,19 +120,15 @@ export function ProjectSettingsPage() {
 
   return (
     <div className="page-container">
-      <header className="mb-8">
-        <p className="hero-eyebrow text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          {pcfg.project.id}
-        </p>
-        <h1 className="hero-title mt-3! text-3xl font-bold tracking-tight">比赛配置</h1>
-        <p className="hero-desc mt-3! max-w-2xl text-sm text-muted-foreground">
-          The hardest part in today's CTF.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow={pcfg.project.id}
+        title="比赛配置"
+        description="配置运行模型、并发限制和比赛平台连接。"
+      />
       {err ? <ErrorNotice message={err} className="mb-6" /> : null}
 
       <Tabs defaultValue="runtime">
-        <TabsList className="mb-6">
+        <TabsList className="mb-4">
           <TabsTrigger value="runtime">运行</TabsTrigger>
           <TabsTrigger value="platform">平台</TabsTrigger>
         </TabsList>
@@ -141,8 +138,8 @@ export function ProjectSettingsPage() {
             title="模型与并发"
             description="选择各类 Agent 使用的模型，并限制同时运行的 Solver 与远程环境。"
           >
-            <Card className="space-y-6 p-5 sm:p-6">
-              <div className="grid gap-5 sm:grid-cols-2">
+            <Card className="space-y-4 p-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <ModelField
                   label="Solver Agent"
                   value={runtime.solverModelId}
@@ -205,9 +202,9 @@ export function ProjectSettingsPage() {
                 </div>
               </div>
               {rt.models.subagentRoles?.length ? (
-                <div className="border-t border-border pt-5">
+                <div className="border-t border-border pt-4">
                   <h3 className="mb-3 text-sm font-semibold">SubAgent Roles</h3>
-                  <div className="grid gap-5 sm:grid-cols-2">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     {rt.models.subagentRoles.map((r) => (
                       <ModelField
                         key={r.name}
@@ -245,7 +242,7 @@ export function ProjectSettingsPage() {
             description="停止当前任务并清空运行、对话、黑板、公告审核、调度队列和题目文件。比赛连接与本页配置会保留。"
             danger
           >
-            <Card className="border-danger/30 bg-danger/[0.025] p-5">
+            <Card className="border-danger/30 bg-danger/2.5 p-4">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <p className="max-w-xl text-xs leading-5 text-muted-foreground">
                   此操作无法撤销。运行中的 Solver 和 SubAgent 会先停止。
@@ -274,8 +271,8 @@ export function ProjectSettingsPage() {
               </Badge>
             }
           >
-            <Card className="space-y-6 p-5 sm:p-6">
-              <div className="mb-5 max-w-md space-y-1.5">
+            <Card className="space-y-4 p-4">
+              <div className="mb-4 max-w-md space-y-1.5">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">显示名称</Label>
                   <Input

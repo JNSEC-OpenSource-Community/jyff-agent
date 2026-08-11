@@ -39,8 +39,8 @@ export function PlatformSetupForm({
     platform.setup.authStrategies[0]
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         {platform.setup.fields.map((field) => (
           <PluginField
             key={field.key}
@@ -70,7 +70,7 @@ export function PlatformSetupForm({
       ) : null}
 
       {strategy?.secrets.length ? (
-        <div className="grid gap-4 rounded-lg border border-border bg-muted/30 p-4 sm:grid-cols-2">
+        <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3 sm:grid-cols-2">
           {strategy.secrets.map((field) => (
             <SecretField
               key={field.name}

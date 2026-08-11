@@ -26,7 +26,7 @@ function MobileSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetTitle className="sr-only">导航</SheetTitle>
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         <SheetCloseButton aria-label="关闭导航" />
       </SheetContent>
     </Sheet>
@@ -99,13 +99,13 @@ function EmptyState({
     <div
       data-slot="empty"
       className={cn(
-        "flex min-h-40 flex-col items-center justify-center p-8 text-center",
+        "flex min-h-32 flex-col items-center justify-center p-6 text-center",
         className,
       )}
     >
       <div
         data-slot="empty-icon"
-        className="mb-4 flex size-12 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground shadow-sm"
+        className="mb-3 flex size-10 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
       >
         <Icon icon={icon} width="24" aria-hidden="true" />
       </div>
@@ -128,17 +128,15 @@ function PageHeader({
   actions?: React.ReactNode
 }): React.ReactElement {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4">
+    <header className="page-header flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
         {eyebrow ? (
           <p className="mb-1! text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
-        {description ? (
-          <p className="mt-1.5! max-w-2xl text-sm text-muted-foreground">{description}</p>
-        ) : null}
+        <h1 className="page-title">{title}</h1>
+        {description ? <p className="page-description">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
@@ -155,7 +153,7 @@ function ErrorNotice({
   return (
     <div
       className={cn(
-        "flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger",
+        "flex items-start gap-2.5 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger",
         className,
       )}
       role="alert"
@@ -180,7 +178,7 @@ function SettingsSection({
   danger?: boolean
 }): React.ReactElement {
   return (
-    <section className="grid gap-4 border-t border-border py-6 first:border-t-0 first:pt-0 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+    <section className="grid gap-4 border-t border-border py-5 first:border-t-0 first:pt-0 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
       <header className="min-w-0">
         <h2 className={cn("text-sm font-semibold tracking-tight", danger && "text-danger")}>
           {title}

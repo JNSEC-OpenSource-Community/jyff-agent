@@ -18,7 +18,7 @@ export function IntelligencePanel({
   onChanged: () => Promise<void>
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <TldrPanel
         projectId={projectId}
         challengeId={challengeId}
@@ -26,7 +26,7 @@ export function IntelligencePanel({
         onChanged={onChanged}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {(
           [
             {
@@ -45,8 +45,8 @@ export function IntelligencePanel({
         ).map(({ kind, title, icon, tone }) => {
           const items = kind === "evidence" ? blackboard.evidence : blackboard.opportunities
           return (
-            <section key={kind} className="overflow-hidden rounded-xl border border-border bg-card">
-              <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+            <section key={kind} className="overflow-hidden rounded-md border border-border bg-card">
+              <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
                 <span
                   className={cn(
                     "flex size-6 items-center justify-center rounded-md text-[10px]",
@@ -63,7 +63,7 @@ export function IntelligencePanel({
                   {items.map((item) => (
                     <div
                       key={item.id}
-                      className="flex gap-3 border-b border-border px-4 py-3 text-xs last:border-b-0"
+                      className="flex gap-3 border-b border-border px-3 py-2.5 text-xs last:border-b-0"
                     >
                       <span className="shrink-0 font-mono font-semibold text-primary">
                         {kind === "evidence" ? "E" : "O"}-{item.id}
@@ -81,7 +81,7 @@ export function IntelligencePanel({
                   ))}
                 </div>
               ) : (
-                <p className="px-4 py-6 text-center text-xs text-muted-foreground">暂无数据</p>
+                <p className="px-3 py-5 text-center text-xs text-muted-foreground">暂无数据</p>
               )}
             </section>
           )
