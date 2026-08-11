@@ -67,16 +67,27 @@ export async function readStreamUntil(
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let collected = ""
-  const deadline = Date.now() + timeoutMs
+  let timedOut = false
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timeoutSignal = Symbol("sse timeout")
+  const deadline = new Promise<typeof timeoutSignal>((resolve) => {
+    timeout = setTimeout(() => resolve(timeoutSignal), timeoutMs)
+  })
   try {
     for (;;) {
-      const { value, done } = await reader.read()
+      const result = await Promise.race([reader.read(), deadline])
+      if (result === timeoutSignal) {
+        timedOut = true
+        throw new Error(`SSE 超时：未等到 ${needle}`)
+      }
+      const { value, done } = result
       if (done) return collected
       collected += decoder.decode(value, { stream: true })
       if (collected.includes(needle)) return collected
-      if (Date.now() > deadline) throw new Error(`SSE 超时：未等到 ${needle}`)
     }
   } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+    if (timedOut) await reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
 }
