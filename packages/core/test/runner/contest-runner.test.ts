@@ -206,7 +206,7 @@ describe("ContestRunner", () => {
       const runner = new ContestRunner(project, {
         maxConcurrent: 1,
         maxAttempts: 1,
-        challengeTimeoutMs: 50,
+        challengeTimeoutMs: 500,
         abortGraceMs: 5,
         createAgentOptions: () => {
           const faux = createFauxCore({ provider: "runner-timeout" })
