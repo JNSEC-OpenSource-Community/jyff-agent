@@ -21,6 +21,7 @@ import { apiMutation, apiRequest } from "../../lib/api.ts"
 import { errorMessage } from "../../lib/format.ts"
 import { cn } from "../../lib/utils.ts"
 import type {
+  BuiltInPluginConfigurationView,
   CustomModelProviderApi,
   CustomModelProviderView,
   ModelAuthenticationView,
@@ -35,19 +36,21 @@ interface Cfg {
   authentication: { enabled: boolean; username: string | null }
   modelConfiguration: ModelConfigurationView | null
   modelAuthentication: ModelAuthenticationView | null
+  plugins?: BuiltInPluginConfigurationView
   webAccess: WebAccessConfigurationView | null
 }
 
 type ProviderSetupMode = "subscription" | "api-key" | "custom"
 
 export function GlobalSettingsPage() {
-  const { refreshAuth } = useApp()
+  const { refreshAuth, refreshProjects } = useApp()
   const [g, setG] = useState<Cfg | null>(null)
   const [uname, setUname] = useState("")
   const [pw, setPw] = useState("")
   const [on, setOn] = useState(false)
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const [pluginBusy, setPluginBusy] = useState(false)
   const [importing, setImporting] = useState(false)
   const [setupMode, setSetupMode] = useState<ProviderSetupMode | null>(null)
   const [providerChoice, setProviderChoice] = useState("")
@@ -179,6 +182,24 @@ export function GlobalSettingsPage() {
     }
   }
 
+  const setPluginEnabled = async (pluginId: "token-usage", enabled: boolean) => {
+    setPluginBusy(true)
+    setErr("")
+    try {
+      const plugins = await apiMutation<BuiltInPluginConfigurationView>(
+        `/api/global-config/plugins/${encodeURIComponent(pluginId)}`,
+        "POST",
+        { enabled },
+      )
+      setG((current) => (current ? { ...current, plugins } : current))
+      await refreshProjects()
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setPluginBusy(false)
+    }
+  }
+
   if (!g) return <Spinner label="加载全局配置" />
   const auth = g.modelAuthentication
   const configuredProviders = auth?.providers.filter((p) => p.configured) ?? []
@@ -212,6 +233,13 @@ export function GlobalSettingsPage() {
     }) ?? []
   const [chosenProviderId, chosenMethodId] = providerChoice.split(":")
   const chosenProvider = auth?.providers.find((provider) => provider.id === chosenProviderId)
+  const tokenUsagePlugin = g.plugins?.plugins.find((plugin) => plugin.id === "token-usage") ?? {
+    id: "token-usage" as const,
+    name: "Token 消耗",
+    description: "按比赛和模型汇总 Solver、SubAgent 与 TLDR 的输入、输出和缓存命中用量。",
+    enabled: true,
+    defaultEnabled: true,
+  }
 
   return (
     <div className="page-container">
@@ -511,15 +539,34 @@ export function GlobalSettingsPage() {
 
         <TabsContent value="plugins">
           <SettingsSection title="插件" description="管理为 Agent 扩展能力的全局插件。">
-            {g.webAccess ? (
-              <WebAccessEditor
-                config={g.webAccess}
-                modelConfiguration={g.modelConfiguration}
-                onSaved={load}
-              />
-            ) : (
-              <ErrorNotice message="当前控制面不支持 web-access 插件" />
-            )}
+            <div>
+              <section className="flex items-center gap-3 pb-4">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold">{tokenUsagePlugin.name}</h3>
+                  <p className="mt-1! text-xs text-muted-foreground">
+                    {tokenUsagePlugin.description}
+                  </p>
+                </div>
+                <Switch
+                  checked={tokenUsagePlugin.enabled}
+                  disabled={pluginBusy}
+                  onCheckedChange={(enabled) => void setPluginEnabled(tokenUsagePlugin.id, enabled)}
+                  aria-label="启用 Token 消耗插件"
+                />
+              </section>
+
+              <div className="border-t border-border pt-4">
+                {g.webAccess ? (
+                  <WebAccessEditor
+                    config={g.webAccess}
+                    modelConfiguration={g.modelConfiguration}
+                    onSaved={load}
+                  />
+                ) : (
+                  <ErrorNotice message="当前控制面不支持 web-access 插件" />
+                )}
+              </div>
+            </div>
           </SettingsSection>
         </TabsContent>
 

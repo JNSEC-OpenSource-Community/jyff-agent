@@ -80,7 +80,11 @@ export interface SubagentManagerOptions {
   maxConcurrent?: number
   onRecord?: (record: SubagentRecord, event: SubagentLifecycleEvent) => Promise<void> | void
   /** 将 Pi 的细粒度运行事件转发给控制面，不参与 Agent 生命周期结算。 */
-  onAgentEvent?: (record: SubagentRecord, event: AgentHarnessEvent) => void
+  onAgentEvent?: (
+    record: SubagentRecord,
+    event: AgentHarnessEvent,
+    model: { provider: string; id: string } | undefined,
+  ) => void
 }
 
 interface ManagedSubagent {
@@ -480,7 +484,12 @@ export class CtfSubagentManager {
   private subscribe(managed: ManagedSubagent, agent: CtfSubagent): void {
     agent.subscribe((event) => {
       try {
-        this.options.onAgentEvent?.(snapshot(managed.record), event)
+        const model = managed.agent?.model
+        this.options.onAgentEvent?.(
+          snapshot(managed.record),
+          event,
+          model ? { provider: model.provider, id: model.id } : undefined,
+        )
       } catch {
         // 实时 UI 是旁路能力，不能因订阅者异常打断 SubAgent。
       }

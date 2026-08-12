@@ -83,6 +83,37 @@ export interface RunEvent {
   createdAt: string
 }
 
+export interface ModelTokenUsage {
+  provider: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalTokens: number
+  cacheHitRate: number | null
+  attributed: boolean
+}
+
+export interface ProjectTokenUsageSnapshot {
+  generatedAt: string
+  models: ModelTokenUsage[]
+  totals: Omit<ModelTokenUsage, "provider" | "model" | "attributed">
+  unattributedTokens: number
+}
+
+export interface RecordModelTokenUsage {
+  source: "solver" | "subagent" | "tldr" | (string & {})
+  sourceId?: string
+  provider: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens?: number
+  createdAt?: string
+}
+
 export interface CreateRunRecord {
   id: string
   challengeId: string
@@ -689,6 +720,81 @@ function subagentFromRow(row: SubagentRow): SubagentRecord {
   }
 }
 
+function modelTokenUsageFromValues(row: {
+  provider: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+}): ModelTokenUsage {
+  const inputTokens = normalizedTokenCount(row.input_tokens)
+  const outputTokens = normalizedTokenCount(row.output_tokens)
+  const cacheReadTokens = normalizedTokenCount(row.cache_read_tokens)
+  const cacheWriteTokens = normalizedTokenCount(row.cache_write_tokens)
+  const eligibleInputTokens = inputTokens + cacheReadTokens
+  return {
+    provider: row.provider,
+    model: row.model,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    totalTokens: inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens,
+    cacheHitRate: eligibleInputTokens > 0 ? cacheReadTokens / eligibleInputTokens : null,
+    attributed: row.provider !== "legacy",
+  }
+}
+
+function modelTokenUsageFromEvent(event: EventRow): RecordModelTokenUsage | undefined {
+  if (!event.data_json) return undefined
+  let data: unknown
+  try {
+    data = JSON.parse(event.data_json) as unknown
+  } catch {
+    return undefined
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined
+  const usage = data as Record<string, unknown>
+  const provider = typeof usage.provider === "string" ? usage.provider : "legacy"
+  const model = typeof usage.model === "string" ? usage.model : "历史 Solver（模型未知）"
+  const inputTokens = normalizedTokenCount(usage.input)
+  const outputTokens = normalizedTokenCount(usage.output)
+  const cacheReadTokens = normalizedTokenCount(usage.cacheRead)
+  const cacheWriteTokens = normalizedTokenCount(usage.cacheWrite)
+  if (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens === 0) return undefined
+  return {
+    source: typeof usage.source === "string" ? usage.source : "legacy-solver",
+    sourceId: String(event.id),
+    provider,
+    model,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    createdAt: event.created_at,
+  }
+}
+
+function legacyModelIdentity(value: string): { provider: string; model: string } {
+  const separator = value.indexOf("/")
+  if (separator > 0 && separator < value.length - 1) {
+    return { provider: value.slice(0, separator), model: value.slice(separator + 1) }
+  }
+  return { provider: "legacy", model: value || "历史 TLDR（模型未知）" }
+}
+
+function normalizedTokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+}
+
+function normalizedUsageIdentity(value: string, field: string): string {
+  const normalized = value.trim()
+  if (!normalized) throw new Error(`${field} must not be empty`)
+  if (normalized.length > 256) throw new Error(`${field} must not exceed 256 characters`)
+  return normalized
+}
+
 /**
  * SQLite-backed authoritative Run state.
  *
@@ -707,6 +813,10 @@ export class RunStore {
   static async open(path: string): Promise<RunStore> {
     await mkdir(dirname(path), { recursive: true })
     const database = new DatabaseSync(path)
+    const hadModelTokenUsage =
+      database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_token_usage'")
+        .get() !== undefined
     database.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = FULL;
@@ -744,6 +854,22 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS run_events_run_id
         ON run_events(run_id, id);
+
+      CREATE TABLE IF NOT EXISTS model_token_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL CHECK (input_tokens >= 0),
+        output_tokens INTEGER NOT NULL CHECK (output_tokens >= 0),
+        cache_read_tokens INTEGER NOT NULL CHECK (cache_read_tokens >= 0),
+        cache_write_tokens INTEGER NOT NULL CHECK (cache_write_tokens >= 0),
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS model_token_usage_model
+        ON model_token_usage(provider, model, id);
 
       CREATE TABLE IF NOT EXISTS run_subagents (
         id TEXT PRIMARY KEY,
@@ -1138,7 +1264,15 @@ export class RunStore {
       database.close()
       throw error
     }
-    return new RunStore(path, database)
+    const store = new RunStore(path, database)
+    try {
+      if (!hadModelTokenUsage) store.backfillModelTokenUsage()
+    } catch (error) {
+      if (!hadModelTokenUsage) database.exec("DROP TABLE IF EXISTS model_token_usage")
+      store.close()
+      throw error
+    }
+    return store
   }
 
   cachePlatformView<K extends PlatformViewCacheKey>(
@@ -2164,12 +2298,27 @@ export class RunStore {
     }
   }
 
-  appendEvent(runId: string, type: string, data?: unknown): RunEvent {
+  appendEvent(
+    runId: string,
+    type: string,
+    data?: unknown,
+    options: { recordModelTokenUsage?: boolean } = {},
+  ): RunEvent {
     this.assertOpen()
     const timestamp = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
       const id = this.insertEvent(runId, type, data, timestamp)
+      if (type === "agent_usage" && options.recordModelTokenUsage !== false) {
+        const usage = modelTokenUsageFromEvent({
+          id,
+          run_id: runId,
+          type,
+          data_json: data === undefined ? null : JSON.stringify(data),
+          created_at: timestamp,
+        })
+        if (usage) this.insertModelTokenUsage(usage)
+      }
       this.database.exec("COMMIT")
       return {
         id,
@@ -2181,6 +2330,72 @@ export class RunStore {
     } catch (error) {
       this.database.exec("ROLLBACK")
       throw error
+    }
+  }
+
+  recordModelTokenUsage(input: RecordModelTokenUsage): void {
+    this.assertOpen()
+    this.insertModelTokenUsage(input)
+  }
+
+  modelTokenUsage(): ProjectTokenUsageSnapshot {
+    this.assertOpen()
+    const rows = this.database
+      .prepare(`
+        SELECT
+          provider,
+          model,
+          SUM(input_tokens) AS input_tokens,
+          SUM(output_tokens) AS output_tokens,
+          SUM(cache_read_tokens) AS cache_read_tokens,
+          SUM(cache_write_tokens) AS cache_write_tokens
+        FROM model_token_usage
+        GROUP BY provider, model
+        ORDER BY
+          SUM(input_tokens + output_tokens + cache_read_tokens) DESC,
+          provider ASC,
+          model ASC
+      `)
+      .all() as unknown as Array<{
+      provider: string
+      model: string
+      input_tokens: number
+      output_tokens: number
+      cache_read_tokens: number
+      cache_write_tokens: number
+    }>
+    const models = rows.map((row) => modelTokenUsageFromValues(row))
+    const totalValues = models.reduce(
+      (totals, usage) => ({
+        inputTokens: totals.inputTokens + usage.inputTokens,
+        outputTokens: totals.outputTokens + usage.outputTokens,
+        cacheReadTokens: totals.cacheReadTokens + usage.cacheReadTokens,
+        cacheWriteTokens: totals.cacheWriteTokens + usage.cacheWriteTokens,
+      }),
+      { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    )
+    const totals = modelTokenUsageFromValues({
+      provider: "",
+      model: "",
+      input_tokens: totalValues.inputTokens,
+      output_tokens: totalValues.outputTokens,
+      cache_read_tokens: totalValues.cacheReadTokens,
+      cache_write_tokens: totalValues.cacheWriteTokens,
+    })
+    return {
+      generatedAt: new Date().toISOString(),
+      models,
+      totals: {
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        cacheReadTokens: totals.cacheReadTokens,
+        cacheWriteTokens: totals.cacheWriteTokens,
+        totalTokens: totals.totalTokens,
+        cacheHitRate: totals.cacheHitRate,
+      },
+      unattributedTokens: models
+        .filter((usage) => !usage.attributed)
+        .reduce((total, usage) => total + usage.totalTokens, 0),
     }
   }
 
@@ -2722,6 +2937,103 @@ export class RunStore {
     if (this.closed) return
     this.closed = true
     this.database.close()
+  }
+
+  /** 首次建立统一账本时，将旧版分散的用量字段导入一次。 */
+  private backfillModelTokenUsage(): void {
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const events = this.database
+        .prepare("SELECT * FROM run_events WHERE type = 'agent_usage' ORDER BY id ASC")
+        .all() as unknown as EventRow[]
+      for (const event of events) {
+        const usage = modelTokenUsageFromEvent(event)
+        if (usage) this.insertModelTokenUsage(usage)
+      }
+
+      const subagents = this.database
+        .prepare("SELECT * FROM run_subagents ORDER BY created_at ASC, id ASC")
+        .all() as unknown as SubagentRow[]
+      for (const subagent of subagents) {
+        const outputTokens = Math.max(
+          0,
+          subagent.total_tokens -
+            subagent.input_tokens -
+            subagent.cache_read_tokens -
+            subagent.cache_write_tokens,
+        )
+        if (
+          subagent.input_tokens +
+            outputTokens +
+            subagent.cache_read_tokens +
+            subagent.cache_write_tokens ===
+          0
+        ) {
+          continue
+        }
+        this.insertModelTokenUsage({
+          source: "legacy-subagent",
+          sourceId: subagent.id,
+          provider: "legacy",
+          model: "历史 SubAgent（模型未知）",
+          inputTokens: subagent.input_tokens,
+          outputTokens,
+          cacheReadTokens: subagent.cache_read_tokens,
+          cacheWriteTokens: subagent.cache_write_tokens,
+          createdAt: subagent.updated_at,
+        })
+      }
+
+      const tldrs = this.database
+        .prepare("SELECT * FROM challenge_tldr ORDER BY updated_at ASC, challenge_id ASC")
+        .all() as unknown as TldrRow[]
+      for (const tldr of tldrs) {
+        if (tldr.input_tokens + tldr.cache_read_tokens + tldr.cache_write_tokens === 0) continue
+        const identity = legacyModelIdentity(tldr.model)
+        this.insertModelTokenUsage({
+          source: "legacy-tldr",
+          sourceId: tldr.challenge_id,
+          provider: identity.provider,
+          model: identity.model,
+          inputTokens: tldr.input_tokens,
+          outputTokens: 0,
+          cacheReadTokens: tldr.cache_read_tokens,
+          cacheWriteTokens: tldr.cache_write_tokens,
+          createdAt: tldr.updated_at,
+        })
+      }
+      this.database.exec("COMMIT")
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  private insertModelTokenUsage(input: RecordModelTokenUsage): void {
+    const provider = normalizedUsageIdentity(input.provider, "provider")
+    const model = normalizedUsageIdentity(input.model, "model")
+    const inputTokens = normalizedTokenCount(input.inputTokens)
+    const outputTokens = normalizedTokenCount(input.outputTokens)
+    const cacheReadTokens = normalizedTokenCount(input.cacheReadTokens)
+    const cacheWriteTokens = normalizedTokenCount(input.cacheWriteTokens ?? 0)
+    this.database
+      .prepare(`
+        INSERT INTO model_token_usage (
+          source, source_id, provider, model, input_tokens, output_tokens,
+          cache_read_tokens, cache_write_tokens, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        normalizedUsageIdentity(input.source, "source"),
+        input.sourceId ?? null,
+        provider,
+        model,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        input.createdAt ?? new Date().toISOString(),
+      )
   }
 
   private getRunOrThrow(id: string): RunRecord {

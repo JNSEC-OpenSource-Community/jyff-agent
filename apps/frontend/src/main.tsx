@@ -1,8 +1,8 @@
 import { lazy, StrictMode, Suspense } from "react"
 import { createRoot } from "react-dom/client"
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom"
 import "./styles.css"
-import { AppProvider, useApp } from "./app/AppProvider.tsx"
+import { AppProvider, isPluginEnabled, useApp } from "./app/AppProvider.tsx"
 import { Spinner, Toaster, TooltipProvider } from "./components/index.ts"
 import { AppShell } from "./layouts/AppShell.tsx"
 import { applyTheme, readTheme } from "./lib/preferences.ts"
@@ -36,6 +36,20 @@ const ProjectSettingsPage = lazy(() =>
     default: ProjectSettingsPage,
   })),
 )
+const TokenUsagePage = lazy(() =>
+  import("./pages/TokenUsagePage.tsx").then(({ TokenUsagePage }) => ({
+    default: TokenUsagePage,
+  })),
+)
+
+function TokenUsageRoute(): React.ReactElement {
+  const { plugins } = useApp()
+  const { projectId = "" } = useParams()
+  if (!isPluginEnabled(plugins, "token-usage")) {
+    return <Navigate to={`/projects/${encodeURIComponent(projectId)}`} replace />
+  }
+  return <TokenUsagePage />
+}
 
 function AuthenticatedRoutes(): React.ReactElement {
   const { auth, loading } = useApp()
@@ -54,6 +68,7 @@ function AuthenticatedRoutes(): React.ReactElement {
             <Route path="father/sessions/:sessionId" element={<FatherPage />} />
             <Route path="projects/:projectId" element={<ProjectPage />} />
             <Route path="projects/:projectId/settings" element={<ProjectSettingsPage />} />
+            <Route path="projects/:projectId/token-usage" element={<TokenUsageRoute />} />
             <Route path="projects/:projectId/challenges/:challengeId" element={<ChallengePage />} />
           </Route>
         ) : (

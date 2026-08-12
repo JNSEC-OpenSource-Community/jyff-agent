@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vite-plus/test"
+import {
+  type BuiltInPluginConfiguration,
+  type BuiltInPluginId,
+  TOKEN_USAGE_PLUGIN_ID,
+} from "../src/domain/built-in-plugin-config.ts"
 import { createWebUiApp } from "../src/server.ts"
 import type { DashboardControlPlane } from "../src/types.ts"
 import { FakeDashboardProject, FakeModelConfiguration } from "./fake-project.ts"
@@ -137,9 +142,30 @@ function appWithControlPlane() {
     maxConcurrent: 8,
     maxRemoteEnvironments: 1,
   }
+  let tokenUsageEnabled = true
+  const builtInPluginConfiguration: BuiltInPluginConfiguration = {
+    snapshot: () => ({
+      plugins: [
+        {
+          id: TOKEN_USAGE_PLUGIN_ID,
+          name: "Token 消耗",
+          description: "按模型汇总 Token 用量。",
+          enabled: tokenUsageEnabled,
+          defaultEnabled: true,
+        },
+      ],
+    }),
+    has: (pluginId: string): pluginId is BuiltInPluginId => pluginId === TOKEN_USAGE_PLUGIN_ID,
+    isEnabled: () => tokenUsageEnabled,
+    setEnabled: async (_pluginId, enabled) => {
+      tokenUsageEnabled = enabled
+      return builtInPluginConfiguration.snapshot()
+    },
+  }
   const app = createWebUiApp({
     controlPlane: plane.controlPlane,
     modelConfiguration: new FakeModelConfiguration(),
+    builtInPluginConfiguration,
     projectRuntimeConfiguration: (projectId) =>
       projectId === "demo"
         ? {
@@ -193,6 +219,7 @@ describe("动态控制面与项目管理", () => {
     const listed = await app.request("/api/projects")
     expect(await jsonOf(listed)).toMatchObject({
       selectedProjectId: "demo",
+      plugins: { plugins: [{ id: "token-usage", enabled: true }] },
       projects: [
         {
           id: "demo",
@@ -231,6 +258,22 @@ describe("动态控制面与项目管理", () => {
     const runtimeView = await app.request("/api/projects/demo/runtime-config")
     expect(await jsonOf(runtimeView)).toMatchObject({
       runtime: { maxConcurrent: 8 },
+    })
+
+    const tokenUsage = await app.request("/api/projects/demo/token-usage")
+    expect(tokenUsage.status).toBe(200)
+    expect(tokenUsage.headers.get("cache-control")).toBe("no-store")
+    expect(await jsonOf(tokenUsage)).toMatchObject({
+      models: [
+        {
+          provider: "openai-codex",
+          model: "gpt-5.6-sol",
+          inputTokens: 12_000,
+          outputTokens: 3_000,
+          cacheReadTokens: 8_000,
+        },
+      ],
+      totals: { totalTokens: 23_000 },
     })
 
     const runtimeUpdated = await jsonRequest(app, "/api/projects/demo/runtime-config", "POST", {
@@ -285,6 +328,25 @@ describe("动态控制面与项目管理", () => {
     })
     expect(plane.deletedProjects).toEqual(["demo", "cache:demo"])
     expect((await app.request("/api/projects/demo")).status).toBe(404)
+  })
+
+  it("全局开关关闭后同步更新项目列表并拒绝 Token 用量接口", async () => {
+    const { app } = appWithControlPlane()
+    await jsonRequest(app, "/api/projects", "POST", { config: DEMO_CONFIG })
+
+    const disabled = await jsonRequest(app, "/api/global-config/plugins/token-usage", "POST", {
+      enabled: false,
+    })
+    expect(await jsonOf(disabled)).toMatchObject({
+      plugins: [{ id: "token-usage", enabled: false }],
+    })
+    expect(await jsonOf(await app.request("/api/projects"))).toMatchObject({
+      plugins: { plugins: [{ id: "token-usage", enabled: false }] },
+    })
+
+    const blocked = await app.request("/api/projects/demo/token-usage")
+    expect(blocked.status).toBe(404)
+    expect(await jsonOf(blocked)).toMatchObject({ error: "plugin_disabled" })
   })
 
   it("无控制面时项目管理端点返回 404", async () => {

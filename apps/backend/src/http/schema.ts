@@ -9,6 +9,8 @@ export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "ma
 
 export const projectArchiveSchema = z.object({ archived: z.boolean() })
 
+export const builtInPluginStateSchema = z.object({ enabled: z.boolean() })
+
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 function hasControlCharacter(value: string): boolean {

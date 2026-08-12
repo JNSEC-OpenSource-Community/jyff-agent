@@ -414,6 +414,20 @@ export interface WebAccessConfigurationUpdate {
   providerConfig?: Record<string, Record<string, string>>
 }
 
+export type BuiltInPluginId = "token-usage"
+
+export interface BuiltInPluginView {
+  id: BuiltInPluginId
+  name: string
+  description: string
+  enabled: boolean
+  defaultEnabled: boolean
+}
+
+export interface BuiltInPluginConfigurationView {
+  plugins: BuiltInPluginView[]
+}
+
 export type ModelAuthLoginStatus = "running" | "awaiting_input" | "success" | "error" | "cancelled"
 
 export interface ModelAuthPromptView {

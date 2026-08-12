@@ -189,7 +189,7 @@ Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queu
 │   ├── runs.sqlite
 │   ├── runs/<run-id>/
 │   └── challenges/
-├── model-config.json / auth.json / web-access.json
+├── model-config.json / auth.json / web-access.json / built-in-plugins.json
 ├── scheduler-config.json / global-config.json / secrets.json
 ├── father/sessions/<session-id>/
 └── extensions/<plugin-id>/revisions/<revision>/
@@ -201,17 +201,20 @@ Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queu
 
 `packages/core/src/persistence/run-store.ts` 使用 Node `sqlite` 的 `DatabaseSync`。主要表包括：
 
-| 表                                                                            | 内容                                                 |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `runs`、`run_events`                                                          | Run 基本信息、状态、退出原因、错误和顺序事件         |
-| `run_subagents`                                                               | SubAgent role、状态、session、工具统计、usage 和结果 |
-| `platform_view_cache`                                                         | overview、题目、公告、远程环境快照                   |
-| `scheduler_queue`、`challenge_scheduling_overrides`                           | 调度来源、lane、位置、版本和人工覆盖                 |
-| `challenge_runtime_state`、`challenge_block_events`                           | blocked 分数、阈值、复活次数和审计事件               |
-| `remote_environment_leases`                                                   | Project 内远程环境租约和优先级                       |
-| `challenge_evidence`、`challenge_opportunities`                               | 黑板数据                                             |
-| `challenge_tldr`                                                              | TLDR 内容、模型、session 和 token usage              |
-| `contest_announcements`、`challenge_announcements`、`announcement_deliveries` | 公告去重、题目匹配、审核和投递状态                   |
+| 表                                                                            | 内容                                                   |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `runs`、`run_events`                                                          | Run 基本信息、状态、退出原因、错误和顺序事件           |
+| `run_subagents`                                                               | SubAgent role、状态、session、工具统计、usage 和结果   |
+| `model_token_usage`                                                           | 按 provider/model 记录 Solver、SubAgent、TLDR 逐次用量 |
+| `platform_view_cache`                                                         | overview、题目、公告、远程环境快照                     |
+| `scheduler_queue`、`challenge_scheduling_overrides`                           | 调度来源、lane、位置、版本和人工覆盖                   |
+| `challenge_runtime_state`、`challenge_block_events`                           | blocked 分数、阈值、复活次数和审计事件                 |
+| `remote_environment_leases`                                                   | Project 内远程环境租约和优先级                         |
+| `challenge_evidence`、`challenge_opportunities`                               | 黑板数据                                               |
+| `challenge_tldr`                                                              | TLDR 内容、模型、session 和 token usage                |
+| `contest_announcements`、`challenge_announcements`、`announcement_deliveries` | 公告去重、题目匹配、审核和投递状态                     |
+
+`model_token_usage` 以 Pi 的 provider 报告为准，记录普通回复以及 compaction、branch summary 的输入、输出、缓存读取和缓存写入；首次升级时会从旧 `agent_usage`、SubAgent 与 TLDR 累计字段回填，无法恢复模型名的旧记录明确标为未归因。该账本由默认开启的内置 `token-usage` 插件维护，开关持久化在 `built-in-plugins.json`；关闭后保留已有数据和 Solver 运行事件，但不再写入新的插件账本记录，HTTP 接口与前端项目入口同时停用。
 
 恢复时以持久化终态、事件和 session 为准，内存队列只是执行投影，浏览器临时状态不是恢复来源。SSE 断线后前端先拉取 snapshot，再继续订阅；Run 和 SubAgent 对话以 JSONL session 为准，SQLite 保存索引和运行摘要。
 
