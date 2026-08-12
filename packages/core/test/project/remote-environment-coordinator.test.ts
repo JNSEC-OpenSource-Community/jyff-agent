@@ -114,10 +114,12 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
-  it("无附件请求会抢占附件题验证租约", async () => {
+  it("无附件请求会在验证租约最小使用时间片后抢占", async () => {
     const log: string[] = []
     const revoked = vi.fn()
-    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      minimumLeaseDurationMs: 0,
+    })
     const verification = coordinator.manage({
       runId: "run-verification",
       challenge: challenge("with-file", 1),
@@ -138,9 +140,12 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
-  it("验证环境在等待恢复执行时被抢占，不返回已经失效的 endpoint", async () => {
+  it("验证环境交付前不会被抢占，交付后至少保留一个最小使用时间片", async () => {
     const log: string[] = []
-    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    const events: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      minimumLeaseDurationMs: 25,
+    })
     const resume = deferred<void>()
     const verification = coordinator.manage({
       runId: "run-verification-waiting",
@@ -150,6 +155,7 @@ describe("RemoteEnvironmentCoordinator", () => {
         suspend() {},
         resume: async () => await resume.promise,
       },
+      onEvent: (type) => events.push(type),
     })
     const required = coordinator.manage({
       runId: "run-required-preempting",
@@ -158,20 +164,209 @@ describe("RemoteEnvironmentCoordinator", () => {
     })
 
     const verificationStart = verification.instance?.start()
-    await vi.waitFor(() => expect(log).toContain("start:verification-waiting"))
-    await required.instance?.start()
+    await vi.waitFor(() => expect(events).toContain("environment_acquired"))
+    let requiredResolved = false
+    const requiredStart = required.instance?.start().then((environment) => {
+      requiredResolved = true
+      return environment
+    })
+    await vi.waitFor(() => expect(events).toContain("environment_preemption_deferred"))
+
+    expect(requiredResolved).toBe(false)
+    expect(log).toEqual(["start:verification-waiting"])
     resume.resolve(undefined)
 
-    await expect(verificationStart).rejects.toMatchObject({
-      name: "RemoteEnvironmentRevokedError",
-      code: "REMOTE_ENVIRONMENT_REVOKED",
-      retryable: true,
+    await expect(verificationStart).resolves.toMatchObject({
+      id: "environment-verification-waiting",
+    })
+    expect(requiredResolved).toBe(false)
+    await expect(requiredStart).resolves.toMatchObject({
+      id: "environment-required-preempting",
     })
     expect(log).toEqual([
       "start:verification-waiting",
       "destroy:verification-waiting",
       "start:required-preempting",
     ])
+    await coordinator.close()
+  })
+
+  it("可重试启动错误在同一次工具调用内退避并恢复，不返回 Agent", async () => {
+    const events: Array<{ type: string; data?: unknown }> = []
+    const log: string[] = []
+    const retrying = capability("retrying", log)
+    if (!retrying.instance) throw new Error("fixture 缺少实例能力")
+    let attempts = 0
+    retrying.instance.start = async () => {
+      attempts++
+      if (attempts < 3) {
+        throw Object.assign(new Error("remote build is still preparing"), {
+          retryable: true,
+          retryAfterMs: 0,
+        })
+      }
+      return {
+        id: "environment-retrying",
+        challengeId: "retrying",
+        status: "running",
+        endpoint: "test://retrying",
+      }
+    }
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startRetryDelaysMs: [0, 0],
+    })
+    const managed = coordinator.manage({
+      runId: "run-retrying",
+      challenge: challenge("retrying", 0),
+      capability: retrying,
+      onEvent: (type, data) => events.push({ type, data }),
+    })
+
+    await expect(managed.instance?.start()).resolves.toMatchObject({
+      id: "environment-retrying",
+    })
+    expect(attempts).toBe(3)
+    expect(events.filter(({ type }) => type === "environment_retry_scheduled")).toHaveLength(2)
+    expect(events.some(({ type }) => type === "environment_start_failed")).toBe(false)
+    await coordinator.close()
+  })
+
+  it("可重试启动错误耗尽预算后只向 Agent 返回最后一次失败", async () => {
+    const events: string[] = []
+    const retrying = capability("exhausted", [])
+    if (!retrying.instance) throw new Error("fixture 缺少实例能力")
+    let attempts = 0
+    retrying.instance.start = async () => {
+      attempts++
+      throw Object.assign(new Error(`temporary failure ${attempts}`), { retryable: true })
+    }
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startRetryDelaysMs: [0, 0],
+    })
+    const managed = coordinator.manage({
+      runId: "run-exhausted",
+      challenge: challenge("exhausted", 0),
+      capability: retrying,
+      onEvent: (type) => events.push(type),
+    })
+
+    await expect(managed.instance?.start()).rejects.toThrow("temporary failure 3")
+    expect(attempts).toBe(3)
+    expect(events.filter((type) => type === "environment_retry_scheduled")).toHaveLength(2)
+    expect(events.filter((type) => type === "environment_start_failed")).toHaveLength(1)
+    await coordinator.close()
+  })
+
+  it("补偿清理失败时停止启动重试，避免重复创建非幂等实例", async () => {
+    const events: string[] = []
+    const retrying = capability("cleanup-failed", [])
+    if (!retrying.instance) throw new Error("fixture 缺少实例能力")
+    let attempts = 0
+    retrying.instance.start = async () => {
+      attempts++
+      throw Object.assign(new Error("temporary start failure"), { retryable: true })
+    }
+    retrying.instance.destroy = async () => {
+      throw new Error("cleanup unavailable")
+    }
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      operationTimeoutMs: 50,
+      startRetryDelaysMs: [0, 0],
+    })
+    const managed = coordinator.manage({
+      runId: "run-cleanup-failed",
+      challenge: challenge("cleanup-failed", 0),
+      capability: retrying,
+      onEvent: (type) => events.push(type),
+    })
+
+    await expect(managed.instance?.start()).rejects.toThrow("temporary start failure")
+    expect(attempts).toBe(1)
+    expect(events).toContain("environment_cleanup_failed")
+    expect(events).not.toContain("environment_retry_scheduled")
+    await coordinator.close()
+  })
+
+  it("未标记为可重试的启动错误立即返回且不会消耗重试预算", async () => {
+    const failing = capability("terminal-start", [])
+    if (!failing.instance) throw new Error("fixture 缺少实例能力")
+    const start = vi.fn(async () => {
+      throw new Error("invalid environment configuration")
+    })
+    failing.instance.start = start
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startRetryDelaysMs: [0, 0],
+    })
+    const managed = coordinator.manage({
+      runId: "run-terminal-start",
+      challenge: challenge("terminal-start", 0),
+      capability: failing,
+    })
+
+    await expect(managed.instance?.start()).rejects.toThrow("invalid environment configuration")
+    expect(start).toHaveBeenCalledOnce()
+    await coordinator.close()
+  })
+
+  it("取消退避中的环境申请后不再启动下一次平台调用", async () => {
+    const retrying = capability("cancel-retry", [])
+    if (!retrying.instance) throw new Error("fixture 缺少实例能力")
+    let attempts = 0
+    retrying.instance.start = async () => {
+      attempts++
+      throw Object.assign(new Error("temporary failure"), { retryable: true })
+    }
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startRetryDelaysMs: [1_000],
+    })
+    const managed = coordinator.manage({
+      runId: "run-cancel-retry",
+      challenge: challenge("cancel-retry", 0),
+      capability: retrying,
+    })
+    const controller = new AbortController()
+    const request = managed.instance?.start(controller.signal)
+    await vi.waitFor(() => expect(attempts).toBe(1))
+
+    controller.abort()
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(attempts).toBe(1)
+    await coordinator.close()
+  })
+
+  it("补偿清理期间取消申请时不发布重试计划", async () => {
+    const events: string[] = []
+    const cleanup = deferred<void>()
+    const retrying = capability("cancel-cleanup", [])
+    if (!retrying.instance) throw new Error("fixture 缺少实例能力")
+    const start = vi.fn(async () => {
+      throw Object.assign(new Error("temporary failure"), { retryable: true })
+    })
+    const destroy = vi.fn(async () => await cleanup.promise)
+    retrying.instance.start = start
+    retrying.instance.destroy = destroy
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startRetryDelaysMs: [0],
+    })
+    const managed = coordinator.manage({
+      runId: "run-cancel-cleanup",
+      challenge: challenge("cancel-cleanup", 0),
+      capability: retrying,
+      onEvent: (type) => events.push(type),
+    })
+    const controller = new AbortController()
+    const request = managed.instance?.start(controller.signal)
+    const rejected = expect(request).rejects.toMatchObject({ name: "AbortError" })
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce())
+
+    controller.abort()
+    cleanup.resolve(undefined)
+
+    await rejected
+    expect(start).toHaveBeenCalledOnce()
+    expect(events).not.toContain("environment_retry_scheduled")
     await coordinator.close()
   })
 

@@ -1,9 +1,10 @@
-import type {
-  ChallengeCapability,
-  ChallengeInfo,
-  FlagSubmission,
-  PlatformProject,
-  RemoteEnvironment,
+import {
+  isRetryablePlatformError,
+  type ChallengeCapability,
+  type ChallengeInfo,
+  type FlagSubmission,
+  type PlatformProject,
+  type RemoteEnvironment,
 } from "@ctf-agent/platform"
 
 export type RemoteEnvironmentPriority = "required" | "verification"
@@ -27,6 +28,10 @@ export interface RemoteEnvironmentCoordinatorOptions {
   startTimeoutMs?: number
   /** Bound status, destroy, reconciliation, and best-effort cleanup calls. */
   operationTimeoutMs?: number
+  /** Verification leases cannot be priority-preempted before this much delivered time. */
+  minimumLeaseDurationMs?: number
+  /** Retry delays for platform failures explicitly marked retryable. */
+  startRetryDelaysMs?: readonly number[]
 }
 
 /** Scheduler-owned permit used to park an Agent while its instance tool awaits external capacity. */
@@ -49,6 +54,9 @@ interface ActiveLease extends RemoteEnvironmentLeaseRecord {
   environment: RemoteEnvironment
   onRevoked?: ManagedCapabilityOptions["onRevoked"]
   onEvent?: ManagedCapabilityOptions["onEvent"]
+  deliveredAt?: number
+  preemptionDeferred?: boolean
+  preemptionDeferredUntil?: number
 }
 
 interface PendingRequest {
@@ -82,6 +90,8 @@ interface ReleaseOptions {
 
 const DEFAULT_START_TIMEOUT_MS = 4 * 60_000
 const DEFAULT_OPERATION_TIMEOUT_MS = 30_000
+const DEFAULT_MINIMUM_LEASE_DURATION_MS = 30_000
+const DEFAULT_START_RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000] as const
 
 /** Project 级远程环境配额。Solver 只能通过题目绑定后的 capability 申请自己的租约。 */
 export class RemoteEnvironmentCoordinator {
@@ -93,6 +103,10 @@ export class RemoteEnvironmentCoordinator {
   private readonly closeController = new AbortController()
   private readonly startTimeoutMs: number
   private readonly operationTimeoutMs: number
+  private readonly minimumLeaseDurationMs: number
+  private readonly startRetryDelaysMs: readonly number[]
+  private preemptionTimer?: ReturnType<typeof setTimeout>
+  private preemptionTimerAt?: number
   private lock: Promise<void> = Promise.resolve()
   private closed = false
 
@@ -109,6 +123,13 @@ export class RemoteEnvironmentCoordinator {
     this.operationTimeoutMs = positiveDuration(
       options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS,
       "远程环境操作超时",
+    )
+    this.minimumLeaseDurationMs = nonNegativeDuration(
+      options.minimumLeaseDurationMs ?? DEFAULT_MINIMUM_LEASE_DURATION_MS,
+      "远程环境最小使用时间片",
+    )
+    this.startRetryDelaysMs = (options.startRetryDelaysMs ?? DEFAULT_START_RETRY_DELAYS_MS).map(
+      (delay) => nonNegativeDuration(delay, "远程环境启动重试延迟"),
     )
   }
 
@@ -155,12 +176,16 @@ export class RemoteEnvironmentCoordinator {
             await options.executionGate?.resume(signal)
           }
 
-          if (!options.executionGate) return environment
+          if (!options.executionGate) {
+            await this.markDelivered(options.runId)
+            return environment
+          }
 
           // A required request may revoke a verification lease while its Solver is waiting to
           // reacquire execution capacity. Never return an endpoint that is already invalid.
           const current = await this.status(options.runId, instance)
           if (!current) throw environmentRevokedError()
+          await this.markDelivered(options.runId)
           return current
         },
         status: async () => await this.status(options.runId, instance),
@@ -234,6 +259,9 @@ export class RemoteEnvironmentCoordinator {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
+    if (this.preemptionTimer) clearTimeout(this.preemptionTimer)
+    this.preemptionTimer = undefined
+    this.preemptionTimerAt = undefined
     const error = abortError("远程环境协调器已关闭")
     this.closeController.abort(error)
 
@@ -363,6 +391,8 @@ export class RemoteEnvironmentCoordinator {
 
   private async preemptForRequiredRequest(): Promise<void> {
     let activeVictim: ActiveLease | undefined
+    let deferredVictim: ActiveLease | undefined
+    let deferredUntil: number | undefined
     await this.withLock(async () => {
       if (
         this.closed ||
@@ -371,19 +401,80 @@ export class RemoteEnvironmentCoordinator {
       ) {
         return
       }
-      activeVictim = this.oldestVerificationLease()
+      const now = Date.now()
+      activeVictim = this.oldestVerificationLease(now)
       if (activeVictim) return
+      const protectedLease = this.verificationLeases().find(
+        (lease) => !this.releaseTasks.has(lease.runId),
+      )
+      if (protectedLease) {
+        deferredVictim = protectedLease
+        deferredUntil = protectedLease.deliveredAt
+          ? protectedLease.deliveredAt + this.minimumLeaseDurationMs
+          : undefined
+        if (
+          protectedLease.preemptionDeferred !== true ||
+          protectedLease.preemptionDeferredUntil !== deferredUntil
+        ) {
+          protectedLease.preemptionDeferred = true
+          protectedLease.preemptionDeferredUntil = deferredUntil
+          protectedLease.onEvent?.("environment_preemption_deferred", {
+            environmentId: protectedLease.environmentId,
+            reason: protectedLease.deliveredAt ? "minimum_lease_duration" : "awaiting_delivery",
+            ...(deferredUntil ? { eligibleAt: new Date(deferredUntil).toISOString() } : {}),
+          })
+        }
+        return
+      }
       const startingVictim = [...this.starting.values()]
         .filter(({ request }) => request.priority === "verification")
         .sort((left, right) => left.startedAt - right.startedAt)[0]
       startingVictim?.controller.abort(abortError("远程环境启动已让位给无附件且无法本地推进的题目"))
     })
+    if (deferredVictim) {
+      if (deferredUntil) this.schedulePreemptionCheck(deferredUntil)
+      return
+    }
     if (activeVictim) {
       await this.releaseLease(activeVictim, {
         revokedMessage:
           "远程环境已让位给无附件且无法本地推进的题目；旧 endpoint 已失效，需要时可重新申请验证环境。",
       }).catch(() => undefined)
     }
+  }
+
+  private async markDelivered(runId: string): Promise<void> {
+    let lease: ActiveLease | undefined
+    await this.withLock(async () => {
+      lease = this.active.get(runId)
+      if (!lease || lease.deliveredAt !== undefined) return
+      lease.deliveredAt = Date.now()
+      lease.preemptionDeferred = false
+      lease.preemptionDeferredUntil = undefined
+    })
+    if (!lease || lease.deliveredAt === undefined) return
+    lease.onEvent?.("environment_delivered", {
+      environmentId: lease.environmentId,
+      deliveredAt: new Date(lease.deliveredAt).toISOString(),
+      deliveryWaitMs: lease.deliveredAt - new Date(lease.acquiredAt).getTime(),
+    })
+    this.kickPump()
+  }
+
+  private schedulePreemptionCheck(at: number): void {
+    if (this.closed || (this.preemptionTimerAt !== undefined && this.preemptionTimerAt <= at))
+      return
+    if (this.preemptionTimer) clearTimeout(this.preemptionTimer)
+    this.preemptionTimerAt = at
+    this.preemptionTimer = setTimeout(
+      () => {
+        this.preemptionTimer = undefined
+        this.preemptionTimerAt = undefined
+        this.kickPump()
+      },
+      Math.max(0, at - Date.now()),
+    )
+    this.preemptionTimer.unref?.()
   }
 
   private async reserveAvailableRequests(): Promise<StartingRequest[]> {
@@ -418,73 +509,132 @@ export class RemoteEnvironmentCoordinator {
     const signals = [controller.signal, this.closeController.signal, timeoutSignal]
     if (request.signal) signals.push(request.signal)
     const signal = AbortSignal.any(signals)
-    const operation = Promise.resolve().then(async () => await request.capability.start(signal))
+    let attempt = 0
+    let finalError: unknown
+    let finalOperation: Promise<RemoteEnvironment> | undefined
 
-    try {
-      const environment = await raceWithSignal(operation, signal)
-      if (signal.aborted) throw signal.reason
-      const lease: ActiveLease = {
-        runId: request.runId,
-        challengeId: request.challengeId,
-        environmentId: environment.id,
-        priority: request.priority,
-        acquiredAt: new Date().toISOString(),
-        capability: request.capability,
-        environment,
-        onRevoked: request.onRevoked,
-        onEvent: request.onEvent,
-      }
-      await this.withLock(async () => {
-        if (this.starting.get(request.runId) !== starting || signal.aborted || this.closed) {
-          throw signal.reason ?? abortError("远程环境申请已取消")
+    while (!signal.aborted) {
+      const operation = Promise.resolve().then(async () => await request.capability.start(signal))
+      finalOperation = operation
+      try {
+        const environment = await raceWithSignal(operation, signal)
+        if (signal.aborted) throw signal.reason
+        const lease: ActiveLease = {
+          runId: request.runId,
+          challengeId: request.challengeId,
+          environmentId: environment.id,
+          priority: request.priority,
+          acquiredAt: new Date().toISOString(),
+          capability: request.capability,
+          environment,
+          onRevoked: request.onRevoked,
+          onEvent: request.onEvent,
         }
-        this.store.saveEnvironmentLease(lease)
-        this.starting.delete(request.runId)
-        this.active.set(request.runId, lease)
-      })
-      request.onEvent?.("environment_acquired", {
-        environmentId: environment.id,
-        priority: request.priority,
-        waited: startedAt - new Date(request.requestedAt).getTime() > 0,
-        durationMs: Date.now() - startedAt,
-      })
-      request.resolve(environment)
-    } catch (cause) {
-      const error = timeoutSignal.aborted
-        ? startTimeoutError(this.startTimeoutMs)
-        : isAbortLike(cause) || signal.aborted
-          ? abortError("远程环境申请已取消")
-          : cause
-      await this.withLock(async () => {
-        if (this.starting.get(request.runId) === starting) this.starting.delete(request.runId)
-      })
-      request.onEvent?.("environment_start_failed", {
-        priority: request.priority,
-        durationMs: Date.now() - startedAt,
-        error: errorText(error),
-      })
-      request.reject(error)
-
-      // POST 可能已到达平台但响应丢失。立即清理一次；若不遵守 abort 的插件
-      // 之后才返回成功，再补一次幂等清理，避免产生无人持有的实例。
-      void this.cleanupCapability(request.capability, request.onEvent)
-      void operation.then(
-        async () => await this.cleanupCapability(request.capability, request.onEvent),
-        () => undefined,
-      )
-    } finally {
-      this.kickPump()
+        await this.withLock(async () => {
+          if (this.starting.get(request.runId) !== starting || signal.aborted || this.closed) {
+            throw signal.reason ?? abortError("远程环境申请已取消")
+          }
+          this.store.saveEnvironmentLease(lease)
+          this.starting.delete(request.runId)
+          this.active.set(request.runId, lease)
+        })
+        request.onEvent?.("environment_acquired", {
+          environmentId: environment.id,
+          priority: request.priority,
+          waited: startedAt - new Date(request.requestedAt).getTime() > 0,
+          durationMs: Date.now() - startedAt,
+          attempts: attempt + 1,
+        })
+        request.resolve(environment)
+        this.kickPump()
+        return
+      } catch (cause) {
+        const error = normalizedStartError(cause, signal, timeoutSignal, this.startTimeoutMs)
+        const fallbackDelay = this.startRetryDelaysMs[attempt]
+        const delayMs = retryDelay(error, fallbackDelay)
+        if (
+          !signal.aborted &&
+          isRetryablePlatformError(error) &&
+          fallbackDelay !== undefined &&
+          delayMs !== undefined
+        ) {
+          const cleaned = await this.cleanupCapability(request.capability, request.onEvent)
+          if (!cleaned) {
+            finalError = error
+            break
+          }
+          if (signal.aborted) {
+            finalError = normalizedStartError(
+              signal.reason,
+              signal,
+              timeoutSignal,
+              this.startTimeoutMs,
+            )
+            break
+          }
+          request.onEvent?.("environment_retry_scheduled", {
+            priority: request.priority,
+            attempt: attempt + 1,
+            nextAttempt: attempt + 2,
+            delayMs,
+            error: errorText(error),
+          })
+          attempt++
+          try {
+            await waitForDelay(delayMs, signal)
+          } catch (delayError) {
+            finalError = normalizedStartError(
+              delayError,
+              signal,
+              timeoutSignal,
+              this.startTimeoutMs,
+            )
+            break
+          }
+          request.onEvent?.("environment_starting", {
+            priority: request.priority,
+            waited: true,
+            attempt: attempt + 1,
+          })
+          continue
+        }
+        finalError = error
+        break
+      }
     }
+
+    finalError ??= normalizedStartError(signal.reason, signal, timeoutSignal, this.startTimeoutMs)
+    await this.withLock(async () => {
+      if (this.starting.get(request.runId) === starting) this.starting.delete(request.runId)
+    })
+    request.onEvent?.("environment_start_failed", {
+      priority: request.priority,
+      durationMs: Date.now() - startedAt,
+      attempts: attempt + 1,
+      error: errorText(finalError),
+    })
+    request.reject(finalError)
+
+    // POST 可能已到达平台但响应丢失。立即清理一次；若不遵守 abort 的插件
+    // 之后才返回成功，再补一次幂等清理，避免产生无人持有的实例。
+    void this.cleanupCapability(request.capability, request.onEvent)
+    void finalOperation?.then(
+      async () => await this.cleanupCapability(request.capability, request.onEvent),
+      () => undefined,
+    )
+    this.kickPump()
   }
 
   private async cleanupCapability(
     capability: NonNullable<ChallengeCapability["instance"]>,
     onEvent?: ManagedCapabilityOptions["onEvent"],
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       await withTimeout(capability.destroy(), this.operationTimeoutMs, "清理启动失败的远程环境")
+      return true
     } catch (error) {
       onEvent?.("environment_cleanup_failed", { error: errorText(error) })
+      return false
     }
   }
 
@@ -539,8 +689,13 @@ export class RemoteEnvironmentCoordinator {
       .sort((left, right) => left.acquiredAt.localeCompare(right.acquiredAt))
   }
 
-  private oldestVerificationLease(): ActiveLease | undefined {
-    return this.verificationLeases().find((lease) => !this.releaseTasks.has(lease.runId))
+  private oldestVerificationLease(now = Date.now()): ActiveLease | undefined {
+    return this.verificationLeases().find(
+      (lease) =>
+        !this.releaseTasks.has(lease.runId) &&
+        lease.deliveredAt !== undefined &&
+        now - lease.deliveredAt >= this.minimumLeaseDurationMs,
+    )
   }
 
   private sortPending(): void {
@@ -594,6 +749,43 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: s
   }
 }
 
+async function waitForDelay(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw signal.reason
+  if (delayMs === 0) return
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(finish, delayMs)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", onAbort)
+      reject(signal.reason)
+    }
+    function finish() {
+      signal.removeEventListener("abort", onAbort)
+      resolve()
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+  })
+}
+
+function normalizedStartError(
+  cause: unknown,
+  signal: AbortSignal,
+  timeoutSignal: AbortSignal,
+  timeoutMs: number,
+): unknown {
+  if (timeoutSignal.aborted) return startTimeoutError(timeoutMs)
+  if (isAbortLike(cause) || signal.aborted) return abortError("远程环境申请已取消")
+  return cause
+}
+
+function retryDelay(error: unknown, fallback: number | undefined): number | undefined {
+  if (error && typeof error === "object") {
+    const value = (error as { retryAfterMs?: unknown }).retryAfterMs
+    if (Number.isInteger(value) && Number(value) >= 0) return Number(value)
+  }
+  return fallback
+}
+
 function priorityRank(priority: RemoteEnvironmentPriority): number {
   return priority === "required" ? 0 : 1
 }
@@ -606,6 +798,11 @@ function validateMaximum(value: number): void {
 
 function positiveDuration(value: number, label: string): number {
   if (!Number.isInteger(value) || value < 1) throw new Error(`${label}必须是正整数`)
+  return value
+}
+
+function nonNegativeDuration(value: number, label: string): number {
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${label}必须是非负整数`)
   return value
 }
 

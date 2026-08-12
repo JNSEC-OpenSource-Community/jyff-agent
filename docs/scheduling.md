@@ -54,7 +54,8 @@ preparing ──→ running ──→ terminal
 饥饿。降低 `maxConcurrent` 不会抢占正在执行的 Run；在实际占用降到新上限以下之前，
 不会发放新的许可。
 
-环境成功、失败或超时都必须重新取得执行许可后，工具结果才会返回 Agent。取消
+环境成功、失败或超时都必须重新取得执行许可后，工具结果才会返回 Agent。平台明确标记的
+可重试启动错误由远程环境协调器在原工具调用内有限退避，不会额外创建 LLM 回合。取消
 `waiting_environment` 会中止 pending/starting 请求；取消 `waiting_execution_slot` 会从
 许可等待队列移除 Run。两条路径最终都会走 Solver 关闭和远程租约清理。
 
@@ -112,6 +113,8 @@ Run 标为 interrupted，并按持久化 Run、session、环境租约和调度�
 - execution waiter 必须优先于新 Run 获得空闲许可。
 - 环境 endpoint 在等待恢复期间被撤销后不得返回 Agent；工具应报告可重试的
   `RemoteEnvironmentRevokedError`。
+- 未交付 Solver 的 verification 环境不得因 required 请求被抢占；交付后必须先获得最小
+  可用时间片。配额下调仍是硬约束，不受该时间片保护。
 - Run 取消、结束和 Scheduler shutdown 都必须清除 waiter，不得泄漏执行许可。
 
 相关实现和行为测试：

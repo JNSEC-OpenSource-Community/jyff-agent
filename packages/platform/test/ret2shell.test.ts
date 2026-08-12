@@ -74,6 +74,21 @@ describe("Ret2Shell platform", () => {
     await expect(request).rejects.toMatchObject({ name: "AbortError" })
     await project.close()
   })
+
+  it("将 cargo crates 重建中的 412 标记为可退避重试", async () => {
+    server = createServer((_request, response) => {
+      response.writeHead(412, { "Content-Type": "text/plain" })
+      response.end("please wait for rebuilding cargo crates")
+    })
+    const project = localProject(await listen(server))
+
+    await expect(project.request({ path: "/building" })).rejects.toMatchObject({
+      code: "precondition",
+      retryable: true,
+      retryAfterMs: expect.any(Number),
+    })
+    await project.close()
+  })
 })
 
 function localProject(baseUrl: string): Ret2ShellProject {

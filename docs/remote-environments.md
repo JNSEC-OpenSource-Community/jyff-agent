@@ -26,13 +26,14 @@ Core 不把完整 `PlatformProject` 交给 Solver。Solver 只能操作当前题
 
 一次申请依次经过以下逻辑状态：
 
-| 状态        | 是否占配额           | 含义                                                |
-| ----------- | -------------------- | --------------------------------------------------- |
-| `pending`   | 否                   | Project 配额已满，按优先级和 FIFO 等待              |
-| `starting`  | 是                   | 已预留槽位，正在执行平台 `start(signal)`            |
-| `active`    | 是                   | 平台返回环境并已写入持久化租约                      |
-| `releasing` | 是，直到有界销毁结束 | 正在调用平台 `destroy()`                            |
-| 遗留租约    | 否                   | 销毁失败，保留 SQLite 记录供下次 Project 打开时回收 |
+| 状态               | 是否占配额           | 含义                                                |
+| ------------------ | -------------------- | --------------------------------------------------- |
+| `pending`          | 否                   | Project 配额已满，按优先级和 FIFO 等待              |
+| `starting`         | 是                   | 已预留槽位，正在执行平台 `start(signal)`            |
+| `waiting_delivery` | 是                   | 平台已返回环境，Solver 正在重新取得执行许可         |
+| `active`           | 是                   | endpoint 已交付 Solver，租约进入实际可用时间        |
+| `releasing`        | 是，直到有界销毁结束 | 正在调用平台 `destroy()`                            |
+| 遗留租约           | 否                   | 销毁失败，保留 SQLite 记录供下次 Project 打开时回收 |
 
 锁只保护这些状态转换。平台 `start`、`status`、`destroy`、遗留回收等远程 I/O 均不在 Project 协调锁内等待，因此一个故障平台调用不会锁住其他申请的取消或租约释放。
 
@@ -42,7 +43,9 @@ Core 不把完整 `PlatformProject` 交给 Solver。Solver 只能操作当前题
 
 - 没有附件的环境题为 `required`：没有实例通常无法本地推进。
 - 有附件的环境题为 `verification`：可以先完成本地分析，再申请实例验证。
-- `required` 请求可撤销最早取得的 `verification` 租约。
+- `required` 请求可撤销最早取得的 `verification` 租约，但不能撤销尚未把 endpoint
+  交付 Solver 的租约。交付后的 verification 租约默认至少获得 30 秒可用时间片，避免环境
+  创建完成后在 Agent 第一次使用前就被撤销。
 - 同优先级请求按申请时间 FIFO。
 - 降低配额时优先撤销最早的 `verification` 租约；不会强制撤销 `required` 租约。
 
@@ -66,6 +69,12 @@ Core 提供不依赖插件实现质量的边界：
 `waiting_execution_slot`，并优先于新 Run 重新取得许可；只有取得许可后，工具结果才返回
 Agent。环境在等待恢复期间被抢占时，Core 会拒绝返回旧 endpoint。完整调度不变量见
 [调度原则与执行许可](scheduling.md)。
+
+平台明确标记为 `retryable: true` 的启动失败不会立即返回 Agent。协调器在同一次工具调用
+和同一个 4 分钟 deadline 内按 `2s → 5s → 15s → 30s` 有限退避；错误携带有效
+`retryAfterMs` 时优先采用平台建议。每次重试前先执行幂等补偿清理，清理失败则停止重试，
+避免非幂等 POST 产生重复实例。取消、Project 关闭和 required 对 starting verification 的
+优先级抢占都会中断退避，不会继续发起下一次平台调用。
 
 平台适配器可以使用更短的业务 deadline。例如 Ret2Shell 的实例就绪 deadline 是 3 分钟，单次 HTTP 最多 30 秒，且 HTTP deadline 覆盖响应头和完整响应体读取。
 
@@ -101,16 +110,19 @@ Core 已负责配额、公平性、硬 deadline、tool 取消竞速和持久化�
 
 协调器向 RunStore 写入以下生命周期事件：
 
-| 事件                         | 说明                                   |
-| ---------------------------- | -------------------------------------- |
-| `environment_waiting`        | 等待配额，包含优先级和队列位置         |
-| `environment_starting`       | 已取得槽位并开始平台调用               |
-| `environment_acquired`       | 租约持久化成功，包含环境 ID 和启动耗时 |
-| `environment_start_failed`   | 启动取消、超时或平台失败               |
-| `environment_cleanup_failed` | 启动失败后的补偿销毁失败               |
-| `environment_released`       | 正常销毁并删除租约                     |
-| `environment_release_failed` | 销毁失败，持久化租约保留               |
-| `environment_revoked`        | 因优先级或配额降低而撤销               |
+| 事件                              | 说明                                     |
+| --------------------------------- | ---------------------------------------- |
+| `environment_waiting`             | 等待配额，包含优先级和队列位置           |
+| `environment_starting`            | 已取得槽位并开始平台调用                 |
+| `environment_acquired`            | 租约持久化成功，包含环境 ID 和启动耗时   |
+| `environment_delivered`           | endpoint 已返回 Solver，包含交付等待时间 |
+| `environment_preemption_deferred` | 抢占因尚未交付或最小时间片而推迟         |
+| `environment_retry_scheduled`     | 可重试启动错误的次数、延迟和脱敏原因     |
+| `environment_start_failed`        | 启动取消、超时或平台失败                 |
+| `environment_cleanup_failed`      | 启动失败后的补偿销毁失败                 |
+| `environment_released`            | 正常销毁并删除租约                       |
+| `environment_release_failed`      | 销毁失败，持久化租约保留                 |
+| `environment_revoked`             | 因优先级或配额降低而撤销                 |
 
 排查长期 tool call 时，依次确认：
 

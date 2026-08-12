@@ -61,15 +61,22 @@ export type R2SErrorCode =
 export class R2SError extends Error {
   readonly code: R2SErrorCode
   readonly status?: number
-  constructor(code: R2SErrorCode, message: string, status?: number) {
+  readonly retryable: boolean
+  readonly retryAfterMs?: number
+  constructor(
+    code: R2SErrorCode,
+    message: string,
+    status?: number,
+    retry?: { retryable: boolean; retryAfterMs?: number },
+  ) {
     super(message)
     this.name = "R2SError"
     this.code = code
     this.status = status
-  }
-
-  get retryable(): boolean {
-    return this.code === "network" || this.code === "rate_limited" || this.code === "server"
+    this.retryable =
+      retry?.retryable ??
+      (this.code === "network" || this.code === "rate_limited" || this.code === "server")
+    if (retry?.retryAfterMs !== undefined) this.retryAfterMs = retry.retryAfterMs
   }
 }
 
@@ -384,7 +391,14 @@ function errorFromStatus(status: number, detail: string): R2SError {
     case 409:
       return new R2SError("conflict", `conflict: ${detail}`, status)
     case 412:
-      return new R2SError("precondition", `precondition failed: ${detail}`, status)
+      return new R2SError(
+        "precondition",
+        `precondition failed: ${detail}`,
+        status,
+        /rebuilding cargo crates/i.test(detail)
+          ? { retryable: true, retryAfterMs: 2_000 }
+          : undefined,
+      )
     case 429:
       return new R2SError("rate_limited", `rate limited: ${detail}`, status)
     default:
