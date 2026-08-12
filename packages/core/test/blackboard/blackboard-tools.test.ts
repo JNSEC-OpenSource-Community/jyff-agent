@@ -182,6 +182,74 @@ describe("createBlackboardTools", () => {
     expect(((result.details as Record<string, unknown>).evidence as { id: number }).id).toBe(1)
   })
 
+  it("record 工具把同批次 evidence 引用解析为持久化 ID", async () => {
+    const recordEvidence = vi.fn(() => ({
+      id: 57,
+      challengeId: "c1",
+      description: "new finding",
+      runId: "r1",
+      createdAt: "now",
+    }))
+    const recordOpportunity = vi.fn(() => ({
+      id: 8,
+      challengeId: "c1",
+      description: "follow up",
+      status: "open" as const,
+      resolution: null,
+      runId: "r1",
+      sourceEvidenceIds: [57],
+      targetEvidenceId: null,
+      createdAt: "now",
+      concludedAt: null,
+    }))
+    const tools = createBlackboardTools({
+      runStore: fakeRunStore({ recordEvidence, recordOpportunity } as Partial<RunStore>),
+      challengeId: "c1",
+      runId: "r1",
+    })
+    const recordTool = tools[1]
+    if (!recordTool) throw new Error("blackboard_record 工具未创建")
+    const input = {
+      evidence: { description: "new finding" },
+      opportunity: { description: "follow up", sourceEvidenceIds: [1] },
+    }
+
+    const result = await recordTool.execute("call", input)
+
+    expect(recordOpportunity).toHaveBeenCalledWith("c1", "r1", "follow up", [57])
+    expect((result.details as Record<string, unknown>).opportunity).toBeDefined()
+    expect((result.details as Record<string, unknown>).opportunityError).toBeUndefined()
+  })
+
+  it("record 工具在没有同批次 evidence 时保留持久化 ID", async () => {
+    const recordOpportunity = vi.fn(() => ({
+      id: 8,
+      challengeId: "c1",
+      description: "follow up",
+      status: "open" as const,
+      resolution: null,
+      runId: "r1",
+      sourceEvidenceIds: [1],
+      targetEvidenceId: null,
+      createdAt: "now",
+      concludedAt: null,
+    }))
+    const tools = createBlackboardTools({
+      runStore: fakeRunStore({ recordOpportunity } as Partial<RunStore>),
+      challengeId: "c1",
+      runId: "r1",
+    })
+    const recordTool = tools[1]
+    if (!recordTool) throw new Error("blackboard_record 工具未创建")
+
+    const result = await recordTool.execute("call", {
+      opportunity: { description: "follow up", sourceEvidenceIds: [1] },
+    })
+
+    expect(recordOpportunity).toHaveBeenCalledWith("c1", "r1", "follow up", [1])
+    expect((result.details as Record<string, unknown>).opportunity).toBeDefined()
+  })
+
   it("record 工具全空参数抛出错误", async () => {
     const tools = createBlackboardTools({
       runStore: fakeRunStore(),
