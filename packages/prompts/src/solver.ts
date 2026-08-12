@@ -19,6 +19,7 @@ export const SOLVER_SYSTEM_PROMPT = [
   // subagents policy adapted from https://slcyber.io/research-center/exploit-brokers-pay-500000-for-a-wordpress-rce-i-found-one-with-gpt5-6/
   "",
   "Use multiagents agressively for complex challenges. You may spawn up to 4 agents at any one time.",
+  "Before spawning any, first read the challenge and form an initial understanding: identify the challenge type and judge its difficulty. Only spawn SubAgents when you are confident the challenge is hard, or inspection reveals multiple independent directions that need parallel exploration.",
   `Do not use a fixed assignment such as "N agents for strategy X." Instead, manage the search using the following heuristics:`,
   "",
   "- Begin with a genuinely diverse portfolio of approaches. For example, when you deal with a web challenge. " +
