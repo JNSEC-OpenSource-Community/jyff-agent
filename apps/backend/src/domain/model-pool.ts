@@ -34,6 +34,11 @@ import type {
   ModelPoolEntryView,
   WebAccessModelAuth,
 } from "../types.ts"
+import {
+  gateProviderStream,
+  ProviderRequestGate,
+  type ProviderStream,
+} from "./provider-request-gate.ts"
 
 const MODEL_API_KEY_SECRET_PREFIX = "CTF_MODEL_API_KEY_"
 const PASSTHROUGH_THINKING_MAP = Object.fromEntries(
@@ -72,6 +77,7 @@ export interface FileModelConfigurationOptions {
   secretStore: SecretStore
   authentication?: DashboardModelAuthentication
   fetch?: typeof globalThis.fetch
+  providerRequestGate?: ProviderRequestGate
 }
 
 export interface AgentModelConfiguration extends DashboardModelConfiguration {
@@ -95,10 +101,14 @@ export async function createFileModelConfiguration(
 }
 
 class PersistentModelConfiguration implements AgentModelConfiguration {
+  private readonly providerRequestGate: ProviderRequestGate
+
   constructor(
     private readonly options: FileModelConfigurationOptions,
     private values: StoredModelConfiguration,
-  ) {}
+  ) {
+    this.providerRequestGate = options.providerRequestGate ?? new ProviderRequestGate()
+  }
 
   snapshot(bindings?: AgentModelBindings): ModelConfigurationView {
     const selectedBindings = bindings ?? this.values
@@ -355,10 +365,15 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
     }
     for (const [provider, entries] of providers) {
       const native = entries.every(({ entry }) => this.hasProviderCredential(entry))
-      const stream = (model: Model<Api>, context: Context, streamOptions?: SimpleStreamOptions) =>
+      const upstream: ProviderStream = (
+        model: Model<Api>,
+        context: Context,
+        streamOptions?: SimpleStreamOptions,
+      ) =>
         native && this.options.authentication
           ? this.options.authentication.models.streamSimple(model, context, streamOptions)
           : streamCustomModel(model, context, streamOptions)
+      const stream = gateProviderStream(this.providerRequestGate, upstream)
       registry.setProvider(
         createProvider({
           id: provider,

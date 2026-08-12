@@ -233,6 +233,11 @@ Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queu
 
 没有配置可用 Solver 模型时，后端会暂停自动调度并在快照中返回原因。自定义 Provider 的模型列表由后端用 SecretStore 请求，浏览器只接收模型 ID；请求失败时保留已有手工输入，不返回上游响应正文。
 
+同一个后端进程创建的 Solver、SubAgent、TLDR、Father 和 Web Access 摘要模型共享按 Provider
+划分的请求门。相同 Provider 的请求起点至少错开 2 秒；任一请求返回可重试的 429 或
+5xx 后，该 Provider 的后续请求统一冷却 15 秒。不同 Provider 相互独立，等待期间的取消
+不会触发上游调用。该背压补充而不替代 Scheduler 的 Run 级重试。
+
 ### 6.2 Agent session 与 compaction
 
 `packages/agents/src/base-agent/` 将 Pi `AgentHarness`、原生 JSONL session、model、thinking level、tools 和 skills 组合成 `BaseAgent`。自动 compaction 默认开启，Solver 使用 `CTF_COMPACTION_PROMPT`，compaction 后由 Project 重新注入 challenge context、黑板、公告和活跃 SubAgent 快照。
