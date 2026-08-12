@@ -45,7 +45,7 @@ export function classifySolverStop(input: ClassifySolverStopInput): SolverStopCl
 
   const facts = errorFacts(input.error)
   // 配额/账单耗尽不会自行恢复。必须在将 HTTP 429 视作短暂限流前识别它们，
-  // 否则调度器会持续发起新的请求，既无意义也可能加剧限流。
+  // 但不能仅凭状态码判断：普通速率限制同样使用 429，仍应有限退避重试。
   if (
     facts.status === 401 ||
     facts.status === 403 ||

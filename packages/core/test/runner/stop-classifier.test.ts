@@ -2,6 +2,33 @@ import { describe, expect, it } from "vite-plus/test"
 import { classifySolverStop } from "../../src/orchestration/stop-classifier.ts"
 
 describe("classifySolverStop", () => {
+  it("区分同为 429 的临时限流和免费额度耗尽", () => {
+    expect(
+      classifySolverStop({
+        error: Object.assign(new Error("Rate limit exceeded. Please try again later."), {
+          status: 429,
+        }),
+      }),
+    ).toMatchObject({
+      kind: "provider_transient",
+      retryable: true,
+      requiresConfiguration: false,
+    })
+
+    expect(
+      classifySolverStop({
+        error: Object.assign(new Error("Rate limit exceeded. Please try again later."), {
+          status: 429,
+          type: "FreeUsageLimitError",
+        }),
+      }),
+    ).toMatchObject({
+      kind: "authentication_or_configuration",
+      retryable: false,
+      requiresConfiguration: true,
+    })
+  })
+
   it.each([
     [{ error: Object.assign(new Error("reset"), { code: "ECONNRESET" }) }, "network_transient"],
     [{ error: Object.assign(new Error("refused"), { code: "ECONNREFUSED" }) }, "network_transient"],
