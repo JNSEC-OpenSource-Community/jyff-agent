@@ -438,6 +438,55 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
+  it("销毁失败时保留租约和配额，重试成功后才启动下一题", async () => {
+    const log: string[] = []
+    const events: string[] = []
+    const store = new MemoryLeaseStore()
+    const coordinator = new RemoteEnvironmentCoordinator(1, store)
+    const firstCapability = capability("first", log)
+    const firstInstance = firstCapability.instance
+    if (!firstInstance) throw new Error("fixture 缺少实例能力")
+    const originalDestroy = firstInstance.destroy.bind(firstInstance)
+    let destroyFails = true
+    firstInstance.destroy = async () => {
+      if (destroyFails) {
+        log.push("destroy:first:failed")
+        throw new Error("platform still rebuilding")
+      }
+      await originalDestroy()
+    }
+    const first = coordinator.manage({
+      runId: "run-first",
+      challenge: challenge("first", 1),
+      capability: firstCapability,
+      onEvent: (type) => events.push(type),
+    })
+    const second = coordinator.manage({
+      runId: "run-second",
+      challenge: challenge("second", 1),
+      capability: capability("second", log),
+    })
+
+    await first.instance?.start()
+    let secondStarted = false
+    const waiting = second.instance?.start().then(() => {
+      secondStarted = true
+    })
+
+    await expect(first.instance?.destroy()).rejects.toThrow("platform still rebuilding")
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(secondStarted).toBe(false)
+    expect(store.leases.has("run-first")).toBe(true)
+    expect(events).toContain("environment_release_failed")
+
+    destroyFails = false
+    await first.instance?.destroy()
+    await waiting
+    expect(log).toEqual(["start:first", "destroy:first:failed", "destroy:first", "start:second"])
+    expect(store.leases.has("run-first")).toBe(false)
+    await coordinator.close()
+  })
+
   it("Flag accepted 后立即释放租约", async () => {
     const log: string[] = []
     const store = new MemoryLeaseStore()
