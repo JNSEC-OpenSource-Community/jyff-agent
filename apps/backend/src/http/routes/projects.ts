@@ -1,4 +1,8 @@
 import { Hono } from "hono"
+import {
+  defaultBuiltInPluginConfigurationView,
+  TOKEN_USAGE_PLUGIN_ID,
+} from "../../domain/built-in-plugin-config.ts"
 import type { App, AppContext, AppEnv, ProjectScope } from "../context.ts"
 import { errorText, HttpError } from "../errors.ts"
 import {
@@ -34,6 +38,8 @@ export function projectsRoutes(services: Services): App {
     return c.json({
       projects,
       selectedProjectId: controlPlane.snapshot().selectedProjectId,
+      plugins:
+        services.builtInPluginConfiguration?.snapshot() ?? defaultBuiltInPluginConfigurationView(),
     })
   })
 
@@ -165,6 +171,14 @@ export function scopedProjectRoutes(services: Services): App {
       runtime: runtime.snapshot(),
       models: services.modelView(projectIdOf(c)),
     })
+  })
+
+  app.get("/token-usage", (c) => {
+    if (services.builtInPluginConfiguration?.isEnabled(TOKEN_USAGE_PLUGIN_ID) === false) {
+      throw new HttpError(404, "plugin_disabled", "Token 消耗插件已关闭")
+    }
+    c.header("Cache-Control", "no-store")
+    return c.json(services.requireProject(projectIdOf(c)).tokenUsage())
   })
 
   app.post("/runtime-config", async (c) => {

@@ -22,6 +22,10 @@ import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
 import { createFileSchedulerConfiguration } from "./domain/scheduler-config.ts"
 import { createFileWebAccessConfiguration } from "./domain/web-access-config.ts"
 import { createFileWebUiAuthentication } from "./domain/webui-auth.ts"
+import {
+  createFileBuiltInPluginConfiguration,
+  TOKEN_USAGE_PLUGIN_ID,
+} from "./domain/built-in-plugin-config.ts"
 import { startWebUi } from "./server.ts"
 
 interface WebUiProcessOptions {
@@ -55,6 +59,9 @@ const webAccessConfiguration = await createFileWebAccessConfiguration({
   storagePath: join(stateDirectory, "web-access.json"),
   secretStore,
 })
+const builtInPluginConfiguration = await createFileBuiltInPluginConfiguration(
+  join(stateDirectory, "built-in-plugins.json"),
+)
 const schedulerConfiguration = await createFileSchedulerConfiguration({
   storagePath: join(stateDirectory, "scheduler-config.json"),
   fallback: options.maxConcurrent,
@@ -138,6 +145,7 @@ const controlPlane = await ControlPlane.create({
   secretStore,
   project: {
     telemetry: { level: "full", maxTextLength: 8_000 },
+    tokenUsageEnabled: () => builtInPluginConfiguration.isEnabled(TOKEN_USAGE_PLUGIN_ID),
     ...(options.workspaceVolume
       ? {
           workspaceMount: ({ relativeWorkspace }) => ({
@@ -211,6 +219,7 @@ const webui = await startWebUi({
   father,
   fatherValidationConfigs,
   extensions,
+  builtInPluginConfiguration,
   webAccessConfiguration,
   projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
   onProjectDeleted: (projectId) => {

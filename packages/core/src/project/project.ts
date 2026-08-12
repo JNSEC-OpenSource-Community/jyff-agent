@@ -135,6 +135,8 @@ export interface OpenProjectOptions {
     workspace: string,
     signal: AbortSignal,
   ) => WebAccessConfig | null | Promise<WebAccessConfig | null>
+  /** 内置 Token 消耗插件的动态开关；省略时保持向后兼容并默认采集。 */
+  tokenUsageEnabled?: () => boolean
   /** 控制面运行在容器中时，将 Run workspace 映射为 Docker daemon 可见的挂载。 */
   workspaceMount?: (context: {
     runId: string
@@ -241,6 +243,7 @@ export class Project {
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly workspaceNamespace: string | undefined,
     private readonly webAccessConfig: OpenProjectOptions["webAccessConfig"],
+    private readonly tokenUsageEnabled: () => boolean,
     private readonly telemetry: Required<ProjectTelemetryOptions>,
     private readonly subagentRuntime: {
       maxConcurrent: number
@@ -321,6 +324,7 @@ export class Project {
         options.workspaceMount,
         normalizeWorkspaceNamespace(options.workspaceNamespace),
         options.webAccessConfig,
+        options.tokenUsageEnabled ?? (() => true),
         {
           level: options.telemetry?.level ?? "safe",
           maxTextLength: Math.max(240, options.telemetry?.maxTextLength ?? 8_000),
@@ -477,10 +481,45 @@ export class Project {
         tools: createTldrWorkspaceTools(workspace),
         initialMessages,
       })
+      const unsubscribeUsage = tldr.subscribe((event) => {
+        if (!this.tokenUsageEnabled()) return
+        const auxiliary = auxiliaryTokenUsage(event)
+        if (!auxiliary) return
+        try {
+          this.runStore.recordModelTokenUsage({
+            source: `tldr-${auxiliary.source}`,
+            sourceId: `${challengeId}:${auxiliary.entryId}`,
+            provider: tldr.model.provider,
+            model: tldr.model.id,
+            inputTokens: auxiliary.usage.input,
+            outputTokens: auxiliary.usage.output,
+            cacheReadTokens: auxiliary.usage.cacheRead,
+            cacheWriteTokens: auxiliary.usage.cacheWrite,
+          })
+        } catch (error) {
+          this.recordDiagnostic("telemetry", error)
+        }
+      })
       try {
         const response = await tldr.prompt(
           "Generate a current concise TLDR from the supplied challenge data and read-only workspace inspection. Update the existing summary when present.",
         )
+        if (this.tokenUsageEnabled()) {
+          try {
+            this.runStore.recordModelTokenUsage({
+              source: "tldr",
+              sourceId: `${challengeId}:${response.timestamp}`,
+              provider: model.provider,
+              model: model.id,
+              inputTokens: response.usage.input,
+              outputTokens: response.usage.output,
+              cacheReadTokens: response.usage.cacheRead,
+              cacheWriteTokens: response.usage.cacheWrite,
+            })
+          } catch (error) {
+            this.recordDiagnostic("telemetry", error)
+          }
+        }
         const text = extractAssistantText(response)
         if (!text) throw new Error("TLDR Agent returned no summary")
         return this.runStore.upsertTldr({
@@ -494,6 +533,7 @@ export class Project {
           cacheWriteTokens: response.usage.cacheWrite,
         })
       } finally {
+        unsubscribeUsage()
         await tldr.close()
       }
     } catch (error) {
@@ -693,6 +733,10 @@ export class Project {
   }
   runs(filter: RunFilter = {}): RunRecord[] {
     return this.runStore.listRuns(filter)
+  }
+
+  tokenUsage() {
+    return this.runStore.modelTokenUsage()
   }
 
   cachedPlatformView(): PlatformViewCache {
@@ -1057,8 +1101,30 @@ export class Project {
         skills,
         webAccessTools,
         maxConcurrent: this.subagentRuntime.maxConcurrent,
-        onAgentEvent: (subagent, event) => {
+        onAgentEvent: (subagent, event, model) => {
           this.publishAgentEvent(runId, subagent.id, event)
+          if (model) this.recordAuxiliaryTokenUsage(runId, "subagent", event, model)
+          if (
+            this.tokenUsageEnabled() &&
+            event.type === "message_end" &&
+            event.message.role === "assistant"
+          ) {
+            const { message } = event
+            try {
+              this.runStore.recordModelTokenUsage({
+                source: "subagent",
+                sourceId: `${runId}:${subagent.id}:${message.timestamp}`,
+                provider: message.provider,
+                model: message.model,
+                inputTokens: message.usage.input,
+                outputTokens: message.usage.output,
+                cacheReadTokens: message.usage.cacheRead,
+                cacheWriteTokens: message.usage.cacheWrite,
+              })
+            } catch (error) {
+              this.recordDiagnostic("telemetry", error, runId)
+            }
+          }
         },
         onRecord: (subagent, event) => {
           try {
@@ -1157,6 +1223,7 @@ export class Project {
       // reasoning token 逐片写入 SQLite，导致事件表/WAL 和 Dashboard 查询爆炸。
       solver.subscribe((event) => {
         this.publishAgentEvent(runId, undefined, event)
+        this.recordAuxiliaryTokenUsage(runId, "solver", event, solver.model)
         if (event.type === "message_end" && solver.thinkingLevel !== "off") {
           try {
             const thinking = extractThinkingText(event.message)
@@ -1194,16 +1261,24 @@ export class Project {
         ) {
           try {
             const { usage } = event.message
-            this.runStore.appendEvent(runId, "agent_usage", {
-              input: usage.input,
-              output: usage.output,
-              cacheRead: usage.cacheRead,
-              cacheWrite: usage.cacheWrite,
-              ...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
-              totalTokens: usage.totalTokens,
-              cost: usage.cost,
-              ts: new Date().toISOString(),
-            })
+            this.runStore.appendEvent(
+              runId,
+              "agent_usage",
+              {
+                source: "solver",
+                provider: event.message.provider,
+                model: event.message.model,
+                input: usage.input,
+                output: usage.output,
+                cacheRead: usage.cacheRead,
+                cacheWrite: usage.cacheWrite,
+                ...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
+                totalTokens: usage.totalTokens,
+                cost: usage.cost,
+                ts: new Date().toISOString(),
+              },
+              { recordModelTokenUsage: this.tokenUsageEnabled() },
+            )
           } catch (error) {
             this.recordDiagnostic("telemetry", error, runId)
           }
@@ -1308,6 +1383,46 @@ export class Project {
         return [name, model ? { ...role, model } : role]
       }),
     )
+  }
+
+  private recordAuxiliaryTokenUsage(
+    runId: string,
+    actor: "solver" | "subagent",
+    event: AgentHarnessEvent,
+    model: { provider: string; id: string },
+  ): void {
+    if (!this.tokenUsageEnabled()) return
+    const auxiliary = auxiliaryTokenUsage(event)
+    if (!auxiliary) return
+    try {
+      if (actor === "subagent") {
+        this.runStore.recordModelTokenUsage({
+          source: `subagent-${auxiliary.source}`,
+          sourceId: `${runId}:${auxiliary.entryId}`,
+          provider: model.provider,
+          model: model.id,
+          inputTokens: auxiliary.usage.input,
+          outputTokens: auxiliary.usage.output,
+          cacheReadTokens: auxiliary.usage.cacheRead,
+          cacheWriteTokens: auxiliary.usage.cacheWrite,
+        })
+        return
+      }
+      this.runStore.appendEvent(runId, "agent_usage", {
+        source: `solver-${auxiliary.source}`,
+        provider: model.provider,
+        model: model.id,
+        input: auxiliary.usage.input,
+        output: auxiliary.usage.output,
+        cacheRead: auxiliary.usage.cacheRead,
+        cacheWrite: auxiliary.usage.cacheWrite,
+        totalTokens: auxiliary.usage.totalTokens,
+        cost: auxiliary.usage.cost,
+        ts: new Date().toISOString(),
+      })
+    } catch (error) {
+      this.recordDiagnostic("telemetry", error, runId)
+    }
   }
 
   async close(): Promise<void> {
@@ -1599,6 +1714,25 @@ function injectBlackboard(runStore: RunStore, challengeId: string): string {
     .replaceAll(">", "\\u003e")
     .replaceAll("&", "\\u0026")
   return blackboardSnapshotPrompt(encoded)
+}
+
+/** Pi 将压缩/分支摘要的供应商用量放在 session 事件中，不会产生 assistant message。 */
+function auxiliaryTokenUsage(event: AgentHarnessEvent) {
+  if (event.type === "session_compact" && !event.fromHook && event.compactionEntry.usage) {
+    return {
+      source: "compaction",
+      entryId: event.compactionEntry.id,
+      usage: event.compactionEntry.usage,
+    }
+  }
+  if (event.type === "session_tree" && !event.fromHook && event.summaryEntry?.usage) {
+    return {
+      source: "branch-summary",
+      entryId: event.summaryEntry.id,
+      usage: event.summaryEntry.usage,
+    }
+  }
+  return undefined
 }
 
 function progressEvents(

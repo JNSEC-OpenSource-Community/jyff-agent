@@ -1,5 +1,6 @@
 import type { RunSessionExportMetadata } from "@ctf-agent/core"
 import { type Context, Hono } from "hono"
+import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
 import type {
   DashboardControlPlane,
@@ -44,6 +45,7 @@ export interface WebUiOptions {
   father?: DashboardFather
   fatherValidationConfigs?: DashboardFatherValidationConfigs
   extensions?: DashboardPlatformExtensions
+  builtInPluginConfiguration?: BuiltInPluginConfiguration
   webAccessConfiguration?: WebAccessConfiguration
   secureCookies?: boolean
   projectRuntimeConfiguration?: (

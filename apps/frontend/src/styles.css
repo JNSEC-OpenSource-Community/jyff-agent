@@ -10,8 +10,8 @@
    黑白中性色承担交互层级，仅为成功、警告和错误保留语义色。
 */
 @theme inline {
-  --font-sans: "Geist", system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-sans: var(--default-sans-font);
+  --font-mono: var(--default-mono-font);
 
   --color-background: var(--bg);
   --color-foreground: var(--fg);
@@ -49,6 +49,24 @@
 }
 
 :root {
+  --default-emoji-font:
+    "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --zh-sans-font:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC",
+    "Source Han Sans SC", 思源黑体, "Noto Sans CJK TC", "Source Han Sans TC", "Noto Sans",
+    "Segoe UI", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif,
+    var(--default-emoji-font);
+  --zh-serif-font:
+    "Noto Serif SC Web Font", "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC",
+    "Source Han Serif CN", 思源宋体, "Noto Serif CJK TC", "Source Han Serif TC",
+    "Source Han Serif TW", "Noto Serif", Georgia, "Times New Roman", Times, STSong, SimSun, serif,
+    var(--default-emoji-font);
+  --zh-mono-font:
+    ui-monospace, "DejaVu Sans Mono", "Noto Sans Mono", SFMono-Regular, Menlo, Monaco, Consolas,
+    "Monospace SC Fallback", monospace, var(--default-emoji-font);
+  --zh-latin-font: "Noto Serif", Georgia, "Times New Roman", Times, serif;
+  --default-sans-font: "Geist", var(--zh-sans-font);
+  --default-mono-font: "Geist Mono", var(--zh-mono-font);
   --bg: #f7f7f5;
   --fg: #161616;
   --card: #ffffff;
@@ -135,6 +153,11 @@ html {
   scrollbar-width: none;
 }
 
+html:root {
+  font-family: var(--default-sans-font);
+  --zh-font: var(--zh-sans-font);
+}
+
 html.dark {
   color-scheme: dark;
 }
@@ -160,6 +183,10 @@ body {
   max-width: 88rem;
   margin-inline: auto;
   padding: 2rem 1.25rem 3rem;
+}
+
+.token-usage-page {
+  font-family: var(--zh-font);
 }
 
 /* AppShell 的主滚动容器位于浏览器最外侧，不显示其滚动条。 */

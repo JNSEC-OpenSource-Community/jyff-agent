@@ -8,6 +8,7 @@ import type {
   ChallengeSummary,
   ContestOverview,
   ContestSchedulerSnapshot,
+  ProjectTokenUsageSnapshot,
   RemoteEnvironment,
   RunEvent,
   RunFilter,
@@ -94,6 +95,31 @@ export class FakeDashboardProject implements DashboardProject {
       startedAt: "2026-07-29T11:55:01.000Z",
     },
   ]
+  tokenUsageValue: ProjectTokenUsageSnapshot = {
+    generatedAt: now,
+    models: [
+      {
+        provider: "openai-codex",
+        model: "gpt-5.6-sol",
+        inputTokens: 12_000,
+        outputTokens: 3_000,
+        cacheReadTokens: 8_000,
+        cacheWriteTokens: 0,
+        totalTokens: 23_000,
+        cacheHitRate: 0.4,
+        attributed: true,
+      },
+    ],
+    totals: {
+      inputTokens: 12_000,
+      outputTokens: 3_000,
+      cacheReadTokens: 8_000,
+      cacheWriteTokens: 0,
+      totalTokens: 23_000,
+      cacheHitRate: 0.4,
+    },
+    unattributedTokens: 0,
+  }
   eventValues = new Map<string, RunEvent[]>([
     [
       "run-pwn-1",
@@ -274,6 +300,10 @@ export class FakeDashboardProject implements DashboardProject {
       const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
       return statuses.includes(run.status)
     })
+  }
+
+  tokenUsage(): ProjectTokenUsageSnapshot {
+    return structuredClone(this.tokenUsageValue)
   }
 
   runSessionPath(runId: string): string {
