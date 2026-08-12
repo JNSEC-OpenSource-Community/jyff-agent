@@ -57,8 +57,11 @@ export interface ChallengeCapability {
   downloadAttachment(attachmentId: string): Promise<{ attachment: Attachment; content: Uint8Array }>
   submitFlag(flag: string): Promise<FlagSubmission>
   instance?: {
+    /** Propagate cancellation through upstream requests and readiness polling. */
     start(signal?: AbortSignal): Promise<RemoteEnvironment>
+    /** Return null when no live instance exists; keep upstream I/O bounded. */
     status(): Promise<RemoteEnvironment | null>
+    /** Idempotent for never-started, already-stopped, and repeated cleanup. */
     destroy(): Promise<void>
   }
 }

@@ -74,6 +74,7 @@ describe("GZCTF platform contract", () => {
   let server: Server | undefined
 
   afterEach(async () => {
+    server?.closeAllConnections()
     if (server)
       await new Promise<void>((resolve, reject) =>
         server?.close((error) => (error ? reject(error) : resolve())),
@@ -337,6 +338,57 @@ describe("GZCTF platform contract", () => {
 
     const transient = Object.assign(new Error("gateway"), { retryable: true })
     expect(isRetryablePlatformError(transient)).toBe(true)
+  })
+
+  test("instance start propagates cancellation into the container request", async () => {
+    server = createServer((request, response) => {
+      const path = request.url ?? "/"
+      if (path === "/api/config") return json(response, { title: "Local", apiPublicKey: null })
+      if (path === "/api/account/profile") return json(response, { id: "user" })
+      if (path === "/api/game/9/details") {
+        return json(response, {
+          challenges: {
+            pwn: [{ id: 12, title: "Abort", category: "Pwn", score: 500 }],
+          },
+          rank: { solvedChallenges: [] },
+        })
+      }
+      if (path === "/api/game/9/challenges/12" && request.method === "GET") {
+        return json(response, {
+          id: 12,
+          title: "Abort",
+          category: "Pwn",
+          score: 500,
+          content: "test",
+          type: "DynamicContainer",
+          context: {},
+        })
+      }
+      if (path === "/api/game/9/container/12" && request.method === "POST") {
+        response.writeHead(200, { "Content-Type": "application/json" })
+        response.write("{")
+        return
+      }
+      return json(response, { title: `Not found: ${path}` }, 404)
+    })
+    const baseUrl = await listen(server)
+    const project = await gzctfPlatform.connect({
+      project: { id: "abort", name: "Abort" },
+      config: {
+        baseUrl,
+        gameId: 9,
+        timeoutMs: 5_000,
+        auth: { type: "cookie", cookieSecret: "GZCTF_COOKIE" },
+      },
+      resolveSecret: (name) => (name === "GZCTF_COOKIE" ? "GZCTF_Token=test" : undefined),
+    })
+    const challenge = await project.bindChallenge("12")
+    const controller = new AbortController()
+    const starting = challenge.instance?.start(controller.signal)
+    setTimeout(() => controller.abort(), 20)
+
+    await expect(starting).rejects.toMatchObject({ name: "AbortError" })
+    await project.close()
   })
 
   test.runIf(process.env.GZCTF_LIVE === "1")("matches gz.imxbt.cn public API shape", async () => {

@@ -186,6 +186,7 @@ docker build --check -f apps/backend/Dockerfile .
 ## 文档
 
 - [系统架构与实现](docs/architecture.md)
+- [容器配发与远程环境生命周期](docs/remote-environments.md)
 - [黑板协议](docs/blackboard-spec.md)
 - [平台插件与 Validation Gate](docs/platform-plugins.md)
 - [SubAgent 生命周期](docs/subagents.md)

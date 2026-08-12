@@ -129,6 +129,8 @@ closing
 
 Project 对 Solver 暴露题目级能力：题目详情、附件下载、Flag 提交以及可选远程实例。平台总览、其他题目和远程环境列表留在 Project 内部，防止 Agent 跨题或跨 Project 操作。
 
+远程实例的 Project 级配额、优先级、启动硬超时、取消、租约恢复与补偿清理见 [容器配发与远程环境生命周期](remote-environments.md)。
+
 ## 4. Run、Solver 与调度
 
 ### 4.1 Run 创建和清理

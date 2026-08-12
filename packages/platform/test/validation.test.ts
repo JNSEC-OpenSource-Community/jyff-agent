@@ -84,6 +84,71 @@ describe("validatePlatformPlugin", () => {
     expect(report.status).toBe("failed")
     expect(report.checks.find(({ id }) => id === "plugin.connect")?.message).toContain("[redacted]")
   })
+
+  it("候选环境启动不返回时由 gate 有界失败并继续清理", async () => {
+    const candidate = plugin("stuck-environment")
+    const connect = candidate.connect.bind(candidate)
+    const destroy = vi.fn(async () => undefined)
+    let observedSignal: AbortSignal | undefined
+    candidate.connect = async (options) => {
+      const project = await connect(options)
+      const bindChallenge = project.bindChallenge.bind(project)
+      project.bindChallenge = async (challengeId) => {
+        if (challengeId !== "env-1") return await bindChallenge(challengeId)
+        return {
+          async getInfo() {
+            return {
+              id: challengeId,
+              title: "Environment",
+              category: "pwn",
+              score: 100,
+              description: "test",
+              attachments: [],
+            }
+          },
+          async downloadAttachment() {
+            throw new Error("attachment unavailable")
+          },
+          async submitFlag() {
+            return { status: "rejected" as const, message: "Wrong" }
+          },
+          instance: {
+            start: async (signal) => {
+              observedSignal = signal
+              return await new Promise<never>(() => undefined)
+            },
+            status: async () => null,
+            destroy,
+          },
+        }
+      }
+      return project
+    }
+
+    const report = await validatePlatformPlugin({
+      plugin: candidate,
+      revision: "rev-timeout",
+      contentHash: "timeout",
+      authorSessionId: "father-timeout",
+      profile: {
+        id: "profile-timeout",
+        project: { id: "test", name: "Test" },
+        config: {},
+        expected: { challengeId: "web-1", environmentChallengeId: "env-1" },
+        mutations: { testEnvironmentLifecycle: true },
+      },
+      timeouts: { operationMs: 50, environmentStartMs: 20 },
+    })
+
+    expect(report.status).toBe("failed")
+    expect(report.checks.find(({ id }) => id === "environment.start")?.message).toContain(
+      "exceeded 20ms",
+    )
+    expect(report.cleanup.environmentDestroyed).toBe(true)
+    expect(report.cleanup.projectClosed).toBe(true)
+    expect(destroy).toHaveBeenCalledOnce()
+    expect(observedSignal?.aborted).toBe(true)
+  })
 })
 
 function plugin(id: string, close = vi.fn()): PlatformPlugin {

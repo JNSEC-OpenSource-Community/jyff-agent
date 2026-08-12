@@ -130,6 +130,46 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
+  it("无附件请求会取消尚未完成的附件题启动预留", async () => {
+    const log: string[] = []
+    let observedSignal: AbortSignal | undefined
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startTimeoutMs: 1_000,
+      operationTimeoutMs: 100,
+    })
+    const verificationCapability = capability("starting-verification", log)
+    if (!verificationCapability.instance) throw new Error("fixture 缺少实例能力")
+    verificationCapability.instance.start = async (signal) => {
+      if (!signal) throw new Error("缺少启动 signal")
+      observedSignal = signal
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+      })
+      throw new Error("unreachable")
+    }
+    const verification = coordinator.manage({
+      runId: "run-starting-verification",
+      challenge: challenge("starting-verification", 1),
+      capability: verificationCapability,
+    })
+    const verificationStart = verification.instance?.start()
+    await vi.waitFor(() => expect(observedSignal).toBeDefined())
+
+    const required = coordinator.manage({
+      runId: "run-required-after-starting",
+      challenge: challenge("required-after-starting", 0),
+      capability: capability("required-after-starting", log),
+    })
+    const requiredStart = required.instance?.start()
+
+    await expect(verificationStart).rejects.toMatchObject({ name: "AbortError" })
+    await expect(requiredStart).resolves.toMatchObject({
+      id: "environment-required-after-starting",
+    })
+    expect(observedSignal?.aborted).toBe(true)
+    await coordinator.close()
+  })
+
   it("附件题完成本地分析后进入 FIFO 等待并在租约释放后继续", async () => {
     const log: string[] = []
     const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
@@ -198,6 +238,100 @@ describe("RemoteEnvironmentCoordinator", () => {
     await expect(request).rejects.toMatchObject({ name: "AbortError" })
     await first.instance?.destroy()
     expect(log).toEqual(["start:first", "destroy:first"])
+    await coordinator.close()
+  })
+
+  it("启动中的工具调用可取消并把 signal 传给平台", async () => {
+    const observedSignals: AbortSignal[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startTimeoutMs: 1_000,
+      operationTimeoutMs: 100,
+    })
+    const blocking = capability("blocking", [])
+    if (!blocking.instance) throw new Error("fixture 缺少实例能力")
+    blocking.instance.start = async (signal) => {
+      if (!signal) throw new Error("缺少启动 signal")
+      observedSignals.push(signal)
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+      })
+      throw new Error("unreachable")
+    }
+    const managed = coordinator.manage({
+      runId: "run-blocking",
+      challenge: challenge("blocking", 0),
+      capability: blocking,
+    })
+    const controller = new AbortController()
+    const request = managed.instance?.start(controller.signal)
+    await vi.waitFor(() => expect(observedSignals).toHaveLength(1))
+
+    controller.abort()
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" })
+    expect(observedSignals[0]?.aborted).toBe(true)
+    await coordinator.close()
+  })
+
+  it("插件忽略取消时由 Core 硬超时解开工具调用和后续配额", async () => {
+    const events: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      startTimeoutMs: 20,
+      operationTimeoutMs: 20,
+    })
+    const stuck = capability("stuck", [])
+    if (!stuck.instance) throw new Error("fixture 缺少实例能力")
+    stuck.instance.start = async () => await new Promise<RemoteEnvironment>(() => undefined)
+    const first = coordinator.manage({
+      runId: "run-stuck",
+      challenge: challenge("stuck", 0),
+      capability: stuck,
+      onEvent: (type) => events.push(type),
+    })
+
+    await expect(first.instance?.start()).rejects.toMatchObject({
+      name: "RemoteEnvironmentStartTimeoutError",
+      code: "ETIMEDOUT",
+      retryable: true,
+    })
+
+    const next = coordinator.manage({
+      runId: "run-next",
+      challenge: challenge("next", 0),
+      capability: capability("next", []),
+    })
+    await expect(next.instance?.start()).resolves.toMatchObject({ id: "environment-next" })
+    expect(events).toContain("environment_start_failed")
+    await coordinator.close()
+  })
+
+  it("一个启动卡住时不持有 Project 环境锁", async () => {
+    const log: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(2, new MemoryLeaseStore(), {
+      startTimeoutMs: 40,
+      operationTimeoutMs: 20,
+    })
+    const active = coordinator.manage({
+      runId: "run-active",
+      challenge: challenge("active", 0),
+      capability: capability("active", log),
+    })
+    await active.instance?.start()
+
+    const stuck = capability("stuck-lock", log)
+    if (!stuck.instance) throw new Error("fixture 缺少实例能力")
+    stuck.instance.start = async () => await new Promise<RemoteEnvironment>(() => undefined)
+    const starting = coordinator
+      .manage({
+        runId: "run-stuck-lock",
+        challenge: challenge("stuck-lock", 0),
+        capability: stuck,
+      })
+      .instance?.start()
+
+    await active.instance?.destroy()
+    expect(log).toContain("destroy:active")
+    await expect(starting).rejects.toMatchObject({ name: "RemoteEnvironmentStartTimeoutError" })
     await coordinator.close()
   })
 

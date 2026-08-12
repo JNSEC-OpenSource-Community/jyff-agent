@@ -7,3 +7,5 @@ Required read-only checks cover config parsing, connection, refresh, overview, s
 Results are `failed`, `read_only_verified`, or `fully_verified`. Skipped mutation checks do not count as passed. The report is bound to the candidate content hash, validation profile fingerprint, harness version, and author Session. Any candidate change invalidates the report.
 
 Do not modify code to special-case profile IDs or validation data. The same implementation is used by real Projects after activation.
+
+Before requesting environment validation, add local deterministic failure-path tests. Verify cancellation during `start(signal)`, a response body that stalls after headers, an instance that never leaves `starting`, an ambiguous start POST, and repeated `destroy()`. The gate verifies a disposable live lifecycle when configured; it cannot prove every upstream failure terminates promptly.

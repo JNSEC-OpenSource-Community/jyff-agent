@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto"
 import type { ChallengeInfo, ChallengeSummary, PlatformPlugin, RemoteEnvironment } from "./index.ts"
 
-export const PLATFORM_VALIDATION_HARNESS_VERSION = "1"
+export const PLATFORM_VALIDATION_HARNESS_VERSION = "2"
+
+const DEFAULT_VALIDATION_OPERATION_TIMEOUT_MS = 30_000
+const DEFAULT_VALIDATION_ENVIRONMENT_START_TIMEOUT_MS = 4 * 60_000
 
 export type PlatformValidationLevel = "failed" | "read_only_verified" | "fully_verified"
 
@@ -55,6 +58,11 @@ export async function validatePlatformPlugin(input: {
   contentHash: string
   authorSessionId: string
   profile: PlatformValidationProfile
+  /** Test-only/embedding overrides; production uses bounded defaults. */
+  timeouts?: {
+    operationMs?: number
+    environmentStartMs?: number
+  }
 }): Promise<PlatformValidationReport> {
   const startedAt = new Date().toISOString()
   const checks: PlatformValidationCheck[] = []
@@ -63,11 +71,23 @@ export async function validatePlatformPlugin(input: {
   let environmentDestroyed: boolean | null = null
   let project: Awaited<ReturnType<PlatformPlugin["connect"]>> | undefined
   let startedEnvironment: RemoteEnvironment | undefined
+  const operationTimeoutMs = input.timeouts?.operationMs ?? DEFAULT_VALIDATION_OPERATION_TIMEOUT_MS
+  const environmentStartTimeoutMs =
+    input.timeouts?.environmentStartMs ?? DEFAULT_VALIDATION_ENVIRONMENT_START_TIMEOUT_MS
 
-  const check = async <T>(id: string, operation: () => Promise<T> | T): Promise<T | undefined> => {
+  const check = async <T>(
+    id: string,
+    operation: () => Promise<T> | T,
+    options: { timeoutMs?: number; onTimeout?: () => void } = {},
+  ): Promise<T | undefined> => {
     const started = performance.now()
     try {
-      const value = await operation()
+      const value = await validationDeadline(
+        Promise.resolve().then(operation),
+        options.timeoutMs ?? operationTimeoutMs,
+        id,
+        options.onTimeout,
+      )
       checks.push({
         id,
         status: "passed",
@@ -193,19 +213,41 @@ export async function validatePlatformPlugin(input: {
           failed(checks, "environment.start", "插件未提供环境生命周期能力")
           capabilities.environment = "failed"
         } else {
-          startedEnvironment = await check("environment.start", () =>
-            environmentCapability.instance?.start(),
+          const startController = new AbortController()
+          let startOperation: Promise<RemoteEnvironment> | undefined
+          startedEnvironment = await check(
+            "environment.start",
+            () => {
+              startOperation = environmentCapability.instance?.start(startController.signal)
+              return startOperation as Promise<RemoteEnvironment>
+            },
+            {
+              timeoutMs: environmentStartTimeoutMs,
+              onTimeout: () => startController.abort(validationTimeoutError("environment.start")),
+            },
           )
           if (startedEnvironment) {
             await check("environment.status", () => environmentCapability.instance?.status())
           }
-          try {
-            await environmentCapability.instance.destroy()
-            environmentDestroyed = true
-            passed(checks, "environment.destroy", "环境已销毁")
-          } catch (error) {
-            environmentDestroyed = false
-            failed(checks, "environment.destroy", safeError(error))
+          await check("environment.destroy", () => environmentCapability.instance?.destroy())
+          environmentDestroyed = checkPassed(checks, "environment.destroy")
+          if (!startedEnvironment && startOperation) {
+            // A candidate may ignore abort and finish after the gate stopped
+            // waiting. Repeat idempotent cleanup if that happens.
+            void startOperation.then(
+              async () => {
+                try {
+                  await validationDeadline(
+                    Promise.resolve(environmentCapability.instance?.destroy()),
+                    operationTimeoutMs,
+                    "environment.lateDestroy",
+                  )
+                } catch {
+                  // The report already records the primary lifecycle failure.
+                }
+              },
+              () => undefined,
+            )
           }
           capabilities.environment = [
             "environment.start",
@@ -222,13 +264,8 @@ export async function validatePlatformPlugin(input: {
     }
   } finally {
     if (project) {
-      try {
-        await project.close()
-        projectClosed = true
-        passed(checks, "project.close", "连接已关闭")
-      } catch (error) {
-        failed(checks, "project.close", safeError(error))
-      }
+      await check("project.close", () => project?.close())
+      projectClosed = checkPassed(checks, "project.close")
     }
   }
 
@@ -327,12 +364,42 @@ function safeError(error: unknown): string {
     .slice(0, 500)
 }
 
-function checkPassed(checks: readonly PlatformValidationCheck[], id: string): boolean {
-  return checks.some((check) => check.id === id && check.status === "passed")
+async function validationDeadline<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  id: string,
+  onTimeout?: () => void,
+): Promise<T> {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1) {
+    throw new Error(`Validation timeout for ${id} must be a positive integer`)
+  }
+  const timeout = AbortSignal.timeout(timeoutMs)
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(validationTimeoutError(id, timeoutMs))
+      timeout.addEventListener("abort", onAbort, { once: true })
+      operation.then(resolve, reject).finally(() => timeout.removeEventListener("abort", onAbort))
+    })
+  } catch (error) {
+    if (!timeout.aborted) throw error
+    onTimeout?.()
+    throw validationTimeoutError(id, timeoutMs)
+  }
 }
 
-function passed(checks: PlatformValidationCheck[], id: string, message: string): void {
-  checks.push({ id, status: "passed", message, durationMs: 0 })
+function validationTimeoutError(id: string, timeoutMs?: number): Error {
+  return Object.assign(
+    new Error(
+      timeoutMs === undefined
+        ? `Validation operation cancelled: ${id}`
+        : `Validation operation ${id} exceeded ${timeoutMs}ms`,
+    ),
+    { name: "PlatformValidationTimeoutError", code: "ETIMEDOUT" },
+  )
+}
+
+function checkPassed(checks: readonly PlatformValidationCheck[], id: string): boolean {
+  return checks.some((check) => check.id === id && check.status === "passed")
 }
 
 function failed(checks: PlatformValidationCheck[], id: string, message: string): void {

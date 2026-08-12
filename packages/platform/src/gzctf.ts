@@ -417,15 +417,16 @@ export class GZCTFClient {
     return await encryptGZCTFApiData(value, this.apiPublicKey)
   }
 
-  async get<T>(path: string): Promise<T> {
-    return await this.api<T>(path, {}, true)
+  async get<T>(path: string, signal?: AbortSignal): Promise<T> {
+    return await this.api<T>(path, signal ? { signal } : {}, true)
   }
 
-  async post<T>(path: string, body?: unknown): Promise<T> {
+  async post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     return await this.api<T>(
       path,
       {
         method: "POST",
+        ...(signal ? { signal } : {}),
         ...(body === undefined
           ? {}
           : {
@@ -437,8 +438,8 @@ export class GZCTFClient {
     )
   }
 
-  async delete(path: string): Promise<void> {
-    await this.api(path, { method: "DELETE" }, false)
+  async delete(path: string, signal?: AbortSignal): Promise<void> {
+    await this.api(path, { method: "DELETE", ...(signal ? { signal } : {}) }, false)
   }
 
   async download(location: string): Promise<Uint8Array> {
@@ -477,6 +478,7 @@ export class GZCTFClient {
         () => request<T>(this.fetchFn, url, this.timeoutMs, this.cookie, init, expectJson),
         method === "GET" || method === "HEAD",
         true,
+        init.signal ?? undefined,
       )
     } catch (error) {
       throw requestContext(error, method, url)
@@ -487,10 +489,12 @@ export class GZCTFClient {
     operation: () => Promise<T>,
     retryableMethod: boolean,
     allowReauthentication: boolean,
+    signal?: AbortSignal,
   ): Promise<T> {
     let authenticatedAgain = false
     let authenticationVersion = this.authenticationVersion
     for (let attempt = 1; ; attempt += 1) {
+      throwIfAborted(signal)
       try {
         return await operation()
       } catch (error) {
@@ -516,7 +520,7 @@ export class GZCTFClient {
         ) {
           throw error
         }
-        await delay(retryDelay(this.config.retryBaseDelayMs, attempt))
+        await delay(retryDelay(this.config.retryBaseDelayMs, attempt), signal)
       }
     }
   }
@@ -629,6 +633,15 @@ async function request<T>(
   try {
     return (await response.json()) as T
   } catch (error) {
+    if (init.signal?.aborted) throw abortReason(init.signal)
+    if (
+      error instanceof DOMException &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw new GZCTFApiError(`GZCTF 请求超过 ${timeoutMs}ms`, "network", undefined, undefined, {
+        cause: error,
+      })
+    }
     throw new GZCTFApiError("无法解析 GZCTF API 响应", "protocol", response.status, undefined, {
       cause: error,
     })
@@ -642,6 +655,9 @@ async function rawRequest(
   cookie: string,
   init: RequestInit,
 ): Promise<Response> {
+  const callerSignal = init.signal ?? undefined
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal
   try {
     const headers = new Headers(init.headers)
     headers.set("Accept", headers.get("Accept") ?? "application/json")
@@ -649,11 +665,12 @@ async function rawRequest(
     return await fetchFn(url, {
       ...init,
       redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
       headers,
     })
   } catch (error) {
-    const timeout = error instanceof DOMException && error.name === "TimeoutError"
+    if (callerSignal?.aborted) throw abortReason(callerSignal)
+    const timeout = timeoutSignal.aborted
     throw new GZCTFApiError(
       timeout ? `GZCTF 请求超过 ${timeoutMs}ms` : "无法连接 GZCTF",
       "network",
@@ -844,11 +861,15 @@ class GZCTFChallengeCapability implements ChallengeCapability {
     this.info = mapChallengeInfo(detail, solved)
     if (isContainer(detail.type)) {
       this.instance = {
-        start: async () => {
-          const existing = await this.getInstanceStatus()
+        start: async (signal) => {
+          const existing = await this.getInstanceStatus(signal)
           if (existing) return existing
           try {
-            const container = await this.client.post<GZCTFContainer>(this.containerPath())
+            const container = await this.client.post<GZCTFContainer>(
+              this.containerPath(),
+              undefined,
+              signal,
+            )
             this.invalidate()
             return this.remember(mapContainer(this.environmentId(), this.challengeId, container))
           } catch (error) {
@@ -857,7 +878,7 @@ class GZCTFChallengeCapability implements ChallengeCapability {
             // status before exposing a noisy/non-idempotent failure to Agent.
             this.invalidate()
             try {
-              const created = await this.getInstanceStatus()
+              const created = await this.getInstanceStatus(signal)
               if (created) return created
             } catch {
               // Preserve the original start failure; it carries retryability.
@@ -924,8 +945,11 @@ class GZCTFChallengeCapability implements ChallengeCapability {
     return await this.loadDetail()
   }
 
-  private async getInstanceStatus(): Promise<RemoteEnvironment | null> {
-    const detail = await this.detail()
+  private async getInstanceStatus(signal?: AbortSignal): Promise<RemoteEnvironment | null> {
+    throwIfAborted(signal)
+    const detail = signal
+      ? await this.client.get<GZCTFChallengeDetail>(this.challengePath(), signal)
+      : await this.detail()
     const context = detail.context
     if (!context?.instanceEntry && !context?.closeTime) {
       this.environments.delete(this.environmentId())
@@ -1216,6 +1240,26 @@ function parseEnvironmentId(value: string, gameId: number): number | null {
   return match?.[1] ? Number(match[1]) : null
 }
 
-async function delay(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, ms))
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    throwIfAborted(signal)
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(abortReason(signal as AbortSignal))
+    }
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal)
+}
+
+function abortReason(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason
+  return new DOMException("aborted", "AbortError")
 }

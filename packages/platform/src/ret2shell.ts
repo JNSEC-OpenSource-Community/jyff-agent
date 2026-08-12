@@ -40,7 +40,7 @@ const REQUEST_TIMEOUT_MS = 30_000
 const SUBMIT_POLL_INTERVAL_MS = 1_500
 const SUBMIT_POLL_MAX_TRIES = 45 // ~67s worst case
 const INSTANCE_POLL_INTERVAL_MS = 3_000
-const INSTANCE_POLL_MAX_TRIES = 60 // ~3 min worst case
+const INSTANCE_START_TIMEOUT_MS = 3 * 60_000
 
 // ---------------------------------------------------------------------------
 // Error type (bounded, credential-free)
@@ -66,6 +66,10 @@ export class R2SError extends Error {
     this.name = "R2SError"
     this.code = code
     this.status = status
+  }
+
+  get retryable(): boolean {
+    return this.code === "network" || this.code === "rate_limited" || this.code === "server"
   }
 }
 
@@ -305,6 +309,7 @@ interface RequestOptions {
   body?: unknown
   timeoutMs?: number
   binary?: boolean
+  signal?: AbortSignal
 }
 
 interface ResponseData {
@@ -335,37 +340,37 @@ async function httpRequest(baseUrl: string, options: RequestOptions): Promise<Re
   }
 
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs)
-  let response: Response
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
   try {
-    response = await fetch(url.toString(), {
+    const response = await fetch(url.toString(), {
       method: options.method ?? "GET",
       headers,
       body,
-      signal: controller.signal,
+      signal,
       redirect: "follow",
     })
+
+    // The deadline covers the response body too. Clearing a timer after headers
+    // lets a stalled body keep a tool call pending forever.
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    const text = new TextDecoder("utf-8").decode(bytes)
+
+    if (response.status >= 400) {
+      const detail = (text || response.statusText).trim().slice(0, 200)
+      throw errorFromStatus(response.status, detail)
+    }
+
+    return { status: response.status, headers: response.headers, text, bytes }
   } catch (err) {
-    if (controller.signal.aborted) {
+    if (err instanceof R2SError) throw err
+    if (options.signal?.aborted) throw abortReason(options.signal)
+    if (timeoutSignal.aborted) {
       throw new R2SError("network", `request to ${url.origin} timed out after ${timeoutMs}ms`)
     }
     const reason = err instanceof Error ? err.message : String(err)
     throw new R2SError("network", `cannot reach ${url.origin}: ${reason}`)
-  } finally {
-    clearTimeout(timer)
   }
-
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  // UTF-8 decode for JSON/text payloads; bytes stay raw for binary downloads.
-  const text = new TextDecoder("utf-8").decode(bytes)
-
-  if (response.status >= 400) {
-    const detail = (text || response.statusText).trim().slice(0, 200)
-    throw errorFromStatus(response.status, detail)
-  }
-
-  return { status: response.status, headers: response.headers, text, bytes }
 }
 
 function errorFromStatus(status: number, detail: string): R2SError {
@@ -628,8 +633,12 @@ export class Ret2ShellProject implements PlatformProject {
     return httpRequest(this.baseUrl, { ...options, authHeader: this.authHeader })
   }
 
-  async getJson<T>(path: string, query?: RequestOptions["query"]): Promise<T> {
-    const data = await this.request({ path, query })
+  async getJson<T>(
+    path: string,
+    query?: RequestOptions["query"],
+    options: Pick<RequestOptions, "signal" | "timeoutMs"> = {},
+  ): Promise<T> {
+    const data = await this.request({ path, query, ...options })
     return parseJson<T>(data, path)
   }
 
@@ -696,9 +705,12 @@ export class Ret2ShellProject implements PlatformProject {
     return Array.isArray(data) ? data : []
   }
 
-  async fetchInstances(): Promise<R2SInstance[]> {
+  async fetchInstances(signal?: AbortSignal, timeoutMs?: number): Promise<R2SInstance[]> {
     const gameId = await this.resolveGameId()
-    const data = await this.getJson<R2SInstance[]>(`/game/${gameId}/instance`)
+    const data = await this.getJson<R2SInstance[]>(`/game/${gameId}/instance`, undefined, {
+      signal,
+      timeoutMs,
+    })
     return Array.isArray(data) ? data : []
   }
 
@@ -1019,55 +1031,70 @@ class Ret2ShellChallenge implements ChallengeCapability {
 
   readonly instance = {
     start: async (signal?: AbortSignal): Promise<RemoteEnvironment> => {
+      throwIfAborted(signal)
       const challengeId = this.challengeId
       const gameId = await this.gameId()
       const path = `/game/${gameId}/challenge/${challengeId}`
+      const deadline = Date.now() + INSTANCE_START_TIMEOUT_MS
 
       // 1. Reuse an existing instance for this challenge if present.
-      let instance = (await this.project.fetchInstances()).find(
-        (item) => String(item.challenge_id) === challengeId,
-      )
+      let instance = (
+        await this.project.fetchInstances(signal, remainingRequestTime(deadline))
+      ).find((item) => String(item.challenge_id) === challengeId)
 
       // 2. Otherwise request one.
       if (!instance) {
         try {
-          await this.project.request({ path: `${path}/instance`, method: "POST" })
+          await this.project.request({
+            path: `${path}/instance`,
+            method: "POST",
+            signal,
+            timeoutMs: remainingRequestTime(deadline),
+          })
         } catch (err) {
           if (err instanceof R2SError && err.code === "conflict") {
             // already launched concurrently
+          } else if (err instanceof R2SError && err.retryable) {
+            // The POST may have reached the platform before its response was
+            // lost. Re-read once before surfacing the non-idempotent failure.
+            try {
+              instance = (
+                await this.project.fetchInstances(signal, remainingRequestTime(deadline))
+              ).find((item) => String(item.challenge_id) === challengeId)
+            } catch {
+              // Preserve the original start failure and its retryability.
+            }
+            if (!instance) throw err
           } else {
             throw err
           }
         }
-        instance = (await this.project.fetchInstances()).find(
-          (item) => String(item.challenge_id) === challengeId,
-        )
-      }
-      if (!instance) {
-        throw new R2SError(
-          "precondition",
-          "challenge instance did not appear after starting (no online environment configured?)",
-        )
       }
 
       // 3. Wait until the pod is running.
-      for (let attempt = 0; attempt < INSTANCE_POLL_MAX_TRIES; attempt += 1) {
+      while (Date.now() < deadline) {
         throwIfAborted(signal)
-        const fresh = (await this.project.fetchInstances()).find(
-          (item) => String(item.challenge_id) === challengeId,
-        )
+        const fresh = (
+          await this.project.fetchInstances(signal, remainingRequestTime(deadline))
+        ).find((item) => String(item.challenge_id) === challengeId)
         if (fresh) {
           instance = fresh
-          if (fresh.state === "Running") break
+          if (fresh.state === "Running") {
+            return await this.project.toRemoteEnvironment(fresh, { proxy: true })
+          }
           if (fresh.state === "Succeeded" || fresh.state === "Failed") {
             throw new R2SError("precondition", `challenge instance entered state ${fresh.state}`)
           }
         }
-        await sleep(INSTANCE_POLL_INTERVAL_MS, signal)
+        await sleep(Math.min(INSTANCE_POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())), signal)
       }
       throwIfAborted(signal)
-
-      return this.project.toRemoteEnvironment(instance, { proxy: true })
+      throw new R2SError(
+        "network",
+        instance
+          ? `timed out waiting for challenge instance to become ready (last state: ${instance.state})`
+          : "challenge instance did not appear before the startup deadline",
+      )
     },
 
     status: async (): Promise<RemoteEnvironment | null> => {
@@ -1179,6 +1206,15 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     }
     signal?.addEventListener("abort", onAbort, { once: true })
   })
+}
+
+function remainingRequestTime(deadline: number): number {
+  return Math.max(1, Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now()))
+}
+
+function abortReason(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason
+  return new DOMException("aborted", "AbortError")
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
