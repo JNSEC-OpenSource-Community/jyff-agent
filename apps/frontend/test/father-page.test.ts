@@ -6,6 +6,8 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { FatherPage } from "../src/pages/FatherPage.tsx"
 
+vi.mock("@iconify/react", () => ({ Icon: () => null }))
+
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()

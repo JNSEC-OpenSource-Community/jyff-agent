@@ -73,6 +73,8 @@ open ── concludeOpportunity ──> concluded
 
 三种对象都是可选的，但至少要提供一个。单项错误会写入结果中的 `evidenceError`、`opportunityError` 或 `concludeError`，不应假定整次调用已经成功。
 
+同一次调用同时创建 Evidence 和 Opportunity 时，`sourceEvidenceIds` 使用 `1` 引用本次调用的第 1 条（也是唯一一条）Evidence；工具会在 Evidence 写入成功后把这个批次局部引用替换为真实的持久化 ID。调用中没有创建 Evidence 时，正整数仍表示已经持久化的 Evidence ID。
+
 ### `blackboard_manage`
 
 用于按 ID 修正或删除记录：
