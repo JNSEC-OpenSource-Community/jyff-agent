@@ -293,6 +293,137 @@ describe("RunStore", () => {
     reopened.close()
   })
 
+  it("按 provider/model 聚合统一 token 账本并在重开后保留最新累计值", async () => {
+    const { path, store } = await storeFixture()
+    store.recordModelTokenUsage({
+      source: "solver",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      inputTokens: 1_000,
+      outputTokens: 200,
+      cacheReadTokens: 3_000,
+      cacheWriteTokens: 0,
+    })
+    store.recordModelTokenUsage({
+      source: "subagent",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      inputTokens: 500,
+      outputTokens: 100,
+      cacheReadTokens: 500,
+      cacheWriteTokens: 50,
+    })
+    store.recordModelTokenUsage({
+      source: "tldr",
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      inputTokens: 400,
+      outputTokens: 80,
+      cacheReadTokens: 0,
+    })
+
+    expect(store.modelTokenUsage()).toMatchObject({
+      models: [
+        {
+          provider: "openai-codex",
+          model: "gpt-5.6-sol",
+          inputTokens: 1_500,
+          outputTokens: 300,
+          cacheReadTokens: 3_500,
+          cacheWriteTokens: 50,
+          totalTokens: 5_350,
+          cacheHitRate: 0.7,
+          attributed: true,
+        },
+        {
+          provider: "anthropic",
+          model: "claude-sonnet-4-5",
+          totalTokens: 480,
+        },
+      ],
+      totals: {
+        inputTokens: 1_900,
+        outputTokens: 380,
+        cacheReadTokens: 3_500,
+        cacheWriteTokens: 50,
+        totalTokens: 5_830,
+      },
+      unattributedTokens: 0,
+    })
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.modelTokenUsage().totals.totalTokens).toBe(5_830)
+    reopened.close()
+  })
+
+  it("可保留 agent_usage 运行事件但跳过插件模型账本", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "run-plugin-disabled",
+      challengeId: "web-disabled",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    store.appendEvent(
+      "run-plugin-disabled",
+      "agent_usage",
+      {
+        source: "solver",
+        provider: "openai-codex",
+        model: "gpt-5.6-sol",
+        input: 100,
+        output: 20,
+        cacheRead: 50,
+        cacheWrite: 0,
+      },
+      { recordModelTokenUsage: false },
+    )
+
+    expect(store.events("run-plugin-disabled")).toContainEqual(
+      expect.objectContaining({ type: "agent_usage" }),
+    )
+    expect(store.modelTokenUsage().models).toEqual([])
+    store.close()
+  })
+
+  it("首次创建 token 账本时兼容导入旧 agent_usage 事件", async () => {
+    const { path, store } = await storeFixture()
+    store.createRun({
+      id: "run-legacy-usage",
+      challengeId: "web-legacy",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    store.appendEvent("run-legacy-usage", "agent_usage", {
+      input: 700,
+      output: 90,
+      cacheRead: 300,
+      cacheWrite: 0,
+    })
+    store.close()
+
+    const database = new DatabaseSync(path)
+    database.exec("DROP TABLE model_token_usage")
+    database.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.modelTokenUsage()).toMatchObject({
+      models: [
+        {
+          provider: "legacy",
+          model: "历史 Solver（模型未知）",
+          inputTokens: 700,
+          outputTokens: 90,
+          cacheReadTokens: 300,
+          attributed: false,
+        },
+      ],
+      unattributedTokens: 1_090,
+    })
+    reopened.close()
+  })
+
   it("启动恢复时把遗留 preparing/running Run 标记为 interrupted", async () => {
     const { store } = await storeFixture()
     store.createRun({

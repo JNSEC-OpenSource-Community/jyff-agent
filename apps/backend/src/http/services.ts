@@ -5,6 +5,7 @@ import {
   piSessionHasConversation,
   readPiSessionConversation,
 } from "../domain/html-export.ts"
+import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
 import type {
   DashboardControlPlane,
@@ -35,6 +36,7 @@ export interface ServicesOptions {
   father?: DashboardFather
   fatherValidationConfigs?: DashboardFatherValidationConfigs
   extensions?: DashboardPlatformExtensions
+  builtInPluginConfiguration?: BuiltInPluginConfiguration
   webAccessConfiguration?: WebAccessConfiguration
   projectRuntimeConfiguration?: (
     projectId: string,
@@ -89,6 +91,10 @@ export class Services {
 
   get webAccessConfiguration(): WebAccessConfiguration | undefined {
     return this.options.webAccessConfiguration
+  }
+
+  get builtInPluginConfiguration(): BuiltInPluginConfiguration | undefined {
+    return this.options.builtInPluginConfiguration
   }
 
   get authentication(): DashboardWebUiAuthentication | undefined {

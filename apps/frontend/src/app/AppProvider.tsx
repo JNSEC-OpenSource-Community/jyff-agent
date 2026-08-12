@@ -9,6 +9,11 @@ import {
   useState,
 } from "react"
 import { apiMutation, apiRequest } from "../lib/api.ts"
+import type {
+  BuiltInPluginConfigurationView,
+  BuiltInPluginId,
+  BuiltInPluginView,
+} from "../types.ts"
 
 export interface AuthenticationState {
   enabled: boolean
@@ -19,6 +24,7 @@ export interface AuthenticationState {
 interface ProjectListResponse {
   projects: ProjectListItem[]
   selectedProjectId: string | null
+  plugins?: BuiltInPluginConfigurationView
 }
 
 export interface ProjectListItem extends ControlPlaneProjectSnapshot {
@@ -29,6 +35,7 @@ export interface ProjectListItem extends ControlPlaneProjectSnapshot {
 interface AppContextValue {
   auth: AuthenticationState | null
   projects: ProjectListItem[]
+  plugins: BuiltInPluginView[]
   selectedProjectId: string | null
   loading: boolean
   refreshAuth: () => Promise<AuthenticationState>
@@ -38,9 +45,27 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null)
 
+const DEFAULT_PLUGINS: BuiltInPluginView[] = [
+  {
+    id: "token-usage",
+    name: "Token 消耗",
+    description: "按比赛和模型汇总 Token 用量。",
+    enabled: true,
+    defaultEnabled: true,
+  },
+]
+
+export function isPluginEnabled(
+  plugins: readonly BuiltInPluginView[] | undefined,
+  pluginId: BuiltInPluginId,
+): boolean {
+  return plugins?.find((plugin) => plugin.id === pluginId)?.enabled ?? true
+}
+
 export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
   const [auth, setAuth] = useState<AuthenticationState | null>(null)
   const [projects, setProjects] = useState<ProjectListItem[]>([])
+  const [plugins, setPlugins] = useState<BuiltInPluginView[]>(DEFAULT_PLUGINS)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -54,6 +79,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     const response = await apiRequest<ProjectListResponse>("/api/projects")
     setProjects(response.projects)
     setSelectedProjectId(response.selectedProjectId)
+    setPlugins(response.plugins?.plugins ?? DEFAULT_PLUGINS)
   }, [])
 
   useEffect(() => {
@@ -74,19 +100,21 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     await apiMutation("/api/auth/logout", "POST")
     await refreshAuth()
     setProjects([])
+    setPlugins(DEFAULT_PLUGINS)
   }, [refreshAuth])
 
   const value = useMemo<AppContextValue>(
     () => ({
       auth,
       projects,
+      plugins,
       selectedProjectId,
       loading,
       refreshAuth,
       refreshProjects,
       logout,
     }),
-    [auth, projects, selectedProjectId, loading, refreshAuth, refreshProjects, logout],
+    [auth, projects, plugins, selectedProjectId, loading, refreshAuth, refreshProjects, logout],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

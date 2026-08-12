@@ -10,6 +10,7 @@ import type {
 } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
+import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it } from "vite-plus/test"
 import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
@@ -445,6 +446,49 @@ describe("Project", () => {
       expect(received).toContain("agent_started")
       expect(received).toContain("agent_finished")
       expect(unrelated).toEqual([])
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("SubAgent 用量只进入比赛模型账本，不污染 Solver 运行事件", async () => {
+    const root = await fixture()
+    const faux = createFauxCore({ provider: "token-subagent" })
+    faux.setResponses([fauxAssistantMessage("subagent analysis complete")])
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: {
+          streamFn: faux.streamSimple as AgentOptions["streamFn"],
+          initialState: { model: faux.getModel(), thinkingLevel: "off" },
+        },
+      })
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")
+      if (!launch) throw new Error("SubAgent 工具未创建")
+
+      await launch.execute("token-subagent", {
+        subagent_type: "general-purpose",
+        prompt: "Inspect the challenge.",
+        description: "Inspect challenge",
+        run_in_background: false,
+      })
+
+      expect(project.tokenUsage().models).toEqual([
+        expect.objectContaining({
+          provider: "token-subagent",
+          model: "faux-1",
+          attributed: true,
+        }),
+      ])
+      expect(project.tokenUsage().totals.totalTokens).toBeGreaterThan(0)
+      expect(
+        project.runEvents(solver.runId).filter((event) => event.type === "agent_usage"),
+      ).toEqual([])
+      await solver.close()
     } finally {
       await project.close()
     }

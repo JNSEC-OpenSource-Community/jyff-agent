@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
@@ -15,6 +15,7 @@ function jsonResponse(data: unknown): Response {
 
 describe("全局供应商设置", () => {
   afterEach(() => {
+    cleanup()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -111,5 +112,82 @@ describe("全局供应商设置", () => {
     if (!editProvider) throw new Error("未找到已有供应商编辑入口")
     await user.click(editProvider)
     expect(screen.getByPlaceholderText("输入新的 API Key")).toBeTruthy()
+  })
+
+  it("在插件页默认开启 Token 消耗插件并可全局关闭", async () => {
+    let enabled = true
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (url === "/api/auth") {
+        return jsonResponse({ enabled: false, authenticated: true, username: null })
+      }
+      if (url === "/api/projects") {
+        return jsonResponse({
+          projects: [],
+          selectedProjectId: null,
+          plugins: {
+            plugins: [
+              {
+                id: "token-usage",
+                name: "Token 消耗",
+                description: "按比赛和模型汇总 Token 用量。",
+                enabled,
+                defaultEnabled: true,
+              },
+            ],
+          },
+        })
+      }
+      if (url === "/api/global-config") {
+        return jsonResponse({
+          authentication: { enabled: false, username: null },
+          modelConfiguration: null,
+          modelAuthentication: null,
+          plugins: {
+            plugins: [
+              {
+                id: "token-usage",
+                name: "Token 消耗",
+                description: "按比赛和模型汇总 Token 用量。",
+                enabled,
+                defaultEnabled: true,
+              },
+            ],
+          },
+          webAccess: null,
+        })
+      }
+      if (url === "/api/global-config/plugins/token-usage" && init?.method === "POST") {
+        if (typeof init.body !== "string") throw new Error("插件开关请求缺少 JSON body")
+        enabled = (JSON.parse(init.body) as { enabled: boolean }).enabled
+        return jsonResponse({
+          plugins: [
+            {
+              id: "token-usage",
+              name: "Token 消耗",
+              description: "按比赛和模型汇总 Token 用量。",
+              enabled,
+              defaultEnabled: true,
+            },
+          ],
+        })
+      }
+      throw new Error(`未处理的请求：${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(createElement(AppProvider, null, createElement(GlobalSettingsPage)))
+    const user = userEvent.setup()
+    await screen.findByText("全局配置")
+    await user.click(screen.getByRole("tab", { name: "插件" }))
+
+    const toggle = screen.getByRole("switch", { name: "启用 Token 消耗插件" })
+    expect(toggle.getAttribute("aria-checked")).toBe("true")
+    await user.click(toggle)
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"))
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/global-config/plugins/token-usage",
+      expect.objectContaining({ method: "POST" }),
+    )
   })
 })

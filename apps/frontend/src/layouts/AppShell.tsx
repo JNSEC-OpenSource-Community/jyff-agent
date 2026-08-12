@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react"
 import { useState } from "react"
 import { NavLink, Outlet, useParams } from "react-router-dom"
-import { useApp } from "../app/AppProvider.tsx"
+import { isPluginEnabled, useApp } from "../app/AppProvider.tsx"
 import { MobileSheet, Tooltip } from "../components/index.ts"
 import {
   applyTheme,
@@ -134,8 +134,9 @@ function SidebarContent({
   inMobile?: boolean
 }) {
   const { projectId } = useParams()
-  const { projects } = useApp()
+  const { projects, plugins } = useApp()
   const project = projects.find((p) => p.id === projectId)
+  const tokenUsageEnabled = isPluginEnabled(plugins, "token-usage")
 
   if (collapsed) {
     return (
@@ -189,6 +190,16 @@ function SidebarContent({
                 <Icon icon="lucide:sliders-horizontal" width={18} />
               </NavLink>
             </Tooltip>
+            {tokenUsageEnabled ? (
+              <Tooltip label="Token 消耗">
+                <NavLink
+                  to={`/projects/${encodeURIComponent(projectId)}/token-usage`}
+                  className={iconLink}
+                >
+                  <Icon icon="lucide:chart-no-axes-column-increasing" width={18} />
+                </NavLink>
+              </Tooltip>
+            ) : null}
           </>
         ) : null}
 
@@ -289,6 +300,14 @@ function SidebarContent({
           >
             比赛设置
           </SidebarNavLink>
+          {tokenUsageEnabled ? (
+            <SidebarNavLink
+              to={`/projects/${encodeURIComponent(projectId)}/token-usage`}
+              icon="lucide:chart-no-axes-column-increasing"
+            >
+              Token 消耗
+            </SidebarNavLink>
+          ) : null}
         </nav>
       ) : null}
 

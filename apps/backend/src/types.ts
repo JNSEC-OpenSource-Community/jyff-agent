@@ -19,6 +19,7 @@ import type {
   PlatformValidationReport,
   PlatformViewCache,
   ProjectConfig,
+  ProjectTokenUsageSnapshot,
   RemoteEnvironment,
   RunEvent,
   RunFilter,
@@ -216,6 +217,7 @@ export interface DashboardProject {
   schedulerQueue?(): SchedulerQueueRecord[]
   setMaxRemoteEnvironments(maxConcurrent: number): Promise<void>
   runs(filter?: RunFilter): RunRecord[]
+  tokenUsage(): ProjectTokenUsageSnapshot
   /** 返回已持久化的原生 Pi session，供 HTML 导出读取。 */
   runSessionPath(runId: string): string
   /** 返回 Pi HTML 导出所需的 system prompt 和工具元数据。 */

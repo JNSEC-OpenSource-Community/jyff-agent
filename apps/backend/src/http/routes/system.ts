@@ -1,5 +1,6 @@
 import { parseProjectConfig } from "@ctf-agent/core"
 import { Hono } from "hono"
+import { defaultBuiltInPluginConfigurationView } from "../../domain/built-in-plugin-config.ts"
 import type { App, AppContext, AppEnv, ProjectScope } from "../context.ts"
 import { errorText, HttpError } from "../errors.ts"
 import {
@@ -10,6 +11,7 @@ import {
 } from "../middleware/auth.ts"
 import {
   parseJsonBody,
+  builtInPluginStateSchema,
   readJsonBody,
   webUiAuthenticationSchema,
   webUiLoginSchema,
@@ -109,10 +111,27 @@ export function systemRoutes(services: Services): App {
       authentication: authenticationOf(services),
       modelConfiguration: services.modelConfiguration?.snapshot() ?? null,
       modelAuthentication: (await services.modelAuthentication?.snapshot()) ?? null,
+      plugins:
+        services.builtInPluginConfiguration?.snapshot() ?? defaultBuiltInPluginConfigurationView(),
       webAccess: services.webAccessConfiguration
         ? await services.webAccessConfiguration.snapshot()
         : null,
     })
+  })
+
+  app.post("/global-config/plugins/:pluginId", async (c) => {
+    const configuration = services.builtInPluginConfiguration
+    if (!configuration) {
+      throw new HttpError(404, "plugin_configuration_unavailable", "当前 WebUI 未配置插件存储")
+    }
+    const pluginId = c.req.param("pluginId")
+    if (!configuration.has(pluginId)) {
+      throw new HttpError(404, "plugin_not_found", `未知内置插件: ${pluginId}`)
+    }
+    const body = await parseJsonBody(c, builtInPluginStateSchema, {
+      code: "invalid_plugin_configuration",
+    })
+    return c.json(await configuration.setEnabled(pluginId, body.enabled))
   })
 
   app.post("/global-config/authentication", async (c) => {
