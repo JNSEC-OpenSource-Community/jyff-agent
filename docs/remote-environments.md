@@ -76,6 +76,11 @@ Agent。环境在等待恢复期间被抢占时，Core 会拒绝返回旧 endpoi
 避免非幂等 POST 产生重复实例。取消、Project 关闭和 required 对 starting verification 的
 优先级抢占都会中断退避，不会继续发起下一次平台调用。
 
+Ret2Shell 的实例删除是异步过程。适配器在 DELETE 被接受后继续轮询 Project 实例列表，
+只有目标实例消失才让 Core 删除租约并分配下一个名额；销毁确认自身受 25 秒 deadline
+约束。平台返回 `rebuilding cargo crates` 时只标记为可重试，不伪造固定短间隔，交由 Core
+使用上述有限指数退避。
+
 平台适配器可以使用更短的业务 deadline。例如 Ret2Shell 的实例就绪 deadline 是 3 分钟，单次 HTTP 最多 30 秒，且 HTTP deadline 覆盖响应头和完整响应体读取。
 
 平台插件 Validation Gate 使用同样的防御边界：普通契约调用默认最多 30 秒，环境启动最多 4 分钟；启动超时时会中止传给候选插件的 signal，继续执行有界 `destroy()` 和 `close()`。候选插件忽略取消时，Gate 报告会失败但验证进程不会无限等待。该行为属于 validation harness version 2。
