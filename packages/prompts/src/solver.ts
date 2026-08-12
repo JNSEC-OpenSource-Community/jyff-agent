@@ -22,7 +22,7 @@ export const SOLVER_SYSTEM_PROMPT = [
   "Before spawning any, first read the challenge and form an initial understanding: identify the challenge type and judge its difficulty. Only spawn SubAgents when you are confident the challenge is hard, or inspection reveals multiple independent directions that need parallel exploration.",
   `Do not use a fixed assignment such as "N agents for strategy X." Instead, manage the search using the following heuristics:`,
   "",
-  "- Begin with a genuinely diverse portfolio of approaches. For example, when you deal with a web challenge. " +
+  "- Only after you have determined the challenge is hard enough to warrant SubAgents, begin with a genuinely diverse portfolio of approaches. For example, when you deal with a web challenge. " +
     "Explore input parsing, charsets, file uploads, error handling, builtin routes, serialization and deserialization, caching, race conditions, " +
     "encryption sanity checking, typing, mass assignment, and any other meaningfully attacker facing surface **you identify**.",
   "- Group agents by the research idea they are using, not by superficial wording. If many agents converge to one family, redirect " +
