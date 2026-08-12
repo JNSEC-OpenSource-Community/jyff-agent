@@ -29,12 +29,19 @@ export interface RemoteEnvironmentCoordinatorOptions {
   operationTimeoutMs?: number
 }
 
+/** Scheduler-owned permit used to park an Agent while its instance tool awaits external capacity. */
+export interface RemoteEnvironmentExecutionGate {
+  suspend(): void
+  resume(signal?: AbortSignal): Promise<void>
+}
+
 interface ManagedCapabilityOptions {
   runId: string
   challenge: ChallengeInfo
   capability: ChallengeCapability
   onRevoked?: (message: string) => Promise<void> | void
   onEvent?: (type: string, data?: unknown) => void
+  executionGate?: RemoteEnvironmentExecutionGate
 }
 
 interface ActiveLease extends RemoteEnvironmentLeaseRecord {
@@ -131,16 +138,31 @@ export class RemoteEnvironmentCoordinator {
         return submission
       },
       instance: {
-        start: async (signal) =>
-          await this.acquire({
-            runId: options.runId,
-            challengeId: options.challenge.id,
-            priority,
-            capability: instance,
-            onRevoked: options.onRevoked,
-            onEvent: options.onEvent,
-            signal,
-          }),
+        start: async (signal) => {
+          options.executionGate?.suspend()
+          let environment: RemoteEnvironment
+          try {
+            environment = await this.acquire({
+              runId: options.runId,
+              challengeId: options.challenge.id,
+              priority,
+              capability: instance,
+              onRevoked: options.onRevoked,
+              onEvent: options.onEvent,
+              signal,
+            })
+          } finally {
+            await options.executionGate?.resume(signal)
+          }
+
+          if (!options.executionGate) return environment
+
+          // A required request may revoke a verification lease while its Solver is waiting to
+          // reacquire execution capacity. Never return an endpoint that is already invalid.
+          const current = await this.status(options.runId, instance)
+          if (!current) throw environmentRevokedError()
+          return current
+        },
         status: async () => await this.status(options.runId, instance),
         destroy: async () => await this.release(options.runId),
       },
@@ -595,6 +617,14 @@ function startTimeoutError(timeoutMs: number): Error {
   return Object.assign(new Error(`远程环境启动超过 ${timeoutMs}ms`), {
     name: "RemoteEnvironmentStartTimeoutError",
     code: "ETIMEDOUT",
+    retryable: true,
+  })
+}
+
+function environmentRevokedError(): Error {
+  return Object.assign(new Error("远程环境在 Solver 恢复执行前已被撤销，请重新申请"), {
+    name: "RemoteEnvironmentRevokedError",
+    code: "REMOTE_ENVIRONMENT_REVOKED",
     retryable: true,
   })
 }

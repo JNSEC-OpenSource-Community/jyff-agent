@@ -4,7 +4,11 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
 import { createWebUiApp } from "../src/server.ts"
-import { FakeDashboardProject, FakeModelConfiguration } from "./fake-project.ts"
+import {
+  FakeDashboardProject,
+  FakeDashboardScheduler,
+  FakeModelConfiguration,
+} from "./fake-project.ts"
 import { jsonOf, jsonRequest } from "./helpers.ts"
 
 describe("模型配置与模型鉴权路由", () => {
@@ -186,8 +190,10 @@ describe("模型配置与模型鉴权路由", () => {
 
   it("模型配置接受语义化模型 ID", async () => {
     const project = new FakeDashboardProject()
+    const scheduler = new FakeDashboardScheduler()
     const { app } = createWebUiApp({
       project,
+      scheduler,
       modelConfiguration: new FakeModelConfiguration(),
       frontendDist: "/nonexistent",
     })
@@ -211,6 +217,7 @@ describe("模型配置与模型鉴权路由", () => {
     })
 
     expect(response.status).toBe(200)
+    expect(scheduler.resumeCalls).toBe(1)
   })
 
   it("模型凭据导入、列出与移除且不泄露原文", async () => {
@@ -335,9 +342,11 @@ describe("模型配置与模型鉴权路由", () => {
 
   it("scoped 模型配置保存到项目并回传快照", async () => {
     const project = new FakeDashboardProject()
+    const scheduler = new FakeDashboardScheduler()
     const modelConfiguration = new FakeModelConfiguration()
     const { app } = createWebUiApp({
       project,
+      scheduler,
       modelConfiguration,
       frontendDist: "/nonexistent",
     })
@@ -364,5 +373,6 @@ describe("模型配置与模型鉴权路由", () => {
     expect(await jsonOf(saved)).toMatchObject({
       configuration: { solverModelId: "solver" },
     })
+    expect(scheduler.resumeCalls).toBe(1)
   })
 })

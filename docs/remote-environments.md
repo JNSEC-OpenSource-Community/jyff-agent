@@ -61,6 +61,12 @@ Core 提供不依赖插件实现质量的边界：
 
 调度器把 `pending` 和 `starting` 都视为外部环境等待，不扣减 Solver 的实际解题时限；远程环境自身仍受上表中的独立 deadline 约束，所以不会形成无限暂停。
 
+长驻 `ContestScheduler` 还会在 `ctf_instance_start` 开始时释放当前 Run 的 Solver 执行许可，
+让本地分析题使用空闲算力。环境启动成功或失败后，Run 进入
+`waiting_execution_slot`，并优先于新 Run 重新取得许可；只有取得许可后，工具结果才返回
+Agent。环境在等待恢复期间被抢占时，Core 会拒绝返回旧 endpoint。完整调度不变量见
+[调度原则与执行许可](scheduling.md)。
+
 平台适配器可以使用更短的业务 deadline。例如 Ret2Shell 的实例就绪 deadline 是 3 分钟，单次 HTTP 最多 30 秒，且 HTTP deadline 覆盖响应头和完整响应体读取。
 
 平台插件 Validation Gate 使用同样的防御边界：普通契约调用默认最多 30 秒，环境启动最多 4 分钟；启动超时时会中止传给候选插件的 signal，继续执行有界 `destroy()` 和 `close()`。候选插件忽略取消时，Gate 报告会失败但验证进程不会无限等待。该行为属于 validation harness version 2。

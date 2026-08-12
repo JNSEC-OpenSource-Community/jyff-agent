@@ -47,7 +47,10 @@ export function modelsRoutes(services: Services): App {
     const configuration = await modelConfiguration.update(body)
     const scheduler = services.currentScheduler()
     if (!configuration.configured) scheduler?.pauseAuto()
-    else await scheduler?.reconcile()
+    else {
+      scheduler?.resume()
+      await scheduler?.reconcile()
+    }
     return c.json({
       configuration: services.modelView(),
       snapshot: await services.sync.refresh(),
@@ -217,7 +220,10 @@ export function scopedModelsRoutes(services: Services): App {
     const configuration = await modelConfiguration.update(body)
     const scheduler = services.currentScheduler(projectIdOf(c))
     if (!configuration.configured) scheduler?.pauseAuto()
-    else await scheduler?.reconcile()
+    else {
+      scheduler?.resume()
+      await scheduler?.reconcile()
+    }
     return c.json({
       configuration: services.modelView(projectIdOf(c)),
       snapshot: await services.sync.refreshProject(projectIdOf(c)),

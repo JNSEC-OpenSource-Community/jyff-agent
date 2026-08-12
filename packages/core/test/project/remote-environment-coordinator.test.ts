@@ -27,6 +27,14 @@ class MemoryLeaseStore implements RemoteEnvironmentLeaseStore {
   }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 function challenge(id: string, attachments: number): ChallengeInfo {
   return {
     id,
@@ -127,6 +135,43 @@ describe("RemoteEnvironmentCoordinator", () => {
 
     expect(log).toEqual(["start:with-file", "destroy:with-file", "start:without-file"])
     expect(revoked).toHaveBeenCalledOnce()
+    await coordinator.close()
+  })
+
+  it("验证环境在等待恢复执行时被抢占，不返回已经失效的 endpoint", async () => {
+    const log: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    const resume = deferred<void>()
+    const verification = coordinator.manage({
+      runId: "run-verification-waiting",
+      challenge: challenge("verification-waiting", 1),
+      capability: capability("verification-waiting", log),
+      executionGate: {
+        suspend() {},
+        resume: async () => await resume.promise,
+      },
+    })
+    const required = coordinator.manage({
+      runId: "run-required-preempting",
+      challenge: challenge("required-preempting", 0),
+      capability: capability("required-preempting", log),
+    })
+
+    const verificationStart = verification.instance?.start()
+    await vi.waitFor(() => expect(log).toContain("start:verification-waiting"))
+    await required.instance?.start()
+    resume.resolve(undefined)
+
+    await expect(verificationStart).rejects.toMatchObject({
+      name: "RemoteEnvironmentRevokedError",
+      code: "REMOTE_ENVIRONMENT_REVOKED",
+      retryable: true,
+    })
+    expect(log).toEqual([
+      "start:verification-waiting",
+      "destroy:verification-waiting",
+      "start:required-preempting",
+    ])
     await coordinator.close()
   })
 

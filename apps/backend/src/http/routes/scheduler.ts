@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import type { App, AppContext, AppEnv } from "../context.ts"
+import { HttpError } from "../errors.ts"
 import {
   parseJsonBody,
   queueMoveSchema,
@@ -31,6 +32,18 @@ export function schedulerRoutes(services: Services): App {
   app.post("/scheduler/auto/pause", async (c) => {
     await readJsonBody(c)
     services.requireSolverScheduler(projectIdOf(c)).pauseAuto()
+    return c.json(await refreshFor(c))
+  })
+
+  app.post("/scheduler/resume", async (c) => {
+    await readJsonBody(c)
+    const projectId = projectIdOf(c)
+    if (!services.modelView(projectId).configured) {
+      throw new HttpError(409, "solver_model_unavailable", "Solver 模型尚未配置完成，无法恢复调度")
+    }
+    const scheduler = services.requireSolverScheduler(projectId)
+    scheduler.resume()
+    await scheduler.reconcile()
     return c.json(await refreshFor(c))
   })
 

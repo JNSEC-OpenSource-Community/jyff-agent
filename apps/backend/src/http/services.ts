@@ -273,8 +273,10 @@ export class Services {
     const configuration = this.options.modelConfiguration
     if (!configuration) return null
     const current = configuration.snapshot()
-    if (current.configured) await scheduler?.reconcile()
-    else scheduler?.pauseAuto()
+    if (current.configured) {
+      scheduler?.resume()
+      await scheduler?.reconcile()
+    } else scheduler?.pauseAuto()
     return current
   }
 

@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vite-plus/test"
 import { createWebUiApp } from "../src/server.ts"
-import { FakeDashboardProject, FakeDashboardScheduler } from "./fake-project.ts"
+import {
+  FakeDashboardProject,
+  FakeDashboardScheduler,
+  FakeModelConfiguration,
+} from "./fake-project.ts"
 import { jsonOf, jsonRequest } from "./helpers.ts"
 
 function appWithScheduler() {
   const project = new FakeDashboardProject()
   const scheduler = new FakeDashboardScheduler()
+  const modelConfiguration = new FakeModelConfiguration()
   const { app } = createWebUiApp({
     project,
     scheduler,
+    modelConfiguration,
     frontendDist: "/nonexistent",
   })
-  return { app, project, scheduler }
+  return { app, project, scheduler, modelConfiguration }
 }
 
 describe("调度器路由", () => {
@@ -110,6 +116,34 @@ describe("调度器路由", () => {
     expect(badVersion.status).toBe(400)
     expect(await jsonOf(badVersion)).toMatchObject({
       error: "invalid_queue_version",
+    })
+  })
+
+  it("仅在 Solver 模型可用时恢复已暂停的调度器", async () => {
+    const { app, scheduler, modelConfiguration } = appWithScheduler()
+    modelConfiguration.value.configured = true
+    delete modelConfiguration.value.unavailableReason
+    scheduler.value.available = false
+    scheduler.value.unavailableReason = "LLM 服务需要人工处理"
+
+    const response = await jsonRequest(app, "/api/scheduler/resume", "POST", {})
+    expect(response.status).toBe(200)
+    expect(scheduler.resumeCalls).toBe(1)
+    expect(scheduler.snapshot()).toMatchObject({ available: true })
+  })
+
+  it("Solver 模型不可用时拒绝恢复且保持调度器暂停", async () => {
+    const { app, scheduler } = appWithScheduler()
+    scheduler.value.available = false
+    scheduler.value.unavailableReason = "LLM 服务需要人工处理"
+
+    const response = await jsonRequest(app, "/api/scheduler/resume", "POST", {})
+    expect(response.status).toBe(409)
+    expect(await jsonOf(response)).toMatchObject({ error: "solver_model_unavailable" })
+    expect(scheduler.resumeCalls).toBe(0)
+    expect(scheduler.snapshot()).toMatchObject({
+      available: false,
+      unavailableReason: "LLM 服务需要人工处理",
     })
   })
 

@@ -133,6 +133,9 @@ Project 对 Solver 暴露题目级能力：题目详情、附件下载、Flag �
 
 ## 4. Run、Solver 与调度
 
+持久队列、执行许可、远程环境 parking、失败分类和恢复规则详见
+[调度原则与执行许可](scheduling.md)。
+
 ### 4.1 Run 创建和清理
 
 `Project.createSolver()` 为每次尝试生成 Run ID、workspace 和 `runs/<runId>/session.jsonl`，并创建 `CtfSolverAgent`。Solver 使用 `BaseAgent` 打开 Pi 原生 JSONL session，加载系统提示词、skills、Pi tools、题目能力和可选 Web Access。

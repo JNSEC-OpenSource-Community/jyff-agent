@@ -187,7 +187,10 @@ export function scopedProjectRoutes(services: Services): App {
       ?.setMaxRemoteEnvironments(configuration.maxRemoteEnvironments)
     const model = modelConfiguration.snapshot(configuration)
     if (!model.configured) scheduler?.pauseAuto()
-    else await scheduler?.reconcile()
+    else {
+      scheduler?.resume()
+      await scheduler?.reconcile()
+    }
     return c.json({
       runtime: configuration,
       models: services.modelView(projectId),

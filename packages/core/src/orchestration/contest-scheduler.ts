@@ -19,7 +19,12 @@ import { classifySolverStop } from "./stop-classifier.ts"
 import { validateChallengeWriteup } from "./writeup-validator.ts"
 
 export type SchedulerQueueSource = Extract<RunSource, "auto" | "manual" | "retry" | "revival">
-export type SchedulerPhase = "preparing" | "running" | "cancelling"
+export type SchedulerPhase =
+  | "preparing"
+  | "running"
+  | "waiting_environment"
+  | "waiting_execution_slot"
+  | "cancelling"
 
 export interface ContestSchedulerOptions {
   maxConcurrent: number
@@ -30,6 +35,8 @@ export interface ContestSchedulerOptions {
   retryDelayMs?: number
   infrastructureRetryDelayMs?: number
   transientRetryDelaysMs?: readonly [number, number, number]
+  /** Bound environment-capable resident Runs; defaults to twice maxConcurrent. */
+  maxEnvironmentResidentRuns?: number
   /** Flag accepted 后执行 writeup turn；生产调度应开启。 */
   writeup?: boolean
   createAgentOptions(context: SchedulerAttemptContext): AgentOptions | Promise<AgentOptions>
@@ -133,6 +140,16 @@ interface ActiveItem {
   resumeRun?: RunRecord
   retryPrompt?: string
   cancelRetryDelay?: () => void
+  holdsExecutionSlot: boolean
+  environmentResident: boolean
+}
+
+interface ExecutionWaiter {
+  active: ActiveItem
+  signal?: AbortSignal
+  resolve(): void
+  reject(error: unknown): void
+  onAbort?: () => void
 }
 
 export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const
@@ -154,6 +171,7 @@ export class ContestScheduler {
   private maxConcurrent: number
   private queueGeneration = 0
   private suspensionReason?: string
+  private readonly executionWaiters: ExecutionWaiter[] = []
 
   constructor(
     private readonly project: Project,
@@ -167,6 +185,10 @@ export class ContestScheduler {
     nonNegativeInteger(options.abortGraceMs ?? 5_000, "abortGraceMs")
     nonNegativeInteger(options.retryDelayMs ?? 2_000, "retryDelayMs")
     nonNegativeInteger(options.infrastructureRetryDelayMs ?? 15_000, "infrastructureRetryDelayMs")
+    positiveInteger(
+      options.maxEnvironmentResidentRuns ?? options.maxConcurrent * 2,
+      "maxEnvironmentResidentRuns",
+    )
     for (const [index, delay] of (
       options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
     ).entries()) {
@@ -516,6 +538,7 @@ export class ContestScheduler {
     if (!active) return this.snapshot()
     active.cancelRequested = true
     active.phase = "cancelling"
+    this.rejectExecutionWaiter(active, abortError("调度任务已取消"))
     active.cancelRetryDelay?.()
     await active.solver?.abort()
     if (active.solver) await active.solver.close("cancelled", "由控制面取消")
@@ -539,6 +562,7 @@ export class ContestScheduler {
     for (const item of active) {
       item.cancelRequested = true
       item.phase = "cancelling"
+      this.rejectExecutionWaiter(item, abortError("调度控制面关闭"))
       item.cancelRetryDelay?.()
       await item.solver?.abort()
     }
@@ -560,8 +584,12 @@ export class ContestScheduler {
     if (this.pumping || this.shuttingDown || !this.availability().available) return
     this.pumping = true
     try {
-      while (this.active.size < this.maxConcurrent && this.availability().available) {
-        const index = this.queue.findIndex((item) => !item.requiresAuto || this.autoEnabled)
+      while (this.executionSlotsInUse() < this.maxConcurrent && this.availability().available) {
+        if (this.grantNextExecutionWaiter()) continue
+        const index = this.queue.findIndex(
+          (item) =>
+            (!item.requiresAuto || this.autoEnabled) && this.canAdmitEnvironmentResident(item),
+        )
         if (index < 0) break
         const [item] = this.queue.splice(index, 1)
         if (!item) break
@@ -576,6 +604,8 @@ export class ContestScheduler {
           runId: null,
           cancelRequested: false,
           queueGeneration: this.queueGeneration,
+          holdsExecutionSlot: true,
+          environmentResident: item.challenge.needsEnv === true,
           ...(item.resumeRun ? { resumeRun: item.resumeRun } : {}),
           ...(item.retryPrompt ? { retryPrompt: item.retryPrompt } : {}),
         }
@@ -585,9 +615,10 @@ export class ContestScheduler {
             this.lastError = errorText(error)
           })
           .finally(() => {
+            this.rejectExecutionWaiter(active, abortError("Run 已结束"))
             this.active.delete(item.challenge.id)
+            this.pump()
             if (this.autoEnabled) void this.reconcile()
-            else this.pump()
           })
         active.operation = operation
       }
@@ -639,6 +670,7 @@ export class ContestScheduler {
                 // Supervisor 统一管理 compact 边界，BaseAgent 不得隐式 compact。
                 compaction: false,
                 writeup: this.options.writeup === true,
+                executionGate: this.executionGate(active),
               })
             : await this.project.createSolver(active.challenge.id, {
                 agent,
@@ -646,6 +678,7 @@ export class ContestScheduler {
                 attempt: active.attempt,
                 source,
                 writeup: this.options.writeup === true,
+                executionGate: this.executionGate(active),
               })
           active.resumeRun = undefined
           this.lastError = undefined
@@ -746,7 +779,10 @@ export class ContestScheduler {
           prompt,
           timeoutMs: this.options.challengeTimeoutMs ?? 30 * 60_000,
           abortGraceMs: this.options.abortGraceMs ?? 5_000,
-          pauseTimeout: () => this.project.isWaitingForRemoteEnvironment(promptRunId),
+          pauseTimeout: () =>
+            active.phase === "waiting_environment" ||
+            active.phase === "waiting_execution_slot" ||
+            this.project.isWaitingForRemoteEnvironment(promptRunId),
         })
         if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
           if (this.options.writeup === true) {
@@ -1128,6 +1164,106 @@ export class ContestScheduler {
     else this.queue.push(item)
   }
 
+  private executionSlotsInUse(): number {
+    return [...this.active.values()].filter((item) => item.holdsExecutionSlot).length
+  }
+
+  private environmentResidentLimit(): number {
+    return this.options.maxEnvironmentResidentRuns ?? this.maxConcurrent * 2
+  }
+
+  private canAdmitEnvironmentResident(item: QueueItem): boolean {
+    if (item.challenge.needsEnv !== true) return true
+    const residents = [...this.active.values()].filter(
+      (active) => active.environmentResident,
+    ).length
+    return residents < this.environmentResidentLimit()
+  }
+
+  private executionGate(active: ActiveItem): NonNullable<CreateSolverOptions["executionGate"]> {
+    return {
+      suspend: () => this.suspendExecutionForEnvironment(active),
+      resume: async (signal) => await this.resumeExecutionAfterEnvironment(active, signal),
+    }
+  }
+
+  private suspendExecutionForEnvironment(active: ActiveItem): void {
+    if (!active.holdsExecutionSlot) return
+    if (active.cancelRequested || this.shuttingDown) throw abortError("调度任务已取消")
+    // Some platform summaries cannot determine needsEnv before binding the challenge. Once the
+    // instance tool is actually used, count the Run against the resident safety bound.
+    active.environmentResident = true
+    active.holdsExecutionSlot = false
+    active.phase = "waiting_environment"
+    this.pump()
+  }
+
+  private async resumeExecutionAfterEnvironment(
+    active: ActiveItem,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (active.holdsExecutionSlot) return
+    if (
+      active.cancelRequested ||
+      this.shuttingDown ||
+      signal?.aborted ||
+      this.active.get(active.challenge.id) !== active
+    ) {
+      throw abortError("调度任务已取消")
+    }
+    if (this.executionWaiters.some((waiter) => waiter.active === active)) {
+      throw new Error(`Run ${active.runId ?? active.challenge.id} 已在等待 Solver 执行槽`)
+    }
+
+    active.phase = "waiting_execution_slot"
+    await new Promise<void>((resolve, reject) => {
+      const waiter: ExecutionWaiter = { active, signal, resolve, reject }
+      if (signal) {
+        waiter.onAbort = () => {
+          const index = this.executionWaiters.indexOf(waiter)
+          if (index >= 0) this.executionWaiters.splice(index, 1)
+          reject(abortError("远程环境工具调用已取消"))
+          this.pump()
+        }
+        signal.addEventListener("abort", waiter.onAbort, { once: true })
+      }
+      this.executionWaiters.push(waiter)
+      this.pump()
+    })
+  }
+
+  private grantNextExecutionWaiter(): boolean {
+    while (this.executionWaiters.length > 0) {
+      const waiter = this.executionWaiters.shift()
+      if (!waiter) return false
+      if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort)
+      const { active } = waiter
+      if (
+        active.cancelRequested ||
+        this.shuttingDown ||
+        waiter.signal?.aborted ||
+        this.active.get(active.challenge.id) !== active
+      ) {
+        waiter.reject(abortError("调度任务已取消"))
+        continue
+      }
+      active.holdsExecutionSlot = true
+      active.phase = "running"
+      waiter.resolve()
+      return true
+    }
+    return false
+  }
+
+  private rejectExecutionWaiter(active: ActiveItem, error: Error): void {
+    const index = this.executionWaiters.findIndex((waiter) => waiter.active === active)
+    if (index < 0) return
+    const [waiter] = this.executionWaiters.splice(index, 1)
+    if (!waiter) return
+    if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort)
+    waiter.reject(error)
+  }
+
   private waitForRetryDelay(active: ActiveItem, delayMs: number): Promise<boolean> {
     if (active.cancelRequested || this.shuttingDown) return Promise.resolve(false)
     if (delayMs === 0) {
@@ -1204,4 +1340,8 @@ function nonNegativeInteger(value: number, field: string): void {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function abortError(message: string): Error {
+  return Object.assign(new Error(message), { name: "AbortError" })
 }

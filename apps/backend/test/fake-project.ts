@@ -426,6 +426,7 @@ export class FakeDashboardProject implements DashboardProject {
 export class FakeDashboardScheduler implements DashboardScheduler {
   dispatchCalls: Array<{ challengeId: string; force?: boolean }> = []
   retryAttemptCalls: Array<{ runId: string; prompt?: string }> = []
+  resumeCalls = 0
   value: ContestSchedulerSnapshot = {
     available: true,
     autoEnabled: false,
@@ -452,6 +453,13 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   pauseAuto(): ContestSchedulerSnapshot {
     this.value.autoEnabled = false
     this.value.queued = []
+    return this.snapshot()
+  }
+
+  resume(): ContestSchedulerSnapshot {
+    this.resumeCalls++
+    this.value.available = true
+    delete this.value.unavailableReason
     return this.snapshot()
   }
 

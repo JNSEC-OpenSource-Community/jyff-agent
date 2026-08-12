@@ -99,7 +99,11 @@ function requiredChallenge(item: TestChallenge | undefined): TestChallenge {
   return item
 }
 
-async function fixture(challenges: TestChallenge[], tracker: SandboxTracker) {
+async function fixture(
+  challenges: TestChallenge[],
+  tracker: SandboxTracker,
+  options: { maxRemoteEnvironments?: number } = {},
+) {
   const root = await mkdtemp(join(tmpdir(), "ctf-scheduler-"))
   roots.push(root)
   await mkdir(join(root, ".pi"), { recursive: true })
@@ -117,8 +121,71 @@ async function fixture(challenges: TestChallenge[], tracker: SandboxTracker) {
     platforms: [new TestPlatformPlugin()],
     sandboxFactory: tracker.create,
     telemetry: { level: "full" },
+    remoteEnvironments: { maxConcurrent: options.maxRemoteEnvironments ?? 1 },
   })
   return project
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function environmentAgent(
+  item: TestChallenge,
+  options: {
+    beforeSubmit?: Promise<void>
+    onEnvironmentReady?: () => void
+  } = {},
+): AgentOptions {
+  const faux = createFauxCore({ provider: `environment-${item.id}` })
+  faux.setResponses([
+    async () => {
+      return fauxAssistantMessage(
+        fauxToolCall("ctf_instance_start", {}, { id: `instance-start-${item.id}` }),
+        { stopReason: "toolUse" },
+      )
+    },
+    async () => {
+      options.onEnvironmentReady?.()
+      await options.beforeSubmit
+      return fauxAssistantMessage(
+        fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: `submit-${item.id}` }),
+        { stopReason: "toolUse" },
+      )
+    },
+    fauxAssistantMessage("done"),
+  ])
+  return {
+    streamFn: faux.streamSimple as AgentOptions["streamFn"],
+    initialState: { model: faux.getModel(), thinkingLevel: "off" },
+  }
+}
+
+function controlledSolvingAgent(
+  item: TestChallenge,
+  beforeSubmit: Promise<void>,
+  onStarted?: () => void,
+): AgentOptions {
+  const faux = createFauxCore({ provider: `controlled-${item.id}` })
+  faux.setResponses([
+    async () => {
+      onStarted?.()
+      await beforeSubmit
+      return fauxAssistantMessage(
+        fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: `submit-${item.id}` }),
+        { stopReason: "toolUse" },
+      )
+    },
+    fauxAssistantMessage("done"),
+  ])
+  return {
+    streamFn: faux.streamSimple as AgentOptions["streamFn"],
+    initialState: { model: faux.getModel(), thinkingLevel: "off" },
+  }
 }
 
 function solvingAgent(item: TestChallenge, delayMs = 0): AgentOptions {
@@ -668,6 +735,338 @@ describe("ContestScheduler", () => {
       expect(tracker.maximum).toBeLessThanOrEqual(2)
       expect(tracker.maximum).toBeGreaterThan(1)
     } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("远程环境等待释放 Solver 槽，并优先恢复已取得环境的 Run", async () => {
+    const first = challenge(201, { remote: true })
+    const second = challenge(202, { remote: true })
+    const local = challenge(203)
+    const queued = challenge(204)
+    const challenges = [first, second, local, queued]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker, { maxRemoteEnvironments: 1 })
+    const firstReady = deferred()
+    const releaseFirst = deferred()
+    const secondResumed = deferred()
+    const releaseSecond = deferred()
+    const localStarted = deferred()
+    const releaseLocal = deferred()
+    let queuedStarted = false
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 2,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) => {
+        if (summary.id === first.id) {
+          return environmentAgent(first, {
+            beforeSubmit: releaseFirst.promise,
+            onEnvironmentReady: firstReady.resolve,
+          })
+        }
+        if (summary.id === second.id) {
+          return environmentAgent(second, {
+            beforeSubmit: releaseSecond.promise,
+            onEnvironmentReady: secondResumed.resolve,
+          })
+        }
+        if (summary.id === local.id) {
+          return controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve)
+        }
+        queuedStarted = true
+        return solvingAgent(queued)
+      },
+    })
+
+    try {
+      await scheduler.dispatch(first.id)
+      await firstReady.promise
+      await scheduler.dispatch(second.id)
+      await waitUntil(() =>
+        project
+          .runs({ challengeId: second.id })
+          .some((run) =>
+            project.runEvents(run.id).some((event) => event.type === "environment_waiting"),
+          ),
+      )
+      await scheduler.dispatch(local.id)
+      await localStarted.promise
+      await scheduler.dispatch(queued.id)
+
+      expect(scheduler.snapshot().active).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ challengeId: second.id, phase: "waiting_environment" }),
+          expect.objectContaining({ challengeId: local.id, phase: "running" }),
+        ]),
+      )
+      expect(scheduler.snapshot().active).toHaveLength(3)
+      expect(queuedStarted).toBe(false)
+
+      releaseFirst.resolve()
+      await secondResumed.promise
+      expect(queuedStarted).toBe(false)
+
+      releaseSecond.resolve()
+      await waitUntil(() => queuedStarted)
+      releaseLocal.resolve()
+      await waitUntil(
+        () =>
+          project.runs().filter((run) => run.status === "solved").length === challenges.length &&
+          scheduler.snapshot().active.length === 0,
+      )
+    } finally {
+      releaseFirst.resolve()
+      releaseSecond.resolve()
+      releaseLocal.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("取消等待远程环境的 Run 后不会泄漏 Solver 许可", async () => {
+    const holder = challenge(205, { remote: true })
+    const waiting = challenge(206, { remote: true })
+    const local = challenge(207)
+    const tracker = new SandboxTracker()
+    const project = await fixture([holder, waiting, local], tracker, {
+      maxRemoteEnvironments: 1,
+    })
+    const holderReady = deferred()
+    const releaseHolder = deferred()
+    const releaseLocal = deferred()
+    const localStarted = deferred()
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 2,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) => {
+        if (summary.id === holder.id) {
+          return environmentAgent(holder, {
+            beforeSubmit: releaseHolder.promise,
+            onEnvironmentReady: holderReady.resolve,
+          })
+        }
+        if (summary.id === waiting.id) {
+          return environmentAgent(waiting)
+        }
+        return controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve)
+      },
+    })
+
+    try {
+      await scheduler.dispatch(holder.id)
+      await holderReady.promise
+      await scheduler.dispatch(waiting.id)
+      await waitUntil(
+        () =>
+          scheduler.snapshot().active.find((item) => item.challengeId === waiting.id)?.phase ===
+          "waiting_environment",
+      )
+      await scheduler.dispatch(local.id)
+      await localStarted.promise
+
+      await scheduler.cancel(waiting.id)
+      expect(scheduler.snapshot().active.some((item) => item.challengeId === waiting.id)).toBe(
+        false,
+      )
+      expect(project.runs({ challengeId: waiting.id }).at(-1)).toMatchObject({
+        status: "cancelled",
+      })
+
+      releaseLocal.resolve()
+      releaseHolder.resolve()
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(tracker.active).toBe(0)
+    } finally {
+      releaseHolder.resolve()
+      releaseLocal.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("已取得环境但等待 Solver 槽时可取消，并回收环境租约", async () => {
+    const remote = challenge(214, { remote: true })
+    const local = challenge(215)
+    const tracker = new SandboxTracker()
+    const project = await fixture([remote, local], tracker, { maxRemoteEnvironments: 1 })
+    const releaseLocal = deferred()
+    const localStarted = deferred()
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        summary.id === remote.id
+          ? environmentAgent(remote)
+          : controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await localStarted.promise
+      await waitUntil(
+        () =>
+          scheduler.snapshot().active.find((item) => item.challengeId === remote.id)?.phase ===
+          "waiting_execution_slot",
+      )
+      scheduler.pauseAuto()
+
+      await scheduler.cancel(remote.id)
+      const cancelled = project.runs({ challengeId: remote.id }).at(-1)
+      expect(cancelled).toMatchObject({ status: "cancelled" })
+      expect(project.runEvents(cancelled?.id ?? "").map((event) => event.type)).toContain(
+        "environment_released",
+      )
+
+      releaseLocal.resolve()
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(tracker.active).toBe(0)
+    } finally {
+      releaseLocal.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("环境启动失败后先重新取得 Solver 槽，再把工具错误交给 Agent", async () => {
+    const remote = challenge(216, {
+      remote: true,
+      failures: { instanceStart: 1 },
+    })
+    const local = challenge(217)
+    const tracker = new SandboxTracker()
+    const project = await fixture([remote, local], tracker, { maxRemoteEnvironments: 1 })
+    const releaseLocal = deferred()
+    const localStarted = deferred()
+    let failureDelivered = false
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        summary.id === remote.id
+          ? environmentAgent(remote, {
+              onEnvironmentReady: () => {
+                failureDelivered = true
+              },
+            })
+          : controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await localStarted.promise
+      await waitUntil(
+        () =>
+          scheduler.snapshot().active.find((item) => item.challengeId === remote.id)?.phase ===
+          "waiting_execution_slot",
+      )
+      expect(failureDelivered).toBe(false)
+
+      releaseLocal.resolve()
+      await waitUntil(() => failureDelivered)
+      await waitUntil(() => project.isChallengeSolved(remote.id))
+    } finally {
+      releaseLocal.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("降低并发后不超发恢复许可，直到执行槽实际低于新上限", async () => {
+    const remote = challenge(218, { remote: true })
+    const firstLocal = challenge(219)
+    const secondLocal = challenge(220)
+    const tracker = new SandboxTracker()
+    const project = await fixture([remote, firstLocal, secondLocal], tracker, {
+      maxRemoteEnvironments: 1,
+    })
+    const releaseFirst = deferred()
+    const releaseSecond = deferred()
+    const firstStarted = deferred()
+    const secondStarted = deferred()
+    const remoteResumed = deferred()
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 2,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) => {
+        if (summary.id === remote.id) {
+          return environmentAgent(remote, { onEnvironmentReady: remoteResumed.resolve })
+        }
+        return summary.id === firstLocal.id
+          ? controlledSolvingAgent(firstLocal, releaseFirst.promise, firstStarted.resolve)
+          : controlledSolvingAgent(secondLocal, releaseSecond.promise, secondStarted.resolve)
+      },
+    })
+
+    try {
+      await scheduler.startAuto()
+      await Promise.all([firstStarted.promise, secondStarted.promise])
+      await waitUntil(
+        () =>
+          scheduler.snapshot().active.find((item) => item.challengeId === remote.id)?.phase ===
+          "waiting_execution_slot",
+      )
+      await scheduler.setMaxConcurrent(1)
+
+      let resumed = false
+      void remoteResumed.promise.then(() => {
+        resumed = true
+      })
+      releaseFirst.resolve()
+      await waitUntil(() => project.isChallengeSolved(firstLocal.id))
+      expect(resumed).toBe(false)
+
+      releaseSecond.resolve()
+      await remoteResumed.promise
+      expect(resumed).toBe(true)
+    } finally {
+      releaseFirst.resolve()
+      releaseSecond.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("环境型驻留 Run 达到上限后跳过后续环境题，但继续启动本地题", async () => {
+    const remote = [
+      challenge(208, { remote: true }),
+      challenge(209, { remote: true }),
+      challenge(210, { remote: true }),
+      challenge(212, { remote: true }),
+      challenge(213, { remote: true }),
+    ]
+    const local = challenge(211)
+    const tracker = new SandboxTracker()
+    const project = await fixture([...remote, local], tracker, { maxRemoteEnvironments: 1 })
+    const releaseFirst = deferred()
+    const releaseLocal = deferred()
+    const localStarted = deferred()
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 2,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) => {
+        if (summary.id === local.id) {
+          return controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve)
+        }
+        return environmentAgent(
+          requiredChallenge(remote.find((candidate) => candidate.id === summary.id)),
+          { beforeSubmit: releaseFirst.promise },
+        )
+      },
+    })
+
+    try {
+      await scheduler.startAuto()
+      await localStarted.promise
+      expect(project.runs({ challengeId: remote[0]?.id })).toHaveLength(1)
+      expect(project.runs({ challengeId: remote[1]?.id })).toHaveLength(1)
+      expect(project.runs({ challengeId: remote[2]?.id })).toHaveLength(1)
+      expect(project.runs({ challengeId: remote[3]?.id })).toHaveLength(1)
+      expect(project.runs({ challengeId: remote[4]?.id })).toHaveLength(0)
+      expect(project.runs({ challengeId: local.id })).toHaveLength(1)
+    } finally {
+      releaseFirst.resolve()
+      releaseLocal.resolve()
       await scheduler.shutdown()
       await project.close()
     }

@@ -106,7 +106,10 @@ import {
   type ProjectConfig,
   parseProjectConfig,
 } from "./config.ts"
-import { RemoteEnvironmentCoordinator } from "./remote-environment-coordinator.ts"
+import {
+  RemoteEnvironmentCoordinator,
+  type RemoteEnvironmentExecutionGate,
+} from "./remote-environment-coordinator.ts"
 import { createTldrWorkspaceTools } from "./tldr-workspace-tools.ts"
 
 export interface OpenProjectOptions {
@@ -182,6 +185,8 @@ export interface CreateSolverOptions {
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource
+  /** Scheduler execution permit released only while ctf_instance_start awaits external capacity. */
+  executionGate?: RemoteEnvironmentExecutionGate
 }
 
 export class SolverCreationError extends Error {
@@ -967,6 +972,7 @@ export class Project {
         runId,
         challenge,
         capability,
+        executionGate: options.executionGate,
         onEvent: (type, data) => {
           try {
             this.runStore.appendEvent(runId, type, data)

@@ -9,7 +9,11 @@ export default defineConfig({
     emptyOutDir: true,
   },
   test: {
-    include: ["../../packages/**/test/**/*.test.ts", "test/**/*.test.ts"],
+    include: [
+      "../../packages/**/test/**/*.test.ts",
+      "../../apps/backend/test/**/*.test.ts",
+      "test/**/*.test.ts",
+    ],
     testTimeout: 20_000,
   },
   staged: {

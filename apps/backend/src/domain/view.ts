@@ -3,6 +3,7 @@ import type {
   ContestSchedulerSnapshot,
   RunEvent,
   RunRecord,
+  SchedulerPhase,
   SchedulerQueueEntry,
 } from "@ctf-agent/core"
 import type {
@@ -334,7 +335,7 @@ function challengeStatus(
   runs: RunRecord[],
   active: RunRecord | undefined,
   queued: boolean,
-  schedulerPhase: "preparing" | "running" | "cancelling" | undefined,
+  schedulerPhase: SchedulerPhase | undefined,
 ): DashboardChallengeStatus {
   if (schedulingDisposition === "solved") return "solved"
   if (schedulingDisposition === "excluded") return "excluded"
