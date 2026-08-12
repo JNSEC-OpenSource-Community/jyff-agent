@@ -39,7 +39,9 @@ import { createServer, type AddressInfo, type Server, type Socket } from "node:n
 const REQUEST_TIMEOUT_MS = 30_000
 const SUBMIT_POLL_INTERVAL_MS = 1_500
 const SUBMIT_POLL_MAX_TRIES = 45 // ~67s worst case
-const INSTANCE_POLL_INTERVAL_MS = 3_000
+// Instance startup is deliberately polled conservatively to avoid flooding
+// the upstream `/game/<id>/instance` endpoint while a container is starting.
+const INSTANCE_POLL_INTERVAL_MS = 10_000
 const INSTANCE_START_TIMEOUT_MS = 3 * 60_000
 
 // ---------------------------------------------------------------------------

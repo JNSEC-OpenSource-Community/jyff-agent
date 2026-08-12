@@ -38,7 +38,10 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   })
   const url = `http://${host.includes(":") ? `[${host}]` : host}:${address.port}`
 
-  const pollIntervalMs = options.pollIntervalMs ?? 15_000
+  // Platform snapshots include the remote-instance list. Keep this interval
+  // reasonably relaxed so the dashboard does not repeatedly hit the upstream
+  // `/game/<id>/instance` endpoint.
+  const pollIntervalMs = options.pollIntervalMs ?? 30_000
   const schedulerReconcileDelay = Math.max(5_000, options.schedulerReconcileIntervalMs ?? 30_000)
   let closed = false
   let refreshTimer: NodeJS.Timeout | undefined

@@ -177,7 +177,7 @@ function SidebarContent({
         {projectId ? (
           <>
             <div className="my-2 h-px w-8 bg-border" />
-            <Tooltip label="作战面板">
+            <Tooltip label="比赛概览">
               <NavLink to={`/projects/${encodeURIComponent(projectId)}`} end className={iconLink}>
                 <Icon icon="lucide:layout-dashboard" width={18} />
               </NavLink>
