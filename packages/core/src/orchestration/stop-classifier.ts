@@ -44,7 +44,15 @@ export function classifySolverStop(input: ClassifySolverStopInput): SolverStopCl
   if (input.timedOut) return classification("timeout", 1, false)
 
   const facts = errorFacts(input.error)
-  if (facts.status === 401 || facts.status === 403 || isConfigurationCode(facts.code)) {
+  // 配额/账单耗尽不会自行恢复。必须在将 HTTP 429 视作短暂限流前识别它们，
+  // 否则调度器会持续发起新的请求，既无意义也可能加剧限流。
+  if (
+    facts.status === 401 ||
+    facts.status === 403 ||
+    isConfigurationCode(facts.code) ||
+    isConfigurationType(facts.type) ||
+    isConfigurationFailure(facts.detail)
+  ) {
     return classification("authentication_or_configuration", 0, false, facts.detail, true)
   }
   if (facts.code && NETWORK_CODES.has(facts.code)) {
@@ -101,6 +109,7 @@ function classification(
 
 function errorFacts(error: unknown): {
   code?: string
+  type?: string
   status?: number
   retryable?: boolean
   detail?: string
@@ -111,10 +120,15 @@ function errorFacts(error: unknown): {
   const statusValue = value.status ?? value.statusCode
   return {
     ...(typeof value.code === "string" ? { code: value.code.toUpperCase() } : {}),
+    ...(typeof value.type === "string" ? { type: value.type.toUpperCase() } : {}),
     ...(typeof statusValue === "number" ? { status: statusValue } : {}),
     ...(typeof value.retryable === "boolean" ? { retryable: value.retryable } : {}),
     detail: error instanceof Error ? error.message : safeString(error),
   }
+}
+
+function isConfigurationType(type: string | undefined): boolean {
+  return type === "FREEUSAGELIMITERROR" || type === "INSUFFICIENTQUOTAERROR"
 }
 
 function safeString(value: unknown): string {
@@ -134,6 +148,18 @@ function isConfigurationCode(code: string | undefined): boolean {
     code === "AUTHENTICATION_ERROR" ||
     code === "INVALID_API_KEY" ||
     code === "MODEL_NOT_FOUND" ||
-    code === "INVALID_CONFIGURATION"
+    code === "INVALID_CONFIGURATION" ||
+    code === "INSUFFICIENT_QUOTA" ||
+    code === "INSUFFICIENT_BALANCE" ||
+    code === "BILLING_NOT_ACTIVE" ||
+    code === "CREDIT_BALANCE_TOO_LOW"
+  )
+}
+
+function isConfigurationFailure(detail: string | undefined): boolean {
+  return (
+    /\b(?:freeusagelimiterror|insufficientquotaerror|insufficient (?:quota|balance|credits?|funds)|(?:(?:current )?quota (?:has been )?exceeded|exceeded (?:your )?(?:current )?quota)|credit balance too low|billing (?:not active|hard limit|limit exceeded))\b/i.test(
+      detail ?? "",
+    ) || /余额不足|额度不足|配额不足/.test(detail ?? "")
   )
 }

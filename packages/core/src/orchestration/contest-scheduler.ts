@@ -606,6 +606,7 @@ export class ContestScheduler {
     let sameRunStops = 0
     let compactRecovery: string | undefined
     let transientRetries = 0
+    let transientRetriesExhausted = false
     const transientRetryDelays =
       this.options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
 
@@ -768,6 +769,21 @@ export class ContestScheduler {
         ) {
           return
         }
+        if (classification.requiresConfiguration) {
+          const message = `${classification.kind}: ${classification.detail ?? outcome.stopReason}`
+          this.suspend(`LLM 服务需要人工处理: ${message}`)
+          this.project.appendRunEvent(solver.runId, "run_transient_failure", {
+            retryable: false,
+            reason: classification.kind,
+            requiresConfiguration: true,
+            sameAttempt: true,
+          })
+          await solver.close("failed", message)
+          solver = undefined
+          active.solver = undefined
+          this.lastError = `${active.challenge.title}: ${message}`
+          return
+        }
         if (classification.blockDelta === 0) {
           const message = `${classification.kind}: ${classification.detail ?? outcome.stopReason}`
           const retryDelay = transientRetryDelays[transientRetries]
@@ -792,6 +808,7 @@ export class ContestScheduler {
           solver = undefined
           active.solver = undefined
           retryableFailure = false
+          transientRetriesExhausted = classification.retryable
           failureReason = "failed"
           failureMessage = message
           if (classification.retryable) break
@@ -852,6 +869,9 @@ export class ContestScheduler {
             ? "timed_out"
             : "failed"
         failureMessage = classification.detail ?? errorText(error)
+        if (classification.requiresConfiguration) {
+          this.suspend(`LLM 服务需要人工处理: ${failureMessage}`)
+        }
         if (
           solver &&
           classification.blockDelta === 0 &&
@@ -946,8 +966,12 @@ export class ContestScheduler {
       failureReason !== "cancelled" &&
       (retryableFailure || schedulerAttemptsAfter > schedulerAttemptsBefore) &&
       !this.shuttingDown &&
+      this.availability().available &&
       active.queueGeneration === this.queueGeneration &&
-      (retryableFailure || schedulerAttemptsAfter < (this.options.maxAttempts ?? 2)) &&
+      // 瞬时 Provider 故障已经在同一个 Run 内完成有限次退避重试；创建新
+      // Run 仍须受 attempt 预算约束。此前 retryableFailure 会绕过该预算，
+      // 导致余额不足或上游持续故障时无限创建请求。
+      schedulerAttemptsAfter < (this.options.maxAttempts ?? 2) &&
       !this.project.isChallengeSolved(active.challenge.id) &&
       !this.project.isChallengeBlocked(active.challenge.id)
     ) {
@@ -956,7 +980,11 @@ export class ContestScheduler {
       }
       const configuredDelay = this.options.retryDelayMs ?? 2_000
       const delay = retryableFailure
-        ? Math.max(this.options.infrastructureRetryDelayMs ?? 15_000, configuredDelay)
+        ? Math.max(
+            this.options.infrastructureRetryDelayMs ?? 15_000,
+            configuredDelay,
+            ...(transientRetriesExhausted ? [transientRetryDelays.at(-1) ?? 0] : []),
+          )
         : configuredDelay
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
       if (

@@ -395,6 +395,84 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("瞬时 Provider 故障耗尽后仍受 attempt 预算限制，不会无限创建新 Run", async () => {
+    const item = challenge(95)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({ provider: "bounded-transient-retries" })
+    faux.setResponses(
+      Array.from({ length: 12 }, () =>
+        fauxAssistantMessage("network unavailable", {
+          stopReason: "error",
+          errorMessage: "fetch failed",
+        }),
+      ),
+    )
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 2,
+      retryDelayMs: 0,
+      infrastructureRetryDelayMs: 0,
+      transientRetryDelaysMs: [0, 0, 0],
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      }),
+    })
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+
+      expect(faux.state.callCount).toBe(8)
+      expect(project.runs({ challengeId: item.id })).toEqual([
+        expect.objectContaining({ attempt: 1, status: "failed" }),
+        expect.objectContaining({ attempt: 2, status: "failed" }),
+      ])
+      expect(scheduler.snapshot().queued).toEqual([])
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("免费额度耗尽时暂停自动调度，且不再创建新请求", async () => {
+    const item = challenge(94)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({ provider: "free-usage-limit" })
+    faux.setResponses([
+      fauxAssistantMessage("quota exhausted", {
+        stopReason: "error",
+        errorMessage:
+          '429: {"type":"FreeUsageLimitError","message":"Rate limit exceeded. Please try again later."}',
+      }),
+    ])
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 3,
+      retryDelayMs: 0,
+      transientRetryDelaysMs: [0, 0, 0],
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      }),
+    })
+    try {
+      await scheduler.startAuto()
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+
+      expect(faux.state.callCount).toBe(1)
+      expect(project.runs({ challengeId: item.id })).toHaveLength(1)
+      expect(scheduler.snapshot()).toMatchObject({
+        available: false,
+        unavailableReason: expect.stringContaining("LLM 服务需要人工处理"),
+      })
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("在 compact 边界记录 delta=2 并继续同一 Run", async () => {
     const item = challenge(97)
     const tracker = new SandboxTracker()

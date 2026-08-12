@@ -10,6 +10,19 @@ describe("classifySolverStop", () => {
     [{ error: Object.assign(new Error("gateway"), { statusCode: 503 }) }, "provider_transient"],
     [{ error: Object.assign(new Error("overloaded"), { statusCode: 502 }) }, "provider_transient"],
     [
+      { error: Object.assign(new Error("You exceeded your current quota"), { status: 429 }) },
+      "authentication_or_configuration",
+    ],
+    [
+      {
+        error: Object.assign(new Error("Rate limit exceeded. Please try again later."), {
+          status: 429,
+          type: "FreeUsageLimitError",
+        }),
+      },
+      "authentication_or_configuration",
+    ],
+    [
       { error: Object.assign(new Error("bad key"), { status: 401 }) },
       "authentication_or_configuration",
     ],
@@ -32,6 +45,12 @@ describe("classifySolverStop", () => {
     [{ error: "HTTP 504 gateway timeout" }, "provider_transient", true],
     [{ stopReason: "aborted", error: "Aborted" }, "network_transient", true],
     [{ error: "rate limit exceeded" }, "protocol_or_non_transient", false, 1],
+    [{ error: "余额不足，请充值后重试" }, "authentication_or_configuration", false],
+    [
+      { error: '429: {"type":"FreeUsageLimitError","message":"Rate limit exceeded"}' },
+      "authentication_or_configuration",
+      false,
+    ],
   ])("uses string fallback for %#", (input, kind, retryable, blockDelta = 0) => {
     expect(classifySolverStop(input)).toMatchObject({
       kind,
