@@ -43,6 +43,8 @@ const SUBMIT_POLL_MAX_TRIES = 45 // ~67s worst case
 // the upstream `/game/<id>/instance` endpoint while a container is starting.
 const INSTANCE_POLL_INTERVAL_MS = 10_000
 const INSTANCE_START_TIMEOUT_MS = 3 * 60_000
+const INSTANCE_DESTROY_POLL_INTERVAL_MS = 1_000
+const INSTANCE_DESTROY_TIMEOUT_MS = 25_000
 
 // ---------------------------------------------------------------------------
 // Error type (bounded, credential-free)
@@ -397,9 +399,7 @@ function errorFromStatus(status: number, detail: string): R2SError {
         "precondition",
         `precondition failed: ${detail}`,
         status,
-        /rebuilding cargo crates/i.test(detail)
-          ? { retryable: true, retryAfterMs: 2_000 }
-          : undefined,
+        /rebuilding cargo crates/i.test(detail) ? { retryable: true } : undefined,
       )
     case 429:
       return new R2SError("rate_limited", `rate limited: ${detail}`, status)
@@ -812,25 +812,38 @@ export class Ret2ShellProject implements PlatformProject {
     const instances = await this.fetchInstances()
     const instance = instances.find((item) => item.name === id)
     if (instance) {
-      this.tunnels.closeByChallenge(String(instance.challenge_id))
-      const gameId = await this.resolveGameId()
-      try {
-        await this.request({
-          path: `/game/${gameId}/challenge/${instance.challenge_id}/instance`,
-          method: "DELETE",
-        })
-      } catch (err) {
-        if (
-          err instanceof R2SError &&
-          (err.code === "not_found" || err.code === "conflict" || err.code === "precondition")
-        ) {
-          return // already stopped or nothing to stop
-        }
-        throw err
-      }
+      await this.destroyChallengeInstance(String(instance.challenge_id))
       return
     }
     // Instance already gone: nothing to destroy.
+  }
+
+  async destroyChallengeInstance(challengeId: string): Promise<void> {
+    this.tunnels.closeByChallenge(challengeId)
+    const gameId = await this.resolveGameId()
+    const deadline = Date.now() + INSTANCE_DESTROY_TIMEOUT_MS
+    try {
+      await this.request({
+        path: `/game/${gameId}/challenge/${challengeId}/instance`,
+        method: "DELETE",
+        timeoutMs: remainingRequestTime(deadline),
+      })
+    } catch (err) {
+      if (err instanceof R2SError && err.code === "not_found") return
+      if (!(err instanceof R2SError && (err.code === "conflict" || err.code === "precondition"))) {
+        throw err
+      }
+    }
+
+    while (Date.now() < deadline) {
+      const instances = await this.fetchInstances(undefined, remainingRequestTime(deadline))
+      if (!instances.some((item) => String(item.challenge_id) === challengeId)) return
+      await sleep(Math.min(INSTANCE_DESTROY_POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())))
+    }
+    throw new R2SError(
+      "network",
+      `timed out waiting for challenge ${challengeId} instance to be destroyed`,
+    )
   }
 
   async bindChallenge(challengeId: string): Promise<ChallengeCapability> {
@@ -1123,23 +1136,7 @@ class Ret2ShellChallenge implements ChallengeCapability {
     },
 
     destroy: async (): Promise<void> => {
-      const challengeId = this.challengeId
-      const gameId = await this.gameId()
-      this.project.tunnels.closeByChallenge(challengeId)
-      try {
-        await this.project.request({
-          path: `/game/${gameId}/challenge/${challengeId}/instance`,
-          method: "DELETE",
-        })
-      } catch (err) {
-        if (
-          err instanceof R2SError &&
-          (err.code === "not_found" || err.code === "conflict" || err.code === "precondition")
-        ) {
-          return
-        }
-        throw err
-      }
+      await this.project.destroyChallengeInstance(this.challengeId)
     },
   }
 }

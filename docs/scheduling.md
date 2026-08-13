@@ -69,9 +69,9 @@ maxEnvironmentResidentRuns = 2 × maxConcurrent
 ```
 
 达到上限后，新的 `needsEnv: true` 题会暂时留在队列，但明确不需要环境的题仍可越过它
-使用空闲算力。平台列表无法提前确定 `needsEnv` 时，Run 首次调用
-`ctf_instance_start` 后会被动态标记为环境型；这种未知类型的瞬时超额最多受当前 Solver
-执行并发约束，不会无限增长。
+使用空闲算力。平台列表无法提前确定 `needsEnv` 时，该 Run 从领取时就保守占用一个驻留
+名额；首次调用 `ctf_instance_start` 后再被明确标记为环境型。这样未知类型不会绕过驻留
+上限而批量创建 Sandbox。
 
 该上限只约束本地 Run/Sandbox 驻留数量，不改变远程协调器的 `required`、`verification`
 优先级和抢占规则。

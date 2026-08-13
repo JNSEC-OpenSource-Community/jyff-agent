@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileSecretStore, modelsFromAgentOptions } from "@ctf-agent/core"
@@ -6,6 +7,7 @@ import { SOLVER_SYSTEM_PROMPT } from "@ctf-agent/prompts"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
 import { createFileModelConfiguration, omitOutputTokenLimit } from "../src/domain/model-pool.ts"
+import { ProviderRequestGate } from "../src/domain/provider-request-gate.ts"
 
 const roots: string[] = []
 
@@ -186,6 +188,68 @@ describe("file model configuration", () => {
         max_completion_tokens: 8_192,
       }),
     ).toEqual({ model: "solver-model" })
+  })
+
+  it("不同 AgentOptions 的同 Provider 请求共享瞬时故障冷却", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-provider-gate-"))
+    roots.push(root)
+    const requestTimes: number[] = []
+    const server = createServer((_request, response) => {
+      requestTimes.push(Date.now())
+      response.writeHead(503)
+      response.end()
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", resolve)
+    })
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("测试 Provider 未监听端口")
+
+    try {
+      const configuration = await createFileModelConfiguration({
+        storagePath: join(root, "model-config.json"),
+        secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+        providerRequestGate: new ProviderRequestGate({
+          minimumIntervalMs: 0,
+          transientCooldownMs: 25,
+        }),
+      })
+      await configuration.addCustomProvider({
+        name: "Failing Gateway",
+        api: "openai-completions",
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        apiKey: "provider-secret",
+      })
+      await configuration.update({
+        models: [modelEntry({ provider: "custom-failing-gateway" })],
+        solverModelId: "solver",
+        tldrModelId: "solver",
+        subagentModels: {},
+      })
+      const firstAgent = configuration.createAgentOptions()
+      const secondAgent = configuration.createAgentOptions()
+      const firstModel = firstAgent.initialState?.model
+      const secondModel = secondAgent.initialState?.model
+      if (!firstModel || !secondModel) throw new Error("测试模型未配置")
+
+      await modelsFromAgentOptions(firstAgent, firstModel)
+        .streamSimple(firstModel, { systemPrompt: "test", messages: [], tools: [] })
+        .result()
+      await modelsFromAgentOptions(secondAgent, secondModel)
+        .streamSimple(secondModel, { systemPrompt: "test", messages: [], tools: [] })
+        .result()
+
+      expect(requestTimes).toHaveLength(2)
+      expect((requestTimes[1] ?? 0) - (requestTimes[0] ?? 0)).toBeGreaterThanOrEqual(20)
+    } finally {
+      server.closeAllConnections()
+      if (server.listening) {
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        )
+      }
+    }
   })
 
   it("配置不完整时保持可恢复状态且不创建 Agent", async () => {

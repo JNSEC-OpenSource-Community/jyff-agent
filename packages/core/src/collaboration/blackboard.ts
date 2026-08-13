@@ -9,6 +9,7 @@ import {
 
 export const BLACKBOARD_TOOL_MAX_CHARACTERS = 64_000
 export const BLACKBOARD_INJECTION_MAX_CHARACTERS = 16_000
+const BATCH_EVIDENCE_REFERENCE = 1
 
 function result(details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
   return {
@@ -113,9 +114,10 @@ export function createBlackboardTools(options: BlackboardToolOptions): AgentTool
       name: "blackboard_record",
       label: "Record to Blackboard",
       description:
-        "Record to the shared challenge blackboard. You can multiple operations. " +
+        "Record to the shared challenge blackboard. You can combine multiple operations. " +
         'Evidence must be one object such as {"evidence":{"description":"verified finding"}}; ' +
-        "do not pass a string or an array as evidence.",
+        "do not pass a string or an array as evidence. When the same call creates Evidence and " +
+        "an Opportunity, use 1 in sourceEvidenceIds to reference the newly created Evidence.",
       parameters: Type.Object({
         evidence: Type.Optional(
           Type.Object({
@@ -169,11 +171,13 @@ export function createBlackboardTools(options: BlackboardToolOptions): AgentTool
         }
 
         const details: Record<string, unknown> = {}
+        let createdEvidenceId: number | undefined
 
         if (input.evidence) {
           try {
             const record = runStore.recordEvidence(challengeId, runId, input.evidence.description)
             details.evidence = record
+            createdEvidenceId = record.id
           } catch (err) {
             details.evidenceError = errorText(err)
           }
@@ -181,11 +185,17 @@ export function createBlackboardTools(options: BlackboardToolOptions): AgentTool
 
         if (input.opportunity) {
           try {
+            const sourceEvidenceIds = input.opportunity.sourceEvidenceIds.map((evidenceId) => {
+              if (evidenceId === BATCH_EVIDENCE_REFERENCE && createdEvidenceId !== undefined) {
+                return createdEvidenceId
+              }
+              return evidenceId
+            })
             const record = runStore.recordOpportunity(
               challengeId,
               runId,
               input.opportunity.description,
-              input.opportunity.sourceEvidenceIds,
+              sourceEvidenceIds,
             )
             details.opportunity = record
           } catch (err) {
