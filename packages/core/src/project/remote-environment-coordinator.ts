@@ -28,13 +28,11 @@ export interface RemoteEnvironmentCoordinatorOptions {
   startTimeoutMs?: number
   /** Bound status, destroy, reconciliation, and best-effort cleanup calls. */
   operationTimeoutMs?: number
-  /** Verification leases cannot be priority-preempted before this much delivered time. */
-  minimumLeaseDurationMs?: number
   /** Retry delays for platform failures explicitly marked retryable. */
   startRetryDelaysMs?: readonly number[]
 }
 
-/** Scheduler-owned permit used to park an Agent while its instance tool awaits external capacity. */
+/** Scheduler phase hook; waiting keeps the Run's hard Sandbox slot. */
 export interface RemoteEnvironmentExecutionGate {
   suspend(): void
   resume(signal?: AbortSignal): Promise<void>
@@ -55,8 +53,6 @@ interface ActiveLease extends RemoteEnvironmentLeaseRecord {
   onRevoked?: ManagedCapabilityOptions["onRevoked"]
   onEvent?: ManagedCapabilityOptions["onEvent"]
   deliveredAt?: number
-  preemptionDeferred?: boolean
-  preemptionDeferredUntil?: number
 }
 
 interface PendingRequest {
@@ -68,6 +64,7 @@ interface PendingRequest {
   signal?: AbortSignal
   onRevoked?: ManagedCapabilityOptions["onRevoked"]
   onEvent?: ManagedCapabilityOptions["onEvent"]
+  promise: Promise<RemoteEnvironment>
   resolve(environment: RemoteEnvironment): void
   reject(error: unknown): void
 }
@@ -84,13 +81,35 @@ interface Deferred<T> {
   reject(error: unknown): void
 }
 
-interface ReleaseOptions {
-  revokedMessage?: string
+export interface RemoteEnvironmentCapacitySnapshot {
+  maximum: number
+  occupied: number
+  available: number
+}
+
+export interface RemoteEnvironmentLeaseSnapshot {
+  runId: string
+  challengeId: string
+  environmentId?: string
+  priority: RemoteEnvironmentPriority
+  phase: "waiting" | "starting" | "ready" | "releasing"
+  requestedAt?: string
+  startedAt?: string
+  acquiredAt?: string
+  deliveredAt?: string
+  status?: RemoteEnvironment["status"]
+  endpoint?: string
+  expiresAt?: string
+  readyAt?: string
+}
+
+export interface RemoteEnvironmentCoordinatorSnapshot {
+  capacity: RemoteEnvironmentCapacitySnapshot
+  leases: RemoteEnvironmentLeaseSnapshot[]
 }
 
 const DEFAULT_START_TIMEOUT_MS = 4 * 60_000
 const DEFAULT_OPERATION_TIMEOUT_MS = 30_000
-const DEFAULT_MINIMUM_LEASE_DURATION_MS = 30_000
 const DEFAULT_START_RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000] as const
 
 /** Project 级远程环境配额。Solver 只能通过题目绑定后的 capability 申请自己的租约。 */
@@ -100,13 +119,15 @@ export class RemoteEnvironmentCoordinator {
   private readonly starting = new Map<string, StartingRequest>()
   private readonly startTasks = new Map<string, Promise<void>>()
   private readonly releaseTasks = new Map<string, Promise<void>>()
+  private readonly expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly closeController = new AbortController()
   private readonly startTimeoutMs: number
   private readonly operationTimeoutMs: number
-  private readonly minimumLeaseDurationMs: number
   private readonly startRetryDelaysMs: readonly number[]
-  private preemptionTimer?: ReturnType<typeof setTimeout>
-  private preemptionTimerAt?: number
+  private readonly capacityListeners = new Set<
+    (snapshot: RemoteEnvironmentCapacitySnapshot) => void
+  >()
+  private observedPlatformEnvironmentIds = new Set<string>()
   private lock: Promise<void> = Promise.resolve()
   private closed = false
 
@@ -123,10 +144,6 @@ export class RemoteEnvironmentCoordinator {
     this.operationTimeoutMs = positiveDuration(
       options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS,
       "远程环境操作超时",
-    )
-    this.minimumLeaseDurationMs = nonNegativeDuration(
-      options.minimumLeaseDurationMs ?? DEFAULT_MINIMUM_LEASE_DURATION_MS,
-      "远程环境最小使用时间片",
     )
     this.startRetryDelaysMs = (options.startRetryDelaysMs ?? DEFAULT_START_RETRY_DELAYS_MS).map(
       (delay) => nonNegativeDuration(delay, "远程环境启动重试延迟"),
@@ -163,15 +180,18 @@ export class RemoteEnvironmentCoordinator {
           options.executionGate?.suspend()
           let environment: RemoteEnvironment
           try {
-            environment = await this.acquire({
-              runId: options.runId,
-              challengeId: options.challenge.id,
-              priority,
-              capability: instance,
-              onRevoked: options.onRevoked,
-              onEvent: options.onEvent,
-              signal,
-            })
+            const current = await this.status(options.runId, instance)
+            environment =
+              current ??
+              (await this.acquire({
+                runId: options.runId,
+                challengeId: options.challenge.id,
+                priority,
+                capability: instance,
+                onRevoked: options.onRevoked,
+                onEvent: options.onEvent,
+                signal,
+              }))
           } finally {
             await options.executionGate?.resume(signal)
           }
@@ -181,8 +201,7 @@ export class RemoteEnvironmentCoordinator {
             return environment
           }
 
-          // A required request may revoke a verification lease while its Solver is waiting to
-          // reacquire execution capacity. Never return an endpoint that is already invalid.
+          // Re-check after an asynchronous scheduler gate so an expired endpoint is never delivered.
           const current = await this.status(options.runId, instance)
           if (!current) throw environmentRevokedError()
           await this.markDelivered(options.runId)
@@ -222,29 +241,91 @@ export class RemoteEnvironmentCoordinator {
 
   async setMaxConcurrent(maxConcurrent: number): Promise<void> {
     validateMaximum(maxConcurrent)
-    const victims = await this.withLock(async () => {
+    await this.withLock(async () => {
       this.maxConcurrent = maxConcurrent
-      let excess = Math.max(0, this.occupiedSlots() - maxConcurrent)
-      const startingVictims = [...this.starting.values()]
-        .filter(({ request }) => request.priority === "verification")
-        .sort((left, right) => left.startedAt - right.startedAt)
-        .slice(0, excess)
-      for (const starting of startingVictims) {
-        starting.controller.abort(abortError("Project 远程环境配额已降低"))
-      }
-      excess -= startingVictims.length
-      return this.verificationLeases().slice(0, excess)
     })
-    await Promise.all(
-      victims.map(async (victim) => {
-        await this.releaseLease(victim, { revokedMessage: "Project 远程环境配额已降低" })
-      }),
+    // 下调不抢占正在解题的租约；现有占用自然释放前不再发新槽。
+    this.notifyCapacityChanged()
+    this.kickPump()
+  }
+
+  capacity(): RemoteEnvironmentCapacitySnapshot {
+    const occupied = this.occupiedSlots()
+    return {
+      maximum: this.maxConcurrent,
+      occupied,
+      available: Math.max(0, this.maxConcurrent - occupied),
+    }
+  }
+
+  snapshot(): RemoteEnvironmentCoordinatorSnapshot {
+    const leases: RemoteEnvironmentLeaseSnapshot[] = [
+      ...this.pending.map((request) => ({
+        runId: request.runId,
+        challengeId: request.challengeId,
+        priority: request.priority,
+        phase: "waiting" as const,
+        requestedAt: request.requestedAt,
+      })),
+      ...[...this.starting.values()].map(({ request, startedAt }) => ({
+        runId: request.runId,
+        challengeId: request.challengeId,
+        priority: request.priority,
+        phase: "starting" as const,
+        requestedAt: request.requestedAt,
+        startedAt: new Date(startedAt).toISOString(),
+      })),
+      ...[...this.active.values()].map((lease) => ({
+        runId: lease.runId,
+        challengeId: lease.challengeId,
+        environmentId: lease.environmentId,
+        priority: lease.priority,
+        phase: this.releaseTasks.has(lease.runId) ? ("releasing" as const) : ("ready" as const),
+        acquiredAt: lease.acquiredAt,
+        ...(lease.deliveredAt === undefined
+          ? {}
+          : { deliveredAt: new Date(lease.deliveredAt).toISOString() }),
+        status: lease.environment.status,
+        endpoint: lease.environment.endpoint,
+        expiresAt: lease.environment.expiresAt,
+        readyAt: lease.environment.readyAt,
+      })),
+    ]
+    leases.sort((left, right) =>
+      (left.requestedAt ?? left.startedAt ?? left.acquiredAt ?? "").localeCompare(
+        right.requestedAt ?? right.startedAt ?? right.acquiredAt ?? "",
+      ),
     )
+    return { capacity: this.capacity(), leases }
+  }
+
+  subscribeCapacity(listener: (snapshot: RemoteEnvironmentCapacitySnapshot) => void): () => void {
+    this.capacityListeners.add(listener)
+    return () => this.capacityListeners.delete(listener)
+  }
+
+  observePlatformEnvironments(environments: readonly RemoteEnvironment[]): void {
+    const next = new Set(
+      environments
+        .filter((environment) => environment.status !== "stopped")
+        .map((environment) => environment.id),
+    )
+    const changed =
+      next.size !== this.observedPlatformEnvironmentIds.size ||
+      [...next].some((id) => !this.observedPlatformEnvironmentIds.has(id))
+    if (!changed) return
+    this.observedPlatformEnvironmentIds = next
+    this.notifyCapacityChanged()
     this.kickPump()
   }
 
   isWaiting(runId: string): boolean {
     return this.starting.has(runId) || this.pending.some((request) => request.runId === runId)
+  }
+
+  environmentForRun(runId: string): RemoteEnvironment | undefined {
+    const environment = this.active.get(runId)?.environment
+    return environment ? { ...environment } : undefined
   }
 
   async destroyEnvironment(environmentId: string): Promise<boolean> {
@@ -259,9 +340,8 @@ export class RemoteEnvironmentCoordinator {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
-    if (this.preemptionTimer) clearTimeout(this.preemptionTimer)
-    this.preemptionTimer = undefined
-    this.preemptionTimerAt = undefined
+    for (const timer of this.expiryTimers.values()) clearTimeout(timer)
+    this.expiryTimers.clear()
     const error = abortError("远程环境协调器已关闭")
     this.closeController.abort(error)
 
@@ -280,28 +360,31 @@ export class RemoteEnvironmentCoordinator {
   }
 
   private async acquire(
-    input: Omit<PendingRequest, "requestedAt" | "resolve" | "reject">,
+    input: Omit<PendingRequest, "requestedAt" | "promise" | "resolve" | "reject">,
   ): Promise<RemoteEnvironment> {
     if (input.signal?.aborted) throw abortError("远程环境申请已取消")
     const deferred = createDeferred<RemoteEnvironment>()
     const request: PendingRequest = {
       ...input,
       requestedAt: new Date().toISOString(),
+      promise: deferred.promise,
       resolve: (environment) => deferred.resolve(environment),
       reject: (error) => deferred.reject(error),
     }
     let existing: RemoteEnvironment | undefined
+    let joined: PendingRequest | undefined
+    let releasing: Promise<void> | undefined
 
     await this.withLock(async () => {
       if (this.closed) throw abortError("远程环境协调器已关闭")
+      releasing = this.releaseTasks.get(input.runId)
+      if (releasing) return
       existing = this.active.get(input.runId)?.environment
       if (existing) return
-      if (
-        this.starting.has(input.runId) ||
-        this.pending.some((item) => item.runId === input.runId)
-      ) {
-        throw new Error(`Run ${input.runId} 已在等待远程环境`)
-      }
+      joined =
+        this.starting.get(input.runId)?.request ??
+        this.pending.find((item) => item.runId === input.runId)
+      if (joined) return
 
       this.pending.push(request)
       this.sortPending()
@@ -313,7 +396,12 @@ export class RemoteEnvironmentCoordinator {
         })
       }
     })
+    if (releasing) {
+      await waitForCaller(releasing, input.signal)
+      return await this.acquire(input)
+    }
     if (existing) return existing
+    if (joined) return await waitForCaller(joined.promise, input.signal)
 
     const onAbort = () => {
       void this.cancelRequest(request, abortError("远程环境申请已取消"))
@@ -364,14 +452,72 @@ export class RemoteEnvironmentCoordinator {
     runId: string,
     capability: NonNullable<ChallengeCapability["instance"]>,
   ): Promise<RemoteEnvironment | null> {
-    if (!this.active.has(runId)) return null
+    const lease = this.active.get(runId)
+    if (!lease) return null
+    if (isExpired(lease.environment)) {
+      await this.forgetExpiredLease(lease)
+      return null
+    }
     const environment = await withTimeout(
       capability.status(),
       this.operationTimeoutMs,
       "读取远程环境状态",
     )
-    if (!environment || environment.status === "stopped") await this.release(runId)
+    if (!environment || environment.status === "stopped" || isExpired(environment)) {
+      await this.forgetExpiredLease(lease)
+      return null
+    }
+
+    const changed =
+      lease.environment.id !== environment.id ||
+      lease.environment.endpoint !== environment.endpoint ||
+      lease.environment.expiresAt !== environment.expiresAt ||
+      lease.environment.status !== environment.status
+    if (changed) {
+      await this.withLock(async () => {
+        if (this.active.get(runId) !== lease) return
+        lease.environment = environment
+        lease.environmentId = environment.id
+        this.store.saveEnvironmentLease(lease)
+      })
+      this.scheduleLeaseExpiry(lease)
+      lease.onEvent?.("environment_updated", {
+        environmentId: environment.id,
+        endpoint: environment.endpoint,
+        expiresAt: environment.expiresAt,
+        status: environment.status,
+      })
+      void Promise.resolve(
+        lease.onRevoked?.(
+          `远程环境状态已更新：${environment.status}${environment.expiresAt ? `，到期时间 ${environment.expiresAt}` : ""}。后续操作必须使用最新的 ctf_instance_status 结果。`,
+        ),
+      ).catch(() => undefined)
+    }
     return environment
+  }
+
+  private async forgetExpiredLease(lease: ActiveLease): Promise<void> {
+    let removed = false
+    await this.withLock(async () => {
+      if (this.active.get(lease.runId) !== lease) return
+      this.active.delete(lease.runId)
+      this.observedPlatformEnvironmentIds.delete(lease.environmentId)
+      this.clearLeaseExpiry(lease.runId)
+      this.store.deleteEnvironmentLease(lease.runId)
+      this.notifyCapacityChanged()
+      removed = true
+    })
+    if (!removed) return
+    lease.onEvent?.("environment_expired", {
+      environmentId: lease.environmentId,
+      expiredAt: lease.environment.expiresAt,
+    })
+    void Promise.resolve(
+      lease.onRevoked?.(
+        "远程环境已过期或平台已停止该实例。旧 endpoint 立即失效；Solver 或 SubAgent 可以调用 ctf_instance_start 原子地重新开启，所有并发调用会共享同一次平台请求。",
+      ),
+    ).catch(() => undefined)
+    this.kickPump()
   }
 
   private kickPump(): void {
@@ -386,61 +532,6 @@ export class RemoteEnvironmentCoordinator {
         }
       })
       .catch(() => undefined)
-    void this.preemptForRequiredRequest()
-  }
-
-  private async preemptForRequiredRequest(): Promise<void> {
-    let activeVictim: ActiveLease | undefined
-    let deferredVictim: ActiveLease | undefined
-    let deferredUntil: number | undefined
-    await this.withLock(async () => {
-      if (
-        this.closed ||
-        this.occupiedSlots() < this.maxConcurrent ||
-        !this.pending.some((request) => request.priority === "required")
-      ) {
-        return
-      }
-      const now = Date.now()
-      activeVictim = this.oldestVerificationLease(now)
-      if (activeVictim) return
-      const protectedLease = this.verificationLeases().find(
-        (lease) => !this.releaseTasks.has(lease.runId),
-      )
-      if (protectedLease) {
-        deferredVictim = protectedLease
-        deferredUntil = protectedLease.deliveredAt
-          ? protectedLease.deliveredAt + this.minimumLeaseDurationMs
-          : undefined
-        if (
-          protectedLease.preemptionDeferred !== true ||
-          protectedLease.preemptionDeferredUntil !== deferredUntil
-        ) {
-          protectedLease.preemptionDeferred = true
-          protectedLease.preemptionDeferredUntil = deferredUntil
-          protectedLease.onEvent?.("environment_preemption_deferred", {
-            environmentId: protectedLease.environmentId,
-            reason: protectedLease.deliveredAt ? "minimum_lease_duration" : "awaiting_delivery",
-            ...(deferredUntil ? { eligibleAt: new Date(deferredUntil).toISOString() } : {}),
-          })
-        }
-        return
-      }
-      const startingVictim = [...this.starting.values()]
-        .filter(({ request }) => request.priority === "verification")
-        .sort((left, right) => left.startedAt - right.startedAt)[0]
-      startingVictim?.controller.abort(abortError("远程环境启动已让位给无附件且无法本地推进的题目"))
-    })
-    if (deferredVictim) {
-      if (deferredUntil) this.schedulePreemptionCheck(deferredUntil)
-      return
-    }
-    if (activeVictim) {
-      await this.releaseLease(activeVictim, {
-        revokedMessage:
-          "远程环境已让位给无附件且无法本地推进的题目；旧 endpoint 已失效，需要时可重新申请验证环境。",
-      }).catch(() => undefined)
-    }
   }
 
   private async markDelivered(runId: string): Promise<void> {
@@ -449,8 +540,6 @@ export class RemoteEnvironmentCoordinator {
       lease = this.active.get(runId)
       if (!lease || lease.deliveredAt !== undefined) return
       lease.deliveredAt = Date.now()
-      lease.preemptionDeferred = false
-      lease.preemptionDeferredUntil = undefined
     })
     if (!lease || lease.deliveredAt === undefined) return
     lease.onEvent?.("environment_delivered", {
@@ -459,22 +548,6 @@ export class RemoteEnvironmentCoordinator {
       deliveryWaitMs: lease.deliveredAt - new Date(lease.acquiredAt).getTime(),
     })
     this.kickPump()
-  }
-
-  private schedulePreemptionCheck(at: number): void {
-    if (this.closed || (this.preemptionTimerAt !== undefined && this.preemptionTimerAt <= at))
-      return
-    if (this.preemptionTimer) clearTimeout(this.preemptionTimer)
-    this.preemptionTimerAt = at
-    this.preemptionTimer = setTimeout(
-      () => {
-        this.preemptionTimer = undefined
-        this.preemptionTimerAt = undefined
-        this.kickPump()
-      },
-      Math.max(0, at - Date.now()),
-    )
-    this.preemptionTimer.unref?.()
   }
 
   private async reserveAvailableRequests(): Promise<StartingRequest[]> {
@@ -493,6 +566,7 @@ export class RemoteEnvironmentCoordinator {
           startedAt: Date.now(),
         }
         this.starting.set(request.runId, starting)
+        this.notifyCapacityChanged()
         request.onEvent?.("environment_starting", {
           priority: request.priority,
           waited: Date.now() - new Date(request.requestedAt).getTime() > 0,
@@ -517,7 +591,10 @@ export class RemoteEnvironmentCoordinator {
       const operation = Promise.resolve().then(async () => await request.capability.start(signal))
       finalOperation = operation
       try {
-        const environment = await raceWithSignal(operation, signal)
+        const started = await raceWithSignal(operation, signal)
+        const environment = request.capability.waitUntilReady
+          ? await raceWithSignal(request.capability.waitUntilReady(started, signal), signal)
+          : await waitForPlatformReportedReady(request.capability, started, signal)
         if (signal.aborted) throw signal.reason
         const lease: ActiveLease = {
           runId: request.runId,
@@ -537,14 +614,24 @@ export class RemoteEnvironmentCoordinator {
           this.store.saveEnvironmentLease(lease)
           this.starting.delete(request.runId)
           this.active.set(request.runId, lease)
+          this.notifyCapacityChanged()
         })
+        this.scheduleLeaseExpiry(lease)
         request.onEvent?.("environment_acquired", {
           environmentId: environment.id,
           priority: request.priority,
           waited: startedAt - new Date(request.requestedAt).getTime() > 0,
           durationMs: Date.now() - startedAt,
           attempts: attempt + 1,
+          endpoint: environment.endpoint,
+          expiresAt: environment.expiresAt,
+          readyAt: environment.readyAt,
         })
+        void Promise.resolve(
+          request.onRevoked?.(
+            `远程环境已就绪${environment.expiresAt ? `，预计于 ${environment.expiresAt} 到期` : ""}。Solver 与所有 SubAgent 必须使用这次更新后的 endpoint；若 status 返回 null，可调用 ctf_instance_start 原子地重新开启。`,
+          ),
+        ).catch(() => undefined)
         request.resolve(environment)
         this.kickPump()
         return
@@ -605,7 +692,10 @@ export class RemoteEnvironmentCoordinator {
 
     finalError ??= normalizedStartError(signal.reason, signal, timeoutSignal, this.startTimeoutMs)
     await this.withLock(async () => {
-      if (this.starting.get(request.runId) === starting) this.starting.delete(request.runId)
+      if (this.starting.get(request.runId) === starting) {
+        this.starting.delete(request.runId)
+        this.notifyCapacityChanged()
+      }
     })
     request.onEvent?.("environment_start_failed", {
       priority: request.priority,
@@ -638,17 +728,17 @@ export class RemoteEnvironmentCoordinator {
     }
   }
 
-  private async releaseLease(lease: ActiveLease, options: ReleaseOptions = {}): Promise<void> {
+  private async releaseLease(lease: ActiveLease): Promise<void> {
     const existing = this.releaseTasks.get(lease.runId)
     if (existing) return await existing
-    const task = this.performRelease(lease, options).finally(() => {
+    const task = this.performRelease(lease).finally(() => {
       if (this.releaseTasks.get(lease.runId) === task) this.releaseTasks.delete(lease.runId)
     })
     this.releaseTasks.set(lease.runId, task)
     return await task
   }
 
-  private async performRelease(lease: ActiveLease, options: ReleaseOptions): Promise<void> {
+  private async performRelease(lease: ActiveLease): Promise<void> {
     let failure: unknown
     try {
       await withTimeout(lease.capability.destroy(), this.operationTimeoutMs, "销毁远程环境")
@@ -666,36 +756,53 @@ export class RemoteEnvironmentCoordinator {
 
     await this.withLock(async () => {
       if (this.active.get(lease.runId) === lease) this.active.delete(lease.runId)
+      this.observedPlatformEnvironmentIds.delete(lease.environmentId)
+      this.clearLeaseExpiry(lease.runId)
       this.store.deleteEnvironmentLease(lease.runId)
+      this.notifyCapacityChanged()
     })
     lease.onEvent?.("environment_released", { environmentId: lease.environmentId })
-    if (options.revokedMessage) {
-      lease.onEvent?.("environment_revoked", {
-        environmentId: lease.environmentId,
-        reason: options.revokedMessage,
-      })
-      void Promise.resolve(lease.onRevoked?.(options.revokedMessage)).catch(() => undefined)
-    }
+    void Promise.resolve(lease.onRevoked?.("远程环境已释放，旧 endpoint 不再有效。")).catch(
+      () => undefined,
+    )
     this.kickPump()
   }
 
   private occupiedSlots(): number {
-    return this.active.size + this.starting.size
+    const environmentIds = new Set(this.observedPlatformEnvironmentIds)
+    for (const lease of this.active.values()) environmentIds.add(lease.environmentId)
+    return environmentIds.size + this.starting.size
   }
 
-  private verificationLeases(): ActiveLease[] {
-    return [...this.active.values()]
-      .filter((lease) => lease.priority === "verification")
-      .sort((left, right) => left.acquiredAt.localeCompare(right.acquiredAt))
-  }
-
-  private oldestVerificationLease(now = Date.now()): ActiveLease | undefined {
-    return this.verificationLeases().find(
-      (lease) =>
-        !this.releaseTasks.has(lease.runId) &&
-        lease.deliveredAt !== undefined &&
-        now - lease.deliveredAt >= this.minimumLeaseDurationMs,
+  private scheduleLeaseExpiry(lease: ActiveLease): void {
+    this.clearLeaseExpiry(lease.runId)
+    if (!lease.environment.expiresAt) return
+    const expiresAt = Date.parse(lease.environment.expiresAt)
+    if (!Number.isFinite(expiresAt)) return
+    const timer = setTimeout(
+      () => {
+        if (this.expiryTimers.get(lease.runId) === timer) {
+          this.expiryTimers.delete(lease.runId)
+        }
+        void this.status(lease.runId, lease.capability).catch((error) => {
+          lease.onEvent?.("environment_status_failed", { error: errorText(error) })
+        })
+      },
+      Math.max(0, expiresAt - Date.now()),
     )
+    timer.unref?.()
+    this.expiryTimers.set(lease.runId, timer)
+  }
+
+  private clearLeaseExpiry(runId: string): void {
+    const timer = this.expiryTimers.get(runId)
+    if (timer) clearTimeout(timer)
+    this.expiryTimers.delete(runId)
+  }
+
+  private notifyCapacityChanged(): void {
+    const snapshot = this.capacity()
+    for (const listener of this.capacityListeners) listener(snapshot)
   }
 
   private sortPending(): void {
@@ -728,6 +835,44 @@ function createDeferred<T>(): Deferred<T> {
     reject = fail
   })
   return { promise, resolve, reject }
+}
+
+async function waitForPlatformReportedReady(
+  capability: NonNullable<ChallengeCapability["instance"]>,
+  initial: RemoteEnvironment,
+  signal: AbortSignal,
+): Promise<RemoteEnvironment> {
+  let environment: RemoteEnvironment | null = initial
+  while (!signal.aborted) {
+    if (
+      environment.status === "running" &&
+      Boolean(environment.endpoint) &&
+      !isExpired(environment)
+    ) {
+      return { ...environment, readyAt: environment.readyAt ?? new Date().toISOString() }
+    }
+    await waitForDelay(1_000, signal)
+    environment = await capability.status()
+    if (!environment || environment.status === "stopped" || isExpired(environment)) {
+      throw Object.assign(new Error("远程环境在就绪前已停止或过期"), {
+        name: "RemoteEnvironmentUnavailableError",
+        code: "REMOTE_ENVIRONMENT_UNAVAILABLE",
+        retryable: true,
+      })
+    }
+  }
+  throw signal.reason
+}
+
+function isExpired(environment: RemoteEnvironment): boolean {
+  if (!environment.expiresAt) return false
+  const expiresAt = Date.parse(environment.expiresAt)
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now()
+}
+
+async function waitForCaller<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return await operation
+  return await raceWithSignal(operation, signal)
 }
 
 async function raceWithSignal<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {

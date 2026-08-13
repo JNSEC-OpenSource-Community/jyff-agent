@@ -449,6 +449,8 @@ function mapChallengeSummary(challenge: CTFdChallenge): ChallengeSummary {
     category: challenge.category,
     score: challenge.value,
     solved: challenge.solved_by_me === true,
+    needsEnv: false,
+    hasAttachments: (challenge.files?.length ?? 0) > 0,
   }
 }
 

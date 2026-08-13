@@ -740,93 +740,76 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("远程环境等待释放 Solver 槽，并优先恢复已取得环境的 Run", async () => {
-    const first = challenge(201, { remote: true })
-    const second = challenge(202, { remote: true })
+  it("远程环境已满时跳过无附件环境题，并严格限制 Solver 容器数", async () => {
+    const holder = challenge(201, { remote: true })
+    const waiting = challenge(202, { remote: true })
     const local = challenge(203)
-    const queued = challenge(204)
-    const challenges = [first, second, local, queued]
     const tracker = new SandboxTracker()
-    const project = await fixture(challenges, tracker, { maxRemoteEnvironments: 1 })
-    const firstReady = deferred()
-    const releaseFirst = deferred()
-    const secondResumed = deferred()
-    const releaseSecond = deferred()
+    const project = await fixture([holder, waiting, local], tracker, {
+      maxRemoteEnvironments: 1,
+    })
+    const holderReady = deferred()
+    const waitingReady = deferred()
     const localStarted = deferred()
+    const releaseHolder = deferred()
+    const releaseWaiting = deferred()
     const releaseLocal = deferred()
-    let queuedStarted = false
     const scheduler = new ContestScheduler(project, {
       maxConcurrent: 2,
       maxAttempts: 1,
       createAgentOptions: ({ challenge: summary }) => {
-        if (summary.id === first.id) {
-          return environmentAgent(first, {
-            beforeSubmit: releaseFirst.promise,
-            onEnvironmentReady: firstReady.resolve,
+        if (summary.id === holder.id) {
+          return environmentAgent(holder, {
+            beforeSubmit: releaseHolder.promise,
+            onEnvironmentReady: holderReady.resolve,
           })
         }
-        if (summary.id === second.id) {
-          return environmentAgent(second, {
-            beforeSubmit: releaseSecond.promise,
-            onEnvironmentReady: secondResumed.resolve,
+        if (summary.id === waiting.id) {
+          return environmentAgent(waiting, {
+            beforeSubmit: releaseWaiting.promise,
+            onEnvironmentReady: waitingReady.resolve,
           })
         }
-        if (summary.id === local.id) {
-          return controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve)
-        }
-        queuedStarted = true
-        return solvingAgent(queued)
+        return controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve)
       },
     })
 
     try {
-      await scheduler.dispatch(first.id)
-      await firstReady.promise
-      await scheduler.dispatch(second.id)
-      await waitUntil(() =>
-        project
-          .runs({ challengeId: second.id })
-          .some((run) =>
-            project.runEvents(run.id).some((event) => event.type === "environment_waiting"),
-          ),
-      )
+      await scheduler.dispatch(holder.id)
+      await holderReady.promise
+      await scheduler.dispatch(waiting.id)
       await scheduler.dispatch(local.id)
       await localStarted.promise
-      await scheduler.dispatch(queued.id)
 
-      expect(scheduler.snapshot().active).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ challengeId: second.id, phase: "waiting_environment" }),
-          expect.objectContaining({ challengeId: local.id, phase: "running" }),
-        ]),
-      )
-      expect(scheduler.snapshot().active).toHaveLength(3)
-      expect(queuedStarted).toBe(false)
+      expect(project.runs({ challengeId: waiting.id })).toHaveLength(0)
+      expect(scheduler.snapshot().active).toHaveLength(2)
+      expect(tracker.maximum).toBe(2)
 
-      releaseFirst.resolve()
-      await secondResumed.promise
-      expect(queuedStarted).toBe(false)
+      releaseHolder.resolve()
+      await waitingReady.promise
+      expect(tracker.maximum).toBe(2)
 
-      releaseSecond.resolve()
-      await waitUntil(() => queuedStarted)
+      releaseWaiting.resolve()
       releaseLocal.resolve()
-      await waitUntil(
-        () =>
-          project.runs().filter((run) => run.status === "solved").length === challenges.length &&
-          scheduler.snapshot().active.length === 0,
-      )
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(tracker.active).toBe(0)
     } finally {
-      releaseFirst.resolve()
-      releaseSecond.resolve()
+      releaseHolder.resolve()
+      releaseWaiting.resolve()
       releaseLocal.resolve()
       await scheduler.shutdown()
       await project.close()
     }
   })
 
-  it("取消等待远程环境的 Run 后不会泄漏 Solver 许可", async () => {
+  it("有附件环境题可在远程槽满时本地启动，等待期间仍占一个容器槽", async () => {
     const holder = challenge(205, { remote: true })
-    const waiting = challenge(206, { remote: true })
+    const waiting = challenge(206, {
+      remote: true,
+      summaryNeedsEnv: null,
+      summaryHasAttachments: null,
+      attachments: [{ id: "chall", name: "chall", content: "payload" }],
+    })
     const local = challenge(207)
     const tracker = new SandboxTracker()
     const project = await fixture([holder, waiting, local], tracker, {
@@ -846,9 +829,7 @@ describe("ContestScheduler", () => {
             onEnvironmentReady: holderReady.resolve,
           })
         }
-        if (summary.id === waiting.id) {
-          return environmentAgent(waiting)
-        }
+        if (summary.id === waiting.id) return environmentAgent(waiting)
         return controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve)
       },
     })
@@ -863,15 +844,14 @@ describe("ContestScheduler", () => {
           "waiting_environment",
       )
       await scheduler.dispatch(local.id)
-      await localStarted.promise
+
+      expect(project.runs({ challengeId: waiting.id })).toHaveLength(1)
+      expect(project.runs({ challengeId: local.id })).toHaveLength(0)
+      expect(tracker.maximum).toBe(2)
 
       await scheduler.cancel(waiting.id)
-      expect(scheduler.snapshot().active.some((item) => item.challengeId === waiting.id)).toBe(
-        false,
-      )
-      expect(project.runs({ challengeId: waiting.id }).at(-1)).toMatchObject({
-        status: "cancelled",
-      })
+      await localStarted.promise
+      expect(tracker.maximum).toBe(2)
 
       releaseLocal.resolve()
       releaseHolder.resolve()
@@ -885,140 +865,47 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("已取得环境但等待 Solver 槽时可取消，并回收环境租约", async () => {
-    const remote = challenge(214, { remote: true })
-    const local = challenge(215)
+  it("降低容器上限不抢占现有 Solver，活跃数回落前不启动新题", async () => {
+    const first = challenge(214)
+    const second = challenge(215)
+    const queued = challenge(216)
     const tracker = new SandboxTracker()
-    const project = await fixture([remote, local], tracker, { maxRemoteEnvironments: 1 })
-    const releaseLocal = deferred()
-    const localStarted = deferred()
-    const scheduler = new ContestScheduler(project, {
-      maxConcurrent: 1,
-      maxAttempts: 1,
-      createAgentOptions: ({ challenge: summary }) =>
-        summary.id === remote.id
-          ? environmentAgent(remote)
-          : controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve),
-    })
-
-    try {
-      await scheduler.startAuto()
-      await localStarted.promise
-      await waitUntil(
-        () =>
-          scheduler.snapshot().active.find((item) => item.challengeId === remote.id)?.phase ===
-          "waiting_execution_slot",
-      )
-      scheduler.pauseAuto()
-
-      await scheduler.cancel(remote.id)
-      const cancelled = project.runs({ challengeId: remote.id }).at(-1)
-      expect(cancelled).toMatchObject({ status: "cancelled" })
-      expect(project.runEvents(cancelled?.id ?? "").map((event) => event.type)).toContain(
-        "environment_released",
-      )
-
-      releaseLocal.resolve()
-      await waitUntil(() => scheduler.snapshot().active.length === 0)
-      expect(tracker.active).toBe(0)
-    } finally {
-      releaseLocal.resolve()
-      await scheduler.shutdown()
-      await project.close()
-    }
-  })
-
-  it("环境启动失败后先重新取得 Solver 槽，再把工具错误交给 Agent", async () => {
-    const remote = challenge(216, {
-      remote: true,
-      failures: { instanceStart: 1 },
-    })
-    const local = challenge(217)
-    const tracker = new SandboxTracker()
-    const project = await fixture([remote, local], tracker, { maxRemoteEnvironments: 1 })
-    const releaseLocal = deferred()
-    const localStarted = deferred()
-    let failureDelivered = false
-    const scheduler = new ContestScheduler(project, {
-      maxConcurrent: 1,
-      maxAttempts: 1,
-      createAgentOptions: ({ challenge: summary }) =>
-        summary.id === remote.id
-          ? environmentAgent(remote, {
-              onEnvironmentReady: () => {
-                failureDelivered = true
-              },
-            })
-          : controlledSolvingAgent(local, releaseLocal.promise, localStarted.resolve),
-    })
-
-    try {
-      await scheduler.startAuto()
-      await localStarted.promise
-      await waitUntil(
-        () =>
-          scheduler.snapshot().active.find((item) => item.challengeId === remote.id)?.phase ===
-          "waiting_execution_slot",
-      )
-      expect(failureDelivered).toBe(false)
-
-      releaseLocal.resolve()
-      await waitUntil(() => failureDelivered)
-      await waitUntil(() => project.isChallengeSolved(remote.id))
-    } finally {
-      releaseLocal.resolve()
-      await scheduler.shutdown()
-      await project.close()
-    }
-  })
-
-  it("降低并发后不超发恢复许可，直到执行槽实际低于新上限", async () => {
-    const remote = challenge(218, { remote: true })
-    const firstLocal = challenge(219)
-    const secondLocal = challenge(220)
-    const tracker = new SandboxTracker()
-    const project = await fixture([remote, firstLocal, secondLocal], tracker, {
-      maxRemoteEnvironments: 1,
-    })
+    const project = await fixture([first, second, queued], tracker)
     const releaseFirst = deferred()
     const releaseSecond = deferred()
     const firstStarted = deferred()
     const secondStarted = deferred()
-    const remoteResumed = deferred()
+    let queuedStarted = false
     const scheduler = new ContestScheduler(project, {
       maxConcurrent: 2,
       maxAttempts: 1,
       createAgentOptions: ({ challenge: summary }) => {
-        if (summary.id === remote.id) {
-          return environmentAgent(remote, { onEnvironmentReady: remoteResumed.resolve })
+        if (summary.id === first.id) {
+          return controlledSolvingAgent(first, releaseFirst.promise, firstStarted.resolve)
         }
-        return summary.id === firstLocal.id
-          ? controlledSolvingAgent(firstLocal, releaseFirst.promise, firstStarted.resolve)
-          : controlledSolvingAgent(secondLocal, releaseSecond.promise, secondStarted.resolve)
+        if (summary.id === second.id) {
+          return controlledSolvingAgent(second, releaseSecond.promise, secondStarted.resolve)
+        }
+        queuedStarted = true
+        return solvingAgent(queued)
       },
     })
 
     try {
       await scheduler.startAuto()
       await Promise.all([firstStarted.promise, secondStarted.promise])
-      await waitUntil(
-        () =>
-          scheduler.snapshot().active.find((item) => item.challengeId === remote.id)?.phase ===
-          "waiting_execution_slot",
-      )
       await scheduler.setMaxConcurrent(1)
 
-      let resumed = false
-      void remoteResumed.promise.then(() => {
-        resumed = true
-      })
       releaseFirst.resolve()
-      await waitUntil(() => project.isChallengeSolved(firstLocal.id))
-      expect(resumed).toBe(false)
+      await waitUntil(
+        () => project.isChallengeSolved(first.id) && scheduler.snapshot().active.length === 1,
+      )
+      expect(queuedStarted).toBe(false)
 
       releaseSecond.resolve()
-      await remoteResumed.promise
-      expect(resumed).toBe(true)
+      await waitUntil(() => queuedStarted)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(tracker.maximum).toBe(2)
     } finally {
       releaseFirst.resolve()
       releaseSecond.resolve()
@@ -1027,7 +914,7 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("环境型驻留 Run 达到上限后跳过后续环境题，但继续启动本地题", async () => {
+  it("无附件环境题只按远程上限开容器，同时越过它启动本地题", async () => {
     const remote = [
       challenge(208, { remote: true }),
       challenge(209, { remote: true }),
@@ -1059,11 +946,12 @@ describe("ContestScheduler", () => {
       await scheduler.startAuto()
       await localStarted.promise
       expect(project.runs({ challengeId: remote[0]?.id })).toHaveLength(1)
-      expect(project.runs({ challengeId: remote[1]?.id })).toHaveLength(1)
-      expect(project.runs({ challengeId: remote[2]?.id })).toHaveLength(1)
-      expect(project.runs({ challengeId: remote[3]?.id })).toHaveLength(1)
-      expect(project.runs({ challengeId: remote[4]?.id })).toHaveLength(0)
+      for (const item of remote.slice(1)) {
+        expect(project.runs({ challengeId: item.id })).toHaveLength(0)
+      }
       expect(project.runs({ challengeId: local.id })).toHaveLength(1)
+      expect(scheduler.snapshot().active).toHaveLength(2)
+      expect(tracker.maximum).toBe(2)
     } finally {
       releaseFirst.resolve()
       releaseLocal.resolve()
@@ -1072,7 +960,7 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("环境需求未知的题目在绑定后等待环境时不会让驻留 Sandbox 无界增长", async () => {
+  it("环境需求未知且无附件时保守占远程意图，不批量创建 Sandbox", async () => {
     const remote = Array.from({ length: 8 }, (_, index) =>
       challenge(230 + index, { remote: true, summaryNeedsEnv: null }),
     )
@@ -1091,18 +979,11 @@ describe("ContestScheduler", () => {
 
     try {
       await scheduler.startAuto()
-      await waitUntil(() => {
-        const snapshot = scheduler.snapshot()
-        return (
-          snapshot.active.length === 4 &&
-          snapshot.queued.length === 4 &&
-          snapshot.active.filter((item) => item.phase === "waiting_environment").length === 3
-        )
-      })
+      await waitUntil(() => tracker.maximum === 1)
 
-      expect(scheduler.snapshot().active).toHaveLength(4)
-      expect(scheduler.snapshot().queued).toHaveLength(4)
-      expect(tracker.maximum).toBe(4)
+      expect(scheduler.snapshot().active).toHaveLength(1)
+      expect(scheduler.snapshot().queued).toHaveLength(7)
+      expect(tracker.maximum).toBe(1)
     } finally {
       neverSubmit.resolve()
       await scheduler.shutdown()

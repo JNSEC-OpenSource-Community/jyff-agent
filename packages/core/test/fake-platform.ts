@@ -23,6 +23,8 @@ export interface TestChallenge {
   remote?: boolean
   /** `null` simulates a platform list that cannot advertise environment requirements yet. */
   summaryNeedsEnv?: boolean | null
+  /** `null` simulates a summary that omits attachment metadata. */
+  summaryHasAttachments?: boolean | null
   failures?: Partial<Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", number>>
   retryableFailures?: Partial<
     Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", boolean>
@@ -107,12 +109,17 @@ class TestPlatformProject implements PlatformProject {
         challenge.summaryNeedsEnv === null
           ? undefined
           : (challenge.summaryNeedsEnv ?? (challenge.remote ? true : false))
+      const hasAttachments =
+        challenge.summaryHasAttachments === null
+          ? undefined
+          : (challenge.summaryHasAttachments ?? challenge.attachments.length > 0)
       return {
         id: challenge.id,
         title: challenge.title,
         category: challenge.category,
         score: challenge.score,
         solved: this.solved.has(challenge.id),
+        ...(hasAttachments === undefined ? {} : { hasAttachments }),
         ...(needsEnv === undefined ? {} : { needsEnv }),
       }
     })

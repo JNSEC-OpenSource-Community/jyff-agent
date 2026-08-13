@@ -62,6 +62,22 @@ describe("WebUI dashboard model", () => {
       status: "solved",
       progress: "Flag 已确认",
     })
+    expect(snapshot.remoteEnvironment).toMatchObject({
+      capacity: { maximum: 1, occupied: 1, available: 0 },
+      leases: [
+        {
+          challengeId: "pwn-1",
+          runId: "run-pwn-1",
+          phase: "ready",
+          acquiredAt: "2026-07-29T11:56:00.000Z",
+        },
+      ],
+    })
+    expect(snapshot.solverLogs[0]).toMatchObject({
+      runId: "run-pwn-1",
+      challengeTitle: "Heap Garden",
+      summary: "开始执行 终端命令",
+    })
     expect(project.latestRunEventCalls).toBe(1)
     expect(project.runEventsCalls).toBe(0)
   })

@@ -114,17 +114,45 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
-  it("无附件请求会在验证租约最小使用时间片后抢占", async () => {
+  it("平台列表中的外部实例也占配额，确认消失后才发放名额", async () => {
     const log: string[] = []
-    const revoked = vi.fn()
-    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
-      minimumLeaseDurationMs: 0,
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    coordinator.observePlatformEnvironments([
+      {
+        id: "external-environment",
+        challengeId: "external",
+        status: "running",
+        endpoint: "test://external",
+      },
+    ])
+    const managed = coordinator.manage({
+      runId: "run-after-external",
+      challenge: challenge("after-external", 0),
+      capability: capability("after-external", log),
     })
+
+    let resolved = false
+    const start = managed.instance?.start().then((environment) => {
+      resolved = true
+      return environment
+    })
+    await vi.waitFor(() => expect(coordinator.snapshot().leases[0]?.phase).toBe("waiting"))
+    expect(coordinator.capacity()).toEqual({ maximum: 1, occupied: 1, available: 0 })
+    expect(resolved).toBe(false)
+    expect(log).toEqual([])
+
+    coordinator.observePlatformEnvironments([])
+    await expect(start).resolves.toMatchObject({ id: "environment-after-external" })
+    await coordinator.close()
+  })
+
+  it("已交付租约保持到持有者主动释放，不因高优先级请求被抢占", async () => {
+    const log: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
     const verification = coordinator.manage({
       runId: "run-verification",
       challenge: challenge("with-file", 1),
       capability: capability("with-file", log),
-      onRevoked: revoked,
     })
     const required = coordinator.manage({
       runId: "run-required",
@@ -133,60 +161,59 @@ describe("RemoteEnvironmentCoordinator", () => {
     })
 
     await verification.instance?.start()
-    await required.instance?.start()
-
-    expect(log).toEqual(["start:with-file", "destroy:with-file", "start:without-file"])
-    expect(revoked).toHaveBeenCalledOnce()
-    await coordinator.close()
-  })
-
-  it("验证环境交付前不会被抢占，交付后至少保留一个最小使用时间片", async () => {
-    const log: string[] = []
-    const events: string[] = []
-    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
-      minimumLeaseDurationMs: 25,
-    })
-    const resume = deferred<void>()
-    const verification = coordinator.manage({
-      runId: "run-verification-waiting",
-      challenge: challenge("verification-waiting", 1),
-      capability: capability("verification-waiting", log),
-      executionGate: {
-        suspend() {},
-        resume: async () => await resume.promise,
-      },
-      onEvent: (type) => events.push(type),
-    })
-    const required = coordinator.manage({
-      runId: "run-required-preempting",
-      challenge: challenge("required-preempting", 0),
-      capability: capability("required-preempting", log),
-    })
-
-    const verificationStart = verification.instance?.start()
-    await vi.waitFor(() => expect(events).toContain("environment_acquired"))
     let requiredResolved = false
     const requiredStart = required.instance?.start().then((environment) => {
       requiredResolved = true
       return environment
     })
-    await vi.waitFor(() => expect(events).toContain("environment_preemption_deferred"))
+    await vi.waitFor(() => expect(coordinator.capacity().occupied).toBe(1))
 
     expect(requiredResolved).toBe(false)
-    expect(log).toEqual(["start:verification-waiting"])
-    resume.resolve(undefined)
+    expect(log).toEqual(["start:with-file"])
 
-    await expect(verificationStart).resolves.toMatchObject({
-      id: "environment-verification-waiting",
+    await verification.instance?.destroy()
+    await expect(requiredStart).resolves.toMatchObject({ id: "environment-without-file" })
+    expect(log).toEqual(["start:with-file", "destroy:with-file", "start:without-file"])
+    await coordinator.close()
+  })
+
+  it("降低配额不撤销现有租约，全部自然释放后才发放新槽", async () => {
+    const log: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(2, new MemoryLeaseStore())
+    const first = coordinator.manage({
+      runId: "run-first",
+      challenge: challenge("first", 0),
+      capability: capability("first", log),
     })
-    expect(requiredResolved).toBe(false)
-    await expect(requiredStart).resolves.toMatchObject({
-      id: "environment-required-preempting",
+    const second = coordinator.manage({
+      runId: "run-second",
+      challenge: challenge("second", 0),
+      capability: capability("second", log),
     })
+    const waiting = coordinator.manage({
+      runId: "run-waiting",
+      challenge: challenge("waiting", 0),
+      capability: capability("waiting", log),
+    })
+
+    await Promise.all([first.instance?.start(), second.instance?.start()])
+    await coordinator.setMaxConcurrent(1)
+    let waitingResolved = false
+    const waitingStart = waiting.instance?.start().then((environment) => {
+      waitingResolved = true
+      return environment
+    })
+
+    await first.instance?.destroy()
+    expect(waitingResolved).toBe(false)
+    await second.instance?.destroy()
+    await expect(waitingStart).resolves.toMatchObject({ id: "environment-waiting" })
     expect(log).toEqual([
-      "start:verification-waiting",
-      "destroy:verification-waiting",
-      "start:required-preempting",
+      "start:first",
+      "start:second",
+      "destroy:first",
+      "destroy:second",
+      "start:waiting",
     ])
     await coordinator.close()
   })
@@ -370,9 +397,10 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
-  it("无附件请求会取消尚未完成的附件题启动预留", async () => {
+  it("新请求不会抢占尚未完成的启动，必须等待原持有者释放", async () => {
     const log: string[] = []
     let observedSignal: AbortSignal | undefined
+    const allowStart = deferred<void>()
     const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
       startTimeoutMs: 1_000,
       operationTimeoutMs: 100,
@@ -382,10 +410,13 @@ describe("RemoteEnvironmentCoordinator", () => {
     verificationCapability.instance.start = async (signal) => {
       if (!signal) throw new Error("缺少启动 signal")
       observedSignal = signal
-      await new Promise<void>((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
-      })
-      throw new Error("unreachable")
+      await allowStart.promise
+      return {
+        id: "environment-starting-verification",
+        challengeId: "starting-verification",
+        status: "running",
+        endpoint: "test://starting-verification",
+      }
     }
     const verification = coordinator.manage({
       runId: "run-starting-verification",
@@ -400,13 +431,120 @@ describe("RemoteEnvironmentCoordinator", () => {
       challenge: challenge("required-after-starting", 0),
       capability: capability("required-after-starting", log),
     })
-    const requiredStart = required.instance?.start()
+    let requiredResolved = false
+    const requiredStart = required.instance?.start().then((environment) => {
+      requiredResolved = true
+      return environment
+    })
 
-    await expect(verificationStart).rejects.toMatchObject({ name: "AbortError" })
+    expect(requiredResolved).toBe(false)
+    expect(observedSignal?.aborted).toBe(false)
+    allowStart.resolve(undefined)
+    await expect(verificationStart).resolves.toMatchObject({
+      id: "environment-starting-verification",
+    })
+    expect(requiredResolved).toBe(false)
+
+    await verification.instance?.destroy()
     await expect(requiredStart).resolves.toMatchObject({
       id: "environment-required-after-starting",
     })
-    expect(observedSignal?.aborted).toBe(true)
+    await coordinator.close()
+  })
+
+  it("同一 Run 的并发启动调用共享一次平台请求", async () => {
+    const log: string[] = []
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    const managed = coordinator.manage({
+      runId: "run-singleflight",
+      challenge: challenge("singleflight", 0),
+      capability: capability("singleflight", log),
+    })
+
+    const [first, second] = await Promise.all([
+      managed.instance?.start(),
+      managed.instance?.start(),
+    ])
+
+    expect(first).toEqual(second)
+    expect(log).toEqual(["start:singleflight"])
+    await coordinator.close()
+  })
+
+  it("只在适配器完成协议就绪检查后交付 endpoint", async () => {
+    const ready = deferred<void>()
+    const events: string[] = []
+    const raw = capability("readiness", [])
+    if (!raw.instance) throw new Error("fixture 缺少实例能力")
+    raw.instance.waitUntilReady = async (environment) => {
+      await ready.promise
+      return { ...environment, readyAt: "2026-01-01T00:00:00.000Z" }
+    }
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    const managed = coordinator.manage({
+      runId: "run-readiness",
+      challenge: challenge("readiness", 0),
+      capability: raw,
+      onEvent: (type) => events.push(type),
+    })
+
+    let delivered = false
+    const start = managed.instance?.start().then((environment) => {
+      delivered = true
+      return environment
+    })
+    await vi.waitFor(() => expect(events).toContain("environment_starting"))
+    expect(delivered).toBe(false)
+
+    ready.resolve(undefined)
+    await expect(start).resolves.toMatchObject({ readyAt: "2026-01-01T00:00:00.000Z" })
+    await coordinator.close()
+  })
+
+  it("检测到租约过期后通知所有参与者，并允许原子重开", async () => {
+    const updates: string[] = []
+    const events: string[] = []
+    let current: RemoteEnvironment | null = null
+    let starts = 0
+    const raw = capability("expiring", [])
+    if (!raw.instance) throw new Error("fixture 缺少实例能力")
+    raw.instance.start = async () => {
+      starts++
+      current = {
+        id: `environment-expiring-${starts}`,
+        challengeId: "expiring",
+        status: "running",
+        endpoint: "test://expiring",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }
+      return current
+    }
+    raw.instance.status = async () => current
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore())
+    const managed = coordinator.manage({
+      runId: "run-expiring",
+      challenge: challenge("expiring", 0),
+      capability: raw,
+      onRevoked: (message) => {
+        updates.push(message)
+      },
+      onEvent: (type) => events.push(type),
+    })
+
+    await managed.instance?.start()
+    const active = current as RemoteEnvironment | null
+    if (!active) throw new Error("fixture 未创建环境")
+    current = { ...active, expiresAt: new Date(Date.now() - 1_000).toISOString() }
+    await expect(managed.instance?.status()).resolves.toBeNull()
+    expect(events).toContain("environment_expired")
+    expect(updates.some((message) => message.includes("原子地重新开启"))).toBe(true)
+
+    const [first, second] = await Promise.all([
+      managed.instance?.start(),
+      managed.instance?.start(),
+    ])
+    expect(first).toEqual(second)
+    expect(starts).toBe(2)
     await coordinator.close()
   })
 

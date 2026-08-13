@@ -33,13 +33,7 @@ import {
   Spinner,
 } from "../components/index.ts"
 import { apiMutation, apiRequest, projectApi } from "../lib/api.ts"
-import {
-  challengeCategoryMark,
-  filterChallenges,
-  recentChallenges,
-  sortChallenges,
-  toneForStatus,
-} from "../lib/challenge.ts"
+import { filterChallenges, sortChallenges, toneForStatus } from "../lib/challenge.ts"
 import { STATUS_LABELS } from "../lib/labels.ts"
 import { absoluteTime, relativeTime } from "../lib/time.ts"
 import { cn } from "../lib/utils.ts"
@@ -165,6 +159,156 @@ function ProgressMetric({ label, value, tone }: { label: string; value: number; 
   )
 }
 
+function elapsedTime(from: string | undefined, now: string): string {
+  if (!from) return "尚未开始"
+  const seconds = Math.max(0, Math.floor((Date.parse(now) - Date.parse(from)) / 1_000))
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分 ${seconds % 60} 秒`
+  const hours = Math.floor(minutes / 60)
+  return `${hours} 小时 ${minutes % 60} 分`
+}
+
+const ENVIRONMENT_PHASE_LABELS = {
+  waiting: "等待名额",
+  starting: "正在启动",
+  ready: "已就绪",
+  releasing: "正在释放",
+} as const
+
+function EnvironmentLedger({
+  snapshot,
+  projectId,
+  challengeTitle,
+  releasing,
+  onRelease,
+}: {
+  snapshot: DashboardSnapshot
+  projectId: string
+  challengeTitle: (challengeId: string) => string
+  releasing: string
+  onRelease: (environmentId: string) => void
+}) {
+  const managedIds = new Set(
+    snapshot.remoteEnvironment.leases.flatMap((lease) =>
+      lease.environmentId ? [lease.environmentId] : [],
+    ),
+  )
+  const unmanaged = snapshot.environments.filter(
+    (environment) => environment.status !== "stopped" && !managedIds.has(environment.id),
+  )
+  const { capacity } = snapshot.remoteEnvironment
+  const rows = snapshot.remoteEnvironment.leases.length + unmanaged.length
+
+  return (
+    <Card className="mb-4 p-0">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            远程环境
+          </p>
+          <h2 className="mt-0.5 font-semibold">实例占用</h2>
+        </div>
+        <div className="flex items-baseline gap-2 font-mono tabular-nums">
+          <strong className="text-lg">{capacity.occupied}</strong>
+          <span className="text-xs text-muted-foreground">/ {capacity.maximum} 个名额</span>
+        </div>
+      </div>
+      {rows === 0 ? (
+        <div className="px-4 py-7 text-sm text-muted-foreground">
+          当前没有 Solver 占用或等待远程环境。
+        </div>
+      ) : (
+        <div className="divide-y divide-border/60">
+          {snapshot.remoteEnvironment.leases.map((lease) => {
+            const since = lease.acquiredAt ?? lease.startedAt ?? lease.requestedAt
+            return (
+              <div
+                key={`${lease.runId}:${lease.environmentId ?? lease.phase}`}
+                className="grid gap-3 border-l-2 border-l-primary px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(8rem,0.8fr)_auto] sm:items-center"
+              >
+                <div className="min-w-0">
+                  <Link
+                    to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(lease.challengeId)}`}
+                    className="truncate text-sm font-medium hover:text-primary"
+                  >
+                    {challengeTitle(lease.challengeId)}
+                  </Link>
+                  <p className="truncate font-mono text-[10px] text-muted-foreground">
+                    {lease.environmentId ?? lease.runId}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        lease.phase === "ready" ? "bg-success" : "bg-warning",
+                      )}
+                    />
+                    <span className="text-xs font-medium">
+                      {ENVIRONMENT_PHASE_LABELS[lease.phase]}
+                    </span>
+                  </div>
+                  <p className="mt-1! font-mono text-[10px] tabular-nums text-muted-foreground">
+                    已持续 {elapsedTime(since, snapshot.generatedAt)}
+                    {lease.expiresAt ? ` · ${relativeTime(lease.expiresAt)}到期` : ""}
+                  </p>
+                </div>
+                {lease.environmentId ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={releasing === lease.environmentId}
+                    onClick={() => onRelease(lease.environmentId as string)}
+                  >
+                    <Icon
+                      icon={
+                        releasing === lease.environmentId
+                          ? "lucide:loader-circle"
+                          : "lucide:circle-stop"
+                      }
+                      className={releasing === lease.environmentId ? "animate-spin" : ""}
+                      width="13"
+                    />
+                    释放
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">{lease.priority}</span>
+                )}
+              </div>
+            )
+          })}
+          {unmanaged.map((environment) => (
+            <div
+              key={environment.id}
+              className="grid gap-3 border-l-2 border-l-muted-foreground/40 px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(8rem,0.8fr)_auto] sm:items-center"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {challengeTitle(environment.challengeId)}
+                </p>
+                <p className="truncate font-mono text-[10px] text-muted-foreground">
+                  {environment.id} · 平台外部实例
+                </p>
+              </div>
+              <span className="text-xs text-muted-foreground">{environment.status}</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={releasing === environment.id}
+                onClick={() => onRelease(environment.id)}
+              >
+                释放
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /* ── Page ── */
 
 export function ProjectPage() {
@@ -176,6 +320,7 @@ export function ProjectPage() {
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [schedulingBusy, setSchedulingBusy] = useState("")
+  const [releasingEnvironment, setReleasingEnvironment] = useState("")
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -276,6 +421,23 @@ export function ProjectPage() {
     }
   }
 
+  async function releaseEnvironment(environmentId: string) {
+    setReleasingEnvironment(environmentId)
+    setError("")
+    try {
+      const next = await apiMutation<DashboardSnapshot>(
+        projectApi(projectId, `/api/environments/${encodeURIComponent(environmentId)}`),
+        "DELETE",
+      )
+      setSnapshot(next)
+      setQueue(next.scheduler?.queued ?? [])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setReleasingEnvironment("")
+    }
+  }
+
   async function setSchedulingDisposition(
     challengeId: string,
     disposition: "default" | "excluded" | "solved",
@@ -318,7 +480,6 @@ export function ProjectPage() {
     snapshot.scheduler?.available === true &&
     (!snapshot.controlPlane || snapshot.controlPlane.phase === "ready")
 
-  const recent = recentChallenges(snapshot.challenges, 5)
   const visible = sortChallenges(filterChallenges(snapshot.challenges, { query, statusFilter }))
 
   return (
@@ -362,6 +523,14 @@ export function ProjectPage() {
       {error ? <ErrorNotice message={error} className="mb-4" /> : null}
 
       <ProgressOverview {...snapshot.stats} />
+
+      <EnvironmentLedger
+        snapshot={snapshot}
+        projectId={projectId}
+        challengeTitle={(challengeId) => byId.get(challengeId)?.title ?? challengeId}
+        releasing={releasingEnvironment}
+        onRelease={(environmentId) => void releaseEnvironment(environmentId)}
+      />
 
       {/* ── Announcement candidates ── */}
       {pendingAnnouncements.length > 0 ? (
@@ -489,65 +658,58 @@ export function ProjectPage() {
           </div>
         </Card>
 
-        {/* 最近活动 */}
+        {/* 全局 Solver 日志 */}
         <Card className="flex min-h-0 flex-col p-0">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                最近活动
+                全局日志
               </p>
-              <h2 className="mt-0.5 font-semibold">最近活跃</h2>
+              <h2 className="mt-0.5 font-semibold">所有 Solver</h2>
             </div>
             <span className="font-mono text-lg font-semibold tabular-nums text-muted-foreground">
-              {snapshot.stats.total}
+              {snapshot.solverLogs.length}
             </span>
           </div>
-          <div className="flex-1 divide-y divide-border/60">
-            {recent.map((c) => {
-              const categoryMark = challengeCategoryMark(c.category)
-              return (
+          <div className="max-h-128 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
+            {snapshot.solverLogs.length > 0 ? (
+              snapshot.solverLogs.map((entry) => (
                 <Link
-                  key={c.id}
-                  to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted"
+                  key={entry.id}
+                  to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(entry.challengeId)}`}
+                  className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 px-4 py-2.5 transition-colors hover:bg-muted"
                 >
                   <span
                     className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-md border border-border font-bold text-muted-foreground",
-                      categoryMark.chinese ? "font-sans text-sm" : "font-mono text-[10px]",
+                      "mt-1.5 size-1.5 rounded-full",
+                      entry.tone === "danger"
+                        ? "bg-danger"
+                        : entry.tone === "warning"
+                          ? "bg-warning"
+                          : entry.tone === "positive"
+                            ? "bg-success"
+                            : "bg-muted-foreground/50",
                     )}
-                  >
-                    {categoryMark.text}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium group-hover:text-primary transition-colors">
-                      {c.title}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {c.score} pts
-                      {c.status === "solved" && c.lastActivityAt
-                        ? ` · 解出 ${relativeTime(c.lastActivityAt)}`
-                        : ` · ${c.progress}`}
-                    </p>
-                  </div>
-                  <Badge tone={toneForStatus(c.status)} className="shrink-0">
-                    {STATUS_LABELS[c.status] ?? c.status}
-                  </Badge>
-                  <Icon
-                    icon="lucide:chevron-right"
-                    width="13"
-                    className="shrink-0 text-muted-foreground/40"
                   />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium group-hover:text-primary">
+                      {entry.challengeTitle}
+                    </p>
+                    <p className="truncate text-[11px] text-muted-foreground">{entry.summary}</p>
+                  </div>
+                  <time
+                    dateTime={entry.createdAt}
+                    title={absoluteTime(entry.createdAt)}
+                    className="font-mono text-[10px] tabular-nums text-muted-foreground"
+                  >
+                    {relativeTime(entry.createdAt)}
+                  </time>
                 </Link>
-              )
-            })}
-            {snapshot.challenges.length > 5 && (
-              <a
-                href="#all"
-                className="flex items-center justify-center gap-1.5 px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                全部 {snapshot.challenges.length} 题 <Icon icon="lucide:arrow-down" width="13" />
-              </a>
+              ))
+            ) : (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                Solver 尚未产生运行日志。
+              </p>
             )}
           </div>
         </Card>

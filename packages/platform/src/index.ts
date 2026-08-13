@@ -11,6 +11,8 @@ export interface ChallengeSummary {
   category: string
   score: number
   solved?: boolean
+  /** Whether the platform summary proves local attachment analysis is available. */
+  hasAttachments?: boolean
   /** Whether this challenge exposes a remotely managed environment. */
   needsEnv?: boolean
 }
@@ -44,6 +46,10 @@ export interface RemoteEnvironment {
   challengeId: string
   status: "starting" | "running" | "stopped"
   endpoint?: string
+  /** Platform-provided absolute expiry time when available. */
+  expiresAt?: string
+  /** Time at which the adapter completed its protocol-aware readiness check. */
+  readyAt?: string
 }
 
 export interface FlagSubmission {
@@ -57,8 +63,17 @@ export interface ChallengeCapability {
   downloadAttachment(attachmentId: string): Promise<{ attachment: Attachment; content: Uint8Array }>
   submitFlag(flag: string): Promise<FlagSubmission>
   instance?: {
-    /** Propagate cancellation through upstream requests and readiness polling. */
+    /** Request or reuse an instance. Core will not deliver it before waitUntilReady succeeds. */
     start(signal?: AbortSignal): Promise<RemoteEnvironment>
+    /**
+     * Optional protocol-aware readiness handshake. Adapters for managed
+     * environments should implement this when platform state alone cannot
+     * prove that the endpoint is usable.
+     */
+    waitUntilReady?(
+      environment: RemoteEnvironment,
+      signal?: AbortSignal,
+    ): Promise<RemoteEnvironment>
     /** Return null when no live instance exists; keep upstream I/O bounded. */
     status(): Promise<RemoteEnvironment | null>
     /** Idempotent for never-started, already-stopped, and repeated cleanup. */
@@ -271,6 +286,7 @@ export function isRetryablePlatformError(error: unknown): boolean {
 }
 
 export * from "./ctfd.ts"
+export * from "./endpoint-readiness.ts"
 export * from "./gzctf.ts"
 export * from "./ret2shell.ts"
 export * from "./registry.ts"

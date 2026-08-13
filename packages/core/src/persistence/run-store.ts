@@ -2298,6 +2298,28 @@ export class RunStore {
     }
   }
 
+  recentEvents(limit = 80): RunEvent[] {
+    this.assertOpen()
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("recent event limit 必须是 1–500 的整数")
+    }
+    const rows = this.database
+      .prepare(`
+      SELECT * FROM run_events
+      WHERE type NOT IN ('agent_thinking', 'agent_usage')
+      ORDER BY id DESC
+      LIMIT ?
+    `)
+      .all(limit) as unknown as EventRow[]
+    return rows.map((row) => ({
+      id: row.id,
+      runId: row.run_id,
+      type: row.type,
+      ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
+      createdAt: row.created_at,
+    }))
+  }
+
   appendEvent(
     runId: string,
     type: string,

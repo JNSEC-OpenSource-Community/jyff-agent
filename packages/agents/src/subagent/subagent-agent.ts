@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import type { ChallengeInfo } from "@ctf-agent/platform"
+import type { ChallengeCapability, ChallengeInfo } from "@ctf-agent/platform"
 import { CTF_COMPACTION_PROMPT, subagentTaskContextPrompt } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions, AgentTool, Skill } from "@earendil-works/pi-agent-core"
@@ -21,6 +21,7 @@ export interface CreateCtfSubagentOptions {
   subagentId: string
   containerCwd: string
   challenge: ChallengeInfo
+  capability?: ChallengeCapability
   sandbox: Sandbox
   agent: AgentOptions
   role: SubagentRole
@@ -67,6 +68,7 @@ export class CtfSubagent extends BaseAgent {
       ...createSubagentTools({
         sandbox: options.sandbox,
         cwd: options.containerCwd,
+        capability: options.capability,
       }),
     ]
     const enabledTools = options.role.tools ? new Set(options.role.tools) : undefined

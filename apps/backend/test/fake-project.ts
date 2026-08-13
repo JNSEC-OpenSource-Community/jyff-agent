@@ -10,6 +10,7 @@ import type {
   ContestSchedulerSnapshot,
   ProjectTokenUsageSnapshot,
   RemoteEnvironment,
+  RemoteEnvironmentCoordinatorSnapshot,
   RunEvent,
   RunFilter,
   RunRecord,
@@ -81,6 +82,21 @@ export class FakeDashboardProject implements DashboardProject {
       endpoint: "tcp://127.0.0.1:31337",
     },
   ]
+  remoteEnvironmentValue: RemoteEnvironmentCoordinatorSnapshot = {
+    capacity: { maximum: 1, occupied: 1, available: 0 },
+    leases: [
+      {
+        runId: "run-pwn-1",
+        challengeId: "pwn-1",
+        environmentId: "env-1",
+        priority: "required",
+        phase: "ready",
+        acquiredAt: "2026-07-29T11:56:00.000Z",
+        status: "running",
+        endpoint: "tcp://127.0.0.1:31337",
+      },
+    ],
+  }
   schedulerQueueValues: SchedulerQueueRecord[] = []
   runValues: RunRecord[] = [
     {
@@ -286,6 +302,24 @@ export class FakeDashboardProject implements DashboardProject {
   }
   async environments(): Promise<RemoteEnvironment[]> {
     return this.environmentValues
+  }
+  async destroyEnvironment(id: string): Promise<void> {
+    this.environmentValues = this.environmentValues.map((environment) =>
+      environment.id === id ? { ...environment, status: "stopped" } : environment,
+    )
+    this.remoteEnvironmentValue = {
+      capacity: { ...this.remoteEnvironmentValue.capacity, occupied: 0, available: 1 },
+      leases: this.remoteEnvironmentValue.leases.filter((lease) => lease.environmentId !== id),
+    }
+  }
+  remoteEnvironmentSnapshot(): RemoteEnvironmentCoordinatorSnapshot {
+    return structuredClone(this.remoteEnvironmentValue)
+  }
+  recentRunEvents(limit = 80): RunEvent[] {
+    return [...this.eventValues.values()]
+      .flat()
+      .sort((left, right) => right.id - left.id)
+      .slice(0, limit)
   }
   async setMaxRemoteEnvironments(_maxConcurrent: number): Promise<void> {}
 

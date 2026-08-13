@@ -48,6 +48,11 @@ function emptySnapshot(): DashboardSnapshot {
     announcements: [],
     announcementCandidates: [],
     environments: [],
+    remoteEnvironment: {
+      capacity: { maximum: 0, occupied: 0, available: 0 },
+      leases: [],
+    },
+    solverLogs: [],
     scheduler: null,
     controlPlane: null,
   }
@@ -223,6 +228,8 @@ function fingerprint(snapshot: DashboardSnapshot): string {
     categories: snapshot.categories,
     announcements: snapshot.announcements,
     environments: snapshot.environments,
+    remoteEnvironment: snapshot.remoteEnvironment,
+    solverLogs: snapshot.solverLogs,
     scheduler: snapshot.scheduler,
     controlPlane: snapshot.controlPlane,
   })

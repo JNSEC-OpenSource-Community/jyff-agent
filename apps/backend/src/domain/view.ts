@@ -15,6 +15,7 @@ import type {
   DashboardProject,
   DashboardScheduler,
   DashboardSnapshot,
+  DashboardSolverLogEntry,
   DashboardStats,
 } from "../types.ts"
 
@@ -119,6 +120,31 @@ export async function buildDashboardSnapshot(
     }
   })
 
+  const challengeTitleById = new Map(challenges.map((challenge) => [challenge.id, challenge.title]))
+  const runById = new Map(runs.map((run) => [run.id, run]))
+  const solverLogs = (project.recentRunEvents?.(80) ?? [])
+    .flatMap((event): DashboardSolverLogEntry[] => {
+      const run = runById.get(event.runId)
+      if (!run) return []
+      return [
+        {
+          id: event.id,
+          runId: event.runId,
+          challengeId: run.challengeId,
+          challengeTitle: challengeTitleById.get(run.challengeId) ?? run.challengeId,
+          type: event.type,
+          summary: solverLogSummary(event),
+          createdAt: event.createdAt,
+          tone: solverLogTone(event.type),
+        },
+      ]
+    })
+    .slice(0, 80)
+  const remoteEnvironment = project.remoteEnvironmentSnapshot?.() ?? {
+    capacity: { maximum: 0, occupied: 0, available: 0 },
+    leases: [],
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     overview,
@@ -132,6 +158,8 @@ export async function buildDashboardSnapshot(
     ),
     announcementCandidates,
     environments,
+    remoteEnvironment,
+    solverLogs,
     scheduler: schedulerSnapshot,
     controlPlane: controlPlane?.snapshot(projectId) ?? null,
   }
@@ -201,6 +229,11 @@ export function buildEmptyDashboardSnapshot(
     announcements: [],
     announcementCandidates: [],
     environments: [],
+    remoteEnvironment: {
+      capacity: { maximum: 0, occupied: 0, available: 0 },
+      leases: [],
+    },
+    solverLogs: [],
     scheduler: null,
     controlPlane: state,
   }
@@ -410,6 +443,63 @@ function progressLabel(status: DashboardChallengeStatus, event: RunEvent | undef
     case "closed":
       return "尝试已手动关闭"
   }
+}
+
+function solverLogSummary(event: RunEvent): string {
+  const tool = eventField(event, "toolName")
+  switch (event.type) {
+    case "run_created":
+      return "已创建 Solver"
+    case "run_started":
+      return "Solver 开始运行"
+    case "run_finished":
+      return "Solver 已结束"
+    case "run_interrupted":
+      return "Solver 因进程重启中断"
+    case "tool_started":
+      return tool ? `开始执行 ${humanToolName(tool)}` : "开始执行工具"
+    case "tool_finished":
+      return tool ? `完成 ${humanToolName(tool)}` : "工具执行结束"
+    case "flag_submitted":
+      return `Flag 提交：${eventField(event, "status") ?? "未知结果"}`
+    case "environment_waiting":
+      return "等待远程环境名额"
+    case "environment_starting":
+      return "正在启动远程环境"
+    case "environment_acquired":
+      return "远程环境已就绪"
+    case "environment_updated":
+      return "远程环境地址或到期时间已更新"
+    case "environment_expired":
+      return "远程环境已过期，可原子重开"
+    case "environment_released":
+      return "远程环境已释放"
+    case "environment_start_failed":
+    case "environment_release_failed":
+      return "远程环境操作失败"
+    case "subagent_started":
+      return `SubAgent 已启动${eventField(event, "role") ? ` · ${eventField(event, "role")}` : ""}`
+    case "subagent_completed":
+      return `SubAgent 已完成${eventField(event, "role") ? ` · ${eventField(event, "role")}` : ""}`
+    case "agent_message":
+      return "Solver 返回了一条消息"
+    default:
+      return event.type.replaceAll("_", " ")
+  }
+}
+
+function solverLogTone(type: string): DashboardSolverLogEntry["tone"] {
+  if (type.includes("failed") || type === "run_interrupted") return "danger"
+  if (type.includes("expired") || type.includes("waiting")) return "warning"
+  if (
+    type.includes("acquired") ||
+    type.includes("completed") ||
+    type.includes("submitted") ||
+    type === "run_finished"
+  ) {
+    return "positive"
+  }
+  return "neutral"
 }
 
 function eventField(event: RunEvent, key: string): string | undefined {

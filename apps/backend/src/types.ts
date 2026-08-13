@@ -21,6 +21,7 @@ import type {
   ProjectConfig,
   ProjectTokenUsageSnapshot,
   RemoteEnvironment,
+  RemoteEnvironmentCoordinatorSnapshot,
   RunEvent,
   RunFilter,
   RunRecord,
@@ -139,6 +140,17 @@ export interface DashboardChallenge {
   concludedOpportunities: number
 }
 
+export interface DashboardSolverLogEntry {
+  id: number
+  runId: string
+  challengeId: string
+  challengeTitle: string
+  type: string
+  summary: string
+  createdAt: string
+  tone: "neutral" | "positive" | "warning" | "danger"
+}
+
 export interface DashboardStats {
   total: number
   solved: number
@@ -158,6 +170,8 @@ export interface DashboardSnapshot {
   announcements: Announcement[]
   announcementCandidates: ChallengeAnnouncementRecord[]
   environments: RemoteEnvironment[]
+  remoteEnvironment: RemoteEnvironmentCoordinatorSnapshot
+  solverLogs: DashboardSolverLogEntry[]
   scheduler: ContestSchedulerSnapshot | null
   controlPlane: ControlPlaneSnapshot | null
 }
@@ -213,6 +227,9 @@ export interface DashboardProject {
     status: "approved" | "rejected",
   ): Promise<ChallengeAnnouncementRecord>
   environments(): Promise<RemoteEnvironment[]>
+  destroyEnvironment?(id: string): Promise<void>
+  remoteEnvironmentSnapshot?(): RemoteEnvironmentCoordinatorSnapshot
+  recentRunEvents?(limit?: number): RunEvent[]
   cachedPlatformView?(): PlatformViewCache
   schedulerQueue?(): SchedulerQueueRecord[]
   setMaxRemoteEnvironments(maxConcurrent: number): Promise<void>

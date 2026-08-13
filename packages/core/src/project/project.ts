@@ -187,7 +187,7 @@ export interface CreateSolverOptions {
   /** Runner 的第几次尝试；直接调用时由 RunStore 自动递增。 */
   attempt?: number
   source?: RunSource
-  /** Scheduler execution permit released only while ctf_instance_start awaits external capacity. */
+  /** Scheduler phase hook; waiting for remote capacity keeps the Run's Sandbox slot. */
   executionGate?: RemoteEnvironmentExecutionGate
 }
 
@@ -216,6 +216,10 @@ export class Project {
   private readonly solvers = new Set<CtfSolverAgent>()
   private readonly subagentManagers = new Map<string, CtfSubagentManager>()
   private readonly runChallengeContexts = new Map<string, string>()
+  private readonly challengeSchedulingHints = new Map<
+    string,
+    { needsEnv: boolean; hasAttachments: boolean }
+  >()
   private readonly diagnosticLog: ProjectDiagnostic[]
   private readonly agentStreamListeners = new Set<{
     target: AgentStreamTarget
@@ -593,9 +597,27 @@ export class Project {
   }
   async challenges(): Promise<ChallengeSummary[]> {
     if (this.localOnly) return this.localChallenges()
-    const challenges = await this.platform.listChallenges()
+    const challenges = (await this.platform.listChallenges()).map((challenge) => ({
+      ...challenge,
+      ...this.challengeSchedulingHints.get(challenge.id),
+    }))
     this.runStore.cachePlatformView("challenges", challenges)
     return challenges
+  }
+  async challengeSchedulingHint(
+    challengeId: string,
+  ): Promise<{ needsEnv: boolean; hasAttachments: boolean }> {
+    const cached = this.challengeSchedulingHints.get(challengeId)
+    if (cached) return cached
+    if (this.localOnly) throw new Error("比赛平台当前不可用")
+    const capability = await this.platform.bindChallenge(challengeId)
+    const challenge = await capability.getInfo()
+    const hint = {
+      needsEnv: challenge.needsEnv === true || capability.instance !== undefined,
+      hasAttachments: challenge.attachments.length > 0,
+    }
+    this.challengeSchedulingHints.set(challengeId, hint)
+    return hint
   }
   async announcements(): Promise<Announcement[]> {
     if (this.localOnly) return this.runStore.platformViewCache().announcements ?? []
@@ -718,6 +740,7 @@ export class Project {
   async environments(): Promise<RemoteEnvironment[]> {
     if (this.localOnly) return this.runStore.platformViewCache().environments ?? []
     const environments = await this.platform.listRemoteEnvironments()
+    this.remoteEnvironments.observePlatformEnvironments(environments)
     this.runStore.cachePlatformView("environments", environments)
     return environments
   }
@@ -727,6 +750,15 @@ export class Project {
   }
   async setMaxRemoteEnvironments(maxConcurrent: number): Promise<void> {
     await this.remoteEnvironments.setMaxConcurrent(maxConcurrent)
+  }
+  remoteEnvironmentCapacity() {
+    return this.remoteEnvironments.capacity()
+  }
+  remoteEnvironmentSnapshot() {
+    return this.remoteEnvironments.snapshot()
+  }
+  subscribeRemoteEnvironmentCapacity(listener: () => void): () => void {
+    return this.remoteEnvironments.subscribeCapacity(listener)
   }
   isWaitingForRemoteEnvironment(runId: string): boolean {
     return this.remoteEnvironments.isWaiting(runId)
@@ -769,6 +801,9 @@ export class Project {
   latestRunEvent(runId: string): RunEvent | undefined {
     return this.runStore.latestEvent(runId)
   }
+  recentRunEvents(limit = 80): RunEvent[] {
+    return this.runStore.recentEvents(limit)
+  }
   appendRunEvent(runId: string, type: string, data?: unknown): RunEvent {
     return this.runStore.appendEvent(runId, type, data)
   }
@@ -783,8 +818,14 @@ export class Project {
     const blackboard = injectBlackboard(this.runStore, challengeId)
     const subagents = this.subagentManagers.get(runId)?.list() ?? this.runStore.subagents(runId)
     const announcements = this.runStore.challengeAnnouncements(challengeId)
+    const environment = this.remoteEnvironments.environmentForRun(runId)
     return [
       challengeContext,
+      ...(environment
+        ? [
+            `<remote_environment_state encoding="json">${escapeXml(JSON.stringify(environment))}</remote_environment_state>`,
+          ]
+        : []),
       ...(blackboard ? [blackboard] : []),
       challengeAnnouncementsPrompt(announcements),
       activeSubagentsPrompt(subagents),
@@ -1011,6 +1052,10 @@ export class Project {
     try {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
+      this.challengeSchedulingHints.set(challengeId, {
+        needsEnv: challenge.needsEnv === true || capability.instance !== undefined,
+        hasAttachments: challenge.attachments.length > 0,
+      })
       let solver!: CtfSolverAgent
       capability = this.remoteEnvironments.manage({
         runId,
@@ -1025,10 +1070,11 @@ export class Project {
           }
         },
         onRevoked: async (message) => {
-          if (!solver || solver.isClosed) return
-          await solver.promptOrSteer(
-            `<environment_revoked>${escapeXml(message)}</environment_revoked>`,
-          )
+          const update = `<remote_environment_update>${escapeXml(message)}</remote_environment_update>`
+          await Promise.allSettled([
+            ...(!solver || solver.isClosed ? [] : [solver.promptOrSteer(update)]),
+            ...(subagentManager ? [subagentManager.broadcast(update)] : []),
+          ])
         },
       })
 
@@ -1095,6 +1141,7 @@ export class Project {
         runId,
         runDirectory,
         challenge,
+        capability,
         sandbox,
         agent: options.agent,
         roles: this.configuredSubagentRoles(),

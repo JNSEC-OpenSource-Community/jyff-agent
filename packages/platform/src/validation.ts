@@ -227,6 +227,27 @@ export async function validatePlatformPlugin(input: {
             },
           )
           if (startedEnvironment) {
+            if (environmentCapability.instance.waitUntilReady) {
+              startedEnvironment = await check(
+                "environment.readiness",
+                () =>
+                  environmentCapability.instance?.waitUntilReady?.(
+                    startedEnvironment as RemoteEnvironment,
+                    startController.signal,
+                  ),
+                {
+                  timeoutMs: environmentStartTimeoutMs,
+                  onTimeout: () =>
+                    startController.abort(validationTimeoutError("environment.readiness")),
+                },
+              )
+            } else {
+              skipped(
+                checks,
+                "environment.readiness",
+                "插件未实现协议感知 readiness，使用兼容状态检查",
+              )
+            }
             await check("environment.status", () => environmentCapability.instance?.status())
           }
           await check("environment.destroy", () => environmentCapability.instance?.destroy())
@@ -249,11 +270,13 @@ export async function validatePlatformPlugin(input: {
               () => undefined,
             )
           }
-          capabilities.environment = [
+          const environmentChecks = [
             "environment.start",
+            ...(environmentCapability.instance.waitUntilReady ? ["environment.readiness"] : []),
             "environment.status",
             "environment.destroy",
-          ].every((id) => checkPassed(checks, id))
+          ]
+          capabilities.environment = environmentChecks.every((id) => checkPassed(checks, id))
             ? "passed"
             : "failed"
         }

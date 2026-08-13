@@ -78,7 +78,7 @@ Project 是数据隔离和权限边界。所有 Project 级 API、SSE 和 worksp
 | 路径                                           | 页面                  | 作用                                                   |
 | ---------------------------------------------- | --------------------- | ------------------------------------------------------ |
 | `/`、`/projects/new`                           | `ProjectsPage`        | Project 列表、创建、连接测试、归档和删除               |
-| `/projects/:projectId`                         | `ProjectPage`         | 快照、题目列表、公告审核、队列排序、自动调度           |
+| `/projects/:projectId`                         | `ProjectPage`         | 题目、队列、远程环境占用、全局 Solver 日志与自动调度   |
 | `/projects/:projectId/settings`                | `ProjectSettingsPage` | 平台和 Project runtime 配置                            |
 | `/projects/:projectId/challenges/:challengeId` | `ChallengePage`       | 对话、情报、Attempts、workspace、Writeup 和 Agent 选择 |
 | `/settings`                                    | `GlobalSettingsPage`  | WebUI 鉴权、Provider、模型认证、模型池和 Web Access    |
@@ -129,12 +129,12 @@ closing
 
 Project 对 Solver 暴露题目级能力：题目详情、附件下载、Flag 提交以及可选远程实例。平台总览、其他题目和远程环境列表留在 Project 内部，防止 Agent 跨题或跨 Project 操作。
 
-远程实例的 Project 级配额、优先级、启动硬超时、取消、租约恢复与补偿清理见 [容器配发与远程环境生命周期](remote-environments.md)。
+远程实例的 Project 级配额、协议就绪、single-flight、到期广播、租约恢复与补偿清理见 [远程环境生命周期](remote-environments.md)。
 
 ## 4. Run、Solver 与调度
 
-持久队列、执行许可、远程环境 parking、失败分类和恢复规则详见
-[调度原则与执行许可](scheduling.md)。
+持久队列、Solver/Sandbox 硬上限、远程容量感知准入、失败分类和恢复规则详见
+[调度与硬资源上限](scheduling.md)。
 
 ### 4.1 Run 创建和清理
 
@@ -163,6 +163,8 @@ Flag 被平台接受后会记录 terminal submission。生产调度会进入 Wri
 
 - 平台已解、RunStore 已解、人工 `excluded/solved` 的题目不会自动入队。
 - 同一题在 queued/active 阶段互斥；手动派发可以显式 `force` 绕过 solved 或 blocked 检查。
+- `maxConcurrent` 是活跃 Solver/Sandbox 的硬上限；等待远程环境的 Run 仍占一个容器槽。
+- 远程槽满时跳过无附件环境题，但允许纯本地题和有附件可本地分析的题越过它。
 - 历史 Run 参与 attempt 预算；`interrupted` 和 `blocked` 不消耗普通重试预算。
 - 网络/限流/服务端错误按可重试分类处理；Session 连续异常超过阈值后将题目设为 blocked。
 - 平台暂不可用时停止领取，但不删除持久化队列和自动调度意图；恢复后继续 reconcile。

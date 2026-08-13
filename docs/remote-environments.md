@@ -1,149 +1,207 @@
-# 容器配发与远程环境生命周期
+# 远程环境生命周期
 
-本文描述比赛平台远程环境的当前实现。远程环境由 CTF 平台创建，与 Solver 使用的本地 Docker sandbox 是两套独立资源：sandbox 执行分析命令，远程环境提供题目服务 endpoint。
+本文描述 CTF 平台远程实例的配额、就绪、到期、共享和回收协议。远程实例与 Solver 的本地
+Docker Sandbox 是两套资源：Sandbox 执行分析命令，远程实例提供题目服务 endpoint。
 
-## 1. 责任边界
+## 1. 单一所有者
 
 ```text
-Solver tool
-  ctf_instance_start/status/destroy
-        │
-        ▼
-RemoteEnvironmentCoordinator（Project 级）
-  配额、优先级、硬超时、取消、租约、迟到清理
-        │
-        ▼
-ChallengeCapability.instance（平台适配器）
-  平台 API、状态轮询、endpoint 映射、幂等销毁
-        │
-        ▼
-CTF 平台容器 / 本地流量代理
+Solver / SubAgent tools
+  ctf_instance_start / status
+  Solver-only destroy
+            │
+            ▼
+RemoteEnvironmentCoordinator（Project 级唯一所有者）
+  配额、single-flight、FIFO、deadline、租约、到期通知、补偿清理
+            │
+            ▼
+ChallengeCapability.instance（题目级平台适配器）
+  start / waitUntilReady / status / destroy
+            │
+            ▼
+CTF 平台实例、TCP/HTTP/WS 服务或本地流量代理
 ```
 
-Core 不把完整 `PlatformProject` 交给 Solver。Solver 只能操作当前题目绑定的 `ChallengeCapability.instance`，协调器再用 Run ID 绑定配额和租约。
+Agent 永远拿不到完整 `PlatformProject`。Solver 与 SubAgent 共享同一个 Run-scoped managed
+capability，因此只能操作当前题目。Solver 可以 start/status/destroy；SubAgent 只能 start/status，
+不能销毁实例或提交 Flag。
 
-## 2. 配发状态
+## 2. 状态与配额
 
-一次申请依次经过以下逻辑状态：
+协调器对 Dashboard 暴露以下状态：
 
-| 状态               | 是否占配额           | 含义                                                |
-| ------------------ | -------------------- | --------------------------------------------------- |
-| `pending`          | 否                   | Project 配额已满，按优先级和 FIFO 等待              |
-| `starting`         | 是                   | 已预留槽位，正在执行平台 `start(signal)`            |
-| `waiting_delivery` | 是                   | 平台已返回环境，Solver 正在重新取得执行许可         |
-| `active`           | 是                   | endpoint 已交付 Solver，租约进入实际可用时间        |
-| `releasing`        | 是，直到有界销毁结束 | 正在调用平台 `destroy()`                            |
-| 遗留租约           | 否                   | 销毁失败，保留 SQLite 记录供下次 Project 打开时回收 |
+| phase       | 是否占远程配额 | 含义                                      |
+| ----------- | -------------- | ----------------------------------------- |
+| `waiting`   | 否             | 没有名额，仍在协调器队列                  |
+| `starting`  | 是             | 已预留名额，执行平台 start 和协议就绪检查 |
+| `ready`     | 是             | endpoint 已确认可用并交付 Run             |
+| `releasing` | 是             | destroy 尚未有界完成                      |
 
-锁只保护这些状态转换。平台 `start`、`status`、`destroy`、遗留回收等远程 I/O 均不在 Project 协调锁内等待，因此一个故障平台调用不会锁住其他申请的取消或租约释放。
+配额计算始终是：
 
-## 3. 配额与优先级
+```text
+occupied = starting + ready
+available = max(0, maximum - occupied)
+```
 
-`maxRemoteEnvironments` 是 Project 级上限，默认由 runtime 配置提供。
+`releasing` 是 ready 租约的投影，在 destroy 成功、内存状态和 SQLite 租约一起删除前不会向后续
+请求发放同一名额。
 
-- 没有附件的环境题为 `required`：没有实例通常无法本地推进。
-- 有附件的环境题为 `verification`：可以先完成本地分析，再申请实例验证。
-- `required` 请求可撤销最早取得的 `verification` 租约，但不能撤销尚未把 endpoint
-  交付 Solver 的租约。交付后的 verification 租约默认至少获得 30 秒可用时间片，避免环境
-  创建完成后在 Agent 第一次使用前就被撤销。
-- 同优先级请求按申请时间 FIFO。
-- 降低配额时优先撤销最早的 `verification` 租约；不会强制撤销 `required` 租约。
+等待请求仍分 `required`（无附件）和 `verification`（有附件）优先级；同优先级 FIFO，required
+可以排到尚未开始的 verification 前面。**不存在活跃租约抢占**：已经取得环境的题可以一直使用，
+直到解出、Blocked、取消、显式 destroy 或平台到期。降低配额也不销毁现有租约；占用自然下降到
+新上限前不再启动新实例。
 
-撤销后，Core 向原 Solver 注入 `<environment_revoked>` 消息，旧 endpoint 不再可信。
+## 3. 每个 Run 的原子申请
 
-## 4. 超时与取消
+一个 Run 同时最多有一个 pending、starting 或 active 远程状态。
 
-Core 提供不依赖插件实现质量的边界：
+多个参与者同时调用 `ctf_instance_start` 时：
 
-| 操作                                    | 默认墙钟上限 | 结果                                                  |
-| --------------------------------------- | -----------: | ----------------------------------------------------- |
-| `start`                                 |       4 分钟 | 抛出可重试的 `RemoteEnvironmentStartTimeoutError`     |
-| `status`、`destroy`、遗留回收和补偿清理 |        30 秒 | 抛出可重试的 `RemoteEnvironmentOperationTimeoutError` |
+1. 第一个调用创建 pending 请求；
+2. 后续 Solver/SubAgent 调用加入同一个 Promise；
+3. 平台只收到一次 start；
+4. 所有调用者获得同一份已就绪环境结果。
 
-`ctf_instance_start` 的 tool signal、Project 关闭信号和 Core 启动 deadline 会合并。即使插件忽略 signal，Core 也会让 tool call 在 deadline 内结束、释放内存配额并继续 pump 后续请求。
+如果 destroy 正在进行，新的 start 先等待同一个 release task 完成，再重新进入 acquire；不会在旧
+实例尚未确认删除时并发创建替代实例。多个 destroy 同样共享一个 release task。
 
-调度器把 `pending` 和 `starting` 都视为外部环境等待，不扣减 Solver 的实际解题时限；远程环境自身仍受上表中的独立 deadline 约束，所以不会形成无限暂停。
+这避免了环境释放或过期边界上多个 Agent 同时成功启动实例、重复推理和重复打平台 API。
 
-长驻 `ContestScheduler` 还会在 `ctf_instance_start` 开始时释放当前 Run 的 Solver 执行许可，
-让本地分析题使用空闲算力。环境启动成功或失败后，Run 进入
-`waiting_execution_slot`，并优先于新 Run 重新取得许可；只有取得许可后，工具结果才返回
-Agent。环境在等待恢复期间被抢占时，Core 会拒绝返回旧 endpoint。完整调度不变量见
-[调度原则与执行许可](scheduling.md)。
+## 4. endpoint 就绪契约
 
-平台明确标记为 `retryable: true` 的启动失败不会立即返回 Agent。协调器在同一次工具调用
-和同一个 4 分钟 deadline 内按 `2s → 5s → 15s → 30s` 有限退避；错误携带有效
-`retryAfterMs` 时优先采用平台建议。每次重试前先执行幂等补偿清理，清理失败则停止重试，
-避免非幂等 POST 产生重复实例。取消、Project 关闭和 required 对 starting verification 的
-优先级抢占都会中断退避，不会继续发起下一次平台调用。
+平台返回 URL、host:port 或 `Running` 状态不等于题目服务可用。Core 的交付顺序是：
 
-Ret2Shell 的实例删除是异步过程。适配器在 DELETE 被接受后继续轮询 Project 实例列表，
-只有目标实例消失才让 Core 删除租约并分配下一个名额；销毁确认自身受 25 秒 deadline
-约束。平台返回 `rebuilding cargo crates` 时只标记为可重试，不伪造固定短间隔，交由 Core
-使用上述有限指数退避。
+```text
+instance.start(signal)
+  → instance.waitUntilReady(environment, signal)
+  → 持久化租约
+  → environment_acquired
+  → tool result 交付 Agent
+```
 
-平台适配器可以使用更短的业务 deadline。例如 Ret2Shell 的实例就绪 deadline 是 3 分钟，单次 HTTP 最多 30 秒，且 HTTP deadline 覆盖响应头和完整响应体读取。
+`waitUntilReady` 是协议感知的适配器能力：
 
-平台插件 Validation Gate 使用同样的防御边界：普通契约调用默认最多 30 秒，环境启动最多 4 分钟；启动超时时会中止传给候选插件的 signal，继续执行有界 `destroy()` 和 `close()`。候选插件忽略取消时，Gate 报告会失败但验证进程不会无限等待。该行为属于 validation harness version 2。
+- HTTP(S) 可以请求真实入口；5xx 继续等待，2xx–4xx 表示应用已接受协议请求；
+- TCP、SSH、自定义二进制协议至少需要成功建立对应传输连接；
+- WS/WSS 或带本地代理的平台应验证握手或上游隧道，而不是只检查本地监听端口；
+- UDP 或特殊 challenge protocol 应由插件实现自己的最小有效握手。
 
-## 5. 取消后的补偿清理
+`packages/platform/src/endpoint-readiness.ts` 提供 HTTP(S) 与 TCP/TLS 的通用检查，但插件可以并且
+应当实现更强的 challenge-specific probe。GZCTF 会在容器入口出现后执行 endpoint 传输检查；
+Ret2Shell 在 pod Running、WSRX/本地 endpoint 建立后执行传输检查。
 
-启动 POST 存在不确定结果：客户端超时或取消时，请求可能已经到达平台并创建实例。Core 因此采用两次有界、幂等的补偿机会：
+为兼容旧扩展，没有 `waitUntilReady` 时 Core 只在 `status === running` 且 endpoint 非空后交付。
+该兼容路径不能证明特殊协议可用；新的远程环境插件应实现显式 readiness。
 
-1. 启动失败、取消或超时后立即调用一次 `destroy()`。
-2. 不遵守 abort 的 `start()` 如果迟到成功，再调用一次 `destroy()`。
+整个 start + readiness 共享 4 分钟 Core deadline 和同一 AbortSignal。就绪失败按启动失败处理，
+不会把尚不可用的 endpoint 直接丢给 Agent 消耗 token。
 
-这保证控制面不会等待失控 promise，也尽量避免孤儿实例。插件的 `destroy()` 必须幂等：实例不存在、已经停止或重复销毁都应成功返回。
-销毁失败时，Core 保留内存和 SQLite 租约并继续占用 Project 环境配额；只有后续幂等重试
-确认销毁成功，才删除租约并启动下一项环境申请。
+## 5. 到期、变化与全员同步
 
-如果销毁失败，内存槽位会被释放，`remote_environment_leases` 记录继续保留。下次 Project 打开时，`reconcile()` 只回收这些由本系统持有的遗留租约，不扫描或销毁用户在平台上的其他实例。
+`RemoteEnvironment` 可以携带：
 
-## 6. 平台适配器契约
+- `expiresAt`：平台给出的绝对到期时间；
+- `readyAt`：适配器完成协议就绪检查的时间。
 
-Core 已负责配额、公平性、硬 deadline、tool 取消竞速和持久化，但插件仍需满足以下最小要求：
+协调器为已知 `expiresAt` 安排单个 unref timer。到期时原子删除活跃租约和 SQLite 记录、释放名额，
+写入 `environment_expired`，并通知当前 Solver 与所有正在运行的 SubAgent。status 返回 null、stopped
+或过期时间已到时走同一转换。
 
-- `start(signal)` 将 signal 传给 fetch、轮询等待和其他可取消操作，并在取消后抛出 `AbortError`；不要吞掉取消继续轮询。
-- 平台请求必须有自己的有限超时，而且超时覆盖响应体消费，不只覆盖收到响应头之前。
-- 启动使用墙钟 deadline；不要用“轮询次数 × sleep”假设总耗时，因为每次请求本身也会耗时。
-- 启动 POST 应视为非幂等且结果可能不确定。失败后先读取状态，避免重复创建；取消时配合幂等销毁。
-- `start()` 只有在返回值足以让 Agent 继续工作时才成功；长期 `starting` 或缺少必要 endpoint 应在有限时间后抛出有界错误。
-- `status()` 和 `destroy()` 自身应有有限网络超时；Core 的 timeout 是最后防线，无法终止插件内部泄漏的 socket、timer 或 promise。
-- `destroy()` 和 `close()` 必须幂等，并清理轮询 timer、socket、WebSocket、本地代理和认证状态。
-- 错误不得包含凭据或完整上游响应正文；网络、限流和服务端错误应暴露 `retryable: true` 或稳定的结构化错误码。
+endpoint、status 或 expiresAt 变化时，协调器更新内存租约和持久化记录，写入
+`environment_updated`，再广播：
 
-内置 Ret2Shell 会把 WSRX WebSocket 流量映射为控制面本地 TCP endpoint，因此其 `solverSandboxNetwork` 为 `control_plane`。Project 会让 Solver sandbox 与控制面共享可访问该回环代理的网络命名空间；配置为 `networkMode: none` 时拒绝启动。
+```xml
+<remote_environment_update>
+  ...最新状态、到期或失效说明...
+</remote_environment_update>
+```
 
-## 7. 事件与排障
+参与者必须把该消息视为权威状态：立即停止使用旧 endpoint。环境失效后 Solver 或任一 SubAgent
+均可调用一次 `ctf_instance_start` 重开；single-flight 保证并发调用只产生一个平台请求。
 
-协调器向 RunStore 写入以下生命周期事件：
+Solver compaction 后，Project 会重新注入当前 `<remote_environment_state>`，避免压缩上下文后恢复
+旧 endpoint。完成、释放和到期更新同样广播给运行中的参与者。
 
-| 事件                              | 说明                                     |
-| --------------------------------- | ---------------------------------------- |
-| `environment_waiting`             | 等待配额，包含优先级和队列位置           |
-| `environment_starting`            | 已取得槽位并开始平台调用                 |
-| `environment_acquired`            | 租约持久化成功，包含环境 ID 和启动耗时   |
-| `environment_delivered`           | endpoint 已返回 Solver，包含交付等待时间 |
-| `environment_preemption_deferred` | 抢占因尚未交付或最小时间片而推迟         |
-| `environment_retry_scheduled`     | 可重试启动错误的次数、延迟和脱敏原因     |
-| `environment_start_failed`        | 启动取消、超时或平台失败                 |
-| `environment_cleanup_failed`      | 启动失败后的补偿销毁失败                 |
-| `environment_released`            | 正常销毁并删除租约                       |
-| `environment_release_failed`      | 销毁失败，持久化租约保留                 |
-| `environment_revoked`             | 因优先级或配额降低而撤销                 |
+## 6. 超时、重试和补偿清理
 
-排查长期 tool call 时，依次确认：
+| 操作                         | 默认墙钟上限 | 行为                                                |
+| ---------------------------- | -----------: | --------------------------------------------------- |
+| start + readiness            |       4 分钟 | 超时返回可重试 `RemoteEnvironmentStartTimeoutError` |
+| status / destroy / 遗留回收  |        30 秒 | 有界失败，不阻塞协调锁                              |
+| 通用 endpoint probe 单次尝试 |         5 秒 | 在总 readiness deadline 内重试                      |
 
-1. 是否出现 `environment_waiting`；若有，检查当前活跃租约及其 release 事件。
-2. 是否出现 `environment_starting`；若有但没有终态，检查 Core 启动 deadline 是否生效。
-3. 平台请求是否把 AbortSignal 传到底层 fetch，响应体是否也受 timeout 约束。
-4. 平台实例是否一直处于 `Pending/starting`，适配器是否在业务 deadline 后错误返回成功。
-5. 是否出现 cleanup/release failure；SQLite 遗留租约会在下次打开 Project 时重试回收。
+平台明确 `retryable: true` 的启动失败会在同一次工具调用内按
+`2s → 5s → 15s → 30s` 有限退避；有效 `retryAfterMs` 优先。每次重试前先幂等 destroy，避免
+非幂等 POST 重复创建实例。Agent 不会因为这些内部重试产生额外 LLM turn。
+
+启动请求存在不确定结果：客户端超时时 POST 可能已经到达平台。Core 因此执行两次有界补偿机会：
+
+1. 启动失败、取消或超时后立即调用幂等 destroy；
+2. 不遵守 abort 的迟到 start 如果之后成功，再调用一次 destroy。
+
+平台 I/O 不在协调锁中等待。destroy 失败时租约继续保留并占名额，Dashboard 显示 releasing/错误
+事件；只有确认销毁后才删除租约和发放下一个槽。
+
+## 7. 持久化与重启
+
+`remote_environment_leases` 保存系统明确持有的 Run、题目、环境 ID、优先级和取得时间。
+Project 打开时只回收这些遗留租约，不扫描或销毁用户在平台上手工创建的其他实例。
+
+启动时遗留回收同样有 30 秒边界。失败记录作为诊断保留，不能为了“恢复可用名额”假装平台环境
+已经消失。
+
+## 8. Dashboard 与人工操作
+
+Project Dashboard 的“远程环境”栏目显示：
+
+- `occupied / maximum`；
+- 占用或等待的题目、Run/环境 ID；
+- waiting、starting、ready、releasing；
+- 已开启/等待时长、平台到期时间；
+- 平台列表中存在但不属于当前协调器租约的外部实例；
+- 人工释放操作。
+
+栏目读取 `RemoteEnvironmentCoordinator.snapshot()`，并与同一次平台环境列表合并，不额外增加轮询
+请求。平台列表中仍存活的外部实例也计入 Project 远程上限；在人工释放或平台列表确认消失前，
+Scheduler 不会把它当作空闲名额。人工释放仍通过 Project 级 API 和协调器 single-flight 路径执行。
+
+全局 Solver 日志聚合以下高信号事件：Run、工具、SubAgent、Flag、环境等待/启动/更新/过期/释放。
+高频 thinking 和 usage 被过滤，日志只展示摘要，不暴露完整推理或上游响应正文。
+
+## 9. 事件
+
+| 事件                          | 说明                                           |
+| ----------------------------- | ---------------------------------------------- |
+| `environment_waiting`         | 等待配额，含优先级和队列位置                   |
+| `environment_starting`        | 预留槽并开始平台 start/readiness               |
+| `environment_retry_scheduled` | 同工具调用内的有限重试                         |
+| `environment_acquired`        | readiness 通过并持久化，含 endpoint 到期元数据 |
+| `environment_delivered`       | endpoint 已返回 Agent                          |
+| `environment_updated`         | endpoint、status 或 expiresAt 变化             |
+| `environment_expired`         | 平台停止或到期，旧 endpoint 失效               |
+| `environment_start_failed`    | 取消、超时、readiness 或平台失败               |
+| `environment_cleanup_failed`  | 启动失败后的补偿销毁失败                       |
+| `environment_released`        | destroy 成功并删除租约                         |
+| `environment_release_failed`  | destroy 失败，租约和名额保留                   |
+| `environment_status_failed`   | 到期检查或状态刷新失败                         |
+
+## 10. 平台适配器要求
+
+- start、readiness、轮询和请求必须向下传递 AbortSignal；
+- 非幂等 start 失败后先读状态，不得无条件重复 POST；
+- `waitUntilReady` 必须验证实际协议，而不只是平台状态码；
+- status 和 destroy 必须有自身网络 deadline，Core timeout 只是最后防线；
+- destroy/close 必须幂等，并清理 timer、socket、WebSocket 和本地代理；
+- 发现到期或不存在时返回 null/stopped，不得继续返回缓存 endpoint；
+- 错误不得包含 Secret 或完整上游响应正文；429、网络和服务端错误应提供稳定 retryable 语义。
 
 相关实现：
 
 - `packages/core/src/project/remote-environment-coordinator.ts`
 - `packages/core/src/project/project.ts`
-- `packages/agents/src/solver/sandbox/tools.ts`
-- `packages/platform/src/index.ts`
+- `packages/platform/src/endpoint-readiness.ts`
 - `packages/platform/src/gzctf.ts`
 - `packages/platform/src/ret2shell.ts`
+- `packages/agents/src/solver/sandbox/tools.ts`
+- `packages/core/test/project/remote-environment-coordinator.test.ts`

@@ -1,4 +1,5 @@
 import { webcrypto } from "node:crypto"
+import { waitForEndpointReachable } from "./endpoint-readiness.ts"
 import type {
   Announcement,
   AnnouncementKind,
@@ -746,6 +747,8 @@ interface GZCTFChallengeSummary {
   title: string
   category: string
   score: number
+  type?: GZCTFChallengeDetail["type"]
+  context?: GZCTFChallengeDetail["context"]
 }
 
 interface GZCTFSolvedChallenge {
@@ -886,6 +889,8 @@ class GZCTFChallengeCapability implements ChallengeCapability {
             throw error
           }
         },
+        waitUntilReady: async (environment, signal) =>
+          await this.waitUntilReady(environment, signal),
         status: async () => await this.getInstanceStatus(),
         destroy: async () => await this.destroyInstance(),
       }
@@ -960,7 +965,30 @@ class GZCTFChallengeCapability implements ChallengeCapability {
       challengeId: String(this.challengeId),
       status: context.instanceEntry ? "running" : "starting",
       ...(context.instanceEntry ? { endpoint: context.instanceEntry } : {}),
+      ...(context.closeTime ? { expiresAt: platformTimestamp(context.closeTime) } : {}),
     })
+  }
+
+  private async waitUntilReady(
+    initial: RemoteEnvironment,
+    signal?: AbortSignal,
+  ): Promise<RemoteEnvironment> {
+    const deadline = Date.now() + 3 * 60_000
+    let environment: RemoteEnvironment | null = initial
+    while (Date.now() < deadline) {
+      throwIfAborted(signal)
+      if (environment.status === "running" && environment.endpoint) {
+        await waitForEndpointReachable(environment.endpoint, signal, {
+          timeoutMs: Math.max(1, deadline - Date.now()),
+          retryDelayMs: Math.max(250, this.config.retryBaseDelayMs),
+        })
+        return this.remember({ ...environment, readyAt: new Date().toISOString() })
+      }
+      await delay(Math.min(1_000, Math.max(1, deadline - Date.now())), signal)
+      environment = await this.getInstanceStatus(signal)
+      if (!environment) break
+    }
+    throw new GZCTFApiError("GZCTF 远程环境在启动期限内未通过 endpoint 就绪检测", "network")
   }
 
   private async destroyInstance(): Promise<void> {
@@ -1054,6 +1082,10 @@ class GZCTFProject implements PlatformProject {
         category: challenge.category,
         score: challenge.score,
         solved: solved.has(challenge.id),
+        ...(challenge.type === undefined ? {} : { needsEnv: isContainer(challenge.type) }),
+        ...(challenge.context === undefined
+          ? {}
+          : { hasAttachments: Boolean(challenge.context.url) }),
       }))
   }
 
@@ -1181,10 +1213,16 @@ function mapChallengeInfo(detail: GZCTFChallengeDetail, solved: boolean): Challe
     score: detail.score ?? 0,
     solved,
     needsEnv: isContainer(detail.type),
+    hasAttachments: attachment !== undefined,
     description: `${detail.content ?? ""}${hints}`,
     attachments: attachment ? [attachment] : [],
     ...(context?.instanceEntry ? { environmentGuide: context.instanceEntry } : {}),
   }
+}
+
+function platformTimestamp(value: number): string {
+  const milliseconds = value < 1_000_000_000_000 ? value * 1_000 : value
+  return new Date(milliseconds).toISOString()
 }
 
 function attachmentFor(

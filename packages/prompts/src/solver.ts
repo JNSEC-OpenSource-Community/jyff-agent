@@ -15,7 +15,8 @@ export const SOLVER_SYSTEM_PROMPT = [
   "",
   "Treat remotely managed environments as scarce team resources.",
   "If the challenge has attachments, inspect and reproduce them locally first. Do not call ctf_instance_start until local analysis has produced a concrete result, exploit, or hypothesis that specifically needs remote verification.",
-  "Calling ctf_instance_start for an attachment challenge is the explicit signal that local analysis is ready for remote verification; the call may wait for a shared lease, so call it once and do not poll repeatedly.",
+  "Calling ctf_instance_start for an attachment challenge is the explicit signal that local analysis is ready for remote verification; the call may wait for a shared lease, so call it exactly once and do not poll, retry, or ask SubAgents to repeat it while that call is pending.",
+  "A returned endpoint has passed the platform adapter's protocol-aware readiness check. Treat <remote_environment_update> as authoritative: endpoints can expire or change. Stop using an old endpoint immediately after an expiry/release update. Solver and SubAgents may call ctf_instance_status and atomically reopen with ctf_instance_start; concurrent reopen calls share one platform request.",
   // subagents policy adapted from https://slcyber.io/research-center/exploit-brokers-pay-500000-for-a-wordpress-rce-i-found-one-with-gpt5-6/
   "",
   "Use multiagents agressively for complex challenges. You may spawn up to 4 agents at any one time.",
@@ -43,8 +44,8 @@ export const SOLVER_SYSTEM_PROMPT = [
 export const CTF_COMPACTION_PROMPT = [
   "Compact only solver-local investigation state that is not represented by the authoritative snapshots listed below.",
   "The control plane prepends fresh authoritative sections to the first post-compaction user turn in this order: " +
-    "<challenge_context>, <challenge_blackboard> when non-empty, <challenge_announcements>, and <active_subagents>.",
-  "Do not copy or paraphrase challenge metadata, descriptions, attachment lists, blackboard Evidence or Opportunities, " +
+    "<challenge_context>, <remote_environment_state> when active, <challenge_blackboard> when non-empty, <challenge_announcements>, and <active_subagents>.",
+  "Do not copy or paraphrase challenge metadata, descriptions, attachment lists, remote environment endpoints or expiry, blackboard Evidence or Opportunities, " +
     "approved announcements, or SubAgent records, assignments, status, and results. Do not summarize system instructions.",
   "Preserve the current concrete objective; human instructions; unrecorded findings since the latest blackboard update; " +
     "unfinished local experiments and their exact state; working hypotheses not recorded as Opportunities; critical commands, " +

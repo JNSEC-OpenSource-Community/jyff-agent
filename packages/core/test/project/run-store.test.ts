@@ -239,6 +239,30 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("全局日志按最新事件读取，并排除高频 thinking/usage", async () => {
+    const { store } = await storeFixture()
+    store.createRun({
+      id: "run-log",
+      challengeId: "web-1",
+      workspace: "workspace",
+      attempt: 1,
+    })
+    store.appendEvent("run-log", "agent_thinking", { text: "private reasoning" })
+    store.appendEvent("run-log", "agent_usage", { input: 10 })
+    const tool = store.appendEvent("run-log", "tool_started", { toolName: "bash" })
+    const acquired = store.appendEvent("run-log", "environment_acquired", {
+      environmentId: "env-1",
+    })
+
+    expect(store.recentEvents(10)).toEqual([
+      acquired,
+      tool,
+      expect.objectContaining({ runId: "run-log", type: "run_created" }),
+    ])
+    expect(() => store.recentEvents(0)).toThrow("1–500")
+    store.close()
+  })
+
   it("agent_usage 事件可持久化与读取(data 原文保留,含 cost 与 reasoning)", async () => {
     const { path, store } = await storeFixture()
     store.createRun({

@@ -102,6 +102,25 @@ describe("系统与快照路由", () => {
     }
   })
 
+  it("项目 Dashboard 可以释放受管远程环境", async () => {
+    const project = new FakeDashboardProject()
+    testApp = await createTestApp({ project })
+    const { app } = testApp
+
+    const response = await app.request("/api/projects/whatever/environments/env-1", {
+      method: "DELETE",
+    })
+
+    expect(response.status).toBe(200)
+    expect(await jsonOf(response)).toMatchObject({
+      remoteEnvironment: {
+        capacity: { maximum: 1, occupied: 0, available: 1 },
+        leases: [],
+      },
+    })
+    expect(project.environmentValues[0]?.status).toBe("stopped")
+  })
+
   it("通过 WebUI 审核公告后才标记为可发送", async () => {
     const project = new FakeDashboardProject()
     project.announcementCandidateValues = [

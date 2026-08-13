@@ -1,3 +1,4 @@
+import { waitForEndpointReachable } from "./endpoint-readiness.ts"
 import type {
   Announcement,
   Attachment,
@@ -1058,6 +1059,20 @@ class Ret2ShellChallenge implements ChallengeCapability {
     )
   }
 
+  private async waitUntilReady(
+    environment: RemoteEnvironment,
+    signal?: AbortSignal,
+  ): Promise<RemoteEnvironment> {
+    if (!environment.endpoint) {
+      throw new R2SError("protocol", "running challenge instance did not expose an endpoint")
+    }
+    await waitForEndpointReachable(environment.endpoint, signal, {
+      timeoutMs: 90_000,
+      retryDelayMs: INSTANCE_POLL_INTERVAL_MS,
+    })
+    return { ...environment, readyAt: new Date().toISOString() }
+  }
+
   readonly instance = {
     start: async (signal?: AbortSignal): Promise<RemoteEnvironment> => {
       throwIfAborted(signal)
@@ -1125,6 +1140,9 @@ class Ret2ShellChallenge implements ChallengeCapability {
           : "challenge instance did not appear before the startup deadline",
       )
     },
+
+    waitUntilReady: async (environment: RemoteEnvironment, signal?: AbortSignal) =>
+      await this.waitUntilReady(environment, signal),
 
     status: async (): Promise<RemoteEnvironment | null> => {
       const challengeId = this.challengeId

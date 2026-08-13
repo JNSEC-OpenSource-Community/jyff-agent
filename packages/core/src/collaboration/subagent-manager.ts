@@ -3,6 +3,7 @@ import { join } from "node:path"
 import {
   type AgentSkill,
   availableSubagentRoles,
+  type ChallengeCapability,
   type ChallengeInfo,
   type CtfSolverAgent,
   CtfSubagent,
@@ -71,6 +72,7 @@ export interface SubagentManagerOptions {
   runId: string
   runDirectory: string
   challenge: ChallengeInfo
+  capability?: ChallengeCapability
   sandbox: Sandbox
   agent: AgentOptions
   roles: ReadonlyMap<string, SubagentRole>
@@ -334,6 +336,19 @@ export class CtfSubagentManager {
     return snapshot(managed.record)
   }
 
+  async broadcast(message: string): Promise<void> {
+    const nextMessage = boundedText(message, "message", 4_000)
+    await Promise.allSettled(
+      [...this.records.values()]
+        .filter((managed) => managed.record.status === "running" && managed.agent)
+        .map(async (managed) => {
+          await managed.agent?.promptOrSteer(nextMessage)
+          managed.record.updatedAt = new Date().toISOString()
+          this.emit(managed, "steered")
+        }),
+    )
+  }
+
   async cancel(id: string): Promise<SubagentRecord> {
     const managed = this.records.get(id)
     if (!managed || TERMINAL.has(managed.record.status)) {
@@ -440,6 +455,7 @@ export class CtfSubagentManager {
           subagentId: managed.record.id,
           containerCwd: managed.record.containerCwd,
           challenge: this.options.challenge,
+          capability: this.options.capability,
           sandbox: this.options.sandbox,
           agent: this.options.agent,
           role: managed.role,

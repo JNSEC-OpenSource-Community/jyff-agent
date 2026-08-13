@@ -36,6 +36,8 @@ export interface SolverToolOptions {
 export interface SubagentToolOptions {
   sandbox: Sandbox
   cwd: string
+  /** Shared run-scoped capability; workers may start/status but never destroy it. */
+  capability?: ChallengeCapability
 }
 
 export interface SandboxToolOptions {
@@ -105,7 +107,12 @@ export function createReadonlySandboxTools(options: SandboxToolOptions): AgentTo
 }
 
 export function createSubagentTools(options: SubagentToolOptions): AgentTool[] {
-  return createSandboxTools(options)
+  return [
+    ...createSandboxTools(options),
+    ...(options.capability?.instance
+      ? createRemoteEnvironmentTools(options.capability.instance, false)
+      : []),
+  ]
 }
 
 /** Every capability closure is bound to one challenge and one Docker environment. */
@@ -171,42 +178,53 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
   ]
 
   if (options.capability.instance) {
-    const instance = options.capability.instance
-    tools.push(
-      {
-        name: "ctf_instance_start",
-        label: "Start Challenge Instance",
-        description: "Start the current challenge instance.",
-        parameters: Type.Object({}),
-        executionMode: "sequential",
-        async execute(_id, _params, signal) {
-          return result((await instance.start(signal)) as unknown as Record<string, unknown>)
-        },
-      },
-      {
-        name: "ctf_instance_status",
-        label: "Challenge Instance Status",
-        description: "Read the current challenge instance status.",
-        parameters: Type.Object({}),
-        executionMode: "sequential",
-        async execute() {
-          return result({ instance: await instance.status() })
-        },
-      },
-      {
-        name: "ctf_instance_destroy",
-        label: "Destroy Challenge Instance",
-        description: "Destroy the current challenge instance.",
-        parameters: Type.Object({}),
-        executionMode: "sequential",
-        async execute() {
-          await instance.destroy()
-          return result({ destroyed: true })
-        },
-      },
-    )
+    tools.push(...createRemoteEnvironmentTools(options.capability.instance, true))
   }
 
+  return tools
+}
+
+function createRemoteEnvironmentTools(
+  instance: NonNullable<ChallengeCapability["instance"]>,
+  includeDestroy: boolean,
+): AgentTool[] {
+  const tools: AgentTool[] = [
+    {
+      name: "ctf_instance_start",
+      label: "Start Challenge Instance",
+      description:
+        "Start or atomically reopen the current challenge instance. Call once, then wait; concurrent Solver/SubAgent calls share one platform request.",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      async execute(_id, _params, signal) {
+        return result((await instance.start(signal)) as unknown as Record<string, unknown>)
+      },
+    },
+    {
+      name: "ctf_instance_status",
+      label: "Challenge Instance Status",
+      description:
+        "Read the authoritative current instance, endpoint, and expiry. A null result means the old endpoint is invalid and ctf_instance_start may reopen it.",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      async execute() {
+        return result({ instance: await instance.status() })
+      },
+    },
+  ]
+  if (includeDestroy) {
+    tools.push({
+      name: "ctf_instance_destroy",
+      label: "Destroy Challenge Instance",
+      description: "Destroy the current challenge instance.",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      async execute() {
+        await instance.destroy()
+        return result({ destroyed: true })
+      },
+    })
+  }
   return tools
 }
 

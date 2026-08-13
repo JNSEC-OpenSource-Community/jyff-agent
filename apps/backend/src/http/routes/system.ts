@@ -239,6 +239,16 @@ export function scopedSystemRoutes(services: Services): App {
     return c.json(await services.sync.refreshProject(projectId))
   })
 
+  app.delete("/environments/:environmentId", async (c) => {
+    const projectId = projectIdOf(c)
+    const project = services.requireProject(projectId)
+    if (!project.destroyEnvironment) {
+      throw new HttpError(501, "environment_management_unavailable", "当前平台不支持环境管理")
+    }
+    await project.destroyEnvironment(c.req.param("environmentId"))
+    return c.json(await services.sync.refreshProject(projectId))
+  })
+
   app.get("/events", (c) => {
     const projectId = projectIdOf(c)
     return sseRoute(c, services.sse, services.sync, projectId)

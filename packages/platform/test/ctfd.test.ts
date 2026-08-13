@@ -151,6 +151,8 @@ describe("CTFd platform plugin", () => {
         category: "Forensics",
         score: 50,
         solved: false,
+        needsEnv: false,
+        hasAttachments: false,
       },
     ])
 

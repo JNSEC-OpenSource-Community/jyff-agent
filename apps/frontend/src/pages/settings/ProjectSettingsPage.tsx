@@ -157,7 +157,7 @@ export function ProjectSettingsPage() {
                     htmlFor={maxConcurrentId}
                     className="text-xs font-medium text-muted-foreground"
                   >
-                    最大并发
+                    最大 Solver 容器数
                   </Label>
                   <Input
                     id={maxConcurrentId}
@@ -170,6 +170,9 @@ export function ProjectSettingsPage() {
                     }
                     className="h-8 text-xs"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    硬上限；等待远程环境的题目也占一个容器，直到解出、Blocked 或取消。
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label

@@ -14,6 +14,7 @@ import type {
   PlatformConnectionTest,
   ProjectConfig,
   RemoteEnvironment,
+  RemoteEnvironmentCoordinatorSnapshot,
   RunEvent,
   RunFilter,
   RunRecord,
@@ -73,6 +74,17 @@ export interface DashboardChallenge {
   concludedOpportunities: number
 }
 
+export interface DashboardSolverLogEntry {
+  id: number
+  runId: string
+  challengeId: string
+  challengeTitle: string
+  type: string
+  summary: string
+  createdAt: string
+  tone: "neutral" | "positive" | "warning" | "danger"
+}
+
 export interface DashboardStats {
   total: number
   solved: number
@@ -92,6 +104,8 @@ export interface DashboardSnapshot {
   announcements: Announcement[]
   announcementCandidates: ChallengeAnnouncementRecord[]
   environments: RemoteEnvironment[]
+  remoteEnvironment: RemoteEnvironmentCoordinatorSnapshot
+  solverLogs: DashboardSolverLogEntry[]
   scheduler: ContestSchedulerSnapshot | null
   controlPlane: ControlPlaneSnapshot | null
 }

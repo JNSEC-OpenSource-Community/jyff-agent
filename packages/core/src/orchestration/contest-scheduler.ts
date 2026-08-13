@@ -19,12 +19,7 @@ import { classifySolverStop } from "./stop-classifier.ts"
 import { validateChallengeWriteup } from "./writeup-validator.ts"
 
 export type SchedulerQueueSource = Extract<RunSource, "auto" | "manual" | "retry" | "revival">
-export type SchedulerPhase =
-  | "preparing"
-  | "running"
-  | "waiting_environment"
-  | "waiting_execution_slot"
-  | "cancelling"
+export type SchedulerPhase = "preparing" | "running" | "waiting_environment" | "cancelling"
 
 export interface ContestSchedulerOptions {
   maxConcurrent: number
@@ -35,8 +30,6 @@ export interface ContestSchedulerOptions {
   retryDelayMs?: number
   infrastructureRetryDelayMs?: number
   transientRetryDelaysMs?: readonly [number, number, number]
-  /** Bound environment-capable resident Runs; defaults to twice maxConcurrent. */
-  maxEnvironmentResidentRuns?: number
   /** Flag accepted 后执行 writeup turn；生产调度应开启。 */
   writeup?: boolean
   createAgentOptions(context: SchedulerAttemptContext): AgentOptions | Promise<AgentOptions>
@@ -140,16 +133,6 @@ interface ActiveItem {
   resumeRun?: RunRecord
   retryPrompt?: string
   cancelRetryDelay?: () => void
-  holdsExecutionSlot: boolean
-  environmentResident: boolean
-}
-
-interface ExecutionWaiter {
-  active: ActiveItem
-  signal?: AbortSignal
-  resolve(): void
-  reject(error: unknown): void
-  onAbort?: () => void
 }
 
 export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const
@@ -171,7 +154,9 @@ export class ContestScheduler {
   private maxConcurrent: number
   private queueGeneration = 0
   private suspensionReason?: string
-  private readonly executionWaiters: ExecutionWaiter[] = []
+  private discoveringAdmission = false
+  private readonly admissionDiscoveryRetryAt = new Map<string, number>()
+  private readonly unsubscribeRemoteEnvironmentCapacity: () => void
 
   constructor(
     private readonly project: Project,
@@ -185,9 +170,8 @@ export class ContestScheduler {
     nonNegativeInteger(options.abortGraceMs ?? 5_000, "abortGraceMs")
     nonNegativeInteger(options.retryDelayMs ?? 2_000, "retryDelayMs")
     nonNegativeInteger(options.infrastructureRetryDelayMs ?? 15_000, "infrastructureRetryDelayMs")
-    positiveInteger(
-      options.maxEnvironmentResidentRuns ?? options.maxConcurrent * 2,
-      "maxEnvironmentResidentRuns",
+    this.unsubscribeRemoteEnvironmentCapacity = this.project.subscribeRemoteEnvironmentCapacity(
+      () => this.pump(),
     )
     for (const [index, delay] of (
       options.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_RETRY_DELAYS_MS
@@ -538,7 +522,6 @@ export class ContestScheduler {
     if (!active) return this.snapshot()
     active.cancelRequested = true
     active.phase = "cancelling"
-    this.rejectExecutionWaiter(active, abortError("调度任务已取消"))
     active.cancelRetryDelay?.()
     await active.solver?.abort()
     if (active.solver) await active.solver.close("cancelled", "由控制面取消")
@@ -556,13 +539,13 @@ export class ContestScheduler {
       return
     }
     this.shuttingDown = true
+    this.unsubscribeRemoteEnvironmentCapacity()
     this.autoEnabled = false
     this.queue.length = 0
     const active = [...this.active.values()]
     for (const item of active) {
       item.cancelRequested = true
       item.phase = "cancelling"
-      this.rejectExecutionWaiter(item, abortError("调度控制面关闭"))
       item.cancelRetryDelay?.()
       await item.solver?.abort()
     }
@@ -584,11 +567,11 @@ export class ContestScheduler {
     if (this.pumping || this.shuttingDown || !this.availability().available) return
     this.pumping = true
     try {
-      while (this.executionSlotsInUse() < this.maxConcurrent && this.availability().available) {
-        if (this.grantNextExecutionWaiter()) continue
+      // maxConcurrent 是本地 Solver/Sandbox 的硬上限。等待远程环境的 Run 仍占用
+      // 自己的 Sandbox，因此 active 数永远不会像旧 execution-permit 模型一样膨胀。
+      while (this.active.size < this.maxConcurrent && this.availability().available) {
         const index = this.queue.findIndex(
-          (item) =>
-            (!item.requiresAuto || this.autoEnabled) && this.canAdmitEnvironmentResident(item),
+          (item) => (!item.requiresAuto || this.autoEnabled) && this.canAdmit(item),
         )
         if (index < 0) break
         const [item] = this.queue.splice(index, 1)
@@ -604,8 +587,6 @@ export class ContestScheduler {
           runId: null,
           cancelRequested: false,
           queueGeneration: this.queueGeneration,
-          holdsExecutionSlot: true,
-          environmentResident: item.challenge.needsEnv === true,
           ...(item.resumeRun ? { resumeRun: item.resumeRun } : {}),
           ...(item.retryPrompt ? { retryPrompt: item.retryPrompt } : {}),
         }
@@ -615,7 +596,6 @@ export class ContestScheduler {
             this.lastError = errorText(error)
           })
           .finally(() => {
-            this.rejectExecutionWaiter(active, abortError("Run 已结束"))
             this.active.delete(item.challenge.id)
             this.pump()
             if (this.autoEnabled) void this.reconcile()
@@ -781,7 +761,6 @@ export class ContestScheduler {
           abortGraceMs: this.options.abortGraceMs ?? 5_000,
           pauseTimeout: () =>
             active.phase === "waiting_environment" ||
-            active.phase === "waiting_execution_slot" ||
             this.project.isWaitingForRemoteEnvironment(promptRunId),
         })
         if (outcome.kind === "submitted" || hasTerminalSubmission(solver)) {
@@ -1164,20 +1143,46 @@ export class ContestScheduler {
     else this.queue.push(item)
   }
 
-  private executionSlotsInUse(): number {
-    return [...this.active.values()].filter((item) => item.holdsExecutionSlot).length
-  }
+  private canAdmit(item: QueueItem): boolean {
+    // 本地题和有附件题不消耗“预期远程槽”，可在平台实例已满时继续利用 Sandbox。
+    if (item.challenge.needsEnv === false || item.challenge.hasAttachments === true) return true
 
-  private environmentResidentLimit(): number {
-    return this.options.maxEnvironmentResidentRuns ?? this.maxConcurrent * 2
-  }
-
-  private canAdmitEnvironmentResident(item: QueueItem): boolean {
-    if (item.challenge.needsEnv === false) return true
-    const residents = [...this.active.values()].filter(
-      (active) => active.environmentResident || active.challenge.needsEnv === undefined,
+    // 无附件环境题（以及平台无法判定的保守项）在创建 Sandbox 前先预留远程意图。
+    // 不能只看协调器当前 occupied：同一轮 pump 内，刚启动的 Solver 尚未来得及调用
+    // ctf_instance_start，否则仍会瞬间创建 maxConcurrent 个等环境的容器。
+    const capacity = this.project.remoteEnvironmentCapacity()
+    const admittedRemoteOnly = [...this.active.values()].filter(
+      (active) => active.challenge.needsEnv !== false && active.challenge.hasAttachments !== true,
     ).length
-    return residents < this.environmentResidentLimit()
+    const available = Math.max(capacity.occupied, admittedRemoteOnly) < capacity.maximum
+    if (!available && item.challenge.needsEnv === undefined) {
+      this.discoverSchedulingHint(item)
+    }
+    return available
+  }
+
+  private discoverSchedulingHint(item: QueueItem): void {
+    if (
+      this.discoveringAdmission ||
+      (this.admissionDiscoveryRetryAt.get(item.challenge.id) ?? 0) > Date.now()
+    ) {
+      return
+    }
+    this.discoveringAdmission = true
+    void this.project
+      .challengeSchedulingHint(item.challenge.id)
+      .then((hint) => {
+        this.admissionDiscoveryRetryAt.delete(item.challenge.id)
+        Object.assign(item.challenge, hint)
+      })
+      .catch((error: unknown) => {
+        this.admissionDiscoveryRetryAt.set(item.challenge.id, Date.now() + 30_000)
+        this.lastError = `${item.challenge.title}: 无法读取调度提示：${errorText(error)}`
+      })
+      .finally(() => {
+        this.discoveringAdmission = false
+        this.pump()
+      })
   }
 
   private executionGate(active: ActiveItem): NonNullable<CreateSolverOptions["executionGate"]> {
@@ -1188,21 +1193,14 @@ export class ContestScheduler {
   }
 
   private suspendExecutionForEnvironment(active: ActiveItem): void {
-    if (!active.holdsExecutionSlot) return
     if (active.cancelRequested || this.shuttingDown) throw abortError("调度任务已取消")
-    // Some platform summaries cannot determine needsEnv before binding the challenge. Once the
-    // instance tool is actually used, count the Run against the resident safety bound.
-    active.environmentResident = true
-    active.holdsExecutionSlot = false
     active.phase = "waiting_environment"
-    this.pump()
   }
 
   private async resumeExecutionAfterEnvironment(
     active: ActiveItem,
     signal?: AbortSignal,
   ): Promise<void> {
-    if (active.holdsExecutionSlot) return
     if (
       active.cancelRequested ||
       this.shuttingDown ||
@@ -1211,57 +1209,7 @@ export class ContestScheduler {
     ) {
       throw abortError("调度任务已取消")
     }
-    if (this.executionWaiters.some((waiter) => waiter.active === active)) {
-      throw new Error(`Run ${active.runId ?? active.challenge.id} 已在等待 Solver 执行槽`)
-    }
-
-    active.phase = "waiting_execution_slot"
-    await new Promise<void>((resolve, reject) => {
-      const waiter: ExecutionWaiter = { active, signal, resolve, reject }
-      if (signal) {
-        waiter.onAbort = () => {
-          const index = this.executionWaiters.indexOf(waiter)
-          if (index >= 0) this.executionWaiters.splice(index, 1)
-          reject(abortError("远程环境工具调用已取消"))
-          this.pump()
-        }
-        signal.addEventListener("abort", waiter.onAbort, { once: true })
-      }
-      this.executionWaiters.push(waiter)
-      this.pump()
-    })
-  }
-
-  private grantNextExecutionWaiter(): boolean {
-    while (this.executionWaiters.length > 0) {
-      const waiter = this.executionWaiters.shift()
-      if (!waiter) return false
-      if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort)
-      const { active } = waiter
-      if (
-        active.cancelRequested ||
-        this.shuttingDown ||
-        waiter.signal?.aborted ||
-        this.active.get(active.challenge.id) !== active
-      ) {
-        waiter.reject(abortError("调度任务已取消"))
-        continue
-      }
-      active.holdsExecutionSlot = true
-      active.phase = "running"
-      waiter.resolve()
-      return true
-    }
-    return false
-  }
-
-  private rejectExecutionWaiter(active: ActiveItem, error: Error): void {
-    const index = this.executionWaiters.findIndex((waiter) => waiter.active === active)
-    if (index < 0) return
-    const [waiter] = this.executionWaiters.splice(index, 1)
-    if (!waiter) return
-    if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort)
-    waiter.reject(error)
+    active.phase = "running"
   }
 
   private waitForRetryDelay(active: ActiveItem, delayMs: number): Promise<boolean> {
