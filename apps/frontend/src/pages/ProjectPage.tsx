@@ -225,7 +225,7 @@ function EnvironmentLedger({
             return (
               <div
                 key={`${lease.runId}:${lease.environmentId ?? lease.phase}`}
-                className="grid gap-3 border-l-2 border-l-primary px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(8rem,0.8fr)_auto] sm:items-center"
+                className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(8rem,0.8fr)_auto] sm:items-center"
               >
                 <div className="min-w-0">
                   <Link
@@ -282,7 +282,7 @@ function EnvironmentLedger({
           {unmanaged.map((environment) => (
             <div
               key={environment.id}
-              className="grid gap-3 border-l-2 border-l-muted-foreground/40 px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(8rem,0.8fr)_auto] sm:items-center"
+              className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(8rem,0.8fr)_auto] sm:items-center"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">

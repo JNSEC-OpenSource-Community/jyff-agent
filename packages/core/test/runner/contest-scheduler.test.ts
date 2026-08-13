@@ -248,6 +248,71 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("writeup 模型错误后的重试继续 writeup，而不是重新注入解题 continuation", async () => {
+    const item = challenge(103)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({ provider: `writeup-retry-${item.id}` })
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: "submit-writeup-retry" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("writeup model failed", {
+        stopReason: "error",
+        errorMessage: "provider unavailable",
+      }),
+      fauxAssistantMessage("writeup complete", { stopReason: "stop" }),
+    ])
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      writeup: true,
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      }),
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      const [failedRun] = project.runs({ challengeId: item.id })
+      expect(failedRun).toEqual(expect.objectContaining({ status: "failed" }))
+      expect(project.runEvents(failedRun?.id ?? "").map((event) => event.type)).toContain(
+        "writeup_failed",
+      )
+
+      await writeFile(
+        join(failedRun?.workspace ?? "", "writeup.md"),
+        `# Challenge ${item.id}\n\n## Summary\nSolved.\n## Analysis\n(None)\n## Vulnerability or Weakness\n(None)\n## Solution / Exploitation\n(None)\n## Reproduction\n(None)\n## Relevant Artifacts\n(None)\n## Flag\n${item.flag}\n`,
+      )
+      await scheduler.retryAttempt(failedRun?.id ?? "")
+      await waitUntil(
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+      )
+
+      const [run] = project.runs({ challengeId: item.id })
+      const session = await readFile(
+        join(
+          dirname(dirname(dirname(run?.workspace ?? ""))),
+          "runs",
+          run?.id ?? "missing",
+          "session.jsonl",
+        ),
+        "utf8",
+      )
+      expect(session).toContain(
+        "The flag was accepted. Write a complete, reproducible English writeup",
+      )
+      expect(session).not.toContain(INCOMPLETE_CONTINUATION_PROMPT)
+      expect(run).toEqual(expect.objectContaining({ status: "solved", closeReason: "submitted" }))
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it.each([
     {
       label: "默认 continuation prompt",

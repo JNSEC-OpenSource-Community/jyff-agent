@@ -115,6 +115,7 @@ interface QueueItem {
   version: number
   resumeRun?: RunRecord
   retryPrompt?: string
+  writeupRetry?: boolean
 }
 
 interface ActiveItem {
@@ -132,6 +133,7 @@ interface ActiveItem {
   operation?: Promise<void>
   resumeRun?: RunRecord
   retryPrompt?: string
+  writeupRetry?: boolean
   cancelRetryDelay?: () => void
 }
 
@@ -416,7 +418,12 @@ export class ContestScheduler {
     if (this.project.challengeSchedulingDisposition(run.challengeId)) {
       throw new ContestSchedulerError("excluded", "该题已设置人工调度状态；请先恢复默认调度状态")
     }
-    if (challenge.solved || this.project.isChallengeSolved(run.challengeId)) {
+    const writeupRetry =
+      this.options.writeup === true &&
+      this.project
+        .runEvents(run.id)
+        .some((event) => event.type === "run_writing_writeup" || event.type === "writeup_failed")
+    if (!writeupRetry && (challenge.solved || this.project.isChallengeSolved(run.challengeId))) {
       throw new ContestSchedulerError("already_solved", "该题已经解出")
     }
     const blocked = this.project.isChallengeBlocked(run.challengeId)
@@ -430,6 +437,7 @@ export class ContestScheduler {
       version: 1,
       resumeRun: run,
       ...(prompt ? { retryPrompt: prompt } : {}),
+      ...(writeupRetry ? { writeupRetry: true } : {}),
     })
     this.pump()
     return this.snapshot()
@@ -589,6 +597,7 @@ export class ContestScheduler {
           queueGeneration: this.queueGeneration,
           ...(item.resumeRun ? { resumeRun: item.resumeRun } : {}),
           ...(item.retryPrompt ? { retryPrompt: item.retryPrompt } : {}),
+          ...(item.writeupRetry ? { writeupRetry: true } : {}),
         }
         this.active.set(item.challenge.id, active)
         const operation = this.runItem(active)
@@ -668,6 +677,13 @@ export class ContestScheduler {
           this.project.removeSchedulerChallenge(active.challenge.id)
           if (active.cancelRequested) {
             await solver.close("cancelled", "在沙箱准备阶段被控制面取消")
+            return
+          }
+          if (active.writeupRetry) {
+            active.writeupRetry = false
+            const retryPrompt = active.retryPrompt
+            active.retryPrompt = undefined
+            await this.writeupAfterSubmission(active, solver, retryPrompt)
             return
           }
         }
@@ -1015,10 +1031,16 @@ export class ContestScheduler {
     }
   }
 
-  private async writeupAfterSubmission(active: ActiveItem, solver: CtfSolverAgent): Promise<void> {
+  private async writeupAfterSubmission(
+    active: ActiveItem,
+    solver: CtfSolverAgent,
+    retryPrompt?: string,
+  ): Promise<void> {
     await this.project.markRunWritingWriteup(solver.runId)
     await solver.prepareWriteup()
-    let prompt = WRITEUP_PROMPT
+    let prompt = retryPrompt
+      ? `${WRITEUP_PROMPT}\n\nAdditional instructions:\n${retryPrompt}`
+      : WRITEUP_PROMPT
     let lastErrors: string[] = []
     for (let attempt = 0; attempt < 3; attempt++) {
       const outcome = await runSolverPrompt({

@@ -101,7 +101,7 @@ node --experimental-transform-types apps/backend/src/main.ts \
 
 ```bash
 vp run build:sandbox
-docker compose -f compose.webui.yaml up --build -d
+docker compose up --build -d
 ```
 
 Compose 配置会：

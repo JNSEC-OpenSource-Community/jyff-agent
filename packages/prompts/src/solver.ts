@@ -84,4 +84,6 @@ export const WRITEUP_PROMPT = `The flag was accepted. Write a complete, reproduc
 ## Reproduction
 ## Relevant Artifacts
 ## Flag
-  `
+
+If there's nothing to say under certain title, keep the title and write a \`(None)\` under it.
+`

@@ -129,7 +129,10 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       parameters: Type.Object({}),
       executionMode: "sequential",
       async execute() {
-        return result((await options.capability.getInfo()) as unknown as Record<string, unknown>)
+        return result({
+          ...((await options.capability.getInfo()) as unknown as Record<string, unknown>),
+          score: undefined,
+        })
       },
     },
     {
