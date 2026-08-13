@@ -1173,9 +1173,9 @@ export class ContestScheduler {
   }
 
   private canAdmitEnvironmentResident(item: QueueItem): boolean {
-    if (item.challenge.needsEnv !== true) return true
+    if (item.challenge.needsEnv === false) return true
     const residents = [...this.active.values()].filter(
-      (active) => active.environmentResident,
+      (active) => active.environmentResident || active.challenge.needsEnv === undefined,
     ).length
     return residents < this.environmentResidentLimit()
   }

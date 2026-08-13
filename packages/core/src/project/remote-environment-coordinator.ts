@@ -656,18 +656,19 @@ export class RemoteEnvironmentCoordinator {
       failure = error
     }
 
-    await this.withLock(async () => {
-      if (this.active.get(lease.runId) === lease) this.active.delete(lease.runId)
-      if (!failure) this.store.deleteEnvironmentLease(lease.runId)
-    })
     if (failure) {
       lease.onEvent?.("environment_release_failed", {
         environmentId: lease.environmentId,
         error: errorText(failure),
       })
-    } else {
-      lease.onEvent?.("environment_released", { environmentId: lease.environmentId })
+      throw failure
     }
+
+    await this.withLock(async () => {
+      if (this.active.get(lease.runId) === lease) this.active.delete(lease.runId)
+      this.store.deleteEnvironmentLease(lease.runId)
+    })
+    lease.onEvent?.("environment_released", { environmentId: lease.environmentId })
     if (options.revokedMessage) {
       lease.onEvent?.("environment_revoked", {
         environmentId: lease.environmentId,
@@ -676,7 +677,6 @@ export class RemoteEnvironmentCoordinator {
       void Promise.resolve(lease.onRevoked?.(options.revokedMessage)).catch(() => undefined)
     }
     this.kickPump()
-    if (failure) throw failure
   }
 
   private occupiedSlots(): number {

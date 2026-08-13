@@ -1072,6 +1072,44 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("环境需求未知的题目在绑定后等待环境时不会让驻留 Sandbox 无界增长", async () => {
+    const remote = Array.from({ length: 8 }, (_, index) =>
+      challenge(230 + index, { remote: true, summaryNeedsEnv: null }),
+    )
+    const tracker = new SandboxTracker()
+    const project = await fixture(remote, tracker, { maxRemoteEnvironments: 1 })
+    const neverSubmit = deferred()
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 2,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        environmentAgent(
+          requiredChallenge(remote.find((candidate) => candidate.id === summary.id)),
+          { beforeSubmit: neverSubmit.promise },
+        ),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await waitUntil(() => {
+        const snapshot = scheduler.snapshot()
+        return (
+          snapshot.active.length === 4 &&
+          snapshot.queued.length === 4 &&
+          snapshot.active.filter((item) => item.phase === "waiting_environment").length === 3
+        )
+      })
+
+      expect(scheduler.snapshot().active).toHaveLength(4)
+      expect(scheduler.snapshot().queued).toHaveLength(4)
+      expect(tracker.maximum).toBe(4)
+    } finally {
+      neverSubmit.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("自主模式暂停时仍允许人工调度，并可取消活跃题目", async () => {
     const item = challenge(1)
     const tracker = new SandboxTracker()

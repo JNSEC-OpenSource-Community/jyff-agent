@@ -21,6 +21,8 @@ export interface TestChallenge {
   attachments: Array<{ id: string; name: string; content: string }>
   flag: string
   remote?: boolean
+  /** `null` simulates a platform list that cannot advertise environment requirements yet. */
+  summaryNeedsEnv?: boolean | null
   failures?: Partial<Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", number>>
   retryableFailures?: Partial<
     Record<"bind" | "getInfo" | "download" | "submit" | "instanceStart", boolean>
@@ -100,14 +102,20 @@ class TestPlatformProject implements PlatformProject {
   }
 
   async listChallenges(): Promise<ChallengeSummary[]> {
-    return this.challenges.map((challenge) => ({
-      id: challenge.id,
-      title: challenge.title,
-      category: challenge.category,
-      score: challenge.score,
-      solved: this.solved.has(challenge.id),
-      ...(challenge.remote ? { needsEnv: true } : {}),
-    }))
+    return this.challenges.map((challenge) => {
+      const needsEnv =
+        challenge.summaryNeedsEnv === null
+          ? undefined
+          : (challenge.summaryNeedsEnv ?? (challenge.remote ? true : false))
+      return {
+        id: challenge.id,
+        title: challenge.title,
+        category: challenge.category,
+        score: challenge.score,
+        solved: this.solved.has(challenge.id),
+        ...(needsEnv === undefined ? {} : { needsEnv }),
+      }
+    })
   }
 
   async listAnnouncements(): Promise<Announcement[]> {

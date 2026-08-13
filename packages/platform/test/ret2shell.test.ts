@@ -85,8 +85,65 @@ describe("Ret2Shell platform", () => {
     await expect(project.request({ path: "/building" })).rejects.toMatchObject({
       code: "precondition",
       retryable: true,
-      retryAfterMs: expect.any(Number),
+      retryAfterMs: undefined,
     })
+    await project.close()
+  })
+
+  it("销毁实例会等待平台列表确认资源消失后再返回", async () => {
+    let deleteAccepted = false
+    let deleteRequests = 0
+    let statusReads = 0
+    server = createServer((request, response) => {
+      response.setHeader("Content-Type", "application/json")
+      if (request.method === "DELETE" && request.url === "/api/game/1/challenge/7/instance") {
+        deleteRequests++
+        if (deleteRequests > 1) {
+          response.writeHead(404)
+          response.end("not found")
+          return
+        }
+        deleteAccepted = true
+        response.end("{}")
+        return
+      }
+      if (request.method === "GET" && request.url === "/api/game/1/instance") {
+        statusReads++
+        response.end(
+          JSON.stringify(
+            deleteAccepted && statusReads >= 2
+              ? []
+              : [
+                  {
+                    state: "Running",
+                    name: "instance-7",
+                    traffic: "traffic-7",
+                    ports: [],
+                    renew_count: 0,
+                    created_at: 0,
+                    user_id: 1,
+                    team_id: 1,
+                    challenge_id: 7,
+                    game_id: 1,
+                    exposed_ports: [],
+                  },
+                ],
+          ),
+        )
+        return
+      }
+      response.writeHead(404)
+      response.end("not found")
+    })
+    const project = localProject(await listen(server))
+    const capability = await project.bindChallenge("7")
+
+    await capability.instance?.destroy()
+    await expect(capability.instance?.destroy()).resolves.toBeUndefined()
+
+    expect(deleteAccepted).toBe(true)
+    expect(deleteRequests).toBe(2)
+    expect(statusReads).toBe(2)
     await project.close()
   })
 })
