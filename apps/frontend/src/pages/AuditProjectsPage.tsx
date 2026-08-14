@@ -179,14 +179,14 @@ function AuditCard({ audit, onDelete }: { audit: CodeAuditProject; onDelete: () 
         <div className="flex items-center gap-1">
           <Link
             to={`/audits/${encodeURIComponent(audit.id)}/settings`}
-            className="flex size-7 items-center justify-center rounded-md hover:bg-primary/10 hover:text-primary"
+            className="flex size-7 items-center justify-center rounded-md outline-none transition-colors hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
             aria-label={`设置 ${audit.name}`}
           >
             <Icon icon="lucide:sliders-horizontal" width={13} />
           </Link>
           <button
             type="button"
-            className="flex size-7 items-center justify-center rounded-md hover:bg-danger/10 hover:text-danger"
+            className="flex size-7 items-center justify-center rounded-md outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-ring/50"
             aria-label={`删除 ${audit.name}`}
             onClick={(event) => {
               event.preventDefault()

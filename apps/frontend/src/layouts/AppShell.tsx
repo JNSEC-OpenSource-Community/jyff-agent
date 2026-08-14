@@ -70,6 +70,9 @@ export function AppShell() {
 
   return (
     <div className="flex h-dvh overflow-hidden">
+      <a className="skip-link" href="#main-content">
+        跳到主要内容
+      </a>
       {/* ── Unified sidebar (wide) ── */}
       <aside
         className={cn(
@@ -101,7 +104,11 @@ export function AppShell() {
       </MobileSheet>
 
       {/* ── Main ── */}
-      <main className="main-mobile relative min-w-0 flex-1 overflow-y-auto">
+      <main
+        id="main-content"
+        className="main-mobile relative min-w-0 flex-1 overflow-y-auto"
+        tabIndex={-1}
+      >
         <button
           type="button"
           className="mobile-menu-trigger fixed z-40 size-9 items-center justify-center rounded-full border border-foreground/10 bg-foreground/5 text-foreground/60 opacity-70 backdrop-blur-sm transition-[background-color,border-color,color,opacity,transform] duration-200 hover:border-foreground/20 hover:bg-foreground/10 hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-95"
@@ -275,7 +282,7 @@ function SidebarContent({
               )}
             />
             <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground truncate">
-              {project ? project.platformId : audit ? "CODE AUDIT" : "比赛管理"}
+              {project ? project.platformId : audit ? "CODE AUDIT" : "项目管理"}
             </span>
           </div>
           <h2 className="mt-0.5 truncate text-sm font-semibold tracking-tight">

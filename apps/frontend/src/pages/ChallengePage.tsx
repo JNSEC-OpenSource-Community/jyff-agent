@@ -104,9 +104,9 @@ export function ChallengePage() {
               <TabsList>
                 <TabsTrigger value="conversation">对话</TabsTrigger>
                 <TabsTrigger value="intelligence">情报</TabsTrigger>
-                <TabsTrigger value="attempts">Attempts</TabsTrigger>
+                <TabsTrigger value="attempts">尝试记录</TabsTrigger>
                 <TabsTrigger value="files">文件</TabsTrigger>
-                <TabsTrigger value="writeup">Writeup</TabsTrigger>
+                <TabsTrigger value="writeup">解题报告</TabsTrigger>
               </TabsList>
               {selectedRun ? (
                 <Select value={selectedRun.id} onValueChange={selectRun}>
@@ -162,13 +162,13 @@ export function ChallengePage() {
                   情报
                 </TabsTrigger>
                 <TabsTrigger value="attempts" className="px-1 text-xs">
-                  Attempts
+                  尝试记录
                 </TabsTrigger>
                 <TabsTrigger value="files" className="px-1 text-xs">
                   文件
                 </TabsTrigger>
                 <TabsTrigger value="writeup" className="px-1 text-xs">
-                  Writeup
+                  解题报告
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -231,7 +231,7 @@ export function ChallengePage() {
               ) : (
                 <EmptyState
                   icon="lucide:file-pen-line"
-                  title="尚无 Writeup"
+                  title="尚无解题报告"
                   description={details.writeup.validation.errors.join("；") || "解出后生成。"}
                 />
               )}

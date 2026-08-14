@@ -68,7 +68,7 @@ describe("TokenUsagePage", () => {
 
     renderPage()
     const historyName = await screen.findByText("历史 SubAgent（模型未知）")
-    expect(historyName.classList.contains("font-mono")).toBe(false)
+    expect(historyName.getAttribute("title")).toBe("历史 SubAgent（模型未知）")
     expect(historyName.closest(".token-usage-page")).toBeTruthy()
   })
 })

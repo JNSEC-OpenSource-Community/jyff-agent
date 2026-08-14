@@ -42,7 +42,7 @@ export function AgentSidebar({
           <CollapsibleTrigger className="group flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-muted">
             <span className="flex items-center gap-2.5">
               <Icon icon="lucide:scan-search" width="15" />
-              运行信息
+              运行详情
             </span>
             <Icon
               icon="lucide:chevron-down"
@@ -74,7 +74,7 @@ export function AgentSidebar({
         <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
           <span className="flex items-center gap-2.5 text-sm font-medium">
             <Icon icon="lucide:network" width="15" />
-            Agents
+            辅助 Agent
           </span>
           <Badge className="text-[10px]">{run?.subagents.length ?? 0}</Badge>
         </div>

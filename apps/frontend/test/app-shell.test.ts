@@ -60,6 +60,11 @@ describe("AppShell navigation", () => {
       ),
     )
 
+    expect(screen.getByRole("link", { name: "跳到主要内容" }).getAttribute("href")).toBe(
+      "#main-content",
+    )
+    expect(document.querySelector("main#main-content")).toBeTruthy()
+
     fireEvent.click(screen.getByRole("button", { name: "菜单" }))
 
     const dialog = screen.getByRole("dialog")

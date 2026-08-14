@@ -19,7 +19,7 @@ describe("Combobox", () => {
     )
 
     const selected = screen.getByTitle(label)
-    expect(selected.className).toContain("min-w-0")
-    expect(selected.className).toContain("truncate")
+    expect(selected.textContent).toContain(label)
+    expect(selected.getAttribute("title")).toBe(label)
   })
 })

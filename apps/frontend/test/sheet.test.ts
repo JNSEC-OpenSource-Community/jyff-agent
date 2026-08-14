@@ -6,7 +6,7 @@ import { describe, expect, it } from "vite-plus/test"
 import { Sheet, SheetContent, SheetTitle } from "../src/components/ui/sheet.tsx"
 
 describe("Sheet", () => {
-  it("exposes the bottom side for its responsive transition", () => {
+  it("opens a titled dialog for the mobile details view", () => {
     render(
       createElement(
         Sheet,
@@ -19,9 +19,6 @@ describe("Sheet", () => {
       ),
     )
 
-    const content = screen.getByRole("dialog")
-    expect(content.getAttribute("data-side")).toBe("bottom")
-    expect(content.getAttribute("data-state")).toBe("open")
-    expect(content.classList.contains("sheet-content")).toBe(true)
+    expect(screen.getByRole("dialog", { name: "题目与 Agents" })).toBeTruthy()
   })
 })

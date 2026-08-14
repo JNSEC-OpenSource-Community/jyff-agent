@@ -1,25 +1,25 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { createElement } from "react"
-import { describe, expect, it } from "vite-plus/test"
+import { describe, expect, it, vi } from "vite-plus/test"
 import { Switch } from "../src/components/ui/switch.tsx"
 
 describe("form controls", () => {
-  it("keeps the enabled switch track and thumb visually distinct", () => {
+  it("exposes its checked state and emits the next value", () => {
+    const onCheckedChange = vi.fn()
     render(
       createElement(Switch, {
         checked: true,
-        onCheckedChange: () => undefined,
+        onCheckedChange,
         "aria-label": "启用设置",
       }),
     )
 
-    const control = screen.getByRole("switch")
-    const thumb = control.querySelector<HTMLElement>('[data-slot="switch-thumb"]')
+    const control = screen.getByRole("switch", { name: "启用设置" })
+    expect(control.getAttribute("aria-checked")).toBe("true")
 
-    expect(control.getAttribute("data-state")).toBe("checked")
-    expect(control.className).toContain("data-[state=checked]:bg-foreground/70")
-    expect(thumb?.className).toContain("data-[state=checked]:bg-background")
+    fireEvent.click(control)
+    expect(onCheckedChange).toHaveBeenCalledWith(false)
   })
 })

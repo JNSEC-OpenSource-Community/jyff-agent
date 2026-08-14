@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client"
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom"
 import "./styles.css"
 import { AppProvider, isPluginEnabled, useApp } from "./app/AppProvider.tsx"
-import { Spinner, Toaster, TooltipProvider } from "./components/index.ts"
+import { Button, ErrorNotice, Spinner, Toaster, TooltipProvider } from "./components/index.ts"
 import { AppShell } from "./layouts/AppShell.tsx"
 import { applyTheme, readTheme } from "./lib/preferences.ts"
 
@@ -72,8 +72,12 @@ function TokenUsageRoute(): React.ReactElement {
 }
 
 function AuthenticatedRoutes(): React.ReactElement {
-  const { auth, loading } = useApp()
-  if (loading || !auth) return <Spinner label="正在初始化控制面" />
+  const { auth, bootstrapError, loading, retryBootstrap } = useApp()
+  if (loading) return <Spinner label="正在初始化控制面" />
+  if (bootstrapError) {
+    return <BootstrapFailure message={bootstrapError} onRetry={() => void retryBootstrap()} />
+  }
+  if (!auth) return <Spinner label="正在初始化控制面" />
 
   return (
     <Suspense fallback={<Spinner label="加载页面" />}>
@@ -101,6 +105,29 @@ function AuthenticatedRoutes(): React.ReactElement {
         <Route path="*" element={<Navigate to={auth.authenticated ? "/" : "/login"} replace />} />
       </Routes>
     </Suspense>
+  )
+}
+
+function BootstrapFailure({
+  message,
+  onRetry,
+}: {
+  message: string
+  onRetry: () => void
+}): React.ReactElement {
+  return (
+    <main className="flex min-h-full items-center justify-center p-6">
+      <section className="surface w-full max-w-md p-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          连接失败
+        </p>
+        <h1 className="mt-2 text-lg font-semibold tracking-tight">无法读取比赛数据</h1>
+        <ErrorNotice message={message} className="mt-4" />
+        <Button className="mt-5" onClick={onRetry}>
+          重试
+        </Button>
+      </section>
+    </main>
   )
 }
 

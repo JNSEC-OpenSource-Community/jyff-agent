@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { AppProvider } from "../src/app/AppProvider.tsx"
 import { GlobalSettingsPage } from "../src/pages/settings/GlobalSettingsPage.tsx"
 
+vi.mock("@iconify/react", () => ({ Icon: () => null }))
+
 function jsonResponse(data: unknown): Response {
   return new Response(JSON.stringify(data), {
     headers: { "content-type": "application/json" },

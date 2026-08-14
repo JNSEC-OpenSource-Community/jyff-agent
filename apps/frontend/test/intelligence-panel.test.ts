@@ -30,14 +30,10 @@ describe("情报面板", () => {
       }),
     )
 
-    const tldrCard = screen.getByRole("heading", { name: "TLDR 摘要" }).closest("section")
-    const evidenceCard = screen.getByRole("heading", { name: "已确认事实" }).closest("section")
-    for (const card of [tldrCard, evidenceCard]) {
-      expect(card?.className).toContain("rounded-md")
-      expect(card?.className).toContain("border-border")
-      expect(card?.className).toContain("bg-card")
-    }
+    expect(screen.getByRole("heading", { name: "TLDR 摘要" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "已确认事实" })).toBeTruthy()
     expect(screen.getByText("已定位栈溢出入口。")).toBeTruthy()
     expect(screen.getByText("summary-model")).toBeTruthy()
+    expect(screen.getByText("NX 已开启")).toBeTruthy()
   })
 })

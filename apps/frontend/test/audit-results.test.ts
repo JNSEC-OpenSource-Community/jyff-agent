@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { CodeAuditFindingsDocument } from "@ctf-agent/core"
-import { render } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import { createElement } from "react"
 import { describe, expect, it } from "vite-plus/test"
 import { AuditFindingsPanel } from "../src/pages/audit/AuditResultPanels.tsx"
@@ -41,11 +41,11 @@ const findings: CodeAuditFindingsDocument = {
 }
 
 describe("audit result panels", () => {
-  it("uses the shared solver syntax highlighter for finding code evidence", () => {
+  it("shows the finding evidence and its source code", () => {
     render(createElement(AuditFindingsPanel, { document: findings }))
 
-    expect(document.querySelector(".hljs.language-python")).toBeTruthy()
-    expect(document.querySelector(".hljs-keyword")).toBeTruthy()
-    expect(document.querySelector(".hljs-title.function_")).toBeTruthy()
+    expect(screen.getByText("授权入口")).toBeTruthy()
+    expect(document.querySelector("code")?.textContent).toContain("def check(user):")
+    expect(screen.getByText("函数直接返回用户信息。")).toBeTruthy()
   })
 })

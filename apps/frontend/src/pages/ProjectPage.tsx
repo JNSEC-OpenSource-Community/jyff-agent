@@ -199,21 +199,34 @@ function EnvironmentLedger({
   )
   const { capacity } = snapshot.remoteEnvironment
   const rows = snapshot.remoteEnvironment.leases.length + unmanaged.length
+  const [open, setOpen] = useState(rows > 0)
 
   return (
-    <Card className="mb-4 p-0">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-4 py-3">
+    <details
+      className="surface group mb-4 overflow-hidden"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="disclosure-summary flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
             远程环境
           </p>
           <h2 className="mt-0.5 font-semibold">实例占用</h2>
         </div>
-        <div className="flex items-baseline gap-2 font-mono tabular-nums">
-          <strong className="text-lg">{capacity.occupied}</strong>
-          <span className="text-xs text-muted-foreground">/ {capacity.maximum} 个名额</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-baseline gap-2 font-mono tabular-nums">
+            <strong className="text-lg">{capacity.occupied}</strong>
+            <span className="text-xs text-muted-foreground">/ {capacity.maximum} 个名额</span>
+          </div>
+          <Icon
+            icon="lucide:chevron-down"
+            width="15"
+            className="text-muted-foreground transition-transform group-open:rotate-180"
+            aria-hidden="true"
+          />
         </div>
-      </div>
+      </summary>
       {rows === 0 ? (
         <div className="px-4 py-7 text-sm text-muted-foreground">
           当前没有 Solver 占用或等待远程环境。
@@ -305,7 +318,7 @@ function EnvironmentLedger({
           ))}
         </div>
       )}
-    </Card>
+    </details>
   )
 }
 
@@ -658,19 +671,27 @@ export function ProjectPage() {
           </div>
         </Card>
 
-        {/* 全局 Solver 日志 */}
-        <Card className="flex min-h-0 flex-col p-0">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        {/* 运行记录默认收起，避免调度日志抢走题目列表的注意力。 */}
+        <details className="surface group min-h-0 overflow-hidden">
+          <summary className="disclosure-summary flex cursor-pointer items-center justify-between gap-3 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                全局日志
+                运行记录
               </p>
-              <h2 className="mt-0.5 font-semibold">所有 Solver</h2>
+              <h2 className="mt-0.5 font-semibold">近期 Solver</h2>
             </div>
-            <span className="font-mono text-lg font-semibold tabular-nums text-muted-foreground">
-              {snapshot.solverLogs.length}
-            </span>
-          </div>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-lg font-semibold tabular-nums text-muted-foreground">
+                {snapshot.solverLogs.length}
+              </span>
+              <Icon
+                icon="lucide:chevron-down"
+                width="15"
+                className="text-muted-foreground transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
+            </div>
+          </summary>
           <div className="max-h-128 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
             {snapshot.solverLogs.length > 0 ? (
               snapshot.solverLogs.map((entry) => (
@@ -707,12 +728,10 @@ export function ProjectPage() {
                 </Link>
               ))
             ) : (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                Solver 尚未产生运行日志。
-              </p>
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">暂无运行记录。</p>
             )}
           </div>
-        </Card>
+        </details>
       </div>
 
       {/* ── All challenges table ── */}
@@ -727,10 +746,14 @@ export function ProjectPage() {
           <div className="flex w-full items-center gap-1 rounded-md border border-border bg-background p-0.5 sm:w-auto">
             <div className="flex min-w-0 flex-1 items-center gap-2 px-2 sm:w-52">
               <Icon icon="lucide:search" width="14" className="text-muted-foreground" />
+              <label htmlFor="challenge-search" className="sr-only">
+                搜索题目
+              </label>
               <Input
+                id="challenge-search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索..."
+                placeholder="搜索题目"
                 className="h-8 min-w-0 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:bg-transparent focus-visible:ring-0"
               />
             </div>
@@ -760,37 +783,41 @@ export function ProjectPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  <th className="py-3 pl-5 pr-3 font-medium">题目</th>
-                  <th className="hidden py-3 px-3 font-medium md:table-cell">分类</th>
-                  <th className="hidden py-3 px-3 font-medium sm:table-cell">分值</th>
-                  <th className="hidden py-3 px-3 font-medium lg:table-cell">尝试</th>
-                  <th className="py-3 px-3 font-medium">状态</th>
-                  <th className="py-3 pr-5"></th>
+                  <th scope="col" className="py-3 pl-5 pr-3 font-medium">
+                    题目
+                  </th>
+                  <th scope="col" className="hidden py-3 px-3 font-medium md:table-cell">
+                    分类
+                  </th>
+                  <th scope="col" className="hidden py-3 px-3 font-medium sm:table-cell">
+                    分值
+                  </th>
+                  <th scope="col" className="hidden py-3 px-3 font-medium lg:table-cell">
+                    尝试
+                  </th>
+                  <th scope="col" className="py-3 px-3 font-medium">
+                    状态
+                  </th>
+                  <th scope="col" className="py-3 pr-5">
+                    <span className="sr-only">操作</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
                 {visible.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="cursor-pointer transition-colors hover:bg-muted"
-                    onClick={() => {
-                      window.location.href = `/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        window.location.href = `/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`
-                      }
-                    }}
-                    tabIndex={0}
-                    role="link"
-                  >
+                  <tr key={c.id} className="transition-colors hover:bg-muted">
                     <td className="py-3 pl-5 pr-3">
-                      <p className="text-sm font-medium">{c.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {c.status === "solved" && c.lastActivityAt
-                          ? `解出于 ${relativeTime(c.lastActivityAt)}`
-                          : c.progress}
-                      </p>
+                      <Link
+                        to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
+                        className="block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <p className="text-sm font-medium hover:text-primary">{c.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.status === "solved" && c.lastActivityAt
+                            ? `解出于 ${relativeTime(c.lastActivityAt)}`
+                            : c.progress}
+                        </p>
+                      </Link>
                     </td>
                     <td className="hidden py-3 px-3 text-sm text-muted-foreground md:table-cell">
                       {c.category}

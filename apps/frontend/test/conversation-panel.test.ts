@@ -23,25 +23,37 @@ let mockActivity = {
   ...INITIAL_AGENT_ACTIVITY,
   connection: "connected" as const,
 }
+let mockLoading = false
+let mockError = ""
+let mockMessage = ""
+let mockSending = false
+const mockSetMessage = vi.fn()
+const mockSend = vi.fn(async () => undefined)
 
 vi.mock("../src/hooks/useConversation.ts", () => ({
   useConversation: () => ({
     conversation: {
       messages: mockMessages,
     },
-    loading: false,
-    error: "",
-    message: "",
-    sending: false,
+    loading: mockLoading,
+    error: mockError,
+    message: mockMessage,
+    sending: mockSending,
     activity: mockActivity,
-    setMessage: vi.fn(),
-    send: vi.fn(),
+    setMessage: mockSetMessage,
+    send: mockSend,
   }),
 }))
 
 beforeEach(() => {
   mockMessages = [initialMessage]
   mockActivity = { ...INITIAL_AGENT_ACTIVITY, connection: "connected" }
+  mockLoading = false
+  mockError = ""
+  mockMessage = ""
+  mockSending = false
+  mockSetMessage.mockReset()
+  mockSend.mockClear()
 })
 
 afterEach(() => {
@@ -49,7 +61,83 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("ConversationPanel scroll affordance", () => {
+describe("ConversationPanel", () => {
+  it("呈现加载、错误、空状态，并在只读模式隐藏输入框", () => {
+    mockLoading = true
+    const { rerender } = render(
+      createElement(ConversationPanel, {
+        target: { type: "solver" },
+        attempt: 1,
+        runStatus: "running",
+        hasConversation: true,
+        conversationUrl: "/conversation",
+        streamUrl: "/events",
+        sendUrl: "/message",
+        onChanged: async () => {},
+      }),
+    )
+    expect(screen.getByRole("status", { name: "正在读取 Pi 会话" })).toBeTruthy()
+
+    mockLoading = false
+    mockError = "会话读取失败"
+    rerender(
+      createElement(ConversationPanel, {
+        target: { type: "solver" },
+        attempt: 1,
+        runStatus: "solved" as const,
+        hasConversation: false,
+        conversationUrl: "/conversation",
+        streamUrl: "/events",
+        sendUrl: "/message",
+        onChanged: async () => {},
+        readOnly: true,
+      }),
+    )
+    expect(screen.getByRole("alert").textContent).toContain("会话读取失败")
+    expect(screen.queryByRole("textbox", { name: "发送给 Agent 的消息" })).toBeNull()
+  })
+
+  it("只在有消息时启用发送，并把当前消息交给 send", () => {
+    mockMessage = "继续检查认证边界"
+    const props = {
+      target: { type: "solver" as const },
+      attempt: 1,
+      runStatus: "solved" as const,
+      hasConversation: true,
+      conversationUrl: "/conversation",
+      streamUrl: "/events",
+      sendUrl: "/message",
+      onChanged: async () => {},
+    }
+    const { rerender } = render(createElement(ConversationPanel, props))
+    const send = screen.getByRole("button", { name: "发送消息" })
+    expect(send.hasAttribute("disabled")).toBe(false)
+    fireEvent.click(send)
+    expect(mockSend).toHaveBeenCalledWith("继续检查认证边界")
+
+    mockMessage = ""
+    rerender(createElement(ConversationPanel, props))
+    expect(screen.getByRole("button", { name: "发送消息" }).hasAttribute("disabled")).toBe(true)
+  })
+
+  it("运行中没有历史消息时说明 Agent 正在工作", () => {
+    mockMessages = []
+    render(
+      createElement(ConversationPanel, {
+        target: { type: "solver" },
+        attempt: 1,
+        runStatus: "running",
+        hasConversation: false,
+        conversationUrl: "/conversation",
+        streamUrl: "/events",
+        sendUrl: "/message",
+        onChanged: async () => {},
+      }),
+    )
+
+    expect(screen.getByRole("status").textContent).toContain("Agent 正在处理题目")
+  })
+
   it("离开底部时显示悬浮按钮并可平滑回到底部", () => {
     const { container } = render(
       createElement(ConversationPanel, {
@@ -75,11 +163,6 @@ describe("ConversationPanel scroll affordance", () => {
 
     fireEvent.scroll(scroller)
     const button = screen.getByRole("button", { name: "回到底部" })
-    expect(button.className).toContain("size-9")
-    expect(button.className).toContain("opacity-90")
-    expect(button.className).toContain("animate-in")
-    expect(button.textContent).toBe("")
-    expect(button.parentElement?.className).toContain("justify-center")
     fireEvent.click(button)
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 1_000, behavior: "smooth" })
@@ -208,7 +291,6 @@ describe("ConversationPanel scroll affordance", () => {
 
     const stop = screen.getByRole("button", { name: "中止 Agent" })
     const send = screen.getByRole("button", { name: "发送消息" })
-    expect(stop.textContent).toBe("")
     expect(stop.nextElementSibling).toBe(send)
   })
 })

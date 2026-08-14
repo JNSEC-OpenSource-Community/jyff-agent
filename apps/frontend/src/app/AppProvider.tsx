@@ -9,6 +9,7 @@ import {
   useState,
 } from "react"
 import { apiMutation, apiRequest } from "../lib/api.ts"
+import { errorMessage } from "../lib/format.ts"
 import type {
   BuiltInPluginConfigurationView,
   BuiltInPluginId,
@@ -38,9 +39,11 @@ interface AppContextValue {
   plugins: BuiltInPluginView[]
   selectedProjectId: string | null
   loading: boolean
+  bootstrapError: string
   refreshAuth: () => Promise<AuthenticationState>
   refreshProjects: () => Promise<void>
   refreshAuditProjects: () => Promise<void>
+  retryBootstrap: () => Promise<void>
   logout: () => Promise<void>
 }
 const AppContext = createContext<AppContextValue | null>(null)
@@ -66,6 +69,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const [plugins, setPlugins] = useState<BuiltInPluginView[]>(DEFAULT_PLUGINS)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [bootstrapError, setBootstrapError] = useState("")
   const refreshAuth = useCallback(async () => {
     const next = await apiRequest<AuthenticationState>("/api/auth")
     setAuth(next)
@@ -85,22 +89,25 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     setPlugins(response.plugins?.plugins ?? DEFAULT_PLUGINS)
     await refreshAuditProjects()
   }, [refreshAuditProjects])
-  useEffect(() => {
-    let active = true
-    void refreshAuth()
-      .then(async (state) => {
-        if (state.authenticated) await refreshProjects()
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
+  const bootstrap = useCallback(async () => {
+    setLoading(true)
+    setBootstrapError("")
+    try {
+      const state = await refreshAuth()
+      if (state.authenticated) await refreshProjects()
+    } catch (cause) {
+      setBootstrapError(errorMessage(cause))
+    } finally {
+      setLoading(false)
     }
   }, [refreshAuth, refreshProjects])
+  useEffect(() => {
+    void bootstrap()
+  }, [bootstrap])
   const logout = useCallback(async () => {
     await apiMutation("/api/auth/logout", "POST")
     await refreshAuth()
+    setBootstrapError("")
     setProjects([])
     setAuditProjects([])
     setPlugins(DEFAULT_PLUGINS)
@@ -113,9 +120,11 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       plugins,
       selectedProjectId,
       loading,
+      bootstrapError,
       refreshAuth,
       refreshProjects,
       refreshAuditProjects,
+      retryBootstrap: bootstrap,
       logout,
     }),
     [
@@ -125,9 +134,11 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       plugins,
       selectedProjectId,
       loading,
+      bootstrapError,
       refreshAuth,
       refreshProjects,
       refreshAuditProjects,
+      bootstrap,
       logout,
     ],
   )

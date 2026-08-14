@@ -1,0 +1,105 @@
+// @vitest-environment jsdom
+
+import type { DashboardSnapshot } from "../src/types.ts"
+import { cleanup, render, screen } from "@testing-library/react"
+import { createElement } from "react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
+import { ProjectPage } from "../src/pages/ProjectPage.tsx"
+
+class FakeEventSource {
+  readonly close = vi.fn()
+
+  constructor(readonly url: string) {}
+
+  addEventListener(): void {}
+}
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe("ProjectPage", () => {
+  it("使用项目范围的题目链接并为筛选表格提供语义标签", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => jsonResponse(snapshot())),
+    )
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/demo"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId",
+            element: createElement(ProjectPage),
+          }),
+        ),
+      ),
+    )
+
+    expect(await screen.findByRole("heading", { name: "训练赛" })).toBeTruthy()
+    expect(screen.getByRole("textbox", { name: "搜索题目" })).toBeTruthy()
+    expect(screen.getByRole("columnheader", { name: "题目" }).getAttribute("scope")).toBe("col")
+
+    const challengeLink = screen.getByRole("link", { name: /认证绕过/ })
+    expect(challengeLink.getAttribute("href")).toBe("/projects/demo/challenges/web%2F1")
+  })
+})
+
+function snapshot(): DashboardSnapshot {
+  return {
+    generatedAt: "2026-08-12T08:00:00.000Z",
+    overview: {
+      id: "demo",
+      name: "训练赛",
+      challenges: 1,
+    },
+    stats: { total: 1, solved: 0, active: 0, failed: 0, pending: 1, attempts: 0, queued: 0 },
+    challenges: [
+      {
+        id: "web/1",
+        title: "认证绕过",
+        category: "web",
+        score: 100,
+        status: "pending",
+        platformSolved: false,
+        attempts: 0,
+        latestRunId: null,
+        latestRunStatus: null,
+        lastActivityAt: null,
+        progress: "等待派发",
+        queuePosition: null,
+        dispatchSource: null,
+        schedulerAttempts: 0,
+        sessionInterruptions: 0,
+        evidence: 0,
+        openOpportunities: 0,
+        concludedOpportunities: 0,
+      },
+    ],
+    categories: ["web"],
+    announcements: [],
+    announcementCandidates: [],
+    environments: [],
+    remoteEnvironment: {
+      leases: [],
+      capacity: { occupied: 0, maximum: 2 },
+    },
+    solverLogs: [],
+    scheduler: { available: true, autoEnabled: false, queued: [] },
+    controlPlane: { phase: "ready" },
+  } as unknown as DashboardSnapshot
+}
+
+function jsonResponse(data: unknown): Response {
+  return new Response(JSON.stringify(data), {
+    headers: { "content-type": "application/json" },
+  })
+}

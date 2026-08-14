@@ -49,23 +49,36 @@ export function useConversation(
 
   const { conversationUrl, hasConversation } = target
 
-  const load = useCallback(async (): Promise<void> => {
-    setError("")
-    const canonical = await apiRequest<DashboardConversation>(conversationUrl)
-    setConversation((current) => mergeCanonicalConversation(canonical, current))
-  }, [conversationUrl])
+  const load = useCallback(
+    async (signal?: AbortSignal): Promise<void> => {
+      setError("")
+      const canonical = await apiRequest<DashboardConversation>(conversationUrl, { signal })
+      setConversation((current) => mergeCanonicalConversation(canonical, current))
+    },
+    [conversationUrl],
+  )
 
   useEffect(() => {
+    const controller = new AbortController()
     setConversation(null)
     setError("")
-    if (!hasConversation) return
+    if (!hasConversation) {
+      setLoading(false)
+      return () => controller.abort()
+    }
     setLoading(true)
-    void load()
-      .catch((cause) => setError(errorMessage(cause)))
-      .finally(() => setLoading(false))
+    void load(controller.signal)
+      .catch((cause) => {
+        if (!isAbortError(cause)) setError(errorMessage(cause))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
   }, [hasConversation, load])
 
   useEffect(() => {
+    const controller = new AbortController()
     setActivity(INITIAL_AGENT_ACTIVITY)
     const source = new EventSource(target.streamUrl)
     const pending: AgentStreamEvent[] = []
@@ -82,7 +95,9 @@ export function useConversation(
         const parsed = JSON.parse((event as MessageEvent<string>).data) as AgentStreamEvent
         pending.push(parsed)
         if (shouldRefreshAgentView(parsed)) {
-          void onChanged().catch((cause) => setError(errorMessage(cause)))
+          void onChanged().catch((cause) => {
+            if (!controller.signal.aborted && !isAbortError(cause)) setError(errorMessage(cause))
+          })
         }
         frame ??= requestAnimationFrame(flush)
       } catch {
@@ -92,7 +107,9 @@ export function useConversation(
     source.addEventListener("ready", () => {
       setActivity((current) => ({ ...current, connection: "connected" }))
       if (hasConversation) {
-        void load().catch((cause) => setError(errorMessage(cause)))
+        void load(controller.signal).catch((cause) => {
+          if (!controller.signal.aborted && !isAbortError(cause)) setError(errorMessage(cause))
+        })
       }
     })
     source.addEventListener("agent_event", queue)
@@ -100,6 +117,7 @@ export function useConversation(
       setActivity((current) => ({ ...current, connection: "reconnecting" }))
     }
     return () => {
+      controller.abort()
       source.close()
       if (frame !== undefined) cancelAnimationFrame(frame)
     }
@@ -138,4 +156,8 @@ export function useConversation(
     }),
     [activity, conversation, error, loading, message, send, sending],
   )
+}
+
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === "AbortError"
 }

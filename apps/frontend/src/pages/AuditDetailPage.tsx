@@ -61,21 +61,36 @@ export function AuditDetailPage(): React.ReactElement {
   const [resultLoading, setResultLoading] = useState(false)
   const [followUpDraft, setFollowUpDraft] = useState("")
   const [followUpBusy, setFollowUpBusy] = useState(false)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
 
   const activeTab = tabFromSearch(searchParams.get("tab"))
-  const load = useCallback(async () => {
-    try {
-      setDetail(await apiRequest<Detail>(`/api/audits/${encodeURIComponent(auditId)}`))
-      setError("")
-    } catch (cause) {
-      setError(errorMessage(cause))
-    }
-  }, [auditId])
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const next = await apiRequest<Detail>(
+          `/api/audits/${encodeURIComponent(auditId)}`,
+          signal ? { signal } : undefined,
+        )
+        setDetail(next)
+        setError("")
+      } catch (cause) {
+        if (!isAbortError(cause)) setError(errorMessage(cause))
+      }
+    },
+    [auditId],
+  )
   useEffect(() => {
-    void load()
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
+  }, [load])
+  const hasActiveRun =
+    detail?.runs.some((run) => ["queued", "running", "paused"].includes(run.status)) ?? false
+  useEffect(() => {
+    if (!hasActiveRun) return
     const timer = setInterval(() => void load(), 2_500)
     return () => clearInterval(timer)
-  }, [load])
+  }, [hasActiveRun, load])
   useEffect(() => {
     setSelectedRunId((current) => {
       if (current && detail?.runs.some((run) => run.id === current)) return current
@@ -138,6 +153,9 @@ export function AuditDetailPage(): React.ReactElement {
 
   const configured = Boolean(detail.audit.auditModelId)
   const run = async (mode: "standard" | "deep") => {
+    const actionKey = `run:${mode}`
+    setBusyAction(actionKey)
+    setError("")
     try {
       const response = await apiMutation<{ run: CodeAuditRun }>(
         `/api/audits/${encodeURIComponent(auditId)}/runs`,
@@ -148,9 +166,14 @@ export function AuditDetailPage(): React.ReactElement {
       await load()
     } catch (cause) {
       setError(errorMessage(cause))
+    } finally {
+      setBusyAction(null)
     }
   }
   const control = async (runId: string, action: "pause" | "resume" | "cancel") => {
+    const actionKey = `${action}:${runId}`
+    setBusyAction(actionKey)
+    setError("")
     try {
       await apiMutation(
         `/api/audits/${encodeURIComponent(auditId)}/runs/${encodeURIComponent(runId)}/${action}`,
@@ -159,6 +182,8 @@ export function AuditDetailPage(): React.ReactElement {
       await load()
     } catch (cause) {
       setError(errorMessage(cause))
+    } finally {
+      setBusyAction(null)
     }
   }
   const submitFollowUp = async () => {
@@ -219,19 +244,29 @@ export function AuditDetailPage(): React.ReactElement {
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-border/60 bg-muted/60 p-4 lg:border-t-0 lg:border-l">
             <Button
-              disabled={!configured || !detail.adapter.available}
+              disabled={busyAction !== null || !configured || !detail.adapter.available}
               onClick={() => void run("standard")}
             >
-              <Icon icon="lucide:play" width={15} aria-hidden="true" />
-              标准审计
+              <Icon
+                icon={busyAction === "run:standard" ? "lucide:loader-circle" : "lucide:play"}
+                width={15}
+                className={busyAction === "run:standard" ? "animate-spin" : undefined}
+                aria-hidden="true"
+              />
+              {busyAction === "run:standard" ? "启动中…" : "标准审计"}
             </Button>
             <Button
               variant="outline"
-              disabled={!configured || !detail.adapter.available}
+              disabled={busyAction !== null || !configured || !detail.adapter.available}
               onClick={() => void run("deep")}
             >
-              <Icon icon="lucide:layers-3" width={15} aria-hidden="true" />
-              深度审计
+              <Icon
+                icon={busyAction === "run:deep" ? "lucide:loader-circle" : "lucide:layers-3"}
+                width={15}
+                className={busyAction === "run:deep" ? "animate-spin" : undefined}
+                aria-hidden="true"
+              />
+              {busyAction === "run:deep" ? "启动中…" : "深度审计"}
             </Button>
           </div>
         </div>
@@ -278,6 +313,7 @@ export function AuditDetailPage(): React.ReactElement {
               selectedRunId={selectedRun?.id ?? ""}
               onSelect={setSelectedRunId}
               onControl={control}
+              busyAction={busyAction}
             />
           </section>
           <AuditManifestPanel manifest={result?.manifest ?? null} />
@@ -342,7 +378,7 @@ export function AuditDetailPage(): React.ReactElement {
             <EmptyState
               icon="lucide:file-text"
               title="报告尚未生成"
-              description="完成审计后，canonical report.md 会作为不可变产物保存。"
+              description="完成审计后，report.md 会作为不可变产物保存。"
             />
           )}
         </TabsContent>
@@ -360,7 +396,7 @@ function ResultPanelState({
   error: string
   children: React.ReactNode
 }): React.ReactElement {
-  if (loading) return <Spinner label="加载 canonical 审计结果" />
+  if (loading) return <Spinner label="加载审计结果" />
   if (error) return <ErrorNotice message={error} />
   return <>{children}</>
 }
@@ -382,12 +418,14 @@ function RunList({
   selectedRunId,
   onSelect,
   onControl,
+  busyAction,
 }: {
   auditId: string
   runs: CodeAuditRun[]
   selectedRunId: string
   onSelect: (id: string) => void
   onControl: (id: string, action: "pause" | "resume" | "cancel") => void
+  busyAction: string | null
 }): React.ReactElement {
   if (!runs.length)
     return (
@@ -404,7 +442,13 @@ function RunList({
     <>
       <AuditRunLog auditId={auditId} run={visibleRun} />
       <Card className="mb-3 overflow-hidden p-0">
-        <RunRow run={visibleRun} selected onSelect={onSelect} onControl={onControl} />
+        <RunRow
+          run={visibleRun}
+          selected
+          onSelect={onSelect}
+          onControl={onControl}
+          busyAction={busyAction}
+        />
       </Card>
       {history.length ? (
         <details className="group">
@@ -425,6 +469,7 @@ function RunList({
                 selected={false}
                 onSelect={onSelect}
                 onControl={onControl}
+                busyAction={busyAction}
               />
             ))}
           </Card>
@@ -439,11 +484,13 @@ function RunRow({
   selected,
   onSelect,
   onControl,
+  busyAction,
 }: {
   run: CodeAuditRun
   selected: boolean
   onSelect: (id: string) => void
   onControl: (id: string, action: "pause" | "resume" | "cancel") => void
+  busyAction: string | null
 }): React.ReactElement {
   return (
     <div className={`flex flex-wrap items-center gap-3 px-4 py-3 ${selected ? "bg-muted/40" : ""}`}>
@@ -468,18 +515,33 @@ function RunRow({
         查看
       </Button>
       {run.status === "running" ? (
-        <Button size="sm" variant="outline" onClick={() => onControl(run.id, "pause")}>
-          暂停
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busyAction !== null}
+          onClick={() => onControl(run.id, "pause")}
+        >
+          {busyAction === `pause:${run.id}` ? "暂停中…" : "暂停"}
         </Button>
       ) : null}
       {run.status === "paused" ? (
-        <Button size="sm" variant="outline" onClick={() => onControl(run.id, "resume")}>
-          恢复
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busyAction !== null}
+          onClick={() => onControl(run.id, "resume")}
+        >
+          {busyAction === `resume:${run.id}` ? "恢复中…" : "恢复"}
         </Button>
       ) : null}
       {run.status === "running" || run.status === "paused" ? (
-        <Button size="sm" variant="outline" onClick={() => onControl(run.id, "cancel")}>
-          取消
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busyAction !== null}
+          onClick={() => onControl(run.id, "cancel")}
+        >
+          {busyAction === `cancel:${run.id}` ? "取消中…" : "取消"}
         </Button>
       ) : null}
     </div>
@@ -500,4 +562,8 @@ function runTone(status: CodeAuditRun["status"]): "danger" | "positive" | "warni
 
 export function tabFromSearch(value: string | null): AuditTab {
   return AUDIT_TABS.some((tab) => tab.value === value) ? (value as AuditTab) : "overview"
+}
+
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === "AbortError"
 }

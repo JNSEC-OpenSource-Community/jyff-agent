@@ -269,7 +269,9 @@ export class AuditStore {
   runs(auditProjectId: string): CodeAuditRun[] {
     return (
       this.database
-        .prepare("SELECT * FROM audit_runs WHERE audit_project_id = ? ORDER BY created_at DESC")
+        .prepare(
+          "SELECT * FROM audit_runs WHERE audit_project_id = ? ORDER BY created_at DESC, rowid DESC",
+        )
         .all(auditProjectId) as unknown as RunRow[]
     ).map(toRun)
   }

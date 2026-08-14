@@ -111,7 +111,7 @@ export function AuditFindingsPanel({
       <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="field-label">finding inventory</p>
+            <p className="field-label">发现清单</p>
             <h2 className="mt-1 text-base font-semibold">{findings.length} 个结构化发现</h2>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -454,7 +454,7 @@ function StructuredSection({
   value: unknown
 }): React.ReactElement {
   return (
-    <details className="group rounded-md border border-border/60 bg-muted/20">
+    <details className="group rounded-md border border-border/60 my-1 bg-muted/20">
       <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40">
         <span className="inline-flex items-center gap-2">
           <Icon icon={icon} width="14" aria-hidden="true" />
@@ -496,7 +496,7 @@ export function AuditCoveragePanel({
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="field-label">coverage receipt</p>
+            <p className="field-label">覆盖记录</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <h2 className="text-base font-semibold">覆盖范围与未决事项</h2>
               <Badge tone={coverageTone(coverage.completeness)}>{coverage.completeness}</Badge>
@@ -621,11 +621,21 @@ function CoverageSurfaces({
         <table className="w-full min-w-[42rem] border-collapse text-left text-xs">
           <thead className="bg-muted/30 text-muted-foreground">
             <tr>
-              <th className="px-4 py-2.5 font-medium">表面</th>
-              <th className="px-4 py-2.5 font-medium">结论</th>
-              <th className="px-4 py-2.5 font-medium">风险区域</th>
-              <th className="px-4 py-2.5 font-medium">备注</th>
-              <th className="px-4 py-2.5 font-medium">凭据</th>
+              <th scope="col" className="px-4 py-2.5 font-medium">
+                表面
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-medium">
+                结论
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-medium">
+                风险区域
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-medium">
+                备注
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-medium">
+                凭据
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">

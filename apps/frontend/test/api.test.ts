@@ -2,25 +2,18 @@ import { describe, expect, it } from "vite-plus/test"
 import { ApiError, apiRequest, projectApi } from "../src/lib/api.ts"
 
 describe("projectApi", () => {
-  it("把 /api/ 路径规范为项目级路径", () => {
-    expect(projectApi("p-1", "/api/snapshot")).toBe("/api/projects/p-1/snapshot")
-  })
-
-  it("已含项目前缀的路径按原样拼接（旧式 /api 后缀兼容）", () => {
-    expect(projectApi("p-1", "/api/projects/p-1/x")).toBe("/api/projects/p-1/projects/p-1/x")
-  })
-
-  it("处理不带前导斜杠的 /api/ 形式", () => {
-    expect(projectApi("p-1", "api/snapshot")).toBe("/api/projects/p-1/snapshot")
-  })
-
-  it("把 /api 与 api 归一为空路径", () => {
-    expect(projectApi("p-1", "/api")).toBe("/api/projects/p-1")
-    expect(projectApi("p-1", "api")).toBe("/api/projects/p-1")
+  it.each([
+    ["/api/snapshot", "/api/projects/demo/snapshot"],
+    ["api/snapshot", "/api/projects/demo/snapshot"],
+    ["/snapshot", "/api/projects/demo/snapshot"],
+    ["snapshot", "/api/projects/demo/snapshot"],
+    ["/api", "/api/projects/demo"],
+  ])("将项目内 API 路径 %s 映射到 %s", (path, expected) => {
+    expect(projectApi("demo", path)).toBe(expected)
   })
 
   it("对项目 ID 做 encodeURIComponent", () => {
-    expect(projectApi("a/b c", "/api/snapshot")).toBe("/api/projects/a%2Fb%20c/snapshot")
+    expect(projectApi("event/2026", "/api/events")).toBe("/api/projects/event%2F2026/events")
   })
 })
 
