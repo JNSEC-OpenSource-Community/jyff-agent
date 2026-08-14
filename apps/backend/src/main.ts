@@ -2,6 +2,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { discoverProjectSkillsWithDiagnostics } from "@ctf-agent/agents"
 import {
+  AuditStore,
   ContestScheduler,
   ControlPlane,
   FatherSessionManager,
@@ -16,6 +17,7 @@ import {
   PlatformPluginRegistry,
   ret2shellPlatform,
 } from "@ctf-agent/platform"
+import { CodeAuditRunner } from "./domain/code-audit-runner.ts"
 import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
@@ -73,6 +75,19 @@ const projectRuntimeConfigurations = new Map<
   string,
   Awaited<ReturnType<typeof createFileProjectRuntimeConfiguration>>
 >()
+const auditStorePath = join(stateDirectory, "audits.sqlite")
+const auditRunner = new CodeAuditRunner(
+  join(stateDirectory, "audit-work"),
+  auditStorePath,
+  modelConfiguration,
+)
+const auditStore = await AuditStore.open(auditStorePath)
+const interruptedAudits = auditStore.interruptActiveRuns()
+auditStore.close()
+if (interruptedAudits > 0) {
+  console.warn(`已将 ${interruptedAudits} 个未完成审计标记为失败；当前 Worker 不支持进程重启恢复。`)
+}
+await auditRunner.cleanupOrphans()
 const platformRegistry = new PlatformPluginRegistry([
   ctfdPlatform,
   gzctfPlatform,
@@ -222,6 +237,17 @@ const webui = await startWebUi({
   builtInPluginConfiguration,
   webAccessConfiguration,
   projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
+  auditStore: () => AuditStore.open(auditStorePath),
+  auditArchiveDirectory: join(stateDirectory, "audit-archives"),
+  auditWorkDirectory: join(stateDirectory, "audit-work"),
+  preflightAudit: () => auditRunner.preflight(),
+  validateAuditModel: async (modelId) => {
+    await modelConfiguration.codexSecurityConfiguration(modelId)
+  },
+  runAudit: (run, audit) => auditRunner.run(run, audit),
+  cancelAudit: (runId) => auditRunner.cancel(runId),
+  pauseAudit: (runId) => auditRunner.pause(runId),
+  resumeAudit: (runId) => auditRunner.resume(runId),
   onProjectDeleted: (projectId) => {
     projectRuntimeConfigurations.delete(projectId)
   },

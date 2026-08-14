@@ -75,7 +75,11 @@ export type DockerWorkspaceMount =
 const OUTPUT_LIMIT = 8 * 1024 * 1024
 
 /** Execute Docker directly without involving a host shell. */
-async function execute(args: string[], options: SandboxExecOptions = {}): Promise<CommandResult> {
+/** Execute a Docker CLI command without a host shell. Intended for tightly scoped runners. */
+export async function executeDockerCommand(
+  args: string[],
+  options: SandboxExecOptions = {},
+): Promise<CommandResult> {
   if (options.signal?.aborted) {
     throw new SandboxCommandError("aborted", "Docker command aborted")
   }
@@ -83,7 +87,10 @@ async function execute(args: string[], options: SandboxExecOptions = {}): Promis
     const spawnOptions: SpawnOptionsWithoutStdio = {
       stdio: ["pipe", "pipe", "pipe"],
     }
-    const child = spawn("docker", args, spawnOptions)
+    const command = process.platform === "win32" ? "wsl.exe" : "docker"
+    const commandArgs =
+      process.platform === "win32" ? ["-e", "docker", ...toWslDockerArgs(args)] : args
+    const child = spawn(command, commandArgs, spawnOptions)
     let stdout = ""
     let stderr = ""
     let stdoutTruncated = false
@@ -181,7 +188,7 @@ export class DockerSandbox implements Sandbox {
 
   static async create(
     options: DockerSandboxOptions,
-    executeCommand: DockerCommandExecutor = execute,
+    executeCommand: DockerCommandExecutor = executeDockerCommand,
   ): Promise<DockerSandbox> {
     let usesVolumeSubpath = true
     let args = dockerSandboxCreateArguments(options, { usesVolumeSubpath })
@@ -288,6 +295,17 @@ export function dockerSandboxCreateArguments(
 
 export function newRunId(): string {
   return randomUUID()
+}
+
+function toWslDockerArgs(args: readonly string[]): string[] {
+  return args.map((argument) =>
+    argument
+      .replaceAll("\\", "/")
+      .replace(
+        /(src=)([A-Za-z]):/g,
+        (_match, prefix, drive) => `${prefix}/mnt/${String(drive).toLowerCase()}`,
+      ),
+  )
 }
 
 function commandFailure(operation: string, result: CommandResult): Error {

@@ -15,6 +15,7 @@ vi.mock("../src/app/AppProvider.tsx", () => ({
   useApp: () => ({
     auth: { enabled: false, authenticated: true, username: null },
     projects: [],
+    auditProjects: [],
     plugins: [
       {
         id: "token-usage",
@@ -96,6 +97,7 @@ describe("AppShell navigation", () => {
     const settings = screen.getByRole("link", { name: "比赛设置" })
     const usage = screen.getByRole("link", { name: "Token 消耗" })
     expect(settings.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "代码审计" })).toBeNull()
     expect(usage.getAttribute("href")).toBe("/projects/demo/token-usage")
   })
 

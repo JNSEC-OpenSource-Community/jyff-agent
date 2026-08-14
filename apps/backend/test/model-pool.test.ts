@@ -40,6 +40,57 @@ afterEach(async () => {
 })
 
 describe("file model configuration", () => {
+  it("通过 Responses bridge 暴露三种自定义 Provider 协议", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-bridge-"))
+    roots.push(root)
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+    })
+    await configuration.addCustomProvider({
+      name: "Completions",
+      api: "openai-completions",
+      baseUrl: "https://completion.example.test/v1",
+      apiKey: "completion-secret",
+    })
+    await configuration.addCustomProvider({
+      name: "Anthropic",
+      api: "anthropic-messages",
+      baseUrl: "https://api.anthropic.com/v1",
+      apiKey: "anthropic-secret",
+    })
+    await configuration.addCustomProvider({
+      name: "Responses",
+      api: "openai-responses",
+      baseUrl: "https://responses.example.test/v1",
+      apiKey: "responses-secret",
+    })
+    await configuration.update({
+      models: [
+        modelEntry({ id: "completion", provider: "custom-completions", modelId: "gpt" }),
+        modelEntry({ id: "anthropic", provider: "custom-anthropic", modelId: "claude" }),
+        modelEntry({ id: "responses", provider: "custom-responses", modelId: "gpt-responses" }),
+      ],
+      solverModelId: "completion",
+      tldrModelId: "completion",
+      subagentModels: {},
+    })
+
+    await expect(configuration.codexSecurityConfiguration("completion")).resolves.toMatchObject({
+      model: "gpt",
+      providerApi: "openai-completions",
+      baseUrl: "https://completion.example.test/v1",
+      apiKey: "completion-secret",
+    })
+    await expect(configuration.codexSecurityConfiguration("anthropic")).resolves.toMatchObject({
+      model: "claude",
+      providerApi: "anthropic-messages",
+    })
+    await expect(configuration.codexSecurityConfiguration("responses")).resolves.toMatchObject({
+      model: "gpt-responses",
+      providerApi: "openai-responses",
+    })
+  })
   it("从自定义供应商的 /models 获取去重模型 ID", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-discovery-"))
     roots.push(root)

@@ -60,12 +60,11 @@ export function MarkdownContent({
             </blockquote>
           ),
           code: ({ className: codeClassName, children }) => {
+            const rawCode = markdownText(children)
             const language = /(?:^|\s)language-([\w-]+)/.exec(codeClassName ?? "")?.[1]
-            return codeClassName ? (
-              <SyntaxHighlightedCode
-                code={markdownText(children).replace(/\n$/, "")}
-                language={language}
-              />
+            const isBlock = Boolean(codeClassName) || rawCode.includes("\n")
+            return isBlock ? (
+              <SyntaxHighlightedCode code={rawCode.replace(/\n$/, "")} language={language} />
             ) : (
               <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-primary">
                 {children}

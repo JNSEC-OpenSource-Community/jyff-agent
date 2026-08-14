@@ -1,4 +1,4 @@
-import type { RunSessionExportMetadata } from "@ctf-agent/core"
+import type { AuditStore, RunSessionExportMetadata } from "@ctf-agent/core"
 import { ContestSchedulerError } from "@ctf-agent/core"
 import {
   exportPiSessionHtml,
@@ -41,6 +41,19 @@ export interface ServicesOptions {
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
+  /** 按需打开 Project 的独立审计数据库；调用方必须在回调结束后释放句柄。 */
+  auditStore?: () => Promise<AuditStore>
+  auditArchiveDirectory?: string
+  auditWorkDirectory?: string
+  preflightAudit?: () => Promise<void>
+  validateAuditModel?: (modelId: string) => Promise<void>
+  runAudit?: (
+    run: import("@ctf-agent/core").CodeAuditRun,
+    audit: import("@ctf-agent/core").CodeAuditProject,
+  ) => Promise<void>
+  cancelAudit?: (runId: string) => boolean
+  pauseAudit?: (runId: string) => Promise<boolean>
+  resumeAudit?: (runId: string) => Promise<boolean>
   onProjectDeleted?: (projectId: string) => void | Promise<void>
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
   exportSessionHtml?: (sessionPath: string, metadata?: RunSessionExportMetadata) => Promise<Buffer>
@@ -185,6 +198,114 @@ export class Services {
       this.options.controlPlane?.canStartSolver?.(projectId) ??
       this.currentScheduler(projectId) !== undefined
     )
+  }
+
+  async auditAdapterStatus() {
+    if (!this.options.runAudit || !this.options.preflightAudit) {
+      return {
+        id: "codex-security" as const,
+        available: false,
+        reason: "Codex Security worker 尚未配置；运行已被安全阻止。",
+      }
+    }
+    try {
+      await this.options.preflightAudit()
+      return {
+        id: "codex-security" as const,
+        available: true,
+        reason: "审计会在隔离容器中运行。",
+      }
+    } catch (error) {
+      return {
+        id: "codex-security" as const,
+        available: false,
+        reason: error instanceof Error ? error.message : "审计 Worker 不可用",
+      }
+    }
+  }
+
+  async validateAuditModel(modelId: string): Promise<void> {
+    if (!this.options.validateAuditModel) {
+      throw new HttpError(503, "code_audit_unavailable", "审计模型校验服务尚未启用")
+    }
+    try {
+      await this.options.validateAuditModel(modelId)
+    } catch (error) {
+      throw new HttpError(
+        400,
+        "audit_model_invalid",
+        error instanceof Error ? error.message : "审计模型不可用",
+      )
+    }
+  }
+
+  async preflightAudit(): Promise<void> {
+    if (!this.options.preflightAudit) {
+      throw new HttpError(503, "code_audit_unavailable", "Codex Security worker 尚未启用")
+    }
+    try {
+      await this.options.preflightAudit()
+    } catch (error) {
+      throw new HttpError(
+        503,
+        "code_audit_worker_unavailable",
+        error instanceof Error ? error.message : "审计 Worker 不可用",
+      )
+    }
+  }
+
+  startAudit(
+    run: import("@ctf-agent/core").CodeAuditRun,
+    audit: import("@ctf-agent/core").CodeAuditProject,
+  ): void {
+    if (!this.options.runAudit) {
+      throw new HttpError(503, "code_audit_unavailable", "Codex Security worker 尚未启用")
+    }
+    void this.options.runAudit(run, audit)
+  }
+
+  cancelAudit(runId: string): void {
+    if (!this.options.cancelAudit?.(runId)) {
+      throw new HttpError(409, "audit_run_not_active", "审计运行当前不可取消")
+    }
+  }
+
+  async pauseAudit(runId: string): Promise<void> {
+    if (!(await this.options.pauseAudit?.(runId))) {
+      throw new HttpError(409, "audit_run_not_active", "审计运行当前不可暂停")
+    }
+  }
+
+  async resumeAudit(runId: string): Promise<void> {
+    if (!(await this.options.resumeAudit?.(runId))) {
+      throw new HttpError(409, "audit_run_not_active", "审计运行当前不可恢复")
+    }
+  }
+
+  get auditArchiveDirectory(): string {
+    if (!this.options.auditArchiveDirectory) {
+      throw new HttpError(503, "code_audit_unavailable", "代码审计归档服务尚未启用")
+    }
+    return this.options.auditArchiveDirectory
+  }
+
+  get auditWorkDirectory(): string {
+    if (!this.options.auditWorkDirectory) {
+      throw new HttpError(503, "code_audit_unavailable", "代码审计运行目录尚未启用")
+    }
+    return this.options.auditWorkDirectory
+  }
+
+  async withAuditStore<T>(operation: (store: AuditStore) => Promise<T> | T): Promise<T> {
+    if (!this.options.auditStore) {
+      throw new HttpError(503, "code_audit_unavailable", "代码审计服务尚未启用")
+    }
+    const store = await this.options.auditStore()
+    try {
+      return await operation(store)
+    } finally {
+      store.close()
+    }
   }
 
   requireRuntime(projectId: string): DashboardProjectRuntimeConfiguration {

@@ -133,9 +133,10 @@ function SidebarContent({
   onToggleTheme: () => void
   inMobile?: boolean
 }) {
-  const { projectId } = useParams()
-  const { projects, plugins } = useApp()
+  const { projectId, auditId } = useParams()
+  const { projects, auditProjects, plugins } = useApp()
   const project = projects.find((p) => p.id === projectId)
+  const audit = auditProjects.find((item) => item.id === auditId)
   const tokenUsageEnabled = isPluginEnabled(plugins, "token-usage")
 
   if (collapsed) {
@@ -157,9 +158,9 @@ function SidebarContent({
             <Icon icon="lucide:blocks" width={18} />
           </NavLink>
         </Tooltip>
-        <Tooltip label="创建比赛">
-          <NavLink to="/projects/new" className={iconLink}>
-            <Icon icon="lucide:plus" width={18} />
+        <Tooltip label="审计项目">
+          <NavLink to="/audits" className={iconLink}>
+            <Icon icon="lucide:folder-search-2" width={18} />
           </NavLink>
         </Tooltip>
         <Tooltip label="全局配置">
@@ -200,6 +201,21 @@ function SidebarContent({
                 </NavLink>
               </Tooltip>
             ) : null}
+          </>
+        ) : null}
+        {auditId ? (
+          <>
+            <div className="my-2 h-px w-8 bg-border" />
+            <Tooltip label="审计概览">
+              <NavLink to={`/audits/${encodeURIComponent(auditId)}`} end className={iconLink}>
+                <Icon icon="lucide:layout-dashboard" width={18} />
+              </NavLink>
+            </Tooltip>
+            <Tooltip label="审计设置">
+              <NavLink to={`/audits/${encodeURIComponent(auditId)}/settings`} className={iconLink}>
+                <Icon icon="lucide:sliders-horizontal" width={18} />
+              </NavLink>
+            </Tooltip>
           </>
         ) : null}
 
@@ -259,11 +275,11 @@ function SidebarContent({
               )}
             />
             <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground truncate">
-              {project ? project.platformId : "比赛管理"}
+              {project ? project.platformId : audit ? "CODE AUDIT" : "比赛管理"}
             </span>
           </div>
           <h2 className="mt-0.5 truncate text-sm font-semibold tracking-tight">
-            {project?.name ?? "JYFF Agent"}
+            {project?.name ?? audit?.name ?? "JYFF Agent"}
           </h2>
         </div>
       </div>
@@ -273,8 +289,8 @@ function SidebarContent({
         <SidebarNavLink to="/" end icon="lucide:blocks">
           比赛列表
         </SidebarNavLink>
-        <SidebarNavLink to="/projects/new" icon="lucide:plus">
-          创建比赛
+        <SidebarNavLink to="/audits" icon="lucide:folder-search-2">
+          审计项目
         </SidebarNavLink>
         <SidebarNavLink to="/settings" icon="lucide:settings-2">
           全局配置
@@ -310,9 +326,26 @@ function SidebarContent({
           ) : null}
         </nav>
       ) : null}
+      {auditId ? (
+        <nav className="flex shrink-0 flex-col gap-0.5 border-b border-border px-2 py-2">
+          <SidebarNavLink
+            to={`/audits/${encodeURIComponent(auditId)}`}
+            end
+            icon="lucide:layout-dashboard"
+          >
+            审计概览
+          </SidebarNavLink>
+          <SidebarNavLink
+            to={`/audits/${encodeURIComponent(auditId)}/settings`}
+            icon="lucide:sliders-horizontal"
+          >
+            审计设置
+          </SidebarNavLink>
+        </nav>
+      ) : null}
 
-      {/* Project list - fills remaining space, scrollable */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* Project and audit target lists fill the remaining scrollable area. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {projects.length > 0 ? (
           <>
             <div className="flex shrink-0 items-baseline justify-between px-4 pb-2 pt-3">
@@ -321,7 +354,7 @@ function SidebarContent({
                 {projects.length}
               </span>
             </div>
-            <nav aria-label="切换比赛" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <nav aria-label="切换比赛" className="px-2 pb-3">
               <div className="flex flex-col gap-1">
                 {projects.map((p) => (
                   <NavLink
@@ -345,13 +378,47 @@ function SidebarContent({
               </div>
             </nav>
           </>
-        ) : (
-          <div className="flex flex-1 items-center justify-center px-4 py-5">
-            <p className="text-center text-xs text-muted-foreground">
-              暂无比赛，点击上方「创建比赛」开始
-            </p>
+        ) : null}
+        <div className="border-t border-border px-2 py-3">
+          <div className="flex items-baseline justify-between px-2 pb-2">
+            <span className="text-[11px] font-medium text-muted-foreground">审计项目</span>
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+              {auditProjects.length}
+            </span>
           </div>
-        )}
+          {auditProjects.length > 0 ? (
+            <nav aria-label="切换审计项目" className="flex flex-col gap-1">
+              {auditProjects.map((audit) => (
+                <NavLink
+                  key={audit.id}
+                  to={`/audits/${encodeURIComponent(audit.id)}`}
+                  className={({ isActive }) =>
+                    cn(
+                      "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring/30",
+                      isActive
+                        ? "bg-foreground/[0.07] text-foreground ring-1 ring-inset ring-foreground/10"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    )
+                  }
+                >
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-muted-foreground">
+                    <Icon icon="lucide:folder-search-2" width={13} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{audit.name}</span>
+                    <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                      {audit.status}
+                    </span>
+                  </span>
+                </NavLink>
+              ))}
+            </nav>
+          ) : (
+            <p className="px-2 py-1 text-xs leading-5 text-muted-foreground">
+              从审计项目页登记代码。
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Bottom bar */}

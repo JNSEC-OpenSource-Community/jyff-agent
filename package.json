@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker",
+    "build:sandbox": "docker build --pull -t ctf-agent-solver:latest packages/sandbox/docker && docker pull litellm/litellm@sha256:1aa6227ab85b21b3959b0ce4fc21ddbe64170d12a85b33c726ca5b22dc41e87a && docker build --pull -f apps/backend/Dockerfile.audit -t ctf-agent-audit:latest .",
     "build:webui": "vp build",
     "check": "vp check",
     "test": "vp test run",

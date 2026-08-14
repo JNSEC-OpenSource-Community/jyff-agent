@@ -11,6 +11,26 @@ import { applyTheme, readTheme } from "./lib/preferences.ts"
 const ChallengePage = lazy(() =>
   import("./pages/ChallengePage.tsx").then(({ ChallengePage }) => ({ default: ChallengePage })),
 )
+const AuditProjectsPage = lazy(() =>
+  import("./pages/AuditProjectsPage.tsx").then(({ AuditProjectsPage }) => ({
+    default: AuditProjectsPage,
+  })),
+)
+const AuditDetailPage = lazy(() =>
+  import("./pages/AuditDetailPage.tsx").then(({ AuditDetailPage }) => ({
+    default: AuditDetailPage,
+  })),
+)
+const NewAuditProjectPage = lazy(() =>
+  import("./pages/NewAuditProjectPage.tsx").then(({ NewAuditProjectPage }) => ({
+    default: NewAuditProjectPage,
+  })),
+)
+const AuditSettingsPage = lazy(() =>
+  import("./pages/AuditSettingsPage.tsx").then(({ AuditSettingsPage }) => ({
+    default: AuditSettingsPage,
+  })),
+)
 const FatherPage = lazy(() =>
   import("./pages/FatherPage.tsx").then(({ FatherPage }) => ({ default: FatherPage })),
 )
@@ -63,6 +83,10 @@ function AuthenticatedRoutes(): React.ReactElement {
           <Route element={<AppShell />}>
             <Route index element={<ProjectsPage />} />
             <Route path="projects/new" element={<NewProjectPage />} />
+            <Route path="audits" element={<AuditProjectsPage />} />
+            <Route path="audits/new" element={<NewAuditProjectPage />} />
+            <Route path="audits/:auditId" element={<AuditDetailPage />} />
+            <Route path="audits/:auditId/settings" element={<AuditSettingsPage />} />
             <Route path="settings" element={<GlobalSettingsPage />} />
             <Route path="father" element={<FatherPage />} />
             <Route path="father/sessions/:sessionId" element={<FatherPage />} />

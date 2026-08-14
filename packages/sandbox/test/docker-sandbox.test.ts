@@ -2,6 +2,7 @@ import {
   type CommandResult,
   DEFAULT_DOCKER_SANDBOX_RESOURCES,
   type DockerCommandExecutor,
+  executeDockerCommand,
   DockerSandbox,
   type DockerSandboxOptions,
   dockerSandboxCreateArguments,
@@ -32,6 +33,25 @@ function result(code: number, output: { stdout?: string; stderr?: string } = {})
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe("Docker command execution", () => {
+  it.skipIf(process.platform !== "win32")(
+    "uses WSL Docker and converts bind source paths",
+    async () => {
+      const result = await executeDockerCommand([
+        "run",
+        "--rm",
+        "--mount",
+        String.raw`type=bind,src=C:\work\source,dst=/source,readonly`,
+        "alpine",
+        "true",
+      ])
+      // The assertion is intentionally behavioral: in Windows CI it catches a missing
+      // WSL Docker bridge without depending on a particular Docker error message.
+      expect(result.stderr).not.toContain("invalid mount path")
+    },
+  )
 })
 
 describe("DockerSandbox resources", () => {

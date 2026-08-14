@@ -29,4 +29,12 @@ describe("MarkdownContent", () => {
     expect(html).toContain("hljs-keyword")
     expect(html).toContain("hljs-built_in")
   })
+
+  it("没有语言标记的报告代码块也复用自动高亮", () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownContent, null, "```\ndef solved():\n    return True\n```"),
+    )
+    expect(html).toContain('class="hljs"')
+    expect(html).toContain("hljs-keyword")
+  })
 })

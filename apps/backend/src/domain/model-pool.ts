@@ -85,6 +85,13 @@ export interface AgentModelConfiguration extends DashboardModelConfiguration {
     target?: "solver" | "tldr" | "father",
     bindings?: AgentModelBindings,
   ): AgentOptions
+  /** Codex Security 通过 Responses bridge 使用模型池中的自定义 Provider。 */
+  codexSecurityConfiguration(modelId: string): Promise<{
+    model: string
+    baseUrl: string
+    apiKey: string
+    providerApi: CustomModelProviderApi
+  }>
   /**
    * 把模型池适配成 web-access 需要的 ModelAuthResolver 形状
    * （find / getApiKeyAndHeaders / getAvailable），供搜索 + auto-summary 使用。
@@ -295,6 +302,37 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       },
     }
     return attachModelsToAgentOptions(agent, models)
+  }
+
+  async codexSecurityConfiguration(modelId: string): Promise<{
+    model: string
+    baseUrl: string
+    apiKey: string
+    providerApi: CustomModelProviderApi
+  }> {
+    const selected = this.values.models.find((entry) => entry.id === modelId)
+    if (!selected) throw new Error("未选择白盒审计模型")
+    const unavailableReason = this.entryUnavailableReason(selected)
+    if (unavailableReason) throw new Error(unavailableReason)
+    const provider = this.values.providers.find((item) => item.id === selected.provider)
+    if (!provider) {
+      throw new Error("白盒审计需要在模型池中配置自定义 Provider")
+    }
+    if (
+      provider.api !== "openai-responses" &&
+      provider.api !== "openai-completions" &&
+      provider.api !== "anthropic-messages"
+    ) {
+      throw new Error("白盒审计不支持该 Provider 协议")
+    }
+    const apiKey = this.options.secretStore.get(providerSecret(selected.provider))
+    if (!apiKey) {
+      throw new Error("白盒审计模型缺少可注入 bridge 的 API Key")
+    }
+    if (hasControlCharacters(apiKey)) throw new Error("白盒审计模型 API Key 包含非法控制字符")
+    const baseUrl = validateCodexBridgeUrl(provider.baseUrl)
+    if (hasControlCharacters(selected.modelId)) throw new Error("白盒审计模型 ID 包含非法控制字符")
+    return { model: selected.modelId, baseUrl, apiKey, providerApi: provider.api }
   }
 
   modelForSubagent(role: string, bindings?: AgentModelBindings): string | undefined {
@@ -616,6 +654,23 @@ function modelRecords(payload: unknown): unknown[] {
   const candidate = payload as { data?: unknown; models?: unknown }
   if (Array.isArray(candidate.data)) return candidate.data
   return Array.isArray(candidate.models) ? candidate.models : []
+}
+
+function validateCodexBridgeUrl(value: string): string {
+  if (hasControlCharacters(value)) throw new Error("白盒审计 Provider URL 包含非法控制字符")
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new Error("白盒审计 Provider URL 无效")
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("白盒审计 Provider URL 必须使用 HTTP 或 HTTPS")
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error("白盒审计 Provider URL 不得包含凭据、查询参数或片段")
+  }
+  return value.replace(/\/+$/, "")
 }
 
 function hasControlCharacters(value: string): boolean {

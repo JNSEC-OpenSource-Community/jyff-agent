@@ -10,6 +10,7 @@ export function useSse(url: string, handlers: Record<string, (data: unknown) => 
   handlersRef.current = handlers
 
   useEffect(() => {
+    if (!url) return
     const source = new EventSource(url)
     for (const [type, handler] of Object.entries(handlersRef.current)) {
       source.addEventListener(type, (event) => {

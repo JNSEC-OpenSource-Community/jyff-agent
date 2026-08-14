@@ -1,0 +1,11 @@
+FROM node:22.19.0-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y ca-certificates git python3 unzip tar \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install --global @openai/codex-security@0.1.10
+
+RUN useradd --create-home --uid 10001 audit
+USER audit
+WORKDIR /work
+ENTRYPOINT ["codex-security"]

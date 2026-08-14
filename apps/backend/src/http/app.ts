@@ -1,4 +1,4 @@
-import type { RunSessionExportMetadata } from "@ctf-agent/core"
+import type { AuditStore, RunSessionExportMetadata } from "@ctf-agent/core"
 import { type Context, Hono } from "hono"
 import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
@@ -20,6 +20,7 @@ import type { App, AppEnv, ProjectScope } from "./context.ts"
 import { errorHandler } from "./errors.ts"
 import { authenticationGate } from "./middleware/auth.ts"
 import { challengeRoutes } from "./routes/challenges.ts"
+import { codeAuditRoutes } from "./routes/code-audit.ts"
 import { fatherRoutes } from "./routes/father.ts"
 import { modelsRoutes, scopedModelsRoutes } from "./routes/models.ts"
 import { projectsRoutes, scopedProjectRoutes } from "./routes/projects.ts"
@@ -51,6 +52,18 @@ export interface WebUiOptions {
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
+  auditStore?: () => Promise<AuditStore>
+  auditArchiveDirectory?: string
+  auditWorkDirectory?: string
+  preflightAudit?: () => Promise<void>
+  validateAuditModel?: (modelId: string) => Promise<void>
+  runAudit?: (
+    run: import("@ctf-agent/core").CodeAuditRun,
+    audit: import("@ctf-agent/core").CodeAuditProject,
+  ) => Promise<void>
+  cancelAudit?: (runId: string) => boolean
+  pauseAudit?: (runId: string) => Promise<boolean>
+  resumeAudit?: (runId: string) => Promise<boolean>
   onProjectDeleted?: (projectId: string) => void | Promise<void>
   /** 测试可替换 Pi 原生 HTML session 导出器。 */
   exportSessionHtml?: (sessionPath: string, metadata?: RunSessionExportMetadata) => Promise<Buffer>
@@ -102,6 +115,7 @@ export function buildRouter(services: Services, options: WebUiOptions): App {
   api.route("/", projectsRoutes(services))
   api.route("/", schedulerRoutes(services))
   api.route("/", challengeRoutes(services))
+  api.route("/", codeAuditRoutes(services))
   api.route("/", fatherRoutes(services))
   api.route("/", runRoutes(services))
   api.route("/", modelsRoutes(services))

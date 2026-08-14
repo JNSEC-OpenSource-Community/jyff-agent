@@ -1,4 +1,4 @@
-import type { ControlPlaneProjectSnapshot } from "@ctf-agent/core"
+import type { CodeAuditProject, ControlPlaneProjectSnapshot } from "@ctf-agent/core"
 import {
   createContext,
   type ReactNode,
@@ -14,37 +14,36 @@ import type {
   BuiltInPluginId,
   BuiltInPluginView,
 } from "../types.ts"
-
 export interface AuthenticationState {
   enabled: boolean
   authenticated: boolean
   username: string | null
 }
-
 interface ProjectListResponse {
   projects: ProjectListItem[]
   selectedProjectId: string | null
   plugins?: BuiltInPluginConfigurationView
 }
-
 export interface ProjectListItem extends ControlPlaneProjectSnapshot {
   solved: number
   total: number
 }
-
+interface CodeAuditCatalogResponse {
+  audits: CodeAuditProject[]
+}
 interface AppContextValue {
   auth: AuthenticationState | null
   projects: ProjectListItem[]
+  auditProjects: CodeAuditProject[]
   plugins: BuiltInPluginView[]
   selectedProjectId: string | null
   loading: boolean
   refreshAuth: () => Promise<AuthenticationState>
   refreshProjects: () => Promise<void>
+  refreshAuditProjects: () => Promise<void>
   logout: () => Promise<void>
 }
-
 const AppContext = createContext<AppContextValue | null>(null)
-
 const DEFAULT_PLUGINS: BuiltInPluginView[] = [
   {
     id: "token-usage",
@@ -54,34 +53,38 @@ const DEFAULT_PLUGINS: BuiltInPluginView[] = [
     defaultEnabled: true,
   },
 ]
-
 export function isPluginEnabled(
   plugins: readonly BuiltInPluginView[] | undefined,
   pluginId: BuiltInPluginId,
 ): boolean {
   return plugins?.find((plugin) => plugin.id === pluginId)?.enabled ?? true
 }
-
 export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
   const [auth, setAuth] = useState<AuthenticationState | null>(null)
   const [projects, setProjects] = useState<ProjectListItem[]>([])
+  const [auditProjects, setAuditProjects] = useState<CodeAuditProject[]>([])
   const [plugins, setPlugins] = useState<BuiltInPluginView[]>(DEFAULT_PLUGINS)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const refreshAuth = useCallback(async (): Promise<AuthenticationState> => {
+  const refreshAuth = useCallback(async () => {
     const next = await apiRequest<AuthenticationState>("/api/auth")
     setAuth(next)
     return next
   }, [])
-
-  const refreshProjects = useCallback(async (): Promise<void> => {
+  const refreshAuditProjects = useCallback(async () => {
+    try {
+      setAuditProjects((await apiRequest<CodeAuditCatalogResponse>("/api/audits")).audits)
+    } catch {
+      setAuditProjects([])
+    }
+  }, [])
+  const refreshProjects = useCallback(async () => {
     const response = await apiRequest<ProjectListResponse>("/api/projects")
     setProjects(response.projects)
     setSelectedProjectId(response.selectedProjectId)
     setPlugins(response.plugins?.plugins ?? DEFAULT_PLUGINS)
-  }, [])
-
+    await refreshAuditProjects()
+  }, [refreshAuditProjects])
   useEffect(() => {
     let active = true
     void refreshAuth()
@@ -95,31 +98,41 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       active = false
     }
   }, [refreshAuth, refreshProjects])
-
-  const logout = useCallback(async (): Promise<void> => {
+  const logout = useCallback(async () => {
     await apiMutation("/api/auth/logout", "POST")
     await refreshAuth()
     setProjects([])
+    setAuditProjects([])
     setPlugins(DEFAULT_PLUGINS)
   }, [refreshAuth])
-
   const value = useMemo<AppContextValue>(
     () => ({
       auth,
       projects,
+      auditProjects,
       plugins,
       selectedProjectId,
       loading,
       refreshAuth,
       refreshProjects,
+      refreshAuditProjects,
       logout,
     }),
-    [auth, projects, plugins, selectedProjectId, loading, refreshAuth, refreshProjects, logout],
+    [
+      auth,
+      projects,
+      auditProjects,
+      plugins,
+      selectedProjectId,
+      loading,
+      refreshAuth,
+      refreshProjects,
+      refreshAuditProjects,
+      logout,
+    ],
   )
-
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
-
 export function useApp(): AppContextValue {
   const context = useContext(AppContext)
   if (!context) throw new Error("useApp 必须在 AppProvider 中使用")

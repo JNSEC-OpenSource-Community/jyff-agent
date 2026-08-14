@@ -68,13 +68,13 @@ vp run build:sandbox
 vp run webui
 ```
 
-`build:sandbox` 创建 `ctf-agent-solver:latest`。Solver、Father 和插件验证都会使用该镜像；没有镜像时 WebUI 仍可能启动，但无法执行这些操作。
+`build:sandbox` 创建 `ctf-agent-solver:latest`、`ctf-agent-audit:latest`，并拉取固定 digest 的 LiteLLM Responses bridge 镜像。Solver、Father 和插件验证使用 solver 镜像；代码审计会按 Run 启动隔离的 LiteLLM sidecar。没有这些镜像时 WebUI 仍可能启动，但相关执行操作会被明确阻止。
 
 `vp run webui` 先执行前端构建，再运行 `apps/backend/src/main.ts`。默认监听 `0.0.0.0:3000`，以终端输出的地址访问 WebUI。
 
 首次使用建议按以下顺序操作：
 
-1. 在全局设置中配置模型 Provider、凭据和可用模型。
+1. 在全局设置中配置模型 Provider、凭据和可用模型。代码审计支持自定义 `openai-responses`、`openai-completions` 和 `anthropic-messages` Provider；后两者经隔离 LiteLLM Responses bridge 转换后供 Codex Security 使用。
 2. 创建 Project，选择 CTFd 或 GZCTF 并测试连接。
 3. 在 Project 设置中绑定 Solver、TLDR、SubAgent 模型和并发参数。
 4. 在 Project 页面同步题目，手动派发单题或开启自动调度。

@@ -9,6 +9,20 @@ export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "ma
 
 export const projectArchiveSchema = z.object({ archived: z.boolean() })
 
+/** 独立审计项目必须引用已由上传端点保存的归档，不接受服务端任意路径。 */
+export const codeAuditCreateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160),
+    archiveName: z.string().trim().min(1).max(255),
+    archiveSize: z
+      .number()
+      .int()
+      .min(1)
+      .max(250 * 1024 * 1024),
+    archivePath: z.string().trim().min(1).max(2_048),
+  })
+  .strict()
+
 export const builtInPluginStateSchema = z.object({ enabled: z.boolean() })
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -247,6 +261,15 @@ export const thinkingLevelSchema = z.object({
         message: `思考强度必须是 ${[...THINKING_LEVELS, "off"].join("/")} 之一`,
       },
     ),
+})
+
+/** 审计 follow-up：会创建一轮新的隔离运行，并在扫描后执行该提示词。 */
+export const auditFollowUpSchema = z.object({
+  prompt: z
+    .string({ message: "Prompt 必须是字符串" })
+    .trim()
+    .min(1, { message: "Prompt 不能为空" })
+    .max(32_000, { message: "Prompt 长度不能超过 32000" }),
 })
 
 /** Run 重试（可选人工继续提示词）。 */
