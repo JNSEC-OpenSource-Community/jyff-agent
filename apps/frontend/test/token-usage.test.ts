@@ -6,6 +6,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { TokenUsagePage } from "../src/pages/TokenUsagePage.tsx"
 
+vi.mock("@iconify/react", () => ({ Icon: () => null }))
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
