@@ -130,7 +130,8 @@ export function useConversation(
       setSending(true)
       setError("")
       try {
-        await apiMutation(target.sendUrl, "POST", { message: trimmed })
+        const bodyKey = target.sendUrl.endsWith("/steer") ? "message" : "text"
+        await apiMutation(target.sendUrl, "POST", { [bodyKey]: trimmed })
         setMessage("")
         await onChanged()
         if (hasConversation) await load()
