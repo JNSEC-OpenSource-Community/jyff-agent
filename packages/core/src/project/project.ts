@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
   type AgentSkill,
@@ -31,9 +31,11 @@ import {
 } from "@ctf-agent/prompts"
 import {
   DockerSandbox,
+  clearDockerWorkspace,
   type DockerSandboxOptions,
   type DockerWorkspaceMount,
   newRunId,
+  removeManagedContainers,
   type Sandbox,
 } from "@ctf-agent/sandbox"
 import {
@@ -129,6 +131,18 @@ export interface OpenProjectOptions {
   /** Resolve a named secret without placing credentials in project config. */
   resolveSecret?: (name: string) => string | undefined
   sandboxFactory?: (options: DockerSandboxOptions) => Promise<Sandbox>
+  /**
+   * 按 runId 回收托管 sandbox 容器（含孤儿容器）。缺省仅在 sandboxFactory 未注入
+   * （即使用真实 DockerSandbox）时启用 `removeManagedContainers`，测试注入自定义
+   * factory 时跳过，避免测试触碰真实 docker。
+   */
+  removeManagedSandboxes?: (runIds: readonly string[]) => Promise<void>
+  /** 清空题目 workspace；生产默认通过 Docker 处理 root-owned 文件，测试可注入宿主实现。 */
+  clearWorkspace?: (input: {
+    image: string
+    workspace: string
+    workspaceMount: DockerWorkspaceMount
+  }) => Promise<void>
   /** 在 .pi/skills 外额外发现的显式 skill 目录。 */
   skillPaths?: readonly string[]
   /**
@@ -254,6 +268,8 @@ export class Project {
     agentDirectory: string,
     private readonly platform: PlatformProject,
     private readonly sandboxFactory: (options: DockerSandboxOptions) => Promise<Sandbox>,
+    private readonly removeManagedSandboxes: OpenProjectOptions["removeManagedSandboxes"],
+    private readonly clearWorkspace: NonNullable<OpenProjectOptions["clearWorkspace"]>,
     private readonly skills: readonly AgentSkill[],
     private readonly subagentRoles: ReadonlyMap<string, SubagentRole>,
     private readonly runStore: RunStore,
@@ -336,6 +352,14 @@ export class Project {
         agentDirectory,
         platform,
         options.sandboxFactory ?? ((sandboxOptions) => DockerSandbox.create(sandboxOptions)),
+        options.removeManagedSandboxes ??
+          (options.sandboxFactory === undefined ? removeManagedContainers : undefined),
+        options.clearWorkspace ??
+          (options.sandboxFactory === undefined
+            ? async ({ image, workspaceMount }) => clearDockerWorkspace({ image, workspaceMount })
+            : async ({ workspace }) => {
+                await rm(workspace, { recursive: true, force: true })
+              }),
         discovered.skills,
         discoveredSubagents.roles,
         runStore,
@@ -895,6 +919,62 @@ export class Project {
   }
   resetSessionInterruptions(challengeId: string): void {
     this.runStore.resetSessionInterruptions(challengeId)
+  }
+  /** 完全重置单题：清空 RunStore 中该题全部状态，并删除 Run session 目录与题目 workspace。 */
+  async resetChallenge(challengeId: string): Promise<void> {
+    if (this.closed) throw new Error("Project 已关闭")
+    // 防御性关闭该题仍在内存中的 solver（调度路径已关则幂等返回；
+    // 兜底 ContestRunner 等不经过 scheduler 的活跃 solver 边角场景）
+    for (const solver of this.solvers) {
+      if (solver.challenge.id === challengeId && !solver.isClosed) {
+        await solver.close("cancelled", "重置题目：运行已停止").catch(() => undefined)
+      }
+    }
+    // 等在途 TLDR 刷新结束，防止 wipe 后它重新 upsert challenge_tldr
+    const inFlightTldr = this.tldrRefreshes.get(challengeId)
+    if (inFlightTldr) await inFlightTldr.catch(() => undefined)
+    const runs = this.runStore.listRuns({ challengeId })
+    // 回收该题 Run 的托管 sandbox 容器（含进程崩溃后遗留的孤儿容器）；已随 solver 关闭的
+    // 容器按标签查不到，幂等跳过。
+    if (this.removeManagedSandboxes) {
+      await this.removeManagedSandboxes(runs.map((run) => run.id))
+    }
+    const workspace = challengeWorkspacePath(this.agentDirectory, challengeId)
+    const workspaceMount = this.workspaceMount?.({
+      runId: runs[0]?.id ?? `reset-${challengeWorkspaceKey(challengeId)}`,
+      workspace,
+      relativeWorkspace: this.relativeWorkspace(challengeId),
+    }) ?? { type: "bind" as const, source: workspace }
+    if (workspaceMount.type === "bind") await mkdir(workspace, { recursive: true })
+    await this.clearWorkspace({
+      image: this.config.sandbox.image,
+      workspace,
+      workspaceMount,
+    })
+    const deletedRuns = this.runStore.resetChallenge(challengeId)
+    if (deletedRuns.length !== runs.length) {
+      throw new Error(`重置题目期间 Run 状态发生变化: ${challengeId}`)
+    }
+    await Promise.all(
+      deletedRuns.map((run) =>
+        rm(join(this.agentDirectory, "runs", run.id), { recursive: true, force: true }),
+      ),
+    )
+    for (const run of deletedRuns) {
+      this.subagentManagers.delete(run.id)
+      this.runChallengeContexts.delete(run.id)
+      for (const key of this.agentStreamSequences.keys()) {
+        if (key.startsWith(`${run.id} `)) this.agentStreamSequences.delete(key)
+      }
+      for (const key of this.activeStreamMessages.keys()) {
+        if (key.startsWith(`${run.id} `)) this.activeStreamMessages.delete(key)
+      }
+      for (const key of this.activeStreamSnapshots.keys()) {
+        if (key.startsWith(`${run.id} `)) this.activeStreamSnapshots.delete(key)
+      }
+    }
+    this.tldrRefreshes.delete(challengeId)
+    this.challengeSchedulingHints.delete(challengeId)
   }
   schedulerQueue(): SchedulerQueueRecord[] {
     return this.runStore.schedulerQueue()

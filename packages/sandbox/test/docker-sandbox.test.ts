@@ -1,4 +1,5 @@
 import {
+  clearDockerWorkspace,
   type CommandResult,
   DEFAULT_DOCKER_SANDBOX_RESOURCES,
   type DockerCommandExecutor,
@@ -6,6 +7,7 @@ import {
   DockerSandbox,
   type DockerSandboxOptions,
   dockerSandboxCreateArguments,
+  removeManagedContainers,
 } from "@ctf-agent/sandbox"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 
@@ -204,5 +206,69 @@ describe("DockerSandbox resources", () => {
       ]),
     )
     expect(warning).toHaveBeenCalledOnce()
+  })
+
+  it("clearDockerWorkspace 通过一次性容器清空卷 subpath", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute.mockResolvedValue(result(0))
+    await clearDockerWorkspace(
+      {
+        image: "solver:latest",
+        workspaceMount: {
+          type: "volume",
+          source: "ctf-agent-data",
+          subpath: "projects/abc/challenges/def/workspace",
+        },
+      },
+      execute,
+    )
+    expect(execute).toHaveBeenCalledWith([
+      "run",
+      "--rm",
+      "--mount",
+      "type=volume,src=ctf-agent-data,dst=/ctf-agent-volume",
+      "--entrypoint",
+      "sh",
+      "solver:latest",
+      "-c",
+      'mkdir -p "$1" && find "$1" -mindepth 1 -delete',
+      "sh",
+      "/ctf-agent-volume/projects/abc/challenges/def/workspace",
+    ])
+  })
+
+  it("clearDockerWorkspace 清理失败时抛错", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute.mockResolvedValue(result(1, { stderr: "permission denied" }))
+    await expect(
+      clearDockerWorkspace(
+        {
+          image: "solver:latest",
+          workspaceMount: { type: "bind", source: "/host/workspace" },
+        },
+        execute,
+      ),
+    ).rejects.toThrow("Docker workspace cleanup failed: permission denied")
+  })
+
+  it("removeManagedContainers 按 run 标签找到并删除容器，找不到时跳过", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute
+      .mockResolvedValueOnce(result(0, { stdout: "abc123\n" }))
+      .mockResolvedValueOnce(result(0, { stdout: "" }))
+      .mockResolvedValueOnce(result(0))
+    await removeManagedContainers(["run-a", "run-b"], execute)
+    expect(execute.mock.calls.map(([args]) => args)).toEqual([
+      ["ps", "-aq", "--filter", "label=ctf-agent.run=run-a"],
+      ["ps", "-aq", "--filter", "label=ctf-agent.run=run-b"],
+      ["rm", "-f", "abc123"],
+    ])
+  })
+
+  it("removeManagedContainers 无容器时不调用 docker rm", async () => {
+    const execute = vi.fn<DockerCommandExecutor>()
+    execute.mockResolvedValue(result(0, { stdout: "" }))
+    await removeManagedContainers(["run-a"], execute)
+    expect(execute).toHaveBeenCalledTimes(1)
   })
 })

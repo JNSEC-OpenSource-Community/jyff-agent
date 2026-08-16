@@ -157,6 +157,8 @@ export class ContestScheduler {
   private queueGeneration = 0
   private suspensionReason?: string
   private discoveringAdmission = false
+  /** 正在被 resetChallenge 清空的题目：任何在途 reconcile/pump 都必须跳过，避免 wipe 期间重建 Run。 */
+  private readonly resetting = new Set<string>()
   private readonly admissionDiscoveryRetryAt = new Map<string, number>()
   private readonly unsubscribeRemoteEnvironmentCapacity: () => void
 
@@ -268,6 +270,7 @@ export class ContestScheduler {
     const byId = new Map(challenges.map((challenge) => [challenge.id, challenge]))
 
     for (const persisted of this.project.schedulerQueue()) {
+      if (this.resetting.has(persisted.challengeId)) continue
       const challenge = byId.get(persisted.challengeId)
       if (
         !challenge ||
@@ -292,6 +295,7 @@ export class ContestScheduler {
 
     for (const challenge of challenges) {
       if (
+        this.resetting.has(challenge.id) ||
         challenge.solved ||
         this.project.isChallengeSolved(challenge.id) ||
         this.project.isChallengeSchedulingExcluded(challenge.id) ||
@@ -305,6 +309,7 @@ export class ContestScheduler {
 
     const ordinaryOutstanding = challenges.some(
       (challenge) =>
+        !this.resetting.has(challenge.id) &&
         !challenge.solved &&
         !this.project.isChallengeSolved(challenge.id) &&
         !this.project.isChallengeSchedulingExcluded(challenge.id) &&
@@ -314,6 +319,7 @@ export class ContestScheduler {
       const blocked = challenges
         .filter(
           (challenge) =>
+            !this.resetting.has(challenge.id) &&
             !challenge.solved &&
             !this.project.isChallengeSchedulingExcluded(challenge.id) &&
             this.project.isChallengeBlocked(challenge.id) &&
@@ -537,6 +543,38 @@ export class ContestScheduler {
     return this.snapshot()
   }
 
+  /** 完全重置单题：终止活跃/排队 Run，清空本地状态，自动模式开启则按新题重新入队。 */
+  async resetChallenge(challengeId: string): Promise<ContestSchedulerSnapshot> {
+    this.resetting.add(challengeId)
+    try {
+      // (a) 摘除内存队列项 + 持久化 scheduler_queue 行（含 resumeRun：其指向的 Run 即将被删）
+      const queueIndex = this.queue.findIndex((item) => item.challenge.id === challengeId)
+      if (queueIndex >= 0) this.queue.splice(queueIndex, 1)
+      this.project.removeSchedulerChallenge(challengeId)
+
+      // (b) 终止活跃 Run（abort + close "cancelled" → 回收 sandbox + 释放远程环境租约）
+      const active = this.active.get(challengeId)
+      if (active) {
+        active.cancelRequested = true
+        active.phase = "cancelling"
+        active.cancelRetryDelay?.()
+        await active.solver?.abort()
+        if (active.solver) await active.solver.close("cancelled", "重置题目：运行已停止")
+        await active.operation?.catch(() => undefined)
+      }
+
+      // (c) wipe DB + 磁盘 + 内存状态
+      await this.project.resetChallenge(challengeId)
+    } finally {
+      this.resetting.delete(challengeId)
+    }
+
+    // (d) 自动重新入队（reconcile 自判 autoEnabled/availability；晚到的在途 reconcile 经
+    //     hasChallenge/去重不会重复入队）
+    if (this.autoEnabled) await this.reconcile()
+    return this.snapshot()
+  }
+
   async shutdown(): Promise<void> {
     if (this.shuttingDown) {
       await Promise.allSettled(
@@ -579,7 +617,10 @@ export class ContestScheduler {
       // 自己的 Sandbox，因此 active 数永远不会像旧 execution-permit 模型一样膨胀。
       while (this.active.size < this.maxConcurrent && this.availability().available) {
         const index = this.queue.findIndex(
-          (item) => (!item.requiresAuto || this.autoEnabled) && this.canAdmit(item),
+          (item) =>
+            !this.resetting.has(item.challenge.id) &&
+            (!item.requiresAuto || this.autoEnabled) &&
+            this.canAdmit(item),
         )
         if (index < 0) break
         const [item] = this.queue.splice(index, 1)

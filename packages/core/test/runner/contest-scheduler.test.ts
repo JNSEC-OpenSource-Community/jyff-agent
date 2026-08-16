@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { INCOMPLETE_CONTINUATION_PROMPT } from "@ctf-agent/prompts"
-import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
+import type {
+  CommandResult,
+  DockerSandboxOptions,
+  DockerWorkspaceMount,
+  Sandbox,
+} from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import {
   createFauxCore,
@@ -102,7 +107,15 @@ function requiredChallenge(item: TestChallenge | undefined): TestChallenge {
 async function fixture(
   challenges: TestChallenge[],
   tracker: SandboxTracker,
-  options: { maxRemoteEnvironments?: number } = {},
+  options: {
+    maxRemoteEnvironments?: number
+    removeManagedSandboxes?: (runIds: readonly string[]) => Promise<void>
+    clearWorkspace?: (input: {
+      image: string
+      workspace: string
+      workspaceMount: DockerWorkspaceMount
+    }) => Promise<void>
+  } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "ctf-scheduler-"))
   roots.push(root)
@@ -122,6 +135,10 @@ async function fixture(
     sandboxFactory: tracker.create,
     telemetry: { level: "full" },
     remoteEnvironments: { maxConcurrent: options.maxRemoteEnvironments ?? 1 },
+    ...(options.removeManagedSandboxes
+      ? { removeManagedSandboxes: options.removeManagedSandboxes }
+      : {}),
+    ...(options.clearWorkspace ? { clearWorkspace: options.clearWorkspace } : {}),
   })
   return project
 }
@@ -1150,6 +1167,117 @@ describe("ContestScheduler", () => {
       expect(scheduler.snapshot().queued).toEqual([])
       const activeId = scheduler.snapshot().active[0]?.challengeId
       if (activeId) await scheduler.cancel(activeId)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("重置活跃题目：终止 Agent、清空历史、回收容器并按 attempt=1 重新入队", async () => {
+    const item = challenge(1)
+    const tracker = new SandboxTracker()
+    const removedContainers: string[][] = []
+    const project = await fixture([item], tracker, {
+      removeManagedSandboxes: async (runIds) => {
+        removedContainers.push([...runIds])
+      },
+    })
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: () => solvingAgent(item, 300),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await waitUntil(() => scheduler.snapshot().active.length === 1)
+      const activeId = scheduler.snapshot().active[0]?.challengeId
+      if (!activeId) throw new Error("自主调度未创建活跃任务")
+      await waitUntil(() => project.runs({ challengeId: activeId }).length === 1)
+      const [oldRun] = project.runs({ challengeId: activeId })
+      if (!oldRun) throw new Error("调度器未创建 Run")
+
+      await scheduler.resetChallenge(activeId)
+
+      // 旧 Run 已彻底清空（含事件/黑板级联），其托管容器也被回收
+      expect(project.runs({ challengeId: activeId }).some((run) => run.id === oldRun.id)).toBe(
+        false,
+      )
+      expect(removedContainers).toEqual([[oldRun.id]])
+      // 自动模式按新题（attempt=1）重新入队并再次启动
+      await waitUntil(
+        () =>
+          project.runs({ challengeId: activeId }).length === 1 &&
+          project.runs({ challengeId: activeId })[0]?.attempt === 1,
+      )
+      const [newRun] = project.runs({ challengeId: activeId })
+      if (!newRun) throw new Error("重置后未重新创建 Run")
+      expect(newRun.id).not.toBe(oldRun.id)
+      // 新 Run 解出后无残留 sandbox
+      await waitUntil(
+        () => project.isChallengeSolved(activeId) && scheduler.snapshot().active.length === 0,
+      )
+      expect(tracker.active).toBe(0)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("重置仅有历史的题目：清空 solved 状态且 auto 未开启时不重新入队", async () => {
+    const item = challenge(1)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: () => solvingAgent(item),
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+      )
+      const [oldRun] = project.runs({ challengeId: item.id })
+      if (!oldRun) throw new Error("调度器未创建 Run")
+
+      await scheduler.resetChallenge(item.id)
+
+      expect(project.runs({ challengeId: item.id }).some((run) => run.id === oldRun.id)).toBe(false)
+      expect(project.runs({ challengeId: item.id })).toEqual([])
+      expect(project.isChallengeSolved(item.id)).toBe(false)
+      // auto 未开启：不自动重新入队
+      expect(scheduler.snapshot().queued.map((q) => q.challengeId)).not.toContain(item.id)
+      expect(tracker.active).toBe(0)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("workspace 清理失败时保留 Run 历史并向调用方报错", async () => {
+    const item = challenge(1)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker, {
+      clearWorkspace: async () => {
+        throw new Error("workspace cleanup failed")
+      },
+    })
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: () => solvingAgent(item),
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+      )
+      const before = project.runs({ challengeId: item.id })
+      await expect(scheduler.resetChallenge(item.id)).rejects.toThrow("workspace cleanup failed")
+      expect(project.runs({ challengeId: item.id })).toEqual(before)
     } finally {
       await scheduler.shutdown()
       await project.close()

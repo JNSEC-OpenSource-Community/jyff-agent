@@ -227,6 +227,11 @@ export class FakeDashboardProject implements DashboardProject {
     return false
   }
 
+  resetChallengeCalls: string[] = []
+  async resetChallenge(challengeId: string): Promise<void> {
+    this.resetChallengeCalls.push(challengeId)
+  }
+
   async sendMessage(challengeId: string, text: string): Promise<{ runId: string }> {
     this.sendMessageCalls.push({ challengeId, text })
     if ("error" in this.sendMessageResult) {
@@ -570,6 +575,15 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   }
 
   async cancel(challengeId: string): Promise<ContestSchedulerSnapshot> {
+    this.value.queued = this.value.queued
+      .filter((item) => item.challengeId !== challengeId)
+      .map((item, index) => ({ ...item, position: index + 1 }))
+    return this.snapshot()
+  }
+
+  resetChallengeCalls: string[] = []
+  async resetChallenge(challengeId: string): Promise<ContestSchedulerSnapshot> {
+    this.resetChallengeCalls.push(challengeId)
     this.value.queued = this.value.queued
       .filter((item) => item.challengeId !== challengeId)
       .map((item, index) => ({ ...item, position: index + 1 }))

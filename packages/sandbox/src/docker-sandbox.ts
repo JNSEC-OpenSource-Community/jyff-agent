@@ -308,6 +308,67 @@ function toWslDockerArgs(args: readonly string[]): string[] {
   )
 }
 
+export interface DockerWorkspaceCleanupOptions {
+  image: string
+  workspaceMount: DockerWorkspaceMount
+}
+
+/**
+ * 通过一次性 root 容器清空 workspace 挂载内容。Solver 可能以 root 写入文件，宿主 WebUI
+ * 进程未必有权限直接 rm；Docker volume 模式还必须操作 daemon 看到的同一个命名卷。
+ */
+export async function clearDockerWorkspace(
+  options: DockerWorkspaceCleanupOptions,
+  executeCommand: DockerCommandExecutor = executeDockerCommand,
+): Promise<void> {
+  let mount: string
+  let target: string
+  if (options.workspaceMount.type === "volume") {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(options.workspaceMount.source)) {
+      throw new Error("Invalid Docker workspace volume name")
+    }
+    mount = `type=volume,src=${options.workspaceMount.source},dst=/ctf-agent-volume`
+    target = options.workspaceMount.subpath
+      ? `/ctf-agent-volume/${normalizedVolumeSubpath(options.workspaceMount.subpath)}`
+      : "/ctf-agent-volume"
+  } else {
+    if (!options.workspaceMount.source || options.workspaceMount.source.includes(",")) {
+      throw new Error("Invalid Docker bind workspace path")
+    }
+    mount = `type=bind,src=${options.workspaceMount.source},dst=/workspace`
+    target = "/workspace"
+  }
+  const cleared = await executeCommand([
+    "run",
+    "--rm",
+    "--mount",
+    mount,
+    "--entrypoint",
+    "sh",
+    options.image,
+    "-c",
+    'mkdir -p "$1" && find "$1" -mindepth 1 -delete',
+    "sh",
+    target,
+  ])
+  if (cleared.code !== 0) throw commandFailure("workspace cleanup", cleared)
+}
+
+/** 按 runId 删除托管 sandbox 容器（含进程崩溃后遗留的孤儿容器）。重置题目环境时回收。 */
+export async function removeManagedContainers(
+  runIds: readonly string[],
+  executeCommand: DockerCommandExecutor = executeDockerCommand,
+): Promise<void> {
+  const collected = new Set<string>()
+  for (const runId of runIds) {
+    const listed = await executeCommand(["ps", "-aq", "--filter", `label=ctf-agent.run=${runId}`])
+    for (const id of listed.stdout.trim().split(/\s+/).filter(Boolean)) collected.add(id)
+  }
+  if (collected.size === 0) return
+  const removed = await executeCommand(["rm", "-f", ...collected])
+  if (removed.code !== 0) throw commandFailure("remove", removed)
+}
+
 function commandFailure(operation: string, result: CommandResult): Error {
   const output = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n")
   return new Error(`Docker ${operation} failed: ${output || `exit code ${result.code}`}`)
