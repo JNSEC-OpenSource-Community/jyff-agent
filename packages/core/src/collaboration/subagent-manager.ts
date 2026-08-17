@@ -121,6 +121,7 @@ export class CtfSubagentManager {
   private parent?: CtfSolverAgent
   private finalizing = false
   private closing = false
+  private closePromise?: Promise<void>
 
   constructor(private readonly options: SubagentManagerOptions) {
     this.maxConcurrent = Math.max(1, options.maxConcurrent ?? 4)
@@ -415,10 +416,25 @@ export class CtfSubagentManager {
   }
 
   async close(): Promise<void> {
-    if (this.closing) return
+    if (this.closePromise) return this.closePromise
     this.closing = true
+    this.closePromise = this.stopPending()
+    return this.closePromise
+  }
+
+  private async stopPending(): Promise<void> {
     const pending = this.list().filter((record) => !TERMINAL.has(record.status))
-    await Promise.allSettled(pending.map((record) => this.cancel(record.id)))
+    await Promise.allSettled(
+      pending.map(async (record) => {
+        const managed = this.records.get(record.id)
+        if (!managed) return
+        // A winner has already ended the run. Persist the latest usable worker
+        // output, but do not inject cancellation notices into the writeup turn.
+        managed.resultConsumed = true
+        if (managed.record.status === "running") await this.captureLatestResult(managed)
+        if (!TERMINAL.has(managed.record.status)) await this.cancel(record.id)
+      }),
+    )
     await Promise.allSettled(
       [...this.records.values()].map(({ agent }) => agent?.waitForIdle() ?? Promise.resolve()),
     )
@@ -489,7 +505,8 @@ export class CtfSubagentManager {
   private async captureLatestResult(managed: ManagedSubagent): Promise<void> {
     const messages = (await managed.agent?.transcript()) ?? []
     for (let index = messages.length - 1; index >= 0; index--) {
-      const text = extractAssistantText(messages[index])
+      const message = messages[index]
+      const text = extractAssistantText(message) || extractToolResultText(message)
       if (text) {
         managed.record.result = text
         return
@@ -593,6 +610,26 @@ export class CtfSubagentManager {
     }
     await parent.promptOrSteer(subagentCompletionNotificationPrompt(notification))
   }
+}
+
+function extractToolResultText(message: unknown): string {
+  if (!message || typeof message !== "object") return ""
+  const candidate = message as {
+    role?: string
+    toolName?: unknown
+    content?: unknown
+  }
+  if (candidate.role !== "toolResult" || !Array.isArray(candidate.content)) return ""
+  const parts = candidate.content.flatMap((block) => {
+    if (!block || typeof block !== "object") return []
+    const value = block as { type?: unknown; text?: unknown }
+    return value.type === "text" && typeof value.text === "string" ? [value.text] : []
+  })
+  if (parts.length === 0) return ""
+  const output = parts.join("\n").trim()
+  if (!output || output === "(no output)") return ""
+  const prefix = typeof candidate.toolName === "string" ? `[${candidate.toolName}] ` : ""
+  return `${prefix}${output}`.slice(0, 8_000)
 }
 
 function settleWithin(promises: Promise<unknown>[], milliseconds: number) {

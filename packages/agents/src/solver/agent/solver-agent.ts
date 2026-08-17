@@ -36,6 +36,8 @@ export interface CreateCtfSolverAgentOptions {
   }
   /** Runs before remote-instance and shared-sandbox cleanup (for child workers). */
   onBeforeCleanup?: () => Promise<void> | void
+  /** Starts immediately after the first accepted submission, before the writeup turn. */
+  onTerminalSubmission?: (submission: FlagSubmission) => Promise<void> | void
   onClosed?: (details: SolverCloseDetails) => Promise<void> | void
 }
 
@@ -99,10 +101,13 @@ export class CtfSolverAgent extends BaseAgent {
   private readonly capability: ChallengeCapability
   private readonly onClosed?: (details: SolverCloseDetails) => Promise<void> | void
   private readonly onBeforeCleanup?: () => Promise<void> | void
+  private readonly onTerminalSubmission?: (submission: FlagSubmission) => Promise<void> | void
   private readonly closeOnSubmission: boolean
   private closeReason: SolverCloseReason = "manual"
   private closed = false
   private finalSubmission?: FlagSubmission
+  private terminalSubmissionCleanup?: Promise<void>
+  private terminalSubmissionCleanupError?: unknown
   private closing?: Promise<void>
 
   private constructor(options: CreateCtfSolverAgentOptions, prepared: PreparedBaseAgent) {
@@ -118,6 +123,7 @@ export class CtfSolverAgent extends BaseAgent {
     this.sandbox = options.sandbox
     this.onClosed = options.onClosed
     this.onBeforeCleanup = options.onBeforeCleanup
+    this.onTerminalSubmission = options.onTerminalSubmission
     this.closeOnSubmission = options.features?.closeOnSubmission !== false
 
     this.subscribe(async (event) => {
@@ -187,6 +193,7 @@ export class CtfSolverAgent extends BaseAgent {
   }
 
   async prepareWriteup(): Promise<void> {
+    await this.terminalSubmissionCleanup
     await this.setActiveTools(["read", "write", "edit", "list"])
   }
 
@@ -201,8 +208,16 @@ export class CtfSolverAgent extends BaseAgent {
   }
 
   private markTerminal(submission: FlagSubmission): void {
+    if (this.finalSubmission) return
     this.finalSubmission = submission
     this.closeReason = "submitted"
+    this.terminalSubmissionCleanup = Promise.resolve()
+      .then(() => this.onTerminalSubmission?.(submission))
+      .catch((error: unknown) => {
+        // Keep the accepted submission authoritative. The cleanup failure is
+        // reported from close(), while writeup waits for this attempt to settle.
+        this.terminalSubmissionCleanupError = error
+      })
   }
 
   async close(reason: SolverCloseReason = this.closeReason, error?: string): Promise<void> {
@@ -220,6 +235,10 @@ export class CtfSolverAgent extends BaseAgent {
     waitForRun: boolean,
   ): Promise<void> {
     const cleanupErrors: string[] = []
+    await this.terminalSubmissionCleanup
+    if (this.terminalSubmissionCleanupError) {
+      cleanupErrors.push(`SubAgent 即时回收失败: ${errorText(this.terminalSubmissionCleanupError)}`)
+    }
     if (waitForRun) {
       try {
         await this.abort()
@@ -276,4 +295,8 @@ export class CtfSolverAgent extends BaseAgent {
       )
     }
   }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

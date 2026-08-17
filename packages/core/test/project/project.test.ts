@@ -418,6 +418,43 @@ describe("Project", () => {
     await project.close()
   })
 
+  it("平台接受首个 Flag 后在 writeup 前封存并回收该 Run 的 SubAgent manager", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+        writeup: true,
+      })
+      const submit = solver.state.tools.find((tool) => tool.name === "ctf_submit_flag")
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")
+      if (!submit || !launch) throw new Error("Solver 协作工具未创建")
+
+      await submit.execute("accepted", { flag: "TEST{fixture}" })
+      await solver.prepareWriteup()
+
+      expect(solver.submission).toMatchObject({ status: "accepted" })
+      await expect(
+        launch.execute("late-worker", {
+          subagent_type: "general-purpose",
+          prompt: "continue after accepted flag",
+          description: "late worker",
+          run_in_background: true,
+        }),
+      ).rejects.toThrow("正在收尾或关闭")
+      await solver.close("submitted")
+      expect(project.runs({ challengeId: "warmup-flag" })).toEqual([
+        expect.objectContaining({ status: "solved", closeReason: "submitted" }),
+      ])
+    } finally {
+      await project.close()
+    }
+  })
+
   it("将 Solver 的 Pi 生命周期旁路投影到隔离的实时订阅", async () => {
     const root = await fixture()
     const project = await Project.open({
