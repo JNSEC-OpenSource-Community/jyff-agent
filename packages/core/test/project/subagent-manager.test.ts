@@ -9,7 +9,12 @@ import {
 } from "@ctf-agent/agents"
 import type { CommandResult, SandboxExecOptions } from "@ctf-agent/sandbox"
 import type { AgentHarnessEvent, AgentOptions } from "@earendil-works/pi-agent-core"
-import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux"
+import {
+  createFauxCore,
+  fauxAssistantMessage,
+  fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux"
+import { Type } from "typebox"
 import { afterEach, describe, expect, it } from "vite-plus/test"
 import {
   CtfSubagentManager,
@@ -422,6 +427,83 @@ describe("CtfSubagentManager", () => {
       }),
     ).toThrow("正在收尾")
     await manager.close()
+  })
+
+  it("获胜回收保留运行 worker 的最近工具结果，取消余项且不注入取消通知", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-winner-cleanup-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-winner-cleanup" })
+    let secondTurnStarted!: () => void
+    const secondTurn = new Promise<void>((resolve) => {
+      secondTurnStarted = resolve
+    })
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("report_candidate", {}, { id: "candidate" }), {
+        stopReason: "toolUse",
+      }),
+      async (_context, options) => {
+        secondTurnStarted()
+        await new Promise<void>((resolve) => {
+          if (options?.signal?.aborted) resolve()
+          else options?.signal?.addEventListener("abort", () => resolve(), { once: true })
+        })
+        return fauxAssistantMessage("late polished report")
+      },
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    const parent = fakeParent()
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-winner-cleanup",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      webAccessTools: [
+        {
+          name: "report_candidate",
+          label: "Report Candidate",
+          description: "Return a deterministic candidate for the lifecycle test.",
+          parameters: Type.Object({}),
+          async execute() {
+            return {
+              content: [{ type: "text", text: "FLAG{winner}" }],
+              details: { candidate: "FLAG{winner}" },
+            }
+          },
+        },
+      ],
+    })
+    manager.attachParent(parent.agent)
+    const created = manager.spawn({
+      role: "general-purpose",
+      prompt: "find a candidate flag",
+      description: "candidate search",
+      background: true,
+    })
+    await secondTurn
+
+    const firstClose = manager.close()
+    const repeatedClose = manager.close()
+    await Promise.all([firstClose, repeatedClose])
+
+    expect(manager.get(created.id)).toMatchObject({
+      status: "cancelled",
+      result: expect.stringContaining("FLAG{winner}"),
+    })
+    expect(parent.steered).toEqual([])
+    expect(() =>
+      manager.spawn({
+        role: "general-purpose",
+        prompt: "too late",
+        description: "late worker",
+        background: true,
+      }),
+    ).toThrow("正在收尾或关闭")
   })
 })
 

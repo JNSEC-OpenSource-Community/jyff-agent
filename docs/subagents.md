@@ -105,6 +105,10 @@ queued → running → completed
 4. 正常完成保存最后一条 assistant 文本；异常保存错误和最近可用结果。
 5. 后台 worker 结束且结果未被消费时，管理器向主 Solver steer 一个 `<subagent_notification>`。
 
+worker 一旦获得具体 Flag 候选或可直接使用的 exploit，应立即返回最小可复现结果。主 Solver
+将首个此类结果作为中断优先验证，不等待其他 worker；只有平台返回 `accepted` 或
+`already_solved` 才构成获胜结果。
+
 通知只包含 worker ID、role、状态和最多 16,000 字符的结果/错误。完整对话和 usage 留在 worker JSONL 与 RunStore，不能把整段思考或秘密塞进主会话。
 
 ## 5. 等待、steer 与恢复
@@ -125,7 +129,11 @@ queued → running → completed
 4. 在 grace period 内等待；仍未完成的任务捕获最新结果后取消。
 5. 确认所有 worker 进入终态并等待 Agent idle。
 
-`close()` 用于 Run 或 Project 关闭，取消所有非终态任务并等待 Agent idle。RunStore 保存终态记录、session path、结果、错误和 usage；WebUI 仍可查看历史对话和导出 HTML，但不会允许向终态 worker 发送指令，除非通过 `resume` 恢复。
+平台接受首个 Flag 后会立即启动 `close()`，并在进入 Writeup turn 前等待回收完成。
+`close()` 会在取消非终态任务前捕获最近的 assistant 回复；若当前 turn 尚无回复，则保留最近的
+tool result。回收过程是幂等的，重复调用会等待同一个屏障，避免共享 Sandbox 在 worker
+完全停止前被销毁。RunStore 保存终态记录、session path、已回收结果、错误和 usage；WebUI
+仍可查看历史对话和导出 HTML，但不会允许向终态 worker 发送指令，除非通过 `resume` 恢复。
 
 当前实现没有独立的 `timed_out` SubAgent 状态。超时或硬中止会表现为 `aborted`、`cancelled` 或 `interrupted`，具体取决于触发路径；不要在 API 或文档中假设存在 `timed_out`。
 

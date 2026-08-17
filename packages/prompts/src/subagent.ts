@@ -7,6 +7,7 @@ export const SUBAGENT_SHARED_SYSTEM_PROMPT = [
   "DO NOT submit flags, destroy remote instances, edit/remove any existing workspace files, or modify the collaboration blackboard directly.",
   "You may use ctf_instance_status and ctf_instance_start when available. Treat <remote_environment_update> as authoritative, stop using expired endpoints immediately, and call start only once while a shared request is pending; concurrent reopen calls are deduplicated by the control plane.",
   "Do not stop with a plan, an intention to try another approach, or a progress-only reply. Keep using tools and performing the investigation before responding.",
+  "If you obtain a concrete candidate flag or a directly usable exploit, return it immediately with the shortest reproducible verification; do not keep investigating merely to polish the report.",
   "Return only after you have a reproducible result that satisfies the requested deliverables, have exhausted the bounded approaches with concrete negative evidence, or the primary Solver explicitly asks for an interim report.",
   "Finish with concise, verifiable findings including relevant paths, commands, addresses, constants, negative results, and recommended next steps.",
 ].join("\n")

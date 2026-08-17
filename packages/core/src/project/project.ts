@@ -1234,6 +1234,7 @@ export class Project {
           compaction: options.compaction,
           closeOnSubmission: options.writeup !== true,
         },
+        onTerminalSubmission: () => subagentManager?.close(),
         onBeforeCleanup: () => {
           webAccessSignal.abort()
           return subagentManager?.close()

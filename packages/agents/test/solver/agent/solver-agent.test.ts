@@ -206,6 +206,65 @@ describe("CtfSolverAgent 强制清理", () => {
     await solver.close("manual")
   })
 
+  it("首个成功提交立即启动 SubAgent 回收，并在 writeup 前等待回收完成", async () => {
+    const log: string[] = []
+    let releaseCleanup!: () => void
+    const cleanupGate = new Promise<void>((resolve) => {
+      releaseCleanup = resolve
+    })
+    const submissions: string[] = []
+    let cleanupCalls = 0
+    const capability: ChallengeCapability = {
+      ...challengeCapability(log),
+      submitFlag: async (flag) => {
+        submissions.push(flag)
+        return { status: "accepted", message: flag }
+      },
+    }
+    const solver = await CtfSolverAgent.create({
+      identity: {
+        projectId: "project",
+        runId: "run-winner",
+        runDirectory: await runDirectory(),
+        workspace: "workspace",
+        challenge: await capability.getInfo(),
+      },
+      capability,
+      sandbox: new OrderedSandbox(log),
+      agent,
+      features: { closeOnSubmission: false },
+      onTerminalSubmission: async () => {
+        cleanupCalls++
+        await cleanupGate
+      },
+    })
+    const submit = solver.activeTools.find((tool) => tool.name === "ctf_submit_flag")
+    if (!submit) throw new Error("提交工具未创建")
+
+    await submit.execute("submit-first", { flag: "FLAG{first}" })
+    await submit.execute("submit-second", { flag: "FLAG{second}" })
+    expect(cleanupCalls).toBe(1)
+    expect(submissions).toEqual(["FLAG{first}", "FLAG{second}"])
+    expect(solver.submission).toEqual({ status: "accepted", message: "FLAG{first}" })
+
+    let prepared = false
+    const preparing = solver.prepareWriteup().then(() => {
+      prepared = true
+    })
+    await Promise.resolve()
+    expect(prepared).toBe(false)
+
+    releaseCleanup()
+    await preparing
+    expect(solver.activeTools.map((tool) => tool.name).sort()).toEqual([
+      "edit",
+      "list",
+      "read",
+      "write",
+    ])
+    await solver.close("submitted")
+  })
+
   it("setThinkingLevel 更新 state.thinkingLevel(下一 turn 生效的注入源)", async () => {
     const log: string[] = []
     const solver = await CtfSolverAgent.create({

@@ -34,6 +34,7 @@ export const SOLVER_SYSTEM_PROMPT = [
   "- Keep several incompatible research routes alive through multiple rounds. Cross-pollinate " +
     "ideas only after independent agents have developed them far enough to expose their real " +
     "strengths and gaps. ",
+  "- Treat the first SubAgent result containing a concrete flag candidate or directly usable exploit as an interrupt: validate it immediately and submit it without waiting for sibling workers. The first platform-accepted submission wins; the control plane will stop and recover the remaining workers.",
   "  - You the root solver agent should repeatedly synthesize, challenge, redirect, and launch new rounds. ",
   // web_search policies
   "",
