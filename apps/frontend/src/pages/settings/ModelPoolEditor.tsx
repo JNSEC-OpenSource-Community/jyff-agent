@@ -28,8 +28,19 @@ interface EM extends ModelPoolEntryUpdate {
   supportedThinkingLevels: string[]
 }
 
+let modelUiKeySequence = 0
+
+function createModelUiKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID()
+  }
+
+  modelUiKeySequence += 1
+  return `model-${Date.now().toString(36)}-${modelUiKeySequence.toString(36)}`
+}
+
 const ed = (m: ModelConfigurationView["models"][number]): EM => ({
-  uiKey: crypto.randomUUID(),
+  uiKey: createModelUiKey(),
   automaticId: false,
   id: m.id,
   provider: m.provider,
@@ -50,7 +61,7 @@ export function ModelPoolEditor({
   authentication: ModelAuthenticationView
   onSaved: (n: ModelConfigurationView) => void
 }) {
-  const [models, setModels] = useState<EM[]>(configuration.models.map(ed))
+  const [models, setModels] = useState<EM[]>(() => configuration.models.map(ed))
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
   const [fatherModelId, setFatherModelId] = useState(
@@ -357,7 +368,7 @@ export function ModelPoolEditor({
             setModels((c) => [
               ...c,
               {
-                uiKey: crypto.randomUUID(),
+                uiKey: createModelUiKey(),
                 automaticId: true,
                 id: modelPoolEntryId(entry),
                 ...entry,

@@ -146,4 +146,20 @@ describe("模型池自定义供应商模型选择", () => {
     expect(ids.at(-1)?.value).toBe("openai/gpt-5.4@medium")
     expect(ids.at(-1)?.readOnly).toBe(true)
   })
+
+  it("缺少 crypto.randomUUID 时仍可渲染并添加模型", () => {
+    vi.stubGlobal("crypto", {})
+
+    render(
+      createElement(ModelPoolEditor, {
+        configuration: { ...configuration, customProviders: [] },
+        authentication,
+        onSaved: () => undefined,
+      }),
+    )
+
+    expect(screen.getAllByLabelText("模型配置 ID")).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: "添加" }))
+    expect(screen.getAllByLabelText("模型配置 ID")).toHaveLength(2)
+  })
 })

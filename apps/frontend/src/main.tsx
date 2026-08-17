@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom"
 import "./styles.css"
+import { AppErrorBoundary } from "./app/AppErrorBoundary.tsx"
 import { AppProvider, isPluginEnabled, useApp } from "./app/AppProvider.tsx"
 import { Button, ErrorNotice, Spinner, Toaster, TooltipProvider } from "./components/index.ts"
 import { AppShell } from "./layouts/AppShell.tsx"
@@ -138,13 +139,15 @@ applyTheme(readTheme())
 
 createRoot(root).render(
   <StrictMode>
-    <BrowserRouter>
-      <TooltipProvider>
-        <AppProvider>
-          <AuthenticatedRoutes />
-          <Toaster position="bottom-right" richColors />
-        </AppProvider>
-      </TooltipProvider>
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <TooltipProvider>
+          <AppProvider>
+            <AuthenticatedRoutes />
+            <Toaster position="bottom-right" richColors />
+          </AppProvider>
+        </TooltipProvider>
+      </BrowserRouter>
+    </AppErrorBoundary>
   </StrictMode>,
 )
