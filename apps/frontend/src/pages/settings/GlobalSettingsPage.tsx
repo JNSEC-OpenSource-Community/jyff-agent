@@ -26,10 +26,12 @@ import type {
   CustomModelProviderView,
   ModelAuthenticationView,
   ModelConfigurationView,
+  ShellPoopConfigurationView,
   WebAccessConfigurationView,
 } from "../../types.ts"
 import { ModelPoolEditor } from "./ModelPoolEditor.tsx"
 import { ProviderCredentialCard } from "./ProviderCredentialCard.tsx"
+import { ShellPoopEditor } from "./ShellPoopEditor.tsx"
 import { WebAccessEditor } from "./WebAccessEditor.tsx"
 
 interface Cfg {
@@ -38,6 +40,7 @@ interface Cfg {
   modelAuthentication: ModelAuthenticationView | null
   plugins?: BuiltInPluginConfigurationView
   webAccess: WebAccessConfigurationView | null
+  shellpoop: ShellPoopConfigurationView | null
 }
 
 type ProviderSetupMode = "subscription" | "api-key" | "custom"
@@ -575,6 +578,14 @@ export function GlobalSettingsPage() {
                   />
                 ) : (
                   <ErrorNotice message="当前控制面不支持 web-access 插件" />
+                )}
+              </div>
+
+              <div className="border-t border-border pt-4">
+                {g.shellpoop ? (
+                  <ShellPoopEditor config={g.shellpoop} onSaved={load} />
+                ) : (
+                  <ErrorNotice message="当前控制面不支持 shellpoop 插件" />
                 )}
               </div>
             </div>

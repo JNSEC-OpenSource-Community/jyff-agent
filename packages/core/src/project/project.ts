@@ -36,6 +36,11 @@ import {
   newRunId,
   type Sandbox,
 } from "@ctf-agent/sandbox"
+import {
+  createShellPoopSession,
+  type ShellPoopConfig,
+  type ShellPoopSession,
+} from "@ctf-agent/shellpoop"
 import { createWebAccessTools, type WebAccessConfig } from "@ctf-agent/web-access"
 import type {
   AgentHarnessEvent,
@@ -135,6 +140,15 @@ export interface OpenProjectOptions {
     workspace: string,
     signal: AbortSignal,
   ) => WebAccessConfig | null | Promise<WebAccessConfig | null>
+  /**
+   * ShellPoop 反弹 shell 工具配置工厂：给定 run 级 AbortSignal（run 结束 abort
+   * → 取消进行中的请求）与 challenge 上下文（用于把 shell 绑定到所属 challenge），
+   * 返回 ShellPoopConfig；返回 null 时禁用反弹 shell 工具。
+   */
+  shellpoopConfig?: (
+    signal: AbortSignal,
+    context: { challengeId: string; runId: string },
+  ) => ShellPoopConfig | null | Promise<ShellPoopConfig | null>
   /** 内置 Token 消耗插件的动态开关；省略时保持向后兼容并默认采集。 */
   tokenUsageEnabled?: () => boolean
   /** 控制面运行在容器中时，将 Run workspace 映射为 Docker daemon 可见的挂载。 */
@@ -247,6 +261,7 @@ export class Project {
     private readonly workspaceMount: OpenProjectOptions["workspaceMount"],
     private readonly workspaceNamespace: string | undefined,
     private readonly webAccessConfig: OpenProjectOptions["webAccessConfig"],
+    private readonly shellpoopConfig: OpenProjectOptions["shellpoopConfig"],
     private readonly tokenUsageEnabled: () => boolean,
     private readonly telemetry: Required<ProjectTelemetryOptions>,
     private readonly subagentRuntime: {
@@ -328,6 +343,7 @@ export class Project {
         options.workspaceMount,
         normalizeWorkspaceNamespace(options.workspaceNamespace),
         options.webAccessConfig,
+        options.shellpoopConfig,
         options.tokenUsageEnabled ?? (() => true),
         {
           level: options.telemetry?.level ?? "safe",
@@ -1049,6 +1065,8 @@ export class Project {
     let capability: Awaited<ReturnType<PlatformProject["bindChallenge"]>> | undefined
     let sandbox: Sandbox | undefined
     let subagentManager: CtfSubagentManager | undefined
+    // 提升到 try 之外，使创建失败路径的 catch 也能回收会话（闭包经 onBeforeCleanup 使用）。
+    let shellpoopSession: ShellPoopSession | undefined
     try {
       capability = await this.platform.bindChallenge(challengeId)
       const challenge = await capability.getInfo()
@@ -1136,6 +1154,22 @@ export class Project {
         if (config) webAccessTools = createWebAccessTools(config)
       }
 
+      // ShellPoop 反弹 shell 工具，默认关闭；host 通过 shellpoopConfig 工厂提供
+      // 服务地址、超时与所属 challenge。每个 run 一个独立会话：只记录并允许
+      // 操作本 run 创建的 shell（challenge 间隔离）；run 结束时 abort 取消
+      // 进行中的请求，并调用会话 close() 删除本 run 全部 shell 以释放端口。
+      const shellpoopSignal = new AbortController()
+      let shellpoopTools: AgentTool[] = []
+      shellpoopSession = undefined
+      if (this.shellpoopConfig) {
+        const config = await this.shellpoopConfig(shellpoopSignal.signal, { challengeId, runId })
+        if (config) {
+          const session = createShellPoopSession(config)
+          shellpoopSession = session
+          shellpoopTools = session.tools
+        }
+      }
+
       subagentManager = new CtfSubagentManager({
         projectId: this.config.project.id,
         runId,
@@ -1147,6 +1181,7 @@ export class Project {
         roles: this.configuredSubagentRoles(),
         skills,
         webAccessTools,
+        shellpoopTools,
         maxConcurrent: this.subagentRuntime.maxConcurrent,
         onAgentEvent: (subagent, event, model) => {
           this.publishAgentEvent(runId, subagent.id, event)
@@ -1213,6 +1248,7 @@ export class Project {
             tools: [
               ...(options.agent.initialState?.tools ?? []),
               ...webAccessTools,
+              ...shellpoopTools,
               ...createBlackboardTools({
                 runStore: this.runStore,
                 challengeId,
@@ -1235,8 +1271,12 @@ export class Project {
           closeOnSubmission: options.writeup !== true,
         },
         onTerminalSubmission: () => subagentManager?.close(),
-        onBeforeCleanup: () => {
+        onBeforeCleanup: async () => {
           webAccessSignal.abort()
+          shellpoopSignal.abort()
+          // 会话 close() 尽力删除本 run 创建的 shell（内部 DELETE 不受刚 abort
+          // 的信号影响），随后回收 SubAgent。抛错由 performClose 记为 cleanupError。
+          await shellpoopSession?.close()
           return subagentManager?.close()
         },
         onClosed: async (details) => {
@@ -1365,6 +1405,13 @@ export class Project {
           await subagentManager.close()
         } catch (cleanupError) {
           cleanupErrors.push(`SubAgent 回收失败: ${errorText(cleanupError)}`)
+        }
+      }
+      if (shellpoopSession) {
+        try {
+          await shellpoopSession.close()
+        } catch (cleanupError) {
+          cleanupErrors.push(`ShellPoop 回收失败: ${errorText(cleanupError)}`)
         }
       }
       if (capability?.instance) {

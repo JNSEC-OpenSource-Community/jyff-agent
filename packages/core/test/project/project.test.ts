@@ -2,6 +2,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { BaseAgent } from "@ctf-agent/agents"
+import { createShellPoopSession } from "@ctf-agent/shellpoop"
 import type {
   CommandResult,
   DockerSandboxOptions,
@@ -11,13 +12,27 @@ import type {
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
 import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux"
-import { afterEach, describe, expect, it } from "vite-plus/test"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
 import { testPlatform } from "../fake-platform.ts"
 
+// 桩掉 createShellPoopSession：生命周期测试只关心 close() 是否被调用，
+// 不真正连接 shellpoop 服务。其余导出透传真实实现。
+vi.mock("@ctf-agent/shellpoop", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@ctf-agent/shellpoop")>()
+  return {
+    ...mod,
+    createShellPoopSession: vi.fn(() => ({
+      tools: [],
+      close: vi.fn().mockResolvedValue(undefined),
+    })),
+  }
+})
+
 const roots: string[] = []
 afterEach(async () => {
+  vi.clearAllMocks()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -873,5 +888,62 @@ describe("Project.setThinkingLevel(运行中切换思考强度)", () => {
       code: "no_active_run",
     })
     await project.close()
+  })
+})
+
+describe("Project · ShellPoop 会话生命周期", () => {
+  it("run 创建时按 challenge 建会话；solver 关闭时调用会话 close()", async () => {
+    const root = await fixture()
+    const sessionClose = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(createShellPoopSession).mockReturnValue({ tools: [], close: sessionClose })
+    const factoryContexts: Array<{ challengeId: string; runId: string }> = []
+    const project = await Project.open({
+      root,
+      config: {
+        version: 1,
+        project: { id: "test-project", name: "Test Project" },
+        platform: { plugin: "test", config: {} },
+        sandbox: { image: "test-image", privileged: true, networkMode: "none" },
+      },
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      shellpoopConfig: async (_signal, context) => {
+        factoryContexts.push(context)
+        return { baseUrl: "http://shellpoop.test:8000", challengeId: context.challengeId }
+      },
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", { agent: agentOptions })
+      expect(factoryContexts).toHaveLength(1)
+      const context = factoryContexts[0]!
+      expect(context.challengeId).toBe("warmup-flag")
+      expect(context.runId).toMatch(/^[0-9a-f-]{36}$/)
+      await solver.close()
+      expect(sessionClose).toHaveBeenCalledTimes(1)
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("shellpoopConfig 返回 null 时不创建会话", async () => {
+    const root = await fixture()
+    const project = await Project.open({
+      root,
+      config: {
+        version: 1,
+        project: { id: "test-project", name: "Test Project" },
+        platform: { plugin: "test", config: {} },
+        sandbox: { image: "test-image", privileged: true, networkMode: "none" },
+      },
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      shellpoopConfig: async () => null,
+    })
+    try {
+      await project.createSolver("warmup-flag", { agent: agentOptions })
+      expect(createShellPoopSession).not.toHaveBeenCalled()
+    } finally {
+      await project.close()
+    }
   })
 })

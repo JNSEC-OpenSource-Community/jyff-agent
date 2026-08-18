@@ -132,6 +132,7 @@ Docker socket 等价于给予容器较高的宿主机控制能力，生产部署
 ├── model-config.json              # 全局模型池 v3
 ├── auth.json                      # Pi Provider 登录状态
 ├── web-access.json                # Web Access allowlist 和 SSRF 配置
+├── shellpoop.json                 # ShellPoop 反弹 shell 插件配置
 ├── scheduler-config.json          # 全局调度默认值
 ├── global-config.json             # WebUI 登录配置
 ├── secrets.json                   # SecretStore，禁止提交
@@ -171,7 +172,7 @@ docker build --check -f apps/backend/Dockerfile .
 | -------------------------------------------- | ---------------------------------------------------------------------- |
 | `apps/backend/src/main.ts`                   | 初始化 SecretStore、模型池、ControlPlane、Scheduler、Father 并启动服务 |
 | `apps/backend/src/http/app.ts`               | 组装鉴权、全局/Project 路由、SSE 和前端静态资源                        |
-| `apps/backend/src/http/routes/`              | Project、Scheduler、Challenge、Run、Model、Father 和 Web Access API    |
+| `apps/backend/src/http/routes/`              | Project、Scheduler、Challenge、Run、Model、Father 等 API               |
 | `apps/frontend/src/main.tsx`                 | React Router、鉴权初始化和页面懒加载入口                               |
 | `packages/core/src/control-plane/`           | Project 注册表、SecretStore 和多 Project 生命周期                      |
 | `packages/core/src/project/`                 | 单 Project、workspace、远程环境和 Solver 装配                          |
@@ -181,6 +182,7 @@ docker build --check -f apps/backend/Dockerfile .
 | `packages/platform/src/`                     | PlatformPlugin 契约、CTFd、GZCTF、注册表和验证器                       |
 | `packages/sandbox/src/`                      | DockerSandbox 和容器内 ExecutionEnv                                    |
 | `packages/web-access/src/`                   | 搜索、页面读取、GitHub/PDF/视频内容提取                                |
+| `packages/shellpoop/src/`                    | 反弹 shell 管理（ShellPoop REST API 的 Agent 工具）                    |
 | `packages/prompts/src/`                      | Solver、SubAgent、Father、TLDR 和 compaction 提示词                    |
 
 ## 文档

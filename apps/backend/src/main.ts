@@ -23,6 +23,7 @@ import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
 import { createFileSchedulerConfiguration } from "./domain/scheduler-config.ts"
+import { createFileShellPoopConfiguration } from "./domain/shellpoop-config.ts"
 import { createFileWebAccessConfiguration } from "./domain/web-access-config.ts"
 import { createFileWebUiAuthentication } from "./domain/webui-auth.ts"
 import {
@@ -61,6 +62,9 @@ const modelConfiguration = await createFileModelConfiguration({
 const webAccessConfiguration = await createFileWebAccessConfiguration({
   storagePath: join(stateDirectory, "web-access.json"),
   secretStore,
+})
+const shellpoopConfiguration = await createFileShellPoopConfiguration({
+  storagePath: join(stateDirectory, "shellpoop.json"),
 })
 const builtInPluginConfiguration = await createFileBuiltInPluginConfiguration(
   join(stateDirectory, "built-in-plugins.json"),
@@ -190,6 +194,19 @@ const controlPlane = await ControlPlane.create({
         sessionSignal: signal,
       }
     },
+    // ShellPoop 反弹 shell 插件默认关闭；启用时把服务地址与超时组装成
+    // ShellPoopConfig 注入 Solver/SubAgent 工具，并把所属 challenge 写入
+    // note 标签，使 shell 与 challenge 的绑定在服务端持久可见。
+    shellpoopConfig: async (signal, { challengeId }) => {
+      const snapshot = await shellpoopConfiguration.projectSnapshot()
+      if (!snapshot.enabled) return null
+      return {
+        baseUrl: snapshot.baseUrl,
+        timeoutMs: snapshot.timeoutMs,
+        sessionSignal: signal,
+        challengeId,
+      }
+    },
   },
   createProjectOptions: async (context) => {
     const runtime = await projectRuntimeConfiguration(context)
@@ -238,6 +255,7 @@ const webui = await startWebUi({
   extensions,
   builtInPluginConfiguration,
   webAccessConfiguration,
+  shellpoopConfiguration,
   projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
   auditStore: () => AuditStore.open(auditStorePath),
   auditArchiveDirectory: join(stateDirectory, "audit-archives"),

@@ -421,6 +421,21 @@ export const webAccessKeySchema = z
   })
   .strict()
 
+/** ShellPoop 反弹 shell 插件全局配置。 */
+export const shellpoopConfigurationSchema = z
+  .object({
+    enabled: z.boolean({ message: "enabled 必须是布尔值" }).optional(),
+    baseUrl: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2048)
+      .regex(/^https?:\/\//i, { message: "baseUrl 必须是 http(s):// 地址" })
+      .optional(),
+    timeoutMs: z.number().positive().max(600_000).optional(),
+  })
+  .strict()
+
 /** auth.json 导入。 */
 export const modelImportSchema = z.object({
   json: z.string().trim().min(1).max(250_000),

@@ -12,6 +12,7 @@
     "@ctf-agent/platform": "workspace:*",
     "@ctf-agent/prompts": "workspace:*",
     "@ctf-agent/sandbox": "workspace:*",
+    "@ctf-agent/shellpoop": "workspace:*",
     "@ctf-agent/web-access": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.82.1",
     "typebox": "^1.1.38"

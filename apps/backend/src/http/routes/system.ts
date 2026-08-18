@@ -116,6 +116,9 @@ export function systemRoutes(services: Services): App {
       webAccess: services.webAccessConfiguration
         ? await services.webAccessConfiguration.snapshot()
         : null,
+      shellpoop: services.shellpoopConfiguration
+        ? await services.shellpoopConfiguration.snapshot()
+        : null,
     })
   })
 

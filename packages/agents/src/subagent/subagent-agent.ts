@@ -28,6 +28,8 @@ export interface CreateCtfSubagentOptions {
   skills?: readonly AgentSkill[]
   /** 可选注入 web-access 工具；role.tools 白名单未包含时不会启用。 */
   webAccessTools?: readonly AgentTool[]
+  /** 可选注入 ShellPoop 反弹 shell 工具；role.tools 白名单未包含时不会启用。 */
+  shellpoopTools?: readonly AgentTool[]
   compaction?: boolean
 }
 
@@ -65,6 +67,7 @@ export class CtfSubagent extends BaseAgent {
     const model = resolveRoleModel(models, fallbackModel, options.role.model)
     const allTools = [
       ...(options.webAccessTools ?? []),
+      ...(options.shellpoopTools ?? []),
       ...createSubagentTools({
         sandbox: options.sandbox,
         cwd: options.containerCwd,

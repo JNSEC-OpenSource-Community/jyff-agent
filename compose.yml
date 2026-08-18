@@ -36,6 +36,26 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
+  shellpoop:
+    build:
+      context: ../shellpoop
+    image: shellpoop:latest
+    init: true
+    environment:
+      SHELLPOOP_HOST: 0.0.0.0
+      SHELLPOOP_PORT: "8000"
+      SHELLPOOP_LISTEN_HOST: 0.0.0.0
+      SHELLPOOP_PORT_MIN: "20000"
+      SHELLPOOP_PORT_MAX: "21000"
+      # 目标主机回连的对外 IP/域名；公网/NAT 场景请显式设置。
+      SHELLPOOP_ADVERTISE_HOST: "${SHELLPOOP_ADVERTISE_HOST:-}"
+    ports:
+      # REST API：webui 容器经 compose 网络访问 shellpoop:8000；宿主机也可直接访问。
+      - "127.0.0.1:8000:8000"
+      # 反弹 shell 监听端口池：目标主机据此回连（需防火墙放行）。
+      - "0.0.0.0:20000-21000:20000-21000"
+    restart: unless-stopped
+
 volumes:
   ctf-agent-data:
     name: ctf-agent-data

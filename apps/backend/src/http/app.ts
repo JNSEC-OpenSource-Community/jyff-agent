@@ -1,6 +1,7 @@
 import type { AuditStore, RunSessionExportMetadata } from "@ctf-agent/core"
 import { type Context, Hono } from "hono"
 import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
+import type { ShellPoopConfiguration } from "../domain/shellpoop-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
 import type {
   DashboardControlPlane,
@@ -26,6 +27,7 @@ import { modelsRoutes, scopedModelsRoutes } from "./routes/models.ts"
 import { projectsRoutes, scopedProjectRoutes } from "./routes/projects.ts"
 import { runRoutes } from "./routes/runs.ts"
 import { schedulerRoutes } from "./routes/scheduler.ts"
+import { shellpoopRoutes } from "./routes/shellpoop.ts"
 import { healthRoutes, scopedSystemRoutes, systemRoutes } from "./routes/system.ts"
 import { webAccessRoutes } from "./routes/web-access.ts"
 import { Services } from "./services.ts"
@@ -48,6 +50,7 @@ export interface WebUiOptions {
   extensions?: DashboardPlatformExtensions
   builtInPluginConfiguration?: BuiltInPluginConfiguration
   webAccessConfiguration?: WebAccessConfiguration
+  shellpoopConfiguration?: ShellPoopConfiguration
   secureCookies?: boolean
   projectRuntimeConfiguration?: (
     projectId: string,
@@ -120,6 +123,7 @@ export function buildRouter(services: Services, options: WebUiOptions): App {
   api.route("/", runRoutes(services))
   api.route("/", modelsRoutes(services))
   api.route("/", webAccessRoutes(services))
+  api.route("/", shellpoopRoutes(services))
   app.route("/api", api)
 
   // 项目级路由：注入 scope 后挂载到两种路径形态（新式与旧式 /api 后缀）。

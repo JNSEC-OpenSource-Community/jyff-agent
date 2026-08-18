@@ -79,6 +79,8 @@ export interface SubagentManagerOptions {
   skills?: readonly AgentSkill[]
   /** 可选注入 web-access 工具，SubAgent 通过 role.tools 白名单决定是否启用。 */
   webAccessTools?: AgentTool[]
+  /** 可选注入 ShellPoop 反弹 shell 工具，SubAgent 通过 role.tools 白名单决定是否启用。 */
+  shellpoopTools?: AgentTool[]
   maxConcurrent?: number
   onRecord?: (record: SubagentRecord, event: SubagentLifecycleEvent) => Promise<void> | void
   /** 将 Pi 的细粒度运行事件转发给控制面，不参与 Agent 生命周期结算。 */
@@ -477,6 +479,7 @@ export class CtfSubagentManager {
           role: managed.role,
           skills: this.options.skills,
           webAccessTools: this.options.webAccessTools,
+          shellpoopTools: this.options.shellpoopTools,
         })
         this.subscribe(managed, managed.agent)
       }
