@@ -125,11 +125,11 @@ describe("file model configuration", () => {
   })
 
   for (const endpointCase of [
-    { api: "openai-completions", endpointPath: "/proxy/chat/completions" },
-    { api: "openai-responses", endpointPath: "/proxy/responses" },
-    { api: "anthropic-messages", endpointPath: "/proxy/v1/messages" },
+    { api: "openai-completions", endpointPath: "/proxy/completions-gateway" },
+    { api: "openai-responses", endpointPath: "/proxy/responses-gateway" },
+    { api: "anthropic-messages", endpointPath: "/proxy/messages-gateway" },
   ] as const) {
-    it(`${endpointCase.api} 使用配置的最终请求 Endpoint`, async () => {
+    it(`${endpointCase.api} 使用任意配置的最终请求 Endpoint`, async () => {
       const root = await mkdtemp(join(tmpdir(), "ctf-model-endpoint-"))
       roots.push(root)
       const requestPaths: string[] = []

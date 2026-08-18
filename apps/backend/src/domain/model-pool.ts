@@ -656,19 +656,12 @@ function providerModelsEndpoint(provider: StoredCustomProvider): string {
 function providerRequestBaseUrl(provider: StoredCustomProvider): string {
   if (!provider.endpointUrl) return provider.baseUrl
 
-  const suffix =
-    provider.api === "openai-completions"
-      ? "/chat/completions"
-      : provider.api === "openai-responses"
-        ? "/responses"
-        : "/v1/messages"
   const endpoint = provider.endpointUrl.replace(/\/+$/, "")
-  if (!endpoint.toLowerCase().endsWith(suffix)) {
-    throw new Error(`请求 Endpoint 必须以 ${suffix} 结尾`)
-  }
-  const base = endpoint.slice(0, -suffix.length).replace(/\/+$/, "")
-  if (!base) throw new Error("请求 Endpoint 缺少服务地址")
-  return base
+  if (!endpoint) throw new Error("请求 Endpoint 缺少服务地址")
+  // pi-ai 的 SDK 会在 baseURL 后追加协议默认路径。用 fragment 作为哨兵，
+  // 让 SDK 追加的路径落入 fragment；HTTP 请求实际发送时 fragment 不会被发送，
+  // 因此 URL pathname 仍保持为用户配置的任意最终 Endpoint。
+  return `${endpoint}#`
 }
 
 function modelRecords(payload: unknown): unknown[] {
