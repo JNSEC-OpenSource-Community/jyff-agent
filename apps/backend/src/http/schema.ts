@@ -88,6 +88,21 @@ export interface ModelPoolEntryOutput {
   reasoningEffort: string
 }
 
+const endpointUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2_048)
+  .refine(httpUrl, { message: "请求 Endpoint 不是有效 URL" })
+  .refine(
+    (value) => {
+      const parsed = new URL(value)
+      return !parsed.username && !parsed.password && !parsed.search && !parsed.hash
+    },
+    { message: "请求 Endpoint 不能包含凭据、查询参数或片段" },
+  )
+  .transform((value) => value.replace(/\/+$/, ""))
+
 export const customModelProviderSchema = z.object({
   name: z.string().trim().min(1).max(80),
   api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]),
@@ -98,6 +113,7 @@ export const customModelProviderSchema = z.object({
     .max(2_048)
     .refine(httpUrl, { message: "Base URL 不是有效 URL" })
     .transform((value) => value.replace(/\/+$/, "")),
+  endpointUrl: endpointUrl.optional(),
   apiKey: z.string().trim().min(1).max(8_192),
 })
 

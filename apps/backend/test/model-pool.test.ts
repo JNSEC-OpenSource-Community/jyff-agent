@@ -124,6 +124,70 @@ describe("file model configuration", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer provider-secret")
   })
 
+  for (const endpointCase of [
+    { api: "openai-completions", endpointPath: "/proxy/chat/completions" },
+    { api: "openai-responses", endpointPath: "/proxy/responses" },
+    { api: "anthropic-messages", endpointPath: "/proxy/v1/messages" },
+  ] as const) {
+    it(`${endpointCase.api} 使用配置的最终请求 Endpoint`, async () => {
+      const root = await mkdtemp(join(tmpdir(), "ctf-model-endpoint-"))
+      roots.push(root)
+      const requestPaths: string[] = []
+      const server = createServer((request, response) => {
+        requestPaths.push(request.url ?? "")
+        response.writeHead(400)
+        response.end("endpoint test")
+      })
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject)
+        server.listen(0, "127.0.0.1", resolve)
+      })
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("测试 Provider 未监听端口")
+
+      try {
+        const configuration = await createFileModelConfiguration({
+          storagePath: join(root, "model-config.json"),
+          secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+          providerRequestGate: new ProviderRequestGate({
+            minimumIntervalMs: 0,
+            transientCooldownMs: 0,
+          }),
+        })
+        const provider = `custom-${endpointCase.api}`
+        await configuration.addCustomProvider({
+          name: endpointCase.api,
+          api: endpointCase.api,
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          endpointUrl: `http://127.0.0.1:${address.port}${endpointCase.endpointPath}`,
+          apiKey: "provider-secret",
+        })
+        await configuration.update({
+          models: [modelEntry({ provider })],
+          solverModelId: "solver",
+          tldrModelId: "solver",
+          subagentModels: {},
+        })
+        const agent = configuration.createAgentOptions()
+        const model = agent.initialState?.model
+        if (!model) throw new Error("测试模型未配置")
+
+        await modelsFromAgentOptions(agent, model)
+          .streamSimple(model, { systemPrompt: "test", messages: [], tools: [] })
+          .result()
+
+        expect(requestPaths).toContain(endpointCase.endpointPath)
+      } finally {
+        server.closeAllConnections()
+        if (server.listening) {
+          await new Promise<void>((resolve, reject) =>
+            server.close((error) => (error ? reject(error) : resolve())),
+          )
+        }
+      }
+    })
+  }
+
   it("只把 API Key 写入 Secret Store", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-config-"))
     roots.push(root)

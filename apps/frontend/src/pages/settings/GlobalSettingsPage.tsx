@@ -59,6 +59,7 @@ export function GlobalSettingsPage() {
   const [customName, setCustomName] = useState("")
   const [customApi, setCustomApi] = useState<CustomModelProviderApi>("openai-completions")
   const [customBaseUrl, setCustomBaseUrl] = useState("")
+  const [customEndpointUrl, setCustomEndpointUrl] = useState("")
   const [customKey, setCustomKey] = useState("")
 
   const load = useCallback(async () => {
@@ -115,10 +116,12 @@ export function GlobalSettingsPage() {
         name: customName,
         api: customApi,
         baseUrl: customBaseUrl,
+        ...(customEndpointUrl.trim() ? { endpointUrl: customEndpointUrl } : {}),
         apiKey: customKey,
       })
       setCustomName("")
       setCustomBaseUrl("")
+      setCustomEndpointUrl("")
       setCustomKey("")
       setSetupMode(null)
       await load()
@@ -137,6 +140,7 @@ export function GlobalSettingsPage() {
     setCustomName(provider.name)
     setCustomApi(provider.api)
     setCustomBaseUrl(provider.baseUrl)
+    setCustomEndpointUrl(provider.endpointUrl ?? "")
     setCustomKey("")
   }
 
@@ -152,10 +156,12 @@ export function GlobalSettingsPage() {
           name: customName,
           api: customApi,
           baseUrl: customBaseUrl,
+          ...(customEndpointUrl.trim() ? { endpointUrl: customEndpointUrl } : {}),
           ...(customKey.trim() ? { apiKey: customKey } : {}),
         },
       )
       setEditingCustomId(null)
+      setCustomEndpointUrl("")
       setCustomKey("")
       await load()
     } catch (e) {
@@ -355,6 +361,7 @@ export function GlobalSettingsPage() {
                             name={customName}
                             api={customApi}
                             baseUrl={customBaseUrl}
+                            endpointUrl={customEndpointUrl}
                             apiKey={customKey}
                             apiKeyPlaceholder="留空则保留当前 API Key"
                             submitLabel="保存修改"
@@ -362,6 +369,7 @@ export function GlobalSettingsPage() {
                             onNameChange={setCustomName}
                             onApiChange={setCustomApi}
                             onBaseUrlChange={setCustomBaseUrl}
+                            onEndpointUrlChange={setCustomEndpointUrl}
                             onApiKeyChange={setCustomKey}
                             onCancel={() => setEditingCustomId(null)}
                             onDelete={() => void removeCustomProvider(p.id)}
@@ -463,6 +471,7 @@ export function GlobalSettingsPage() {
                         setCustomName("")
                         setCustomApi("openai-completions")
                         setCustomBaseUrl("")
+                        setCustomEndpointUrl("")
                         setCustomKey("")
                       }}
                     />
@@ -474,6 +483,7 @@ export function GlobalSettingsPage() {
                           name={customName}
                           api={customApi}
                           baseUrl={customBaseUrl}
+                          endpointUrl={customEndpointUrl}
                           apiKey={customKey}
                           apiKeyPlaceholder="API Key"
                           submitLabel="添加自定义供应商"
@@ -482,6 +492,7 @@ export function GlobalSettingsPage() {
                           onNameChange={setCustomName}
                           onApiChange={setCustomApi}
                           onBaseUrlChange={setCustomBaseUrl}
+                          onEndpointUrlChange={setCustomEndpointUrl}
                           onApiKeyChange={setCustomKey}
                           onCancel={() => setSetupMode(null)}
                           onSubmit={() => void addCustomProvider()}
@@ -702,10 +713,17 @@ function ProviderSetupOption({
   )
 }
 
+function endpointPlaceholder(api: CustomModelProviderApi): string {
+  if (api === "openai-completions") return "https://proxy.example/v1/chat/completions"
+  if (api === "openai-responses") return "https://proxy.example/v1/responses"
+  return "https://proxy.example/v1/messages"
+}
+
 function CustomProviderForm({
   name,
   api,
   baseUrl,
+  endpointUrl,
   apiKey,
   apiKeyPlaceholder,
   submitLabel,
@@ -714,6 +732,7 @@ function CustomProviderForm({
   onNameChange,
   onApiChange,
   onBaseUrlChange,
+  onEndpointUrlChange,
   onApiKeyChange,
   onCancel,
   onDelete,
@@ -722,6 +741,7 @@ function CustomProviderForm({
   name: string
   api: CustomModelProviderApi
   baseUrl: string
+  endpointUrl: string
   apiKey: string
   apiKeyPlaceholder: string
   submitLabel: string
@@ -730,6 +750,7 @@ function CustomProviderForm({
   onNameChange: (value: string) => void
   onApiChange: (value: CustomModelProviderApi) => void
   onBaseUrlChange: (value: string) => void
+  onEndpointUrlChange: (value: string) => void
   onApiKeyChange: (value: string) => void
   onCancel: () => void
   onDelete?: () => void
@@ -759,7 +780,14 @@ function CustomProviderForm({
           type="url"
           value={baseUrl}
           onChange={(event) => onBaseUrlChange(event.target.value)}
-          placeholder="Base URL"
+          placeholder="Base URL（用于模型发现）"
+        />
+        <Input
+          aria-label="请求 Endpoint（可选）"
+          type="url"
+          value={endpointUrl}
+          onChange={(event) => onEndpointUrlChange(event.target.value)}
+          placeholder={endpointPlaceholder(api)}
         />
         <Input
           aria-label="API Key"

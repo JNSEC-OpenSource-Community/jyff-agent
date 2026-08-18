@@ -275,6 +275,8 @@ export interface CustomModelProviderView {
   name: string
   api: CustomModelProviderApi
   baseUrl: string
+  /** 可选的最终模型请求地址，例如 /v1/chat/completions。 */
+  endpointUrl?: string
   apiKeyConfigured: boolean
 }
 
@@ -282,6 +284,7 @@ export interface CustomModelProviderUpdate {
   name: string
   api: CustomModelProviderApi
   baseUrl: string
+  endpointUrl?: string
   apiKey: string
 }
 
@@ -289,6 +292,7 @@ export interface CustomModelProviderEdit {
   name: string
   api: CustomModelProviderApi
   baseUrl: string
+  endpointUrl?: string
   apiKey?: string
 }
 

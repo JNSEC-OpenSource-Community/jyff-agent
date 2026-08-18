@@ -92,6 +92,7 @@ describe("模型配置与模型鉴权路由", () => {
       name: "Internal Gateway",
       api: "openai-responses",
       baseUrl: "https://models.example.test/v1/",
+      endpointUrl: "https://proxy.example.test/v1/responses",
       apiKey: "provider-secret",
     })
     expect(created.status).toBe(200)
@@ -103,6 +104,7 @@ describe("模型配置与模型鉴权路由", () => {
             id: "custom-internal-gateway",
             api: "openai-responses",
             baseUrl: "https://models.example.test/v1",
+            endpointUrl: "https://proxy.example.test/v1/responses",
           },
         ],
       },
@@ -125,6 +127,7 @@ describe("模型配置与模型鉴权路由", () => {
         name: "Internal Responses Gateway",
         api: "openai-responses",
         baseUrl: "https://responses.example.test/v1/",
+        endpointUrl: "https://proxy.example.test/v1/responses",
       },
     )
     expect(updated.status).toBe(200)
@@ -135,6 +138,7 @@ describe("模型配置与模型鉴权路由", () => {
             id: "custom-internal-gateway",
             name: "Internal Responses Gateway",
             baseUrl: "https://responses.example.test/v1",
+            endpointUrl: "https://proxy.example.test/v1/responses",
             apiKeyConfigured: true,
           },
         ],

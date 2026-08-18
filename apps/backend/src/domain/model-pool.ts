@@ -60,6 +60,7 @@ interface StoredCustomProvider {
   name: string
   api: CustomModelProviderApi
   baseUrl: string
+  endpointUrl?: string
 }
 
 interface StoredModelConfiguration {
@@ -167,7 +168,9 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       name: input.name.trim(),
       api: input.api,
       baseUrl: input.baseUrl.replace(/\/+$/, ""),
+      ...(input.endpointUrl ? { endpointUrl: input.endpointUrl.replace(/\/+$/, "") } : {}),
     }
+    providerRequestBaseUrl(provider)
     const next = {
       ...this.values,
       providers: [...this.values.providers, provider],
@@ -192,7 +195,9 @@ class PersistentModelConfiguration implements AgentModelConfiguration {
       name: input.name.trim(),
       api: input.api,
       baseUrl: input.baseUrl.replace(/\/+$/, ""),
+      ...(input.endpointUrl ? { endpointUrl: input.endpointUrl.replace(/\/+$/, "") } : {}),
     }
+    providerRequestBaseUrl(providers[providerIndex])
     const next = { ...this.values, providers }
     if (input.apiKey !== undefined) {
       await this.options.secretStore.set({
@@ -648,6 +653,24 @@ function providerModelsEndpoint(provider: StoredCustomProvider): string {
   return `${base}/models`
 }
 
+function providerRequestBaseUrl(provider: StoredCustomProvider): string {
+  if (!provider.endpointUrl) return provider.baseUrl
+
+  const suffix =
+    provider.api === "openai-completions"
+      ? "/chat/completions"
+      : provider.api === "openai-responses"
+        ? "/responses"
+        : "/v1/messages"
+  const endpoint = provider.endpointUrl.replace(/\/+$/, "")
+  if (!endpoint.toLowerCase().endsWith(suffix)) {
+    throw new Error(`请求 Endpoint 必须以 ${suffix} 结尾`)
+  }
+  const base = endpoint.slice(0, -suffix.length).replace(/\/+$/, "")
+  if (!base) throw new Error("请求 Endpoint 缺少服务地址")
+  return base
+}
+
 function modelRecords(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload
   if (typeof payload !== "object" || payload === null) return []
@@ -693,7 +716,7 @@ function resolveModel(
   const provider = configuration.provider
   const modelId = configuration.modelId
   const customProvider = customProviders.find((candidate) => candidate.id === provider)
-  const baseUrl = customProvider?.baseUrl ?? ""
+  const baseUrl = customProvider ? providerRequestBaseUrl(customProvider) : ""
   const contextWindow = configuration.contextWindow
   const reasoning = configuration.thinkingEnabled
 
@@ -786,6 +809,7 @@ function parseStoredProviders(value: unknown): StoredCustomProvider[] {
     const id = stringValue(candidate.id)
     const name = stringValue(candidate.name)
     const baseUrl = stringValue(candidate.baseUrl)?.replace(/\/+$/, "")
+    const endpointUrl = stringValue(candidate.endpointUrl)?.replace(/\/+$/, "")
     const api = candidate.api
     if (
       !id ||
@@ -794,7 +818,15 @@ function parseStoredProviders(value: unknown): StoredCustomProvider[] {
       !["openai-completions", "openai-responses", "anthropic-messages"].includes(String(api))
     )
       return []
-    return [{ id, name, baseUrl, api: api as CustomModelProviderApi }]
+    return [
+      {
+        id,
+        name,
+        baseUrl,
+        api: api as CustomModelProviderApi,
+        ...(endpointUrl ? { endpointUrl } : {}),
+      },
+    ]
   })
 }
 

@@ -648,6 +648,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       name: provider.name,
       api: provider.api,
       baseUrl: provider.baseUrl,
+      ...(provider.endpointUrl ? { endpointUrl: provider.endpointUrl } : {}),
       apiKeyConfigured: true,
     })
     return this.snapshot()
@@ -664,6 +665,7 @@ export class FakeModelConfiguration implements DashboardModelConfiguration {
       name: provider.name,
       api: provider.api,
       baseUrl: provider.baseUrl,
+      ...(provider.endpointUrl ? { endpointUrl: provider.endpointUrl } : {}),
       apiKeyConfigured:
         Boolean(provider.apiKey) || this.value.customProviders[index]?.apiKeyConfigured === true,
     }
