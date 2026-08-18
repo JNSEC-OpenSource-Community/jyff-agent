@@ -18,6 +18,17 @@ import { Type } from "typebox"
 export interface ShellPoopConfig {
   /** ShellPoop REST API 基地址，如 http://127.0.0.1:8000 或 http://shellpoop:8000。 */
   baseUrl: string
+  /**
+   * ShellPoop 服务 API 密钥。服务端配了 `SHELLPOOP_API_KEY` 时必须携带，
+   * 请求会带上 `Authorization: Bearer <apiKey>`；未配置则不发认证头。
+   */
+  apiKey?: string
+  /**
+   * 每次请求时解析 API 密钥的延迟闭包（优先于 `apiKey`）。与
+   * web-access 的 `resolveSecret` 一致：密钥保存在 SecretStore，改动即时
+   * 生效，无需等下一个 run 重建会话。
+   */
+  resolveApiKey?: () => string | undefined
   /** 单次请求超时（毫秒），默认 15_000。 */
   timeoutMs?: number
   /** run 结束 abort → 取消进行中的请求。 */
@@ -41,7 +52,6 @@ export interface ShellPoopSession {
 export interface ShellPoopShell {
   id: string
   endpoint?: string
-  connect_command?: string
   connected?: boolean
   peer?: string | null
   note?: string | null
@@ -66,21 +76,45 @@ function result(details: object): AgentToolResult<Record<string, unknown>> {
   }
 }
 
+/** 服务端 shell 字典中的反弹 payload 字段，不会出现在任何 Agent 工具结果中。 */
+const SHELLPOOP_PAYLOAD_FIELDS = new Set(["connect_command", "payloads"])
+
+/**
+ * 从服务端返回的 shell 对象中剔除反弹 payload（connect_command / payloads）：
+ * Agent 只需要 id 与 ip:port（endpoint）和连接状态，不需要看到具体的反弹命令。
+ */
+function withoutPayload(shell: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(shell).filter(([key]) => !SHELLPOOP_PAYLOAD_FIELDS.has(key)),
+  )
+}
+
+/** 解析当前生效的 API 密钥：优先用延迟闭包（每次请求重新读取），否则用静态值。 */
+function apiKeyFor(config: ShellPoopConfig): string | undefined {
+  return config.resolveApiKey ? config.resolveApiKey() : config.apiKey
+}
+
 async function request(
   baseUrl: string,
   path: string,
   init: { method?: string; headers?: Record<string, string>; body?: string },
   timeoutMs: number,
   signal: AbortSignal | undefined,
+  apiKey?: string,
 ): Promise<unknown> {
   const controller = new AbortController()
   const onAbort = () => controller.abort()
   signal?.addEventListener("abort", onAbort, { once: true })
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...init.headers,
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    }
     const response = await fetch(`${baseUrl}${path}`, {
       method: init.method ?? "GET",
-      headers: { "Content-Type": "application/json", ...init.headers },
+      headers,
       ...(init.body !== undefined ? { body: init.body } : {}),
       signal: controller.signal,
     })
@@ -133,6 +167,7 @@ async function closeOwnedShells(config: ShellPoopConfig, owned: Set<string>): Pr
         { method: "DELETE" },
         timeoutMs,
         undefined,
+        apiKeyFor(config),
       )
     } catch {
       // 尽力而为：单个 shell 删除失败不阻塞 run 关闭。
@@ -159,7 +194,7 @@ function buildShellPoopTools(config: ShellPoopConfig, owned?: Set<string>): Agen
       name: "shellpoop_create",
       label: "Create Reverse Shell",
       description:
-        "Create a new reverse-shell session on the ShellPoop server. Returns an endpoint (ip:port) and a ready-to-run connect_command (bash /dev/tcp) that the target host can execute to connect back. Use the returned id for shellpoop_exec / shellpoop_output / shellpoop_delete.",
+        "Create a new reverse-shell session on the ShellPoop server. Returns the session id and the endpoint (ip:port) the target host should connect back to. Use the returned id for shellpoop_exec / shellpoop_output / shellpoop_delete.",
       parameters: Type.Object({ note: Type.Optional(Type.String()) }),
       executionMode: "sequential",
       async execute(_id, params) {
@@ -172,9 +207,10 @@ function buildShellPoopTools(config: ShellPoopConfig, owned?: Set<string>): Agen
           { method: "POST", ...(note ? { body: JSON.stringify({ note }) } : {}) },
           timeoutMs,
           signal,
-        )) as { id?: string }
+          apiKeyFor(config),
+        )) as Record<string, unknown>
         if (owned && typeof data.id === "string") owned.add(data.id)
-        return result(data as object)
+        return result(withoutPayload(data))
       },
     },
     {
@@ -185,18 +221,24 @@ function buildShellPoopTools(config: ShellPoopConfig, owned?: Set<string>): Agen
       parameters: Type.Object({}),
       executionMode: "sequential",
       async execute() {
-        const data = (await request(baseUrl, "/shell", { method: "GET" }, timeoutMs, signal)) as {
-          shells?: Array<Record<string, unknown>>
-        }
-        if (!owned) return result(data as object)
-        const shells = (data.shells ?? []).filter(
+        const data = (await request(
+          baseUrl,
+          "/shell",
+          { method: "GET" },
+          timeoutMs,
+          signal,
+          apiKeyFor(config),
+        )) as { shells?: Array<Record<string, unknown>> }
+        const shells = (data.shells ?? []).map(withoutPayload)
+        if (!owned) return result({ ...(data as object), shells })
+        const ownedShells = shells.filter(
           (shell) => typeof shell.id === "string" && owned.has(shell.id),
         )
         return result({
           ...(data as object),
-          shells,
-          total: shells.length,
-          connected: shells.filter((shell) => shell.connected === true).length,
+          shells: ownedShells,
+          total: ownedShells.length,
+          connected: ownedShells.filter((shell) => shell.connected === true).length,
         })
       },
     },
@@ -228,6 +270,7 @@ function buildShellPoopTools(config: ShellPoopConfig, owned?: Set<string>): Agen
             },
             timeoutMs,
             signal,
+            apiKeyFor(config),
           )) as object,
         )
       },
@@ -249,6 +292,7 @@ function buildShellPoopTools(config: ShellPoopConfig, owned?: Set<string>): Agen
             { method: "GET" },
             timeoutMs,
             signal,
+            apiKeyFor(config),
           )) as object,
         )
       },
@@ -269,6 +313,7 @@ function buildShellPoopTools(config: ShellPoopConfig, owned?: Set<string>): Agen
           { method: "DELETE" },
           timeoutMs,
           signal,
+          apiKeyFor(config),
         )) as object
         owned?.delete(sessionId)
         return result(data)

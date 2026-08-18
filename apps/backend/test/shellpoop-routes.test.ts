@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vite-plus/test"
+import { FileSecretStore } from "@ctf-agent/core"
 import { createFileShellPoopConfiguration } from "../src/domain/shellpoop-config.ts"
 import { createFileWebUiAuthentication } from "../src/domain/webui-auth.ts"
 import { createWebUiApp, type WebUiApp } from "../src/server.ts"
@@ -20,8 +21,10 @@ describe("ShellPoop 配置路由", () => {
   async function appWithShellPoop(authenticated = false) {
     const root = await mkdtemp(join(tmpdir(), "ctf-shellpoop-route-"))
     roots.push(root)
+    const secretStore = await FileSecretStore.open(join(root, "secrets.json"))
     const shellpoopConfiguration = await createFileShellPoopConfiguration({
       storagePath: join(root, "shellpoop.json"),
+      secretStore,
     })
     let authentication: Awaited<ReturnType<typeof createFileWebUiAuthentication>> | undefined
     if (authenticated) {
@@ -48,6 +51,27 @@ describe("ShellPoop 配置路由", () => {
     const body = await jsonOf(res)
     expect(body.enabled).toBe(false)
     expect(body.baseUrl).toBe("http://127.0.0.1:8000")
+    expect(body.apiKeyConfigured).toBe(false)
+  })
+
+  it("POST /key 写入 API 密钥", async () => {
+    const { app } = await appWithShellPoop()
+    const res = await jsonRequest(app, "/api/global-config/shellpoop/key", "POST", {
+      apiKey: "s3cret",
+    })
+    expect(res.status).toBe(200)
+    const body = await jsonOf(await app.request("/api/global-config/shellpoop"))
+    expect(body.apiKeyConfigured).toBe(true)
+    // 快照绝不返回密钥值
+    expect(body).not.toHaveProperty("apiKey")
+  })
+
+  it("POST /key 空值清除 API 密钥", async () => {
+    const { app } = await appWithShellPoop()
+    await jsonRequest(app, "/api/global-config/shellpoop/key", "POST", { apiKey: "s3cret" })
+    await jsonRequest(app, "/api/global-config/shellpoop/key", "POST", { apiKey: null })
+    const body = await jsonOf(await app.request("/api/global-config/shellpoop"))
+    expect(body.apiKeyConfigured).toBe(false)
   })
 
   it("POST 更新配置", async () => {
