@@ -14,7 +14,7 @@ import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
 
 const MAX_EXTENSION_FILES = 200
 const MAX_EXTENSION_BYTES = 2 * 1024 * 1024
-const RESERVED_IDS = new Set(["ctfd", "gzctf", "ret2shell"])
+const RESERVED_IDS = new Set(["ctfd", "dasctf", "gzctf", "ret2shell"])
 const VALIDATION_REPORTS_DIRECTORY = ".validation-reports"
 
 export interface PlatformExtensionManifest {

@@ -286,6 +286,7 @@ export function isRetryablePlatformError(error: unknown): boolean {
 }
 
 export * from "./ctfd.ts"
+export * from "./dasctf.ts"
 export * from "./endpoint-readiness.ts"
 export * from "./gzctf.ts"
 export * from "./ret2shell.ts"

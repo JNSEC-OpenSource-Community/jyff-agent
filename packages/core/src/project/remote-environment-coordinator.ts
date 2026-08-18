@@ -691,6 +691,11 @@ export class RemoteEnvironmentCoordinator {
     }
 
     finalError ??= normalizedStartError(signal.reason, signal, timeoutSignal, this.startTimeoutMs)
+
+    // POST 可能已到达平台但响应丢失。补偿回收有界完成前继续占用 starting
+    // 槽，避免下一题与不确定的旧实例并发创建。若插件不遵守 abort 并在
+    // 之后才返回成功，再执行一次幂等清理。
+    await this.cleanupCapability(request.capability, request.onEvent)
     await this.withLock(async () => {
       if (this.starting.get(request.runId) === starting) {
         this.starting.delete(request.runId)
@@ -705,9 +710,6 @@ export class RemoteEnvironmentCoordinator {
     })
     request.reject(finalError)
 
-    // POST 可能已到达平台但响应丢失。立即清理一次；若不遵守 abort 的插件
-    // 之后才返回成功，再补一次幂等清理，避免产生无人持有的实例。
-    void this.cleanupCapability(request.capability, request.onEvent)
     void finalOperation?.then(
       async () => await this.cleanupCapability(request.capability, request.onEvent),
       () => undefined,

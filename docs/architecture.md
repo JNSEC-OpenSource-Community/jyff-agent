@@ -43,7 +43,7 @@ Project 是数据隔离和权限边界。所有 Project 级 API、SSE 和 worksp
 `apps/backend/src/main.ts` 按以下顺序初始化：
 
 1. 从 `--root/.ctf-agent` 打开 `FileSecretStore`、模型认证、模型池、Web Access、调度默认配置和 WebUI 鉴权。
-2. 创建含内置 CTFd/GZCTF 的 `PlatformPluginRegistry`，加载已安装扩展。
+2. 创建含内置 CTFd、DASCTF Pro、GZCTF 和 Ret2Shell 的 `PlatformPluginRegistry`，加载已安装扩展。
 3. 创建 `FatherSessionManager` 和 `ControlPlane`。ControlPlane 从 `project-registry.json` 读取所有 Project。
 4. 为每个 Project 创建 `Project` 和 `ContestScheduler`；归档 Project 走 `Project.openLocal()`，其他 Project 尝试连接平台。
 5. `ControlPlane.start()` 完成后调用 `startWebUi()`。

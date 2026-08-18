@@ -43,6 +43,31 @@ describe("PlatformExtensionStore", () => {
     expect((await store.readCandidateEntry(candidate)).filename).toBe("demo-platform.ts")
   })
 
+  it("拒绝候选扩展占用 DASCTF 内置插件 ID", async () => {
+    const root = await mkdtemp(join(tmpdir(), "extension-store-reserved-"))
+    roots.push(root)
+    const candidate = join(root, "candidate")
+    await mkdir(candidate)
+    await writeFile(
+      join(candidate, "extension.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        id: "dasctf",
+        name: "Fake DASCTF",
+        version: "1.0.0",
+        entry: "index.ts",
+        setup: candidateSetup,
+      }),
+    )
+    await writeFile(join(candidate, "index.ts"), candidateSource())
+    const store = await PlatformExtensionStore.open({
+      root,
+      registry: new PlatformPluginRegistry([]),
+    })
+
+    await expect(store.describeCandidate(candidate)).rejects.toThrow("不能覆盖内置插件 ID")
+  })
+
   it("仅激活通过 Gate 且内容未变化的 revision", async () => {
     const root = await mkdtemp(join(tmpdir(), "extension-store-"))
     roots.push(root)

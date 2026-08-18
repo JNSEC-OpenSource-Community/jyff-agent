@@ -45,14 +45,18 @@ Agent 永远不能拿到完整 `PlatformProject`。`Project.bindChallenge()` 只
 
 内置平台在 `apps/backend/src/main.ts` 中直接注册，不经过 `extension.json`：
 
-| 平台  | 代码                             | 认证                                      | 能力                                             |
-| ----- | -------------------------------- | ----------------------------------------- | ------------------------------------------------ |
-| CTFd  | `packages/platform/src/ctfd.ts`  | Access Token，默认 Secret 名 `CTFD_TOKEN` | REST API `/api/v1/`、题目、公告、附件、Flag 提交 |
-| GZCTF | `packages/platform/src/gzctf.ts` | 用户名/密码或 `GZCTF_Token` Cookie        | 题目、公告、附件、Flag 提交、远程环境生命周期    |
+| 平台       | 代码                                 | 认证                                                   | 能力                                                    |
+| ---------- | ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------- |
+| CTFd       | `packages/platform/src/ctfd.ts`      | Access Token，默认 Secret 名 `CTFD_TOKEN`              | REST API `/api/v1/`、题目、公告、附件、Flag 提交        |
+| DASCTF Pro | `packages/platform/src/dasctf.ts`    | AI Agent AccessKey，默认 Secret 名 `DASCTF_ACCESS_KEY` | Agent API、题目、公告、附件、Flag、异步远程环境生命周期 |
+| GZCTF      | `packages/platform/src/gzctf.ts`     | 用户名/密码或 `GZCTF_Token` Cookie                     | 题目、公告、附件、Flag 提交、远程环境生命周期           |
+| Ret2Shell  | `packages/platform/src/ret2shell.ts` | Token                                                  | 题目、Flag 与基于本地代理的远程环境生命周期             |
 
-两种配置都会拒绝带凭据、query 或 fragment 的 `baseUrl`。CTFd 将网络、限流和 HTTP 5xx 标记为可重试；GZCTF 还实现请求重试、短期缓存、登录恢复、提交轮询和 API 数据加密。GZCTF 的 X25519 + SHA-256 + AES-256-GCM 请求封装由 `encryptGZCTFApiData()` 实现。
+所有配置都会拒绝带凭据、query 或 fragment 的 `baseUrl`。CTFd 将网络、限流和 HTTP 5xx 标记为可重试；GZCTF 还实现请求重试、短期缓存、登录恢复、提交轮询和 API 数据加密。GZCTF 的 X25519 + SHA-256 + AES-256-GCM 请求封装由 `encryptGZCTFApiData()` 实现。
 
-内置插件不能被扩展覆盖：`PlatformPluginRegistry.registerExtension()` 会拒绝 ID `ctfd` 和 `gzctf`。
+DASCTF Pro 会合并并缓存 Dashboard 的题目/公告并发读取；平台没有全局实例列表，因此 Dashboard 只投影本进程已确认的实例，不会为了找环境而逐题拉取详情。环境启动 POST、状态轮询和普通快照请求互不持有共享 I/O 锁，且每次请求都有独立超时与取消信号；环境轮询使用渐进间隔，避免 solver 启动拖住全站或触发严格限流。
+
+内置插件不能被扩展覆盖：注册表按实际内置 ID 拒绝覆盖，扩展 manifest 还会静态拒绝 `ctfd`、`dasctf`、`gzctf` 和 `ret2shell`。
 
 ## 3. 扩展目录和 manifest
 
@@ -87,7 +91,7 @@ Father 生成的候选目录通常是：
 约束如下：
 
 - 只支持 `schemaVersion: 2`。
-- `id` 为小写字母、数字和连字符组成的有效 ID，不能使用 `ctfd` 或 `gzctf`。
+- `id` 为小写字母、数字和连字符组成的有效 ID，不能使用 `ctfd`、`dasctf`、`gzctf` 或 `ret2shell`。
 - `version` 必须是三段式 semver。
 - `entry` 必须是候选目录内的 `.js`、`.mjs` 或 `.ts` 文件，禁止绝对路径、`..` 和 symlink。
 - 候选最多 200 个文件，总大小最多 2 MiB。
@@ -171,6 +175,7 @@ WebUI 只有在 Gate 状态为 `ready` 时允许调用 `POST /api/father/session
 | ----------------------------------------------------------- | ------------------------------------------------------------ |
 | `packages/platform/src/index.ts`                            | 契约、setup 解析和通用错误分类；平台实现只依赖这些接口       |
 | `packages/platform/src/ctfd.ts`                             | CTFd 配置、HTTP client、题目/附件/公告/提交映射              |
+| `packages/platform/src/dasctf.ts`                           | DASCTF Agent API、限流友好缓存和异步远程环境映射             |
 | `packages/platform/src/gzctf.ts`                            | GZCTF 认证、加密、重试、题目和远程环境映射                   |
 | `packages/platform/src/registry.ts`                         | 内置和扩展插件注册；禁止覆盖内置 ID                          |
 | `packages/platform/src/validation.ts`                       | 只读/变更能力检查和报告等级计算                              |

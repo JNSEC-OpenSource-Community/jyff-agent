@@ -314,6 +314,48 @@ describe("RemoteEnvironmentCoordinator", () => {
     await coordinator.close()
   })
 
+  it("最终启动失败的补偿回收完成前不向下一题发放配额", async () => {
+    const cleanup = deferred<void>()
+    const failing = capability("cleanup-before-release", [])
+    if (!failing.instance) throw new Error("fixture 缺少实例能力")
+    failing.instance.start = async () => {
+      throw new Error("terminal start failure")
+    }
+    const destroy = vi.fn(async () => await cleanup.promise)
+    failing.instance.destroy = destroy
+    const coordinator = new RemoteEnvironmentCoordinator(1, new MemoryLeaseStore(), {
+      operationTimeoutMs: 1_000,
+    })
+    const first = coordinator.manage({
+      runId: "run-cleanup-before-release",
+      challenge: challenge("cleanup-before-release", 0),
+      capability: failing,
+    })
+    const firstStart = first.instance?.start()
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce())
+
+    const next = coordinator.manage({
+      runId: "run-after-cleanup",
+      challenge: challenge("after-cleanup", 0),
+      capability: capability("after-cleanup", []),
+    })
+    let nextResolved = false
+    const nextStart = next.instance?.start().then((environment) => {
+      nextResolved = true
+      return environment
+    })
+    await vi.waitFor(() =>
+      expect(coordinator.snapshot().leases.some(({ phase }) => phase === "waiting")).toBe(true),
+    )
+    expect(nextResolved).toBe(false)
+    expect(coordinator.capacity()).toEqual({ maximum: 1, occupied: 1, available: 0 })
+
+    cleanup.resolve(undefined)
+    await expect(firstStart).rejects.toThrow("terminal start failure")
+    await expect(nextStart).resolves.toMatchObject({ id: "environment-after-cleanup" })
+    await coordinator.close()
+  })
+
   it("未标记为可重试的启动错误立即返回且不会消耗重试预算", async () => {
     const failing = capability("terminal-start", [])
     if (!failing.instance) throw new Error("fixture 缺少实例能力")

@@ -7,7 +7,7 @@ JYFF Agent 是面向批量 CTF 解题的控制面。它把比赛平台、模型�
 ## 功能
 
 - **多 Project 管理**：为不同比赛隔离平台配置、凭据、题目 workspace、运行记录和调度器。
-- **平台接入**：内置 CTFd 和 GZCTF，统一提供题目、公告、附件、Flag 提交及可选远程环境能力；公告可匹配题目并由用户审核后投递。
+- **平台接入**：内置 CTFd、DASCTF Pro、GZCTF 和 Ret2Shell，统一提供题目、公告、附件、Flag 提交及可选远程环境能力；公告可匹配题目并由用户审核后投递。
 - **模型池**：全局维护 Pi Models registry 和 Provider 凭据，再按 Project 为 Solver、TLDR、SubAgent 角色绑定模型；支持自定义 Provider 和模型发现。
 - **批量调度**：支持自动队列、手动派发、队列排序、并发限制、重试、失败阻塞和平台故障恢复。
 - **Solver 运行环境**：每次 Run 使用独立 Pi JSONL 会话和 Docker sandbox，能够读取附件、操作 workspace、调用题目能力并提交 Flag。

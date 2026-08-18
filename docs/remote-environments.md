@@ -89,7 +89,7 @@ instance.start(signal)
 
 `packages/platform/src/endpoint-readiness.ts` 提供 HTTP(S) 与 TCP/TLS 的通用检查，但插件可以并且
 应当实现更强的 challenge-specific probe。GZCTF 会在容器入口出现后执行 endpoint 传输检查；
-Ret2Shell 在 pod Running、WSRX/本地 endpoint 建立后执行传输检查。
+DASCTF Pro 在异步 build 完成并返回代理/直连 endpoint 后执行传输检查；Ret2Shell 在 pod Running、WSRX/本地 endpoint 建立后执行传输检查。
 
 为兼容旧扩展，没有 `waitUntilReady` 时 Core 只在 `status === running` 且 endpoint 非空后交付。
 该兼容路径不能证明特殊协议可用；新的远程环境插件应实现显式 readiness。
@@ -201,6 +201,7 @@ Scheduler 不会把它当作空闲名额。人工释放仍通过 Project 级 API
 - `packages/core/src/project/remote-environment-coordinator.ts`
 - `packages/core/src/project/project.ts`
 - `packages/platform/src/endpoint-readiness.ts`
+- `packages/platform/src/dasctf.ts`
 - `packages/platform/src/gzctf.ts`
 - `packages/platform/src/ret2shell.ts`
 - `packages/agents/src/solver/sandbox/tools.ts`

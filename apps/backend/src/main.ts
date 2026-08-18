@@ -13,6 +13,7 @@ import {
 } from "@ctf-agent/core"
 import {
   ctfdPlatform,
+  dasctfPlatform,
   gzctfPlatform,
   PlatformPluginRegistry,
   ret2shellPlatform,
@@ -90,6 +91,7 @@ if (interruptedAudits > 0) {
 await auditRunner.cleanupOrphans()
 const platformRegistry = new PlatformPluginRegistry([
   ctfdPlatform,
+  dasctfPlatform,
   gzctfPlatform,
   ret2shellPlatform,
 ])

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test"
 import { ctfdPlatform } from "../src/ctfd.ts"
+import { dasctfPlatform } from "../src/dasctf.ts"
 import { gzctfPlatform } from "../src/gzctf.ts"
 import type { PlatformPlugin } from "../src/index.ts"
 import {
@@ -10,8 +11,8 @@ import {
 } from "../src/index.ts"
 
 describe("内置平台 setup", () => {
-  it("CTFd 与 GZCTF 使用当前 setup 契约", () => {
-    for (const platform of [ctfdPlatform, gzctfPlatform]) {
+  it("所有内置平台使用当前 setup 契约", () => {
+    for (const platform of [ctfdPlatform, dasctfPlatform, gzctfPlatform]) {
       expect(() => parsePlatformSetupDescriptor(platform.setup)).not.toThrow()
       expect(platform.setup?.fields).toBeDefined()
       expect(platform.setup?.authStrategies).toBeDefined()
