@@ -87,6 +87,35 @@ describe("题目路由", () => {
     ).toBe(404)
   })
 
+  it("重置题目：走 scheduler.resetChallenge 并返回快照；未知题目 404", async () => {
+    const project = new FakeDashboardProject()
+    const scheduler = new FakeDashboardScheduler()
+    const { app } = createWebUiApp({ project, scheduler, frontendDist: "/nonexistent" })
+
+    const reset = await jsonRequest(app, "/api/challenges/pwn-1/reset", "POST", {})
+    expect(reset.status).toBe(200)
+    expect(scheduler.resetChallengeCalls).toEqual(["pwn-1"])
+    expect(project.resetChallengeCalls).toEqual([])
+    expect(await jsonOf(reset)).toMatchObject({
+      challenges: expect.arrayContaining([
+        expect.objectContaining({
+          id: "pwn-1",
+        }),
+      ]),
+    })
+
+    expect((await jsonRequest(app, "/api/challenges/missing/reset", "POST", {})).status).toBe(404)
+  })
+
+  it("无调度器时重置走 project.resetChallenge", async () => {
+    const project = new FakeDashboardProject()
+    const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
+
+    const reset = await jsonRequest(app, "/api/challenges/pwn-1/reset", "POST", {})
+    expect(reset.status).toBe(200)
+    expect(project.resetChallengeCalls).toEqual(["pwn-1"])
+  })
+
   it("详情包含 SubAgent 列表，未知题目 404", async () => {
     const { app } = appWithProject()
     const details = await app.request("/api/challenges/pwn-1")

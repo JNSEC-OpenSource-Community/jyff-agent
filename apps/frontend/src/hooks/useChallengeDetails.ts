@@ -28,6 +28,7 @@ export function useChallengeDetails(
   selectRun: (runId: string) => void
   selectSubagent: (subagentId: string | null) => void
   challengeAction: (action: "dispatch" | "cancel") => Promise<void>
+  resetChallenge: () => Promise<void>
   reload: () => Promise<void>
 } {
   const [details, setDetails] = useState<ChallengeDetails | null>(null)
@@ -100,6 +101,23 @@ export function useChallengeDetails(
     [challengeId, details?.challenge.status, load, projectId],
   )
 
+  const resetChallenge = useCallback(async (): Promise<void> => {
+    setBusy(true)
+    setError("")
+    try {
+      await apiMutation(
+        projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/reset`),
+        "POST",
+        {},
+      )
+      await load()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }, [challengeId, load, projectId])
+
   return {
     details,
     error,
@@ -110,6 +128,7 @@ export function useChallengeDetails(
     selectRun,
     selectSubagent,
     challengeAction,
+    resetChallenge,
     reload: load,
   }
 }

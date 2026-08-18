@@ -432,6 +432,19 @@ export interface WebAccessConfigurationUpdate {
   providerConfig?: Record<string, Record<string, string>>
 }
 
+/** ShellPoop 反弹 shell 插件的全局配置视图。 */
+export interface ShellPoopConfigurationView {
+  enabled: boolean
+  baseUrl: string
+  timeoutMs?: number
+}
+
+export interface ShellPoopConfigurationUpdate {
+  enabled?: boolean
+  baseUrl?: string
+  timeoutMs?: number
+}
+
 export type BuiltInPluginId = "token-usage"
 
 export interface BuiltInPluginView {

@@ -2247,6 +2247,47 @@ export class RunStore {
     }
   }
 
+  /** 删除该题全部 Run（级联事件/SubAgent/黑板/block 事件/环境租约/公告投递）与题目级持久状态，
+   *  返回被删除的 Run 记录供调用方清理 session 目录。 */
+  resetChallenge(challengeId: string): RunRecord[] {
+    this.assertOpen()
+    const runs = this.listRuns({ challengeId })
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      // scheduler_queue：与 removeSchedulerChallenge 相同地重排同 lane 剩余 position
+      const queued = this.database
+        .prepare("SELECT lane, position FROM scheduler_queue WHERE challenge_id = ?")
+        .get(challengeId) as { lane: SchedulerQueueLane; position: number } | undefined
+      if (queued) {
+        this.database.prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?").run(challengeId)
+        this.database
+          .prepare(`
+            UPDATE scheduler_queue
+            SET position = position - 1, version = version + 1
+            WHERE lane = ? AND position > ?
+          `)
+          .run(queued.lane, queued.position)
+      }
+      // 级联删除该题全部 Run 的 run_events / run_subagents / challenge_evidence /
+      // challenge_opportunities(+sources) / challenge_block_events /
+      // remote_environment_leases / announcement_deliveries
+      this.database.prepare("DELETE FROM runs WHERE challenge_id = ?").run(challengeId)
+      // 题目级状态不随 Run 级联，必须显式清理
+      this.database.prepare("DELETE FROM challenge_tldr WHERE challenge_id = ?").run(challengeId)
+      this.database
+        .prepare("DELETE FROM challenge_runtime_state WHERE challenge_id = ?")
+        .run(challengeId)
+      this.database
+        .prepare("DELETE FROM challenge_scheduling_overrides WHERE challenge_id = ?")
+        .run(challengeId)
+      this.database.exec("COMMIT")
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+    return runs
+  }
+
   isSolved(challengeId: string): boolean {
     this.assertOpen()
     const row = this.database

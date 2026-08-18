@@ -604,6 +604,132 @@ describe("RunStore", () => {
     store.close()
   })
 
+  it("resetChallenge 删除该题全部 Run 与题目级状态并级联清理", async () => {
+    const { store } = await storeFixture()
+    // 该题历史：一个已解出 Run + 一个 blocked Run
+    store.createRun({
+      id: "web-solved",
+      challengeId: "web-1",
+      workspace: "workspace",
+      attempt: 1,
+      source: "auto",
+    })
+    store.updateRun("web-solved", { status: "solved", closeReason: "submitted" }, "run_finished")
+    store.createRun({
+      id: "web-blocked",
+      challengeId: "web-1",
+      workspace: "workspace",
+      attempt: 2,
+      source: "auto",
+    })
+    store.updateRun("web-blocked", { status: "blocked", closeReason: "blocked" }, "run_blocked")
+    // 对照题保留其 Run
+    store.createRun({
+      id: "pwn-run",
+      challengeId: "pwn-1",
+      workspace: "pwn-workspace",
+      attempt: 1,
+      source: "auto",
+    })
+
+    // 黑板 evidence/opportunity、环境租约、公告投递都挂在 Run 上
+    const evidence = store.recordEvidence("web-1", "web-solved", "发现 format string 漏洞")
+    store.recordOpportunity("web-1", "web-solved", "利用 format string 泄露 ASLR", [evidence.id])
+    store.saveEnvironmentLease({
+      runId: "web-solved",
+      challengeId: "web-1",
+      environmentId: "env-1",
+      priority: "verification",
+      acquiredAt: "2026-01-01T00:00:00.000Z",
+    })
+    store.persistContestAnnouncement({
+      key: "notice:web",
+      platformAnnouncementId: "notice",
+      revisionHash: "revision",
+      title: "Hint",
+      content: "Cookie Jar",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+      kind: "hint",
+    })
+    store.linkChallengeAnnouncement({
+      challengeId: "web-1",
+      announcementKey: "notice:web",
+      matchType: "id",
+      matchedValue: "web-1",
+    })
+    store.reviewChallengeAnnouncement({
+      challengeId: "web-1",
+      announcementKey: "notice:web",
+      status: "approved",
+    })
+    store.enqueueAnnouncementDelivery({
+      challengeId: "web-1",
+      announcementKey: "notice:web",
+      runId: "web-solved",
+    })
+
+    // 题目级状态：TLDR、block 运行态、人工 solved 覆盖、调度队列
+    store.upsertTldr({
+      challengeId: "web-1",
+      content: "已经尝试过 x 方向",
+      model: "anthropic/claude-sonnet-4-5",
+      sessionPath: "runs/web-solved/session.jsonl",
+    })
+    store.setChallengeSchedulingDisposition("web-1", "solved")
+    store.enqueueSchedulerChallenge({ challengeId: "web-1", source: "auto", lane: "normal" })
+    const queuedPwn = store.enqueueSchedulerChallenge({
+      challengeId: "pwn-1",
+      source: "auto",
+      lane: "normal",
+    })
+    expect(queuedPwn.position).toBe(2)
+
+    // 全局 token 账本与题目无关，不应被清除
+    store.recordModelTokenUsage({
+      source: "solver",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      inputTokens: 1_000,
+      outputTokens: 200,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    })
+
+    const deleted = store.resetChallenge("web-1")
+
+    expect(deleted.map((run) => run.id).sort()).toEqual(["web-blocked", "web-solved"])
+    expect(store.listRuns({ challengeId: "web-1" })).toEqual([])
+    expect(store.isSolved("web-1")).toBe(false)
+    expect(store.nextAttempt("web-1")).toBe(1)
+    expect(store.tldr("web-1")).toBeUndefined()
+    expect(store.challengeRuntimeState("web-1")).toMatchObject({
+      blockScore: 0,
+      blocked: false,
+      blockedAt: null,
+      blockedRunId: null,
+    })
+    expect(store.challengeSchedulingDisposition("web-1")).toBeNull()
+    expect(store.getBlackboardSummary("web-1")).toEqual({ evidence: [], opportunities: [] })
+    expect(store.listEnvironmentLeases()).toEqual([])
+    expect(store.announcementDeliveries("web-1")).toEqual([])
+    // 公告审核匹配保留（challenge_announcements 不被删）
+    expect(store.challengeAnnouncements("web-1").map((a) => a.key)).toEqual(["notice:web"])
+
+    // 其余队列行 position 重排连续
+    const remainingQueue = store.schedulerQueue()
+    expect(remainingQueue.map((row) => row.challengeId)).toEqual(["pwn-1"])
+    expect(remainingQueue[0]?.position).toBe(1)
+
+    // 对照题原样保留
+    expect(store.getRun("pwn-run")).toBeDefined()
+    expect(store.listRuns({ challengeId: "pwn-1" })).toHaveLength(1)
+
+    // 全局 token 账本不受影响
+    const usage = store.modelTokenUsage()
+    expect(usage.totals.totalTokens).toBe(1_200)
+    store.close()
+  })
+
   it("公告 delivery outbox 对 Run 幂等，并允许 failed 重试", async () => {
     const { store } = await storeFixture()
     store.persistContestAnnouncement({

@@ -43,6 +43,7 @@ export function ConversationPanel({
   conversationUrl,
   streamUrl,
   sendUrl,
+  bodyKey,
   exportUrl,
   stopUrl,
   viewKey,
@@ -64,6 +65,7 @@ export function ConversationPanel({
   conversationUrl: string
   streamUrl: string
   sendUrl: string
+  bodyKey: "message" | "text"
   exportUrl?: string
   stopUrl?: string
   viewKey?: string
@@ -79,7 +81,7 @@ export function ConversationPanel({
   stopPlacement?: "header" | "composer"
 }): React.ReactElement {
   const { conversation, loading, error, message, sending, activity, setMessage, send } =
-    useConversation({ conversationUrl, streamUrl, sendUrl, hasConversation }, onChanged)
+    useConversation({ conversationUrl, streamUrl, sendUrl, bodyKey, hasConversation }, onChanged)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const localViewStateStore = useRef<ConversationViewStateStore>(new Map())

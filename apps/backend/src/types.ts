@@ -263,6 +263,8 @@ export interface DashboardProject {
     disposition: "excluded" | "solved" | null,
   ): unknown
   removeSchedulerChallenge(challengeId: string): boolean
+  /** 完全重置单题：清空 RunStore 状态、Run session 目录与题目 workspace。 */
+  resetChallenge(challengeId: string): Promise<void>
   /**
    * 向某题当前活跃的 solver 发送人工消息(题目级对话框)。
    * 无活跃 solver 时 reject 一个带 code:"no_active_run" 的 Error。
@@ -295,6 +297,8 @@ export interface DashboardScheduler {
     },
   ): ContestSchedulerSnapshot
   cancel(challengeId: string): Promise<ContestSchedulerSnapshot>
+  /** 完全重置单题：终止活跃/排队 Run 并清空本地状态，自动模式开启则重新入队。 */
+  resetChallenge(challengeId: string): Promise<ContestSchedulerSnapshot>
 }
 
 export interface DashboardControlPlane {

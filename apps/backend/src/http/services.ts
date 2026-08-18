@@ -6,6 +6,7 @@ import {
   readPiSessionConversation,
 } from "../domain/html-export.ts"
 import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
+import type { ShellPoopConfiguration } from "../domain/shellpoop-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
 import type {
   DashboardControlPlane,
@@ -38,6 +39,7 @@ export interface ServicesOptions {
   extensions?: DashboardPlatformExtensions
   builtInPluginConfiguration?: BuiltInPluginConfiguration
   webAccessConfiguration?: WebAccessConfiguration
+  shellpoopConfiguration?: ShellPoopConfiguration
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
@@ -104,6 +106,10 @@ export class Services {
 
   get webAccessConfiguration(): WebAccessConfiguration | undefined {
     return this.options.webAccessConfiguration
+  }
+
+  get shellpoopConfiguration(): ShellPoopConfiguration | undefined {
+    return this.options.shellpoopConfiguration
   }
 
   get builtInPluginConfiguration(): BuiltInPluginConfiguration | undefined {
@@ -358,6 +364,14 @@ export class Services {
     const configuration = this.options.webAccessConfiguration
     if (!configuration) {
       throw new HttpError(404, "web_access_unavailable", "当前控制面不支持 web-access 插件配置")
+    }
+    return configuration
+  }
+
+  requireShellPoop(): ShellPoopConfiguration {
+    const configuration = this.options.shellpoopConfiguration
+    if (!configuration) {
+      throw new HttpError(404, "shellpoop_unavailable", "当前控制面不支持 shellpoop 插件配置")
     }
     return configuration
   }

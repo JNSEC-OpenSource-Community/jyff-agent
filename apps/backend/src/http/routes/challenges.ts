@@ -47,6 +47,19 @@ export function challengeRoutes(services: Services): App {
     return c.json(await refreshFor(c))
   })
 
+  // 完全重置单题：终止当前 Agent（如有）→ 清空运行历史/黑板/workspace → 自动调度开启则重新入队。
+  app.post("/challenges/:challengeId/reset", async (c) => {
+    await readJsonBody(c)
+    const challengeId = c.req.param("challengeId")
+    const project = services.requireProject(projectIdOf(c))
+    const exists = (await project.challenges()).some((challenge) => challenge.id === challengeId)
+    if (!exists) throw new HttpError(404, "challenge_not_found", "题目不存在")
+    const scheduler = services.currentScheduler(projectIdOf(c))
+    if (scheduler) await scheduler.resetChallenge(challengeId)
+    else await project.resetChallenge(challengeId)
+    return c.json(await refreshFor(c))
+  })
+
   app.patch("/challenges/:challengeId/scheduling", async (c) => {
     const challengeId = c.req.param("challengeId")
     services.requireSolverScheduler(projectIdOf(c))

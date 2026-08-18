@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorNotice,
   Select,
@@ -38,6 +39,7 @@ import { WorkspaceFilesPanel } from "./challenge/WorkspaceFilesPanel.tsx"
 
 export function ChallengePage() {
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
   const conversationViewStates = useRef<ConversationViewStateStore>(new Map())
   const { projectId = "", challengeId = "" } = useParams()
   const {
@@ -50,6 +52,7 @@ export function ChallengePage() {
     selectRun,
     selectSubagent,
     challengeAction,
+    resetChallenge,
     reload,
   } = useChallengeDetails(projectId, challengeId)
 
@@ -188,6 +191,7 @@ export function ChallengePage() {
                   conversationUrl={convoUrl}
                   streamUrl={streamUrl}
                   sendUrl={sendUrl}
+                  bodyKey={selectedSubagent ? "message" : "text"}
                   exportUrl={exportUrl}
                   viewKey={`${rid}:${selectedSubagent?.id ?? "solver"}`}
                   viewStateStore={conversationViewStates.current}
@@ -253,20 +257,32 @@ export function ChallengePage() {
           </div>
           <div className="flex items-center justify-between px-3 py-2.5">
             <Badge tone={toneForStatus(c.status)}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
-            <Button
-              variant={active ? "danger" : "primary"}
-              disabled={busy || (!active && !details.solverAvailable)}
-              title={
-                !active && !details.solverAvailable
-                  ? "平台故障或 Project 已归档，当前只能查看本地记录"
-                  : undefined
-              }
-              onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
-              size="sm"
-            >
-              <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
-              {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                disabled={busy}
+                title="清空该题的运行历史、对话与题目环境"
+                onClick={() => setResetOpen(true)}
+                size="sm"
+              >
+                <Icon icon="lucide:rotate-ccw" width="14" />
+                重置
+              </Button>
+              <Button
+                variant={active ? "danger" : "primary"}
+                disabled={busy || (!active && !details.solverAvailable)}
+                title={
+                  !active && !details.solverAvailable
+                    ? "平台故障或 Project 已归档，当前只能查看本地记录"
+                    : undefined
+                }
+                onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
+                size="sm"
+              >
+                <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
+                {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
+              </Button>
+            </div>
           </div>
         </Card>
 
@@ -293,20 +309,32 @@ export function ChallengePage() {
               </div>
               <div className="flex items-center justify-between px-3 py-2.5">
                 <Badge tone={toneForStatus(c.status)}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
-                <Button
-                  variant={active ? "danger" : "primary"}
-                  disabled={busy || (!active && !details.solverAvailable)}
-                  title={
-                    !active && !details.solverAvailable
-                      ? "平台故障或 Project 已归档，当前只能查看本地记录"
-                      : undefined
-                  }
-                  onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
-                  size="sm"
-                >
-                  <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
-                  {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    title="清空该题的运行历史、对话与题目环境"
+                    onClick={() => setResetOpen(true)}
+                    size="sm"
+                  >
+                    <Icon icon="lucide:rotate-ccw" width="14" />
+                    重置
+                  </Button>
+                  <Button
+                    variant={active ? "danger" : "primary"}
+                    disabled={busy || (!active && !details.solverAvailable)}
+                    title={
+                      !active && !details.solverAvailable
+                        ? "平台故障或 Project 已归档，当前只能查看本地记录"
+                        : undefined
+                    }
+                    onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
+                    size="sm"
+                  >
+                    <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
+                    {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
+                  </Button>
+                </div>
               </div>
             </Card>
             <AgentSidebar
@@ -322,6 +350,19 @@ export function ChallengePage() {
           <SheetCloseButton aria-label="关闭题目与 Agents" />
         </SheetContent>
       </Sheet>
+
+      <ConfirmDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        title="重置该题？"
+        description="此操作不可撤销。该题所有运行中的 Agent 会先停止，运行历史、对话、SubAgent、黑板、TLDR、Writeup、调度覆盖与题目 workspace 都会被永久清空，题目将回到「未尝试」状态；已审核的公告关联与用量统计不受影响。"
+        confirmLabel="确认重置"
+        busy={busy}
+        busyLabel="正在重置…"
+        onConfirm={() => {
+          void resetChallenge().then(() => setResetOpen(false))
+        }}
+      />
     </div>
   )
 }
