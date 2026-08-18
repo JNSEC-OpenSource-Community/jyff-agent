@@ -153,6 +153,39 @@ describe("useConversation", () => {
     expect((screen.getByRole("textbox", { name: "消息" }) as HTMLInputElement).value).toBe("")
   })
 
+  it("challenge 发送端使用 text 作为请求体字段名", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      if (init?.method === "POST") return jsonResponse({})
+      return jsonResponse({ messages: [] })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const onChanged = vi.fn(async () => undefined)
+
+    render(
+      createElement(ConversationProbe, {
+        hasConversation: false,
+        onChanged,
+        bodyKey: "text",
+      }),
+    )
+    const source = FakeEventSource.instances[0]
+    if (!source) throw new Error("SSE connection was not created")
+
+    fireEvent.change(screen.getByRole("textbox", { name: "消息" }), {
+      target: { value: "检查认证边界" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "发送" }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce())
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/send",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ text: "检查认证边界" }),
+      }),
+    )
+  })
+
   it("卸载时关闭 SSE 并取消尚未刷新的帧", () => {
     const cancelAnimationFrame = vi.fn()
     const frames: FrameRequestCallback[] = []
@@ -197,13 +230,16 @@ describe("useConversation", () => {
 function ConversationProbe({
   hasConversation,
   onChanged,
+  bodyKey = "message",
 }: {
   hasConversation: boolean
   onChanged: () => Promise<void>
+  bodyKey?: "message" | "text"
 }): React.ReactElement {
   const source: ConversationSource = {
     conversationUrl: "/conversation",
     sendUrl: "/send",
+    bodyKey,
     streamUrl: "/events",
     hasConversation,
   }

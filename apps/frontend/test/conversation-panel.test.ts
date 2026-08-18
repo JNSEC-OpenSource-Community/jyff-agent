@@ -73,6 +73,7 @@ describe("ConversationPanel", () => {
         conversationUrl: "/conversation",
         streamUrl: "/events",
         sendUrl: "/message",
+        bodyKey: "message" as const,
         onChanged: async () => {},
       }),
     )
@@ -89,6 +90,7 @@ describe("ConversationPanel", () => {
         conversationUrl: "/conversation",
         streamUrl: "/events",
         sendUrl: "/message",
+        bodyKey: "message" as const,
         onChanged: async () => {},
         readOnly: true,
       }),
@@ -107,6 +109,7 @@ describe("ConversationPanel", () => {
       conversationUrl: "/conversation",
       streamUrl: "/events",
       sendUrl: "/message",
+      bodyKey: "message" as const,
       onChanged: async () => {},
     }
     const { rerender } = render(createElement(ConversationPanel, props))
@@ -131,6 +134,7 @@ describe("ConversationPanel", () => {
         conversationUrl: "/conversation",
         streamUrl: "/events",
         sendUrl: "/message",
+        bodyKey: "message" as const,
         onChanged: async () => {},
       }),
     )
@@ -148,6 +152,7 @@ describe("ConversationPanel", () => {
         conversationUrl: "/conversation",
         streamUrl: "/events",
         sendUrl: "/message",
+        bodyKey: "message" as const,
         onChanged: async () => {},
       }),
     )
@@ -178,6 +183,7 @@ describe("ConversationPanel", () => {
       conversationUrl: "/conversation",
       streamUrl: "/events",
       sendUrl: "/message",
+      bodyKey: "message" as const,
       onChanged: async () => {},
     }
     const { container, rerender } = render(createElement(ConversationPanel, props))
@@ -253,6 +259,7 @@ describe("ConversationPanel", () => {
         conversationUrl: "/conversation",
         streamUrl: "/events",
         sendUrl: "/message",
+        bodyKey: "message" as const,
         stopUrl: "/father/stop",
         onChanged: changed,
       }),
@@ -276,6 +283,7 @@ describe("ConversationPanel", () => {
       conversationUrl: "/conversation",
       streamUrl: "/events",
       sendUrl: "/message",
+      bodyKey: "message" as const,
       stopUrl: "/father/stop",
       stopPlacement: "composer" as const,
       onChanged: async () => {},
@@ -305,6 +313,7 @@ function conversation(viewKey: string, store: ConversationViewStateStore) {
     conversationUrl: `/${viewKey}/conversation`,
     streamUrl: `/${viewKey}/events`,
     sendUrl: `/${viewKey}/message`,
+    bodyKey: "message",
     viewKey,
     viewStateStore: store,
     onChanged: async () => {},

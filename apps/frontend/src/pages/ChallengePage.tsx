@@ -191,6 +191,7 @@ export function ChallengePage() {
                   conversationUrl={convoUrl}
                   streamUrl={streamUrl}
                   sendUrl={sendUrl}
+                  bodyKey={selectedSubagent ? "message" : "text"}
                   exportUrl={exportUrl}
                   viewKey={`${rid}:${selectedSubagent?.id ?? "solver"}`}
                   viewStateStore={conversationViewStates.current}

@@ -302,6 +302,7 @@ function FatherConversation({ sessionId }: { sessionId: string }): React.ReactEl
           conversationUrl={`/api/father/sessions/${sessionId}/conversation`}
           streamUrl={`/api/father/sessions/${sessionId}/events`}
           sendUrl={`/api/father/sessions/${sessionId}/message`}
+          bodyKey="message"
           exportUrl={`/api/father/sessions/${sessionId}/export`}
           stopUrl={`/api/father/sessions/${sessionId}/stop`}
           header={{

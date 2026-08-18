@@ -17,6 +17,8 @@ export interface ConversationSource {
   conversationUrl: string
   /** 发送消息接口（POST）。 */
   sendUrl: string
+  /** POST 请求体中的消息字段名：challenge 用 "text"，father/steer 用 "message"。 */
+  bodyKey: "message" | "text"
   /** 当前 Run 或 SubAgent 的实时 Pi 事件接口。 */
   streamUrl: string
   /** 是否有可读取的持久化对话。 */
@@ -130,8 +132,7 @@ export function useConversation(
       setSending(true)
       setError("")
       try {
-        const bodyKey = target.sendUrl.endsWith("/steer") ? "message" : "text"
-        await apiMutation(target.sendUrl, "POST", { [bodyKey]: trimmed })
+        await apiMutation(target.sendUrl, "POST", { [target.bodyKey]: trimmed })
         setMessage("")
         await onChanged()
         if (hasConversation) await load()
