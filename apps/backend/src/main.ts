@@ -9,6 +9,7 @@ import {
   FatherValidationConfigStore,
   FileSecretStore,
   PlatformExtensionStore,
+  shellpoopApiKeySecretName,
   webAccessSecretName,
 } from "@ctf-agent/core"
 import {
@@ -65,6 +66,7 @@ const webAccessConfiguration = await createFileWebAccessConfiguration({
 })
 const shellpoopConfiguration = await createFileShellPoopConfiguration({
   storagePath: join(stateDirectory, "shellpoop.json"),
+  secretStore,
 })
 const builtInPluginConfiguration = await createFileBuiltInPluginConfiguration(
   join(stateDirectory, "built-in-plugins.json"),
@@ -194,15 +196,19 @@ const controlPlane = await ControlPlane.create({
         sessionSignal: signal,
       }
     },
-    // ShellPoop 反弹 shell 插件默认关闭；启用时把服务地址与超时组装成
-    // ShellPoopConfig 注入 Solver/SubAgent 工具，并把所属 challenge 写入
-    // note 标签，使 shell 与 challenge 的绑定在服务端持久可见。
+    // ShellPoop 反弹 shell 插件默认关闭；启用时把服务地址、超时与 API 密钥
+    // 组装成 ShellPoopConfig 注入 Solver/SubAgent 工具，并把所属 challenge
+    // 写入 note 标签，使 shell 与 challenge 的绑定在服务端持久可见。
+    // 密钥从全局 SecretStore 读取，服务端配了 SHELLPOOP_API_KEY 时用于认证。
     shellpoopConfig: async (signal, { challengeId }) => {
       const snapshot = await shellpoopConfiguration.projectSnapshot()
       if (!snapshot.enabled) return null
       return {
         baseUrl: snapshot.baseUrl,
         timeoutMs: snapshot.timeoutMs,
+        // 延迟解析：每次请求都从 SecretStore 重读密钥，改动即时生效，
+        // 不必等重启或下一个 run 重建会话。
+        resolveApiKey: () => secretStore.get(shellpoopApiKeySecretName()),
         sessionSignal: signal,
         challengeId,
       }

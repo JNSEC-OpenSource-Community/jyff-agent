@@ -581,7 +581,7 @@ export function GlobalSettingsPage() {
                 )}
               </div>
 
-              <div className="border-t border-border pt-4">
+              <div className="mt-8 border-t border-border pt-4">
                 {g.shellpoop ? (
                   <ShellPoopEditor config={g.shellpoop} onSaved={load} />
                 ) : (

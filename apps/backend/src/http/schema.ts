@@ -436,6 +436,13 @@ export const shellpoopConfigurationSchema = z
   })
   .strict()
 
+/** ShellPoop 服务 API 密钥写入。 */
+export const shellpoopKeySchema = z
+  .object({
+    apiKey: z.string().trim().max(16_384).nullable().optional(),
+  })
+  .strict()
+
 /** auth.json 导入。 */
 export const modelImportSchema = z.object({
   json: z.string().trim().min(1).max(250_000),

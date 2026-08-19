@@ -195,8 +195,8 @@ export function WebAccessEditor({
       </section>
 
       {enabled ? (
-        <>
-          <section className="border-t border-border py-4">
+        <div className="surface-elevated overflow-hidden">
+          <section className="px-4 py-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Providers</h3>
               <span className="text-xs text-muted-foreground">
@@ -320,7 +320,7 @@ export function WebAccessEditor({
             ) : null}
           </section>
 
-          <section className="border-t border-border py-4">
+          <section className="border-t border-border px-4 py-4">
             <div className="mb-3">
               <h3 className="text-sm font-semibold">搜索工作流</h3>
             </div>
@@ -368,7 +368,7 @@ export function WebAccessEditor({
             </div>
           </section>
 
-          <section className="border-t border-border py-4">
+          <section className="border-t border-border px-4 py-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">SSRF / 网络策略</h3>
               <div className="flex items-center gap-2">
@@ -390,7 +390,7 @@ export function WebAccessEditor({
               />
             </div>
           </section>
-        </>
+        </div>
       ) : null}
 
       <div className="flex justify-end border-t border-border pt-4">

@@ -437,6 +437,8 @@ export interface ShellPoopConfigurationView {
   enabled: boolean
   baseUrl: string
   timeoutMs?: number
+  /** ShellPoop 服务 API 密钥是否已配置；永不返回密钥值。 */
+  apiKeyConfigured: boolean
 }
 
 export interface ShellPoopConfigurationUpdate {

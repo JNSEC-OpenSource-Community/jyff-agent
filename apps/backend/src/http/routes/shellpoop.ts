@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import type { App, AppEnv } from "../context.ts"
 import { errorText, HttpError } from "../errors.ts"
-import { parseJsonBody, shellpoopConfigurationSchema } from "../schema.ts"
+import { parseJsonBody, shellpoopConfigurationSchema, shellpoopKeySchema } from "../schema.ts"
 import type { Services } from "../services.ts"
 
 /** ShellPoop 反弹 shell 插件全局配置路由。 */
@@ -26,6 +26,18 @@ export function shellpoopRoutes(services: Services): App {
       )
     } catch (error) {
       throw new HttpError(400, "invalid_shellpoop_configuration", errorText(error))
+    }
+  })
+
+  app.post("/global-config/shellpoop/key", async (c) => {
+    const body = await parseJsonBody(c, shellpoopKeySchema, {
+      code: "invalid_shellpoop_key",
+    })
+    try {
+      await services.requireShellPoop().setApiKey(body.apiKey ?? undefined)
+      return c.json({ ok: true })
+    } catch (error) {
+      throw new HttpError(400, "invalid_shellpoop_key", errorText(error))
     }
   })
 

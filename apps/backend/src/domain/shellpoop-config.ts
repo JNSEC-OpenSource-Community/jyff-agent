@@ -1,11 +1,14 @@
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
+import { type SecretStore, shellpoopApiKeySecretName } from "@ctf-agent/core"
 
 /**
  * ShellPoop 反弹 shell 插件的持久化全局配置。
  *
- * ShellPoop 服务本身无鉴权，因此这里只有地址与超时，不需要 SecretStore。
- * 配置持久化到 <stateDirectory>/shellpoop.json（0600，原子写）。
+ * ShellPoop 服务支持可选的 API 密钥认证（`SHELLPOOP_API_KEY`）。非敏感字段
+ * （启用开关 / 服务地址 / 超时）持久化到 <stateDirectory>/shellpoop.json（0600，
+ * 原子写）；API 密钥是敏感值，只存进全局 SecretStore（`CTF_SHELLPOOP_API_KEY`），
+ * 快照只暴露 `apiKeyConfigured` 布尔值，永不返回密钥本身。
  */
 
 interface StoredShellPoopConfiguration {
@@ -19,6 +22,8 @@ export interface ShellPoopConfigurationView {
   enabled: boolean
   baseUrl: string
   timeoutMs?: number
+  /** ShellPoop 服务 API 密钥是否已配置；绝不返回密钥值。 */
+  apiKeyConfigured: boolean
 }
 
 export interface ShellPoopConfiguration {
@@ -28,6 +33,8 @@ export interface ShellPoopConfiguration {
     baseUrl?: string
     timeoutMs?: number
   }): Promise<ShellPoopConfigurationView>
+  /** 写/删 ShellPoop 服务 API 密钥（空值删除）。密钥只进 SecretStore，snapshot 不返回值。 */
+  setApiKey(apiKey: string | undefined): Promise<void>
   /** 返回 Project 注入工具时使用的完整配置。 */
   projectSnapshot(): Promise<{ enabled: boolean; baseUrl: string; timeoutMs: number }>
 }
@@ -62,6 +69,7 @@ function normalizeTimeoutMs(value: unknown): number | undefined {
 
 export async function createFileShellPoopConfiguration(options: {
   storagePath: string
+  secretStore: SecretStore
 }): Promise<ShellPoopConfiguration> {
   let configuration: StoredShellPoopConfiguration
   try {
@@ -108,6 +116,7 @@ export async function createFileShellPoopConfiguration(options: {
       enabled: value.enabled,
       baseUrl: value.baseUrl,
       ...(value.timeoutMs !== undefined ? { timeoutMs: value.timeoutMs } : {}),
+      apiKeyConfigured: options.secretStore.has(shellpoopApiKeySecretName()),
     }
   }
 
@@ -131,6 +140,12 @@ export async function createFileShellPoopConfiguration(options: {
       configuration = next
       await persist(next)
       return toView(next)
+    },
+
+    async setApiKey(apiKey) {
+      await options.secretStore.set({
+        [shellpoopApiKeySecretName()]: apiKey,
+      })
     },
 
     async projectSnapshot() {
