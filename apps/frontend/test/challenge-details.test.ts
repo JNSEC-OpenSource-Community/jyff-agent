@@ -2,9 +2,11 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createElement } from "react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { useChallengeDetails } from "../src/hooks/useChallengeDetails.ts"
 import { useSse } from "../src/hooks/useSse.ts"
+import { ChallengePage } from "../src/pages/ChallengePage.tsx"
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -119,6 +121,56 @@ describe("useChallengeDetails", () => {
     expect(await screen.findByText("other project")).toBeTruthy()
     expect(first.close).toHaveBeenCalledOnce()
     await waitFor(() => expect(FakeEventSource.instances[1]?.url).toBe("/api/projects/two/events"))
+  })
+
+  it("已解出的题目显示强制派发确认，并显式提交 force", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource)
+    let dispatchBody: unknown
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        if (init?.method === "POST") {
+          expect(url).toBe("/api/projects/one/challenges/web-1/dispatch")
+          if (typeof init.body !== "string") throw new Error("expected a JSON request body")
+          dispatchBody = JSON.parse(init.body)
+          return jsonResponse({})
+        }
+        return jsonResponse({
+          ...details("one", "已经解出"),
+          challenge: {
+            ...details("one", "已经解出").challenge,
+            status: "solved",
+            platformSolved: true,
+          },
+        })
+      }),
+    )
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/one/challenges/web-1"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId/challenges/:challengeId",
+            element: createElement(ChallengePage),
+          }),
+        ),
+      ),
+    )
+
+    const forceButtons = await screen.findAllByRole("button", { name: "强制派发" })
+    const forceButton = forceButtons[0]
+    if (!forceButton) throw new Error("force dispatch button was not rendered")
+    fireEvent.click(forceButton)
+    expect(screen.getByText("强制派发已解出的题目？")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "确认强制派发" }))
+
+    await waitFor(() => expect(dispatchBody).toEqual({ force: true }))
   })
 })
 
