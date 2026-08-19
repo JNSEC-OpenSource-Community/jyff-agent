@@ -64,9 +64,12 @@ export function ModelPoolEditor({
   const [models, setModels] = useState<EM[]>(() => configuration.models.map(ed))
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const [solverModelId, setSolverModelId] = useState(configuration.solverModelId)
+  const [tldrModelId, setTldrModelId] = useState(configuration.tldrModelId)
   const [fatherModelId, setFatherModelId] = useState(
     configuration.fatherModelId ?? configuration.solverModelId,
   )
+  const [subagentModels, setSubagentModels] = useState(configuration.subagentModels)
   const [customModelIds, setCustomModelIds] = useState<Record<string, string[] | null>>({})
 
   useEffect(() => {
@@ -115,14 +118,36 @@ export function ModelPoolEditor({
     [authentication.providers, configuration.customProviders],
   )
 
-  function up(i: number, p: Partial<EM>) {
-    setModels((current) =>
-      current.map((model, index) => {
-        if (index !== i) return model
-        const next = { ...model, ...p }
-        return next.automaticId ? { ...next, id: modelPoolEntryId(next) } : next
-      }),
+  function rebindModel(previousId: string, nextId: string): void {
+    const rebind = (modelId: string) => (modelId === previousId ? nextId : modelId)
+    setSolverModelId(rebind)
+    setTldrModelId(rebind)
+    setFatherModelId(rebind)
+    setSubagentModels((current) =>
+      Object.fromEntries(
+        Object.entries(current).flatMap(([role, modelId]) => {
+          if (modelId !== previousId) return [[role, modelId]]
+          return nextId ? [[role, nextId]] : []
+        }),
+      ),
     )
+  }
+
+  function up(i: number, patch: Partial<EM>): void {
+    const current = models[i]
+    if (!current) return
+    const patched = { ...current, ...patch }
+    const next = patched.automaticId ? { ...patched, id: modelPoolEntryId(patched) } : patched
+    if (next.id !== current.id) rebindModel(current.id, next.id)
+    setModels((entries) => entries.map((model, index) => (index === i ? next : model)))
+  }
+
+  function removeModel(i: number): void {
+    const removed = models[i]
+    if (!removed) return
+    const remaining = models.filter((_, index) => index !== i)
+    setModels(remaining)
+    rebindModel(removed.id, remaining[0]?.id ?? "")
   }
 
   function modelOptions(providerId: string) {
@@ -143,10 +168,10 @@ export function ModelPoolEditor({
         models: models.map(
           ({ uiKey: _, automaticId: __, supportedThinkingLevels: ___, ...m }) => m,
         ),
-        solverModelId: configuration.solverModelId,
-        tldrModelId: configuration.tldrModelId,
+        solverModelId,
+        tldrModelId,
         fatherModelId,
-        subagentModels: configuration.subagentModels,
+        subagentModels,
       }
       const r = await apiMutation<{ configuration: ModelConfigurationView }>(
         "/api/model-config",
@@ -154,6 +179,10 @@ export function ModelPoolEditor({
         payload,
       )
       setModels(r.configuration.models.map(ed))
+      setSolverModelId(r.configuration.solverModelId)
+      setTldrModelId(r.configuration.tldrModelId)
+      setFatherModelId(r.configuration.fatherModelId ?? r.configuration.solverModelId)
+      setSubagentModels(r.configuration.subagentModels)
       onSaved(r.configuration)
     } catch (e) {
       setErr(errorMessage(e))
@@ -167,21 +196,40 @@ export function ModelPoolEditor({
       {err ? <ErrorNotice message={err} /> : null}
       <section>
         <div className="mb-3">
-          <h3 className="text-sm font-semibold">Clanker Father</h3>
+          <h3 className="text-sm font-semibold">Agent 默认模型</h3>
           <p className="mt-1! text-xs text-muted-foreground">
-            指定插件工坊使用的全局模型，不跟随比赛配置。
+            新建比赛继承 Solver 与 TLDR 默认值；Father 始终使用这里的全局配置。
           </p>
         </div>
-        <Combobox
-          className="w-full max-w-sm"
-          value={fatherModelId}
-          onChange={setFatherModelId}
-          options={models.map((model) => ({
-            value: model.id,
-            label: model.id,
-          }))}
-          placeholder="选择 Father 模型"
-        />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Solver">
+            <Combobox
+              value={solverModelId}
+              onChange={setSolverModelId}
+              options={models.map((model) => ({ value: model.id, label: model.id }))}
+              placeholder="选择 Solver 模型"
+              disabled={models.length === 0}
+            />
+          </Field>
+          <Field label="TLDR">
+            <Combobox
+              value={tldrModelId}
+              onChange={setTldrModelId}
+              options={models.map((model) => ({ value: model.id, label: model.id }))}
+              placeholder="选择 TLDR 模型"
+              disabled={models.length === 0}
+            />
+          </Field>
+          <Field label="Clanker Father">
+            <Combobox
+              value={fatherModelId}
+              onChange={setFatherModelId}
+              options={models.map((model) => ({ value: model.id, label: model.id }))}
+              placeholder="选择 Father 模型"
+              disabled={models.length === 0}
+            />
+          </Field>
+        </div>
       </section>
       <section className="border-t border-border pt-4">
         <div className="mb-3 flex items-end justify-between gap-4">
@@ -217,7 +265,9 @@ export function ModelPoolEditor({
                     size="icon"
                     variant="ghost"
                     className="size-7 text-muted-foreground hover:text-danger"
-                    onClick={() => setModels((c) => c.filter((_, j) => j !== i))}
+                    aria-label={`删除模型 ${m.id}`}
+                    title={`删除模型 ${m.id}`}
+                    onClick={() => removeModel(i)}
                   >
                     <Icon icon="lucide:trash-2" width="13" />
                   </Button>
@@ -380,7 +430,7 @@ export function ModelPoolEditor({
           <Icon icon="lucide:plus" width="13" />
           添加
         </Button>
-        <Button onClick={() => void save()} disabled={busy || models.length === 0}>
+        <Button onClick={() => void save()} disabled={busy}>
           <Icon
             icon={busy ? "lucide:loader-circle" : "lucide:save"}
             className={busy ? "animate-spin" : ""}

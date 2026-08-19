@@ -40,6 +40,7 @@ import { WorkspaceFilesPanel } from "./challenge/WorkspaceFilesPanel.tsx"
 export function ChallengePage() {
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [forceDispatchOpen, setForceDispatchOpen] = useState(false)
   const conversationViewStates = useRef<ConversationViewStateStore>(new Map())
   const { projectId = "", challengeId = "" } = useParams()
   const {
@@ -69,6 +70,24 @@ export function ChallengePage() {
 
   const c = details.challenge
   const active = ["preparing", "running", "blocking", "writing_writeup"].includes(c.status)
+  const forceDispatch = c.status === "solved"
+  const dispatchLabel = active
+    ? "终止"
+    : forceDispatch
+      ? "强制派发"
+      : c.status === "blocked"
+        ? "重新派发"
+        : "派发"
+  const dispatchIcon = active ? "lucide:square" : forceDispatch ? "lucide:rotate-cw" : "lucide:play"
+  const runPrimaryAction = (): void => {
+    if (active) {
+      void challengeAction("cancel")
+    } else if (forceDispatch) {
+      setForceDispatchOpen(true)
+    } else {
+      void challengeAction("dispatch")
+    }
+  }
   const rid = selectedRun?.id ?? ""
   const convoUrl = selectedSubagent
     ? projectApi(
@@ -274,13 +293,15 @@ export function ChallengePage() {
                 title={
                   !active && !details.solverAvailable
                     ? "平台故障或 Project 已归档，当前只能查看本地记录"
-                    : undefined
+                    : forceDispatch
+                      ? "创建新的 Attempt，重新验证已经解出的题目"
+                      : undefined
                 }
-                onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
+                onClick={runPrimaryAction}
                 size="sm"
               >
-                <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
-                {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
+                <Icon icon={dispatchIcon} width="14" />
+                {dispatchLabel}
               </Button>
             </div>
           </div>
@@ -326,13 +347,15 @@ export function ChallengePage() {
                     title={
                       !active && !details.solverAvailable
                         ? "平台故障或 Project 已归档，当前只能查看本地记录"
-                        : undefined
+                        : forceDispatch
+                          ? "创建新的 Attempt，重新验证已经解出的题目"
+                          : undefined
                     }
-                    onClick={() => void challengeAction(active ? "cancel" : "dispatch")}
+                    onClick={runPrimaryAction}
                     size="sm"
                   >
-                    <Icon icon={active ? "lucide:square" : "lucide:play"} width="14" />
-                    {active ? "终止" : c.status === "blocked" ? "重新派发" : "派发"}
+                    <Icon icon={dispatchIcon} width="14" />
+                    {dispatchLabel}
                   </Button>
                 </div>
               </div>
@@ -350,6 +373,19 @@ export function ChallengePage() {
           <SheetCloseButton aria-label="关闭题目与 Agents" />
         </SheetContent>
       </Sheet>
+
+      <ConfirmDialog
+        open={forceDispatchOpen}
+        onOpenChange={setForceDispatchOpen}
+        title="强制派发已解出的题目？"
+        description="这会保留现有解题记录并创建新的 Attempt，用于重新验证题目。"
+        confirmLabel="确认强制派发"
+        busy={busy}
+        busyLabel="正在派发…"
+        onConfirm={() => {
+          void challengeAction("dispatch", { force: true }).then(() => setForceDispatchOpen(false))
+        }}
+      />
 
       <ConfirmDialog
         open={resetOpen}

@@ -30,6 +30,37 @@ async function modelProviderAction<T>(action: () => Promise<T>): Promise<T> {
   }
 }
 
+function assertRemovedModelsAreUnused(
+  services: Services,
+  currentModelIds: readonly string[],
+  nextModelIds: readonly string[],
+): void {
+  const nextIds = new Set(nextModelIds)
+  const removedIds = new Set(currentModelIds.filter((modelId) => !nextIds.has(modelId)))
+  if (removedIds.size === 0 || !services.controlPlane) return
+
+  const conflicts = services.controlPlane.projectSnapshots().flatMap((project) => {
+    const runtime = services.runtime(project.id)?.snapshot()
+    if (!runtime) return []
+
+    const bindings: string[] = []
+    if (removedIds.has(runtime.solverModelId)) bindings.push(`Solver (${runtime.solverModelId})`)
+    if (removedIds.has(runtime.tldrModelId)) bindings.push(`TLDR (${runtime.tldrModelId})`)
+    for (const [role, modelId] of Object.entries(runtime.subagentModels)) {
+      if (removedIds.has(modelId)) bindings.push(`SubAgent ${role} (${modelId})`)
+    }
+    return bindings.length > 0 ? [`${project.name} [${project.id}]：${bindings.join("、")}`] : []
+  })
+
+  if (conflicts.length > 0) {
+    throw new HttpError(
+      409,
+      "model_in_use",
+      `模型仍被比赛引用，请先在比赛设置中更换模型：${conflicts.join("；")}`,
+    )
+  }
+}
+
 /** 模型配置与凭据路由（全局版）。 */
 export function modelsRoutes(services: Services): App {
   const app = new Hono<AppEnv>()
@@ -44,6 +75,11 @@ export function modelsRoutes(services: Services): App {
       code: "invalid_model_configuration",
       maximumSize: 256_000,
     })
+    assertRemovedModelsAreUnused(
+      services,
+      modelConfiguration.snapshot().models.map((model) => model.id),
+      body.models.map((model) => model.id),
+    )
     const configuration = await modelConfiguration.update(body)
     const scheduler = services.currentScheduler()
     if (!configuration.configured) scheduler?.pauseAuto()

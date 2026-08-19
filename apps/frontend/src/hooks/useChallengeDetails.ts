@@ -27,7 +27,7 @@ export function useChallengeDetails(
   target: ConversationTarget
   selectRun: (runId: string) => void
   selectSubagent: (subagentId: string | null) => void
-  challengeAction: (action: "dispatch" | "cancel") => Promise<void>
+  challengeAction: (action: "dispatch" | "cancel", options?: { force?: boolean }) => Promise<void>
   resetChallenge: () => Promise<void>
   reload: () => Promise<void>
 } {
@@ -82,14 +82,17 @@ export function useChallengeDetails(
     : { type: "solver" }
 
   const challengeAction = useCallback(
-    async (action: "dispatch" | "cancel"): Promise<void> => {
+    async (action: "dispatch" | "cancel", options: { force?: boolean } = {}): Promise<void> => {
       setBusy(true)
       setError("")
       try {
+        const force =
+          action === "dispatch" &&
+          (options.force === true || details?.challenge.status === "blocked")
         await apiMutation(
           projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}/${action}`),
           "POST",
-          action === "dispatch" && details?.challenge.status === "blocked" ? { force: true } : {},
+          force ? { force: true } : {},
         )
         await load()
       } catch (cause) {

@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { createFileModelAuthentication } from "../src/domain/model-auth.ts"
 import { createWebUiApp } from "../src/server.ts"
+import type { DashboardControlPlane } from "../src/types.ts"
 import {
   FakeDashboardProject,
   FakeDashboardScheduler,
@@ -78,6 +79,112 @@ describe("模型配置与模型鉴权路由", () => {
         tldrModelId: "solver",
       },
     })
+  })
+
+  it("删除比赛仍在使用的模型时返回具体引用，重新绑定后允许删除", async () => {
+    const project = new FakeDashboardProject()
+    const modelConfiguration = new FakeModelConfiguration()
+    const model = (id: string) => ({
+      id,
+      provider: "openai",
+      modelId: id,
+      contextWindow: 128_000,
+      thinkingEnabled: false,
+      reasoningEffort: "off",
+      passthroughThinking: false,
+      supportedThinkingLevels: ["off"],
+      configured: true,
+    })
+    modelConfiguration.value = {
+      models: [model("old-model"), model("new-model")],
+      customProviders: [],
+      solverModelId: "old-model",
+      tldrModelId: "old-model",
+      fatherModelId: "old-model",
+      subagentModels: {},
+      supportedThinkingLevels: ["off"],
+      configured: true,
+    }
+    let runtime = {
+      solverModelId: "old-model",
+      tldrModelId: "new-model",
+      subagentModels: { helper: "old-model" },
+      maxConcurrent: 2,
+      maxRemoteEnvironments: 1,
+    }
+    const projectSnapshot = {
+      id: "training",
+      name: "训练赛",
+      platformId: "ctfd",
+      phase: "ready" as const,
+      lastError: null,
+      createdAt: "2026-08-19T00:00:00.000Z",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+      archived: false,
+    }
+    const controlPlaneSnapshot = {
+      phase: "ready" as const,
+      configured: true,
+      projectId: projectSnapshot.id,
+      projectName: projectSnapshot.name,
+      platformId: projectSnapshot.platformId,
+      lastError: null,
+      updatedAt: projectSnapshot.updatedAt,
+      selectedProjectId: projectSnapshot.id,
+      projects: [projectSnapshot],
+    }
+    const controlPlane = {
+      snapshot: () => controlPlaneSnapshot,
+      projectSnapshots: () => [projectSnapshot],
+      currentProject: () => project,
+      currentScheduler: () => undefined,
+    } as unknown as DashboardControlPlane
+    const { app } = createWebUiApp({
+      controlPlane,
+      modelConfiguration,
+      projectRuntimeConfiguration: (projectId) =>
+        projectId === "training"
+          ? {
+              snapshot: () => structuredClone(runtime),
+              update: async (configuration) => configuration,
+            }
+          : undefined,
+      frontendDist: "/nonexistent",
+    })
+    const payload = {
+      models: [
+        {
+          id: "new-model",
+          provider: "openai",
+          modelId: "new-model",
+          contextWindow: 128_000,
+          thinkingEnabled: false,
+          reasoningEffort: "off",
+          passthroughThinking: false,
+        },
+      ],
+      solverModelId: "new-model",
+      tldrModelId: "new-model",
+      fatherModelId: "new-model",
+      subagentModels: {},
+    }
+
+    const blocked = await jsonRequest(app, "/api/model-config", "POST", payload)
+    expect(blocked.status).toBe(409)
+    expect(await jsonOf(blocked)).toMatchObject({
+      error: "model_in_use",
+      message: expect.stringContaining(
+        "训练赛 [training]：Solver (old-model)、SubAgent helper (old-model)",
+      ),
+    })
+
+    runtime = {
+      ...runtime,
+      solverModelId: "new-model",
+      subagentModels: { helper: "new-model" },
+    }
+    const saved = await jsonRequest(app, "/api/model-config", "POST", payload)
+    expect(saved.status).toBe(200)
   })
 
   it("创建、编辑和删除自定义兼容供应商", async () => {

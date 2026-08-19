@@ -147,6 +147,67 @@ describe("模型池自定义供应商模型选择", () => {
     expect(ids.at(-1)?.readOnly).toBe(true)
   })
 
+  it("删除默认模型时把 Agent 绑定迁移到剩余模型", async () => {
+    const primary = configuration.models[0]
+    if (!primary) throw new Error("test configuration requires a primary model")
+    const fallback = {
+      ...primary,
+      id: "fallback",
+      modelId: "model-b",
+    }
+    const configured = {
+      ...configuration,
+      models: [primary, fallback],
+      customProviders: [],
+      subagentModels: { helper: "solver" },
+    }
+    let savedPayload: Record<string, unknown> | undefined
+    const onSaved = vi.fn()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (_input, init) => {
+        if (typeof init?.body !== "string") throw new Error("expected a JSON request body")
+        savedPayload = JSON.parse(init.body) as Record<string, unknown>
+        return new Response(
+          JSON.stringify({
+            configuration: {
+              ...configured,
+              models: [fallback],
+              solverModelId: "fallback",
+              tldrModelId: "fallback",
+              fatherModelId: "fallback",
+              subagentModels: { helper: "fallback" },
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        )
+      }),
+    )
+
+    render(
+      createElement(ModelPoolEditor, {
+        configuration: configured,
+        authentication,
+        onSaved,
+      }),
+    )
+
+    expect(screen.getByLabelText("Solver")).toBeTruthy()
+    expect(screen.getByLabelText("TLDR")).toBeTruthy()
+    expect(screen.getByLabelText("Clanker Father")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "删除模型 solver" }))
+    fireEvent.click(screen.getByRole("button", { name: "保存" }))
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+    expect(savedPayload).toMatchObject({
+      models: [{ id: "fallback" }],
+      solverModelId: "fallback",
+      tldrModelId: "fallback",
+      fatherModelId: "fallback",
+      subagentModels: { helper: "fallback" },
+    })
+  })
+
   it("缺少 crypto.randomUUID 时仍可渲染并添加模型", () => {
     vi.stubGlobal("crypto", {})
 
