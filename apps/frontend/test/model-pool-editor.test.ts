@@ -7,6 +7,8 @@ import { modelPoolEntryId } from "../src/lib/model-pool.ts"
 import { ModelPoolEditor } from "../src/pages/settings/ModelPoolEditor.tsx"
 import type { ModelAuthenticationView, ModelConfigurationView } from "../src/types.ts"
 
+vi.mock("@iconify/react", () => ({ Icon: () => null }))
+
 const configuration: ModelConfigurationView = {
   models: [
     {

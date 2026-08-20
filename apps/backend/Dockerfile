@@ -13,6 +13,7 @@ COPY --chown=vp:vp packages/core/package.json packages/core/package.json
 COPY --chown=vp:vp packages/platform/package.json packages/platform/package.json
 COPY --chown=vp:vp packages/prompts/package.json packages/prompts/package.json
 COPY --chown=vp:vp packages/sandbox/package.json packages/sandbox/package.json
+COPY --chown=vp:vp packages/shellpoop/package.json packages/shellpoop/package.json
 COPY --chown=vp:vp packages/web-access/package.json packages/web-access/package.json
 RUN vp install --frozen-lockfile --ignore-scripts
 
@@ -33,6 +34,7 @@ COPY --chown=vp:vp packages/core/package.json packages/core/package.json
 COPY --chown=vp:vp packages/platform/package.json packages/platform/package.json
 COPY --chown=vp:vp packages/prompts/package.json packages/prompts/package.json
 COPY --chown=vp:vp packages/sandbox/package.json packages/sandbox/package.json
+COPY --chown=vp:vp packages/shellpoop/package.json packages/shellpoop/package.json
 COPY --chown=vp:vp packages/web-access/package.json packages/web-access/package.json
 RUN vp install --frozen-lockfile --prod --filter @ctf-agent/backend... --ignore-scripts
 
