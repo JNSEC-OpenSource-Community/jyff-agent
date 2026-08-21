@@ -11,7 +11,9 @@ export default defineConfig({
   test: {
     setupFiles: ["./test/setup.ts"],
     include: [
-      "../../packages/**/test/**/*.test.ts",
+      // Keep the workspace depth explicit: ** also follows pnpm's package
+      // symlinks under node_modules and executes dependency tests repeatedly.
+      "../../packages/*/test/**/*.test.ts",
       "../../apps/backend/test/**/*.test.ts",
       "test/**/*.test.ts",
     ],

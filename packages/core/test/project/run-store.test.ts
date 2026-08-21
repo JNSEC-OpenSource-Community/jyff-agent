@@ -10,11 +10,14 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-async function storeFixture(): Promise<{
+async function storeFixture(options: { persistent?: boolean } = {}): Promise<{
   root: string
   path: string
   store: RunStore
 }> {
+  if (!options.persistent) {
+    return { root: "", path: ":memory:", store: await RunStore.open(":memory:") }
+  }
   const root = await mkdtemp(join(tmpdir(), "ctf-run-store-"))
   roots.push(root)
   const path = join(root, "runs.sqlite")
@@ -23,7 +26,7 @@ async function storeFixture(): Promise<{
 
 describe("RunStore", () => {
   it("持久化最后一次成功的平台视图", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.cachePlatformView("overview", {
       id: "contest-1",
       name: "Cached CTF",
@@ -59,7 +62,7 @@ describe("RunStore", () => {
   })
 
   it("持久化并清除题目人工调度状态", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     expect(store.challengeSchedulingDisposition("web-skip")).toBeNull()
     store.setChallengeSchedulingDisposition("web-skip", "excluded")
     store.setChallengeSchedulingDisposition("crypto-solved", "solved")
@@ -86,7 +89,7 @@ describe("RunStore", () => {
   })
 
   it("持久化远程环境租约并随 Run 删除", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.createRun({
       id: "run-environment",
       challengeId: "pwn-1",
@@ -118,7 +121,7 @@ describe("RunStore", () => {
   })
 
   it("持久化 Run 状态、attempt 和事件，并可在重开后查询", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.createRun({
       id: "run-1",
       challengeId: "web-1",
@@ -162,7 +165,7 @@ describe("RunStore", () => {
   })
 
   it("agent_thinking 事件可持久化与读取(data 原文保留)", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.createRun({
       id: "run-1",
       challengeId: "web-1",
@@ -264,7 +267,7 @@ describe("RunStore", () => {
   })
 
   it("agent_usage 事件可持久化与读取(data 原文保留,含 cost 与 reasoning)", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.createRun({
       id: "run-1",
       challengeId: "web-1",
@@ -318,7 +321,7 @@ describe("RunStore", () => {
   })
 
   it("按 provider/model 聚合统一 token 账本并在重开后保留最新累计值", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.recordModelTokenUsage({
       source: "solver",
       provider: "openai-codex",
@@ -412,7 +415,7 @@ describe("RunStore", () => {
   })
 
   it("首次创建 token 账本时兼容导入旧 agent_usage 事件", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.createRun({
       id: "run-legacy-usage",
       challengeId: "web-legacy",
@@ -769,7 +772,7 @@ describe("RunStore", () => {
   })
 
   it("持久化题目级 TLDR 并在更新时覆盖旧错误", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     expect(
       store.upsertTldr({
         challengeId: "web-1",
@@ -821,7 +824,7 @@ describe("RunStore", () => {
   })
 
   it("幂等持久化公告 revision 和题目关联", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     const input = {
       key: "notice-1:hash-a",
       platformAnnouncementId: "notice-1",
@@ -886,7 +889,7 @@ describe("RunStore", () => {
   })
 
   it("打开旧数据库时自动补充公告审核字段并默认为待审核", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.close()
     const legacy = new DatabaseSync(path)
     legacy.exec("ALTER TABLE challenge_announcements DROP COLUMN reviewed_at")
@@ -928,7 +931,7 @@ describe("RunStore", () => {
   })
 
   it("持久化 normal/blocked 队列、支持乐观锁重排和人工跨 lane 提前", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     const normal1 = store.enqueueSchedulerChallenge({
       challengeId: "normal-1",
       source: "auto",
@@ -1109,7 +1112,7 @@ describe("RunStore", () => {
   })
 
   it("打开现行旧数据库时只提高尚未 blocked 任务的基础阈值", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.createRun({
       id: "active-threshold-run",
       challengeId: "active-threshold",
@@ -1206,7 +1209,7 @@ describe("RunStore", () => {
   })
 
   it("打开旧数据库时自动补充 run source 字段", async () => {
-    const { path, store } = await storeFixture()
+    const { path, store } = await storeFixture({ persistent: true })
     store.close()
     const legacy = new DatabaseSync(path)
     legacy.exec("ALTER TABLE runs DROP COLUMN source")

@@ -15,7 +15,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-async function storeFixture(): Promise<{ store: RunStore; path: string }> {
+async function storeFixture(
+  options: { persistent?: boolean } = {},
+): Promise<{ store: RunStore; path: string }> {
+  if (!options.persistent) {
+    return { store: await RunStore.open(":memory:"), path: ":memory:" }
+  }
   const root = await mkdtemp(join(tmpdir(), "ctf-blackboard-"))
   roots.push(root)
   const path = join(root, "runs.sqlite")
@@ -289,7 +294,7 @@ describe("RunStore blackboard", () => {
   })
 
   it("旧库 concluded Opportunity 迁移为 confirmed resolution", async () => {
-    const { store, path } = await storeFixture()
+    const { store, path } = await storeFixture({ persistent: true })
     store.createRun({
       id: "legacy-run",
       challengeId: "legacy-challenge",

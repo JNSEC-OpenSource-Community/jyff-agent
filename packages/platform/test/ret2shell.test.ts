@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http"
-import { afterEach, describe, expect, it } from "vite-plus/test"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   extractGameId,
   parseConfig,
@@ -11,6 +11,8 @@ describe("Ret2Shell platform", () => {
   let server: Server | undefined
 
   afterEach(async () => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
     server?.closeAllConnections()
     if (server?.listening) {
       await new Promise<void>((resolve, reject) =>
@@ -91,26 +93,26 @@ describe("Ret2Shell platform", () => {
   })
 
   it("销毁实例会等待平台列表确认资源消失后再返回", async () => {
+    vi.useFakeTimers()
     let deleteAccepted = false
     let deleteRequests = 0
     let statusReads = 0
-    server = createServer((request, response) => {
-      response.setHeader("Content-Type", "application/json")
-      if (request.method === "DELETE" && request.url === "/api/game/1/challenge/7/instance") {
-        deleteRequests++
-        if (deleteRequests > 1) {
-          response.writeHead(404)
-          response.end("not found")
-          return
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input : input.url,
+        )
+        const method = init?.method ?? "GET"
+        if (method === "DELETE" && url.pathname === "/api/game/1/challenge/7/instance") {
+          deleteRequests++
+          if (deleteRequests > 1) return new Response("not found", { status: 404 })
+          deleteAccepted = true
+          return jsonResponse({})
         }
-        deleteAccepted = true
-        response.end("{}")
-        return
-      }
-      if (request.method === "GET" && request.url === "/api/game/1/instance") {
-        statusReads++
-        response.end(
-          JSON.stringify(
+        if (method === "GET" && url.pathname === "/api/game/1/instance") {
+          statusReads++
+          return jsonResponse(
             deleteAccepted && statusReads >= 2
               ? []
               : [
@@ -128,18 +130,22 @@ describe("Ret2Shell platform", () => {
                     exposed_ports: [],
                   },
                 ],
-          ),
-        )
-        return
-      }
-      response.writeHead(404)
-      response.end("not found")
-    })
-    const project = localProject(await listen(server))
+          )
+        }
+        return new Response("not found", { status: 404 })
+      }),
+    )
+    const project = localProject("https://ret2shell.test")
     const capability = await project.bindChallenge("7")
+    if (!capability.instance) throw new Error("测试题目缺少远程环境能力")
 
-    await capability.instance?.destroy()
-    await expect(capability.instance?.destroy()).resolves.toBeUndefined()
+    const destroying = capability.instance.destroy()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(statusReads).toBe(1)
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    await vi.advanceTimersByTimeAsync(1_000)
+    await destroying
+    await expect(capability.instance.destroy()).resolves.toBeUndefined()
 
     expect(deleteAccepted).toBe(true)
     expect(deleteRequests).toBe(2)
@@ -147,6 +153,12 @@ describe("Ret2Shell platform", () => {
     await project.close()
   })
 })
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "Content-Type": "application/json" },
+  })
+}
 
 function localProject(baseUrl: string): Ret2ShellProject {
   return new Ret2ShellProject({

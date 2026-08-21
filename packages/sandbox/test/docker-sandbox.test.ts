@@ -1,3 +1,6 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import {
   clearDockerWorkspace,
   type CommandResult,
@@ -10,6 +13,15 @@ import {
   removeManagedContainers,
 } from "@ctf-agent/sandbox"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
+
+const spawnMock = vi.hoisted(() => vi.fn())
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: spawnMock,
+}))
+
+const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")
+if (!originalPlatform) throw new Error("process.platform descriptor is unavailable")
 
 const options: DockerSandboxOptions = {
   projectId: "project",
@@ -34,27 +46,53 @@ function result(code: number, output: { stdout?: string; stderr?: string } = {})
 }
 
 afterEach(() => {
+  Object.defineProperty(process, "platform", originalPlatform)
+  spawnMock.mockReset()
   vi.restoreAllMocks()
 })
 
 describe("Docker command execution", () => {
-  it.skipIf(process.platform !== "win32")(
-    "uses WSL Docker and converts bind source paths",
-    async () => {
-      const result = await executeDockerCommand([
+  it("uses WSL Docker and converts bind source paths", async () => {
+    Object.defineProperty(process, "platform", { ...originalPlatform, value: "win32" })
+    spawnMock.mockImplementationOnce(successfulChildProcess)
+
+    await expect(
+      executeDockerCommand([
         "run",
         "--rm",
         "--mount",
         String.raw`type=bind,src=C:\work\source,dst=/source,readonly`,
         "alpine",
         "true",
-      ])
-      // The assertion is intentionally behavioral: in Windows CI it catches a missing
-      // WSL Docker bridge without depending on a particular Docker error message.
-      expect(result.stderr).not.toContain("invalid mount path")
-    },
-  )
+      ]),
+    ).resolves.toMatchObject({ code: 0, stdout: "", stderr: "" })
+    expect(spawnMock).toHaveBeenCalledWith(
+      "wsl.exe",
+      [
+        "-e",
+        "docker",
+        "run",
+        "--rm",
+        "--mount",
+        "type=bind,src=/mnt/c/work/source,dst=/source,readonly",
+        "alpine",
+        "true",
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    )
+  })
 })
+
+function successfulChildProcess(): ChildProcessWithoutNullStreams {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+  }) as unknown as ChildProcessWithoutNullStreams
+  queueMicrotask(() => child.emit("close", 0, null))
+  return child
+}
 
 describe("DockerSandbox resources", () => {
   it("默认限制每个 Solver 容器的 CPU、内存、swap、PID 与存储", () => {

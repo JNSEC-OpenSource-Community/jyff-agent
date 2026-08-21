@@ -184,7 +184,7 @@ describe("ContestRunner", () => {
       const runner = new ContestRunner(project, {
         maxConcurrent: 1,
         maxAttempts: 1,
-        challengeTimeoutMs: 500,
+        challengeTimeoutMs: 100,
         abortGraceMs: 5,
         createAgentOptions: () => {
           const faux = createFauxCore({ provider: "runner-timeout" })
@@ -193,7 +193,7 @@ describe("ContestRunner", () => {
               stopReason: "toolUse",
             }),
             async () => {
-              await new Promise((resolve) => setTimeout(resolve, 1_000))
+              await new Promise((resolve) => setTimeout(resolve, 250))
               return fauxAssistantMessage("too late")
             },
           ])
