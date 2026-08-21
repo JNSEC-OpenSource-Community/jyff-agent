@@ -17,6 +17,7 @@ function modelEntry(
     provider: string
     modelId: string
     contextWindow: number
+    maxTokens: number
     thinkingEnabled: boolean
     reasoningEffort: string
     passthroughThinking: boolean
@@ -224,7 +225,8 @@ describe("file model configuration", () => {
       provider: "custom-openai",
       api: "openai-completions",
       baseUrl: "https://models.example.test/v1",
-      maxTokens: 64_000,
+      // 未显式配置时钳制为安全默认,不再把 contextWindow 当输出上限发送
+      maxTokens: 32_768,
     })
     expect(await agent.getApiKey?.("custom-openai")).toBe("secret-key")
     expect(await agent.getApiKey?.("another-provider")).toBeUndefined()
@@ -303,6 +305,62 @@ describe("file model configuration", () => {
         max_completion_tokens: 8_192,
       }),
     ).toEqual({ model: "solver-model" })
+  })
+
+  it("自定义模型输出上限默认钳制并支持显式配置", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-max-tokens-"))
+    roots.push(root)
+    const storagePath = join(root, "model-config.json")
+    const configuration = await createFileModelConfiguration({
+      storagePath,
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+    })
+    await configuration.addCustomProvider({
+      name: "GLM",
+      api: "anthropic-messages",
+      baseUrl: "https://open.bigmodel.example.test/api/anthropic",
+      apiKey: "secret-key",
+    })
+
+    const view = await configuration.update({
+      models: [
+        modelEntry({ provider: "custom-glm", contextWindow: 1_000_000 }),
+        modelEntry({
+          id: "glm",
+          provider: "custom-glm",
+          modelId: "glm-5.3",
+          contextWindow: 1_000_000,
+          maxTokens: 131_072,
+        }),
+      ],
+      solverModelId: "solver",
+      tldrModelId: "solver",
+      subagentModels: {},
+    })
+
+    expect(view.models.find((entry) => entry.id === "solver")?.maxTokens).toBeUndefined()
+    expect(view.models.find((entry) => entry.id === "glm")?.maxTokens).toBe(131_072)
+    // anthropic-messages 必须发送 max_tokens：未配置时不能把 1M 的 contextWindow
+    // 直传（GLM 会 400 [1210][max_tokens参数非法：限制数值范围[1,131072]]）
+    expect(configuration.createAgentOptions().initialState?.model?.maxTokens).toBe(32_768)
+    expect(await readFile(storagePath, "utf8")).toContain('"maxTokens": 131072')
+
+    await configuration.update({
+      models: [
+        modelEntry({ provider: "custom-glm", contextWindow: 1_000_000 }),
+        modelEntry({
+          id: "glm",
+          provider: "custom-glm",
+          modelId: "glm-5.3",
+          contextWindow: 1_000_000,
+          maxTokens: 131_072,
+        }),
+      ],
+      solverModelId: "glm",
+      tldrModelId: "solver",
+      subagentModels: {},
+    })
+    expect(configuration.createAgentOptions().initialState?.model?.maxTokens).toBe(131_072)
   })
 
   it("不同 AgentOptions 的同 Provider 请求共享瞬时故障冷却", async () => {
