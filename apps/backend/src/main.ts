@@ -31,7 +31,8 @@ import {
   createFileBuiltInPluginConfiguration,
   TOKEN_USAGE_PLUGIN_ID,
 } from "./domain/built-in-plugin-config.ts"
-import { startWebUi } from "./server.ts"
+import { createProcessShutdown } from "./process-shutdown.ts"
+import { startWebUi, type WebUiServer } from "./server.ts"
 
 interface WebUiProcessOptions {
   root: string
@@ -250,74 +251,98 @@ const controlPlane = await ControlPlane.create({
   },
 })
 
-await controlPlane.start()
-const webui = await startWebUi({
-  controlPlane,
-  modelAuthentication,
-  modelConfiguration,
-  authentication,
-  father,
-  fatherValidationConfigs,
-  extensions,
-  builtInPluginConfiguration,
-  webAccessConfiguration,
-  shellpoopConfiguration,
-  projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
-  auditStore: () => AuditStore.open(auditStorePath),
-  auditArchiveDirectory: join(stateDirectory, "audit-archives"),
-  auditWorkDirectory: join(stateDirectory, "audit-work"),
-  preflightAudit: () => auditRunner.preflight(),
-  validateAuditModel: async (modelId) => {
-    await modelConfiguration.codexSecurityConfiguration(modelId)
+let webui: WebUiServer | undefined
+const processShutdown = createProcessShutdown({
+  close: async () => {
+    // 先调用 WebUI.close() 停止接收新请求；它在首次 await 前会关闭定时器与 SSE。
+    // Father 与 ControlPlane 随后并行关闭，单个清理失败不能阻止其他 Agent 正常回收。
+    const operations: Promise<void>[] = []
+    if (webui) operations.push(webui.close())
+    operations.push(father.close(), controlPlane.close())
+    const settled = await Promise.allSettled(operations)
+    const failures = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason)
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "Agent 进程资源回收不完整")
+    }
   },
-  runAudit: (run, audit) => auditRunner.run(run, audit),
-  cancelAudit: (runId) => auditRunner.cancel(runId),
-  pauseAudit: (runId) => auditRunner.pause(runId),
-  resumeAudit: (runId) => auditRunner.resume(runId),
-  onProjectDeleted: (projectId) => {
-    projectRuntimeConfigurations.delete(projectId)
-  },
-  host: options.host,
-  port: options.port,
-  pollIntervalMs: options.pollIntervalMs,
 })
 
-console.log(`JYFF Agent WebUI 已启动：${webui.url}`)
-if (controlPlane.snapshot().phase !== "ready") {
-  console.log("比赛平台尚未连接，请在 WebUI 中完成配置")
+function shutdownAfterSignal(signal: NodeJS.Signals): void {
+  void processShutdown.shutdown(signal).catch((error: unknown) => {
+    console.error("Agent 进程资源回收不完整", error)
+    process.exitCode = 1
+  })
 }
-if (options.autoStart) {
-  for (const project of controlPlane.projectSnapshots()) {
-    const scheduler = controlPlane.currentScheduler(project.id)
-    const runtime = projectRuntimeConfigurations.get(project.id)
-    if (!scheduler || !runtime) continue
-    const availability = modelConfiguration.snapshot(runtime.snapshot())
-    if (availability.configured) {
-      await scheduler.startAuto()
-      console.log(`${project.name}：自主调度已开启`)
-    } else {
-      console.log(`${project.name}：自主调度未开启：${availability.unavailableReason}`)
+
+process.once("SIGINT", () => shutdownAfterSignal("SIGINT"))
+process.once("SIGTERM", () => shutdownAfterSignal("SIGTERM"))
+process.once("SIGHUP", () => shutdownAfterSignal("SIGHUP"))
+if (process.platform === "win32") {
+  process.once("SIGBREAK", () => shutdownAfterSignal("SIGBREAK"))
+}
+process.on("uncaughtException", (error, origin) => {
+  processShutdown.fatal(`uncaughtException:${origin}`, error)
+})
+process.on("unhandledRejection", (reason) => {
+  processShutdown.fatal("unhandledRejection", reason)
+})
+
+try {
+  await controlPlane.start()
+  webui = await startWebUi({
+    controlPlane,
+    modelAuthentication,
+    modelConfiguration,
+    authentication,
+    father,
+    fatherValidationConfigs,
+    extensions,
+    builtInPluginConfiguration,
+    webAccessConfiguration,
+    shellpoopConfiguration,
+    projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
+    auditStore: () => AuditStore.open(auditStorePath),
+    auditArchiveDirectory: join(stateDirectory, "audit-archives"),
+    auditWorkDirectory: join(stateDirectory, "audit-work"),
+    preflightAudit: () => auditRunner.preflight(),
+    validateAuditModel: async (modelId) => {
+      await modelConfiguration.codexSecurityConfiguration(modelId)
+    },
+    runAudit: (run, audit) => auditRunner.run(run, audit),
+    cancelAudit: (runId) => auditRunner.cancel(runId),
+    pauseAudit: (runId) => auditRunner.pause(runId),
+    resumeAudit: (runId) => auditRunner.resume(runId),
+    onProjectDeleted: (projectId) => {
+      projectRuntimeConfigurations.delete(projectId)
+    },
+    host: options.host,
+    port: options.port,
+    pollIntervalMs: options.pollIntervalMs,
+  })
+
+  console.log(`JYFF Agent WebUI 已启动：${webui.url}`)
+  if (controlPlane.snapshot().phase !== "ready") {
+    console.log("比赛平台尚未连接，请在 WebUI 中完成配置")
+  }
+  if (options.autoStart) {
+    for (const project of controlPlane.projectSnapshots()) {
+      const scheduler = controlPlane.currentScheduler(project.id)
+      const runtime = projectRuntimeConfigurations.get(project.id)
+      if (!scheduler || !runtime) continue
+      const availability = modelConfiguration.snapshot(runtime.snapshot())
+      if (availability.configured) {
+        await scheduler.startAuto()
+        console.log(`${project.name}：自主调度已开启`)
+      } else {
+        console.log(`${project.name}：自主调度未开启：${availability.unavailableReason}`)
+      }
     }
   }
+} catch (error) {
+  processShutdown.fatal("启动失败", error)
 }
-
-let closing = false
-async function shutdown(signal: string): Promise<void> {
-  if (closing) return
-  closing = true
-  console.log(`收到 ${signal}，正在关闭 WebUI…`)
-  try {
-    await webui.close()
-    await father.close()
-    await controlPlane.close()
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
-    process.exitCode = 1
-  }
-}
-
-process.once("SIGINT", () => void shutdown("SIGINT"))
-process.once("SIGTERM", () => void shutdown("SIGTERM"))
 
 function parseOptions(args: string[]): WebUiProcessOptions {
   const values = new Map<string, string>()

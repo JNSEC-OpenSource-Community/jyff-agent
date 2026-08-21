@@ -31,7 +31,13 @@ export function schedulerRoutes(services: Services): App {
 
   app.post("/scheduler/auto/pause", async (c) => {
     await readJsonBody(c)
-    services.requireSolverScheduler(projectIdOf(c)).pauseAuto()
+    services.requireScheduler(projectIdOf(c)).pauseAuto()
+    return c.json(await refreshFor(c))
+  })
+
+  app.post("/scheduler/active/stop", async (c) => {
+    await readJsonBody(c)
+    await services.requireScheduler(projectIdOf(c)).stopAllActive()
     return c.json(await refreshFor(c))
   })
 

@@ -284,6 +284,7 @@ export interface DashboardScheduler {
   reconcile(): Promise<ContestSchedulerSnapshot>
   startAuto(): Promise<ContestSchedulerSnapshot>
   pauseAuto(): ContestSchedulerSnapshot
+  stopAllActive(): Promise<ContestSchedulerSnapshot>
   resume(): ContestSchedulerSnapshot
   setMaxConcurrent(maxConcurrent: number): Promise<ContestSchedulerSnapshot>
   dispatch(challengeId: string, options?: { force?: boolean }): Promise<ContestSchedulerSnapshot>

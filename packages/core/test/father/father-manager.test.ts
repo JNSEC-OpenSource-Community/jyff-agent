@@ -35,6 +35,39 @@ describe("FatherSessionManager", () => {
     await expect(access(workspace)).rejects.toThrow()
   })
 
+  it("重启时回收异常中断 Father 的遗留 Docker Sandbox", async () => {
+    const root = await mkdtemp(join(tmpdir(), "father-orphan-"))
+    roots.push(root)
+    const options = {
+      root,
+      image: "unused",
+      createAgentOptions: () =>
+        ({
+          initialState: { model: { provider: "test", id: "model" } },
+        }) as AgentOptions,
+      sandboxFactory: vi.fn(async () => ({ close: vi.fn() })) as never,
+    }
+    const manager = await FatherSessionManager.open(options)
+    const created = await manager.create({ createdBy: "nick" })
+    const indexPath = join(root, ".ctf-agent", "father", "sessions.json")
+    const records = JSON.parse(await readFile(indexPath, "utf8")) as Array<{
+      id: string
+      status: string
+    }>
+    if (!records[0]) throw new Error("Father 测试记录未持久化")
+    records[0].status = "running"
+    await writeFile(indexPath, JSON.stringify(records))
+
+    const removeManagedSandboxes = vi.fn(async (_runIds: readonly string[]) => undefined)
+    const restarted = await FatherSessionManager.open({
+      ...options,
+      removeManagedSandboxes,
+    })
+
+    expect(removeManagedSandboxes).toHaveBeenCalledWith([created.id.slice("father-".length)])
+    expect(restarted.get(created.id)?.status).toBe("stopped")
+  })
+
   it("空闲时启动 prompt 而不是只把指令加入队列", async () => {
     const root = await mkdtemp(join(tmpdir(), "father-turn-"))
     roots.push(root)

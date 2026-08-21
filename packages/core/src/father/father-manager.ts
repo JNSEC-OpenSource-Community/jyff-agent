@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { type AgentSkill, CtfFatherAgent, materializeSkills } from "@ctf-agent/agents"
-import { DockerSandbox, type DockerWorkspaceMount } from "@ctf-agent/sandbox"
+import {
+  DockerSandbox,
+  type DockerWorkspaceMount,
+  removeManagedContainers,
+} from "@ctf-agent/sandbox"
 import type { AgentHarnessEvent, AgentOptions } from "@earendil-works/pi-agent-core"
 import type {
   AgentStreamEvent,
@@ -54,6 +58,8 @@ export interface FatherSessionManagerOptions {
   workspaceMount?: (sessionId: string) => DockerWorkspaceMount
   sandboxFactory?: typeof DockerSandbox.create
   agentFactory?: typeof CtfFatherAgent.create
+  /** 测试注入或生产按 run 标签回收上次异常退出遗留的 Father 容器。 */
+  removeManagedSandboxes?: (runIds: readonly string[]) => Promise<void>
 }
 
 interface FatherSubscription {
@@ -79,12 +85,14 @@ export class FatherSessionManager {
   static async open(options: FatherSessionManagerOptions): Promise<FatherSessionManager> {
     const manager = new FatherSessionManager(options)
     await mkdir(manager.sessionsRoot(), { recursive: true })
+    const interrupted: FatherSessionRecord[] = []
     try {
       const parsed = JSON.parse(await readFile(manager.indexPath(), "utf8"))
       if (Array.isArray(parsed)) {
         for (const value of parsed) {
           const record = parseRecord(value)
           if (!record) continue
+          if (record.status === "running") interrupted.push(record)
           manager.records.set(record.id, {
             ...record,
             status: record.status === "running" ? "stopped" : record.status,
@@ -93,6 +101,22 @@ export class FatherSessionManager {
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
+    const removeManagedSandboxes =
+      options.removeManagedSandboxes ??
+      (options.sandboxFactory === undefined ? removeManagedContainers : undefined)
+    if (removeManagedSandboxes && interrupted.length > 0) {
+      try {
+        await removeManagedSandboxes(interrupted.map((record) => record.id.slice("father-".length)))
+      } catch (error) {
+        for (const previous of interrupted) {
+          const record = manager.records.get(previous.id)
+          if (!record) continue
+          record.status = "failed"
+          record.error = `遗留 Father Docker Sandbox 回收失败: ${errorText(error)}`
+          record.updatedAt = new Date().toISOString()
+        }
+      }
     }
     await manager.persist()
     return manager

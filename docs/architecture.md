@@ -50,6 +50,8 @@ Project 是数据隔离和权限边界。所有 Project 级 API、SSE 和 worksp
 
 `apps/backend/src/server.ts` 在监听 HTTP 端口前先进行一次真实快照刷新，然后启动定时刷新、调度器 reconcile 和 15 秒 SSE heartbeat。`--auto-start` 只会在模型可用且 Project 可调度时开启自动调度。
 
+进程监听 `SIGINT`、`SIGTERM`、`SIGHUP`（Windows 另含 `SIGBREAK`）以及未捕获异常。所有退出来源共享一次关闭任务；WebUI、Father 和 ControlPlane 都会被调用并等待正常关闭，致命异常只在回收完成后退出。`SIGKILL`、宿主 OOM 等无法执行 JavaScript 的场景由下次启动时的 Docker 标签清理和远程租约 reconcile 兜底。
+
 ### 2.2 HTTP 与前端
 
 `apps/backend/src/http/app.ts` 组装三类入口：
@@ -123,8 +125,8 @@ closing
 1. 解析 `ProjectConfig` 并选择 `PlatformPlugin`。
 2. `open()` 调用 `plugin.connect()`；`openLocal()` 使用不可用平台实现，只打开本地数据。
 3. 发现 Project skills 和 SubAgent role。
-4. 打开 `<stateDirectory>/runs.sqlite`，把上一次进程遗留的 `preparing`/`running` Run 和非终态 SubAgent 标记为 interrupted。
-5. 创建 `RemoteEnvironmentCoordinator` 并恢复租约。
+4. 打开 `<stateDirectory>/runs.sqlite`，把上一次进程遗留的 `preparing`/`running` Run 和非终态 SubAgent 标记为 interrupted，并按 Run 标签清理其遗留 Docker Sandbox。
+5. 创建 `RemoteEnvironmentCoordinator` 并回收持久化的遗留远程租约。
 6. 为后续 Run 保存平台快照、workspace、session、黑板、TLDR 和 Agent stream。
 
 Project 对 Solver 暴露题目级能力：题目详情、附件下载、Flag 提交以及可选远程实例。平台总览、其他题目和远程环境列表留在 Project 内部，防止 Agent 跨题或跨 Project 操作。
@@ -171,7 +173,7 @@ Flag 被平台接受后会记录 terminal submission。生产调度会进入 Wri
 - 队列排序带 `expectedVersion`，版本冲突时拒绝陈旧拖拽请求，前端重新读取服务端快照。
 - `AnnouncementPoller` 定期拉取公告；`announcement-matcher.ts` 按 ID、标题、内容和关键词生成题目候选，候选先由 WebUI 审核，之后才写入 Run 的上下文。
 
-Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queue` 保存跨重启意图；发布快照前会把持久层版本回灌内存，避免 WebUI 使用过期版本。
+Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queue` 保存跨重启意图；发布快照前会把持久层版本回灌内存，避免 WebUI 使用过期版本。暂停调度不会打断已活跃 Solver；暂停后 WebUI 会提供“停止全部 Solver”，该操作等待每个 Solver 按正常关闭顺序回收 SubAgent、远程实例和 Docker Sandbox。
 
 ## 5. 持久化与恢复
 

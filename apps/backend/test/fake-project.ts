@@ -502,6 +502,7 @@ export class FakeDashboardProject implements DashboardProject {
 export class FakeDashboardScheduler implements DashboardScheduler {
   dispatchCalls: Array<{ challengeId: string; force?: boolean }> = []
   retryAttemptCalls: Array<{ runId: string; prompt?: string }> = []
+  stopAllActiveCalls = 0
   resumeCalls = 0
   value: ContestSchedulerSnapshot = {
     available: true,
@@ -529,6 +530,15 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   pauseAuto(): ContestSchedulerSnapshot {
     this.value.autoEnabled = false
     this.value.queued = []
+    return this.snapshot()
+  }
+
+  async stopAllActive(): Promise<ContestSchedulerSnapshot> {
+    this.stopAllActiveCalls++
+    if (this.value.autoEnabled) {
+      throw new Error("请先暂停调度")
+    }
+    this.value.active = []
     return this.snapshot()
   }
 

@@ -30,6 +30,7 @@ export class CtfFatherAgent extends BaseAgent {
   readonly id: string
   private readonly sandbox: Sandbox
   private closed = false
+  private closing?: Promise<void>
 
   private constructor(options: CreateCtfFatherAgentOptions, prepared: PreparedBaseAgent) {
     super(prepared, { compaction: true })
@@ -63,11 +64,33 @@ export class CtfFatherAgent extends BaseAgent {
   }
 
   async close(): Promise<void> {
+    if (this.closing) return this.closing
     if (this.closed) return
     this.closed = true
-    await this.abort()
-    await this.waitForIdle()
-    await this.sandbox.close()
+    this.closing = this.performClose()
+    return this.closing
+  }
+
+  private async performClose(): Promise<void> {
+    const failures: unknown[] = []
+    try {
+      await this.abort()
+    } catch (error) {
+      failures.push(error)
+    }
+    try {
+      await this.waitForIdle()
+    } catch (error) {
+      failures.push(error)
+    }
+    try {
+      await this.sandbox.close()
+    } catch (error) {
+      failures.push(error)
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `Father Agent ${this.id} 资源回收不完整`)
+    }
   }
 }
 

@@ -97,6 +97,7 @@ export class ContestSchedulerError extends Error {
       | "attempts_exhausted"
       | "blocked"
       | "excluded"
+      | "auto_enabled"
       | "queue_version_conflict",
     message: string,
   ) {
@@ -151,6 +152,7 @@ export class ContestScheduler {
   private readonly active = new Map<string, ActiveItem>()
   private autoEnabled = false
   private shuttingDown = false
+  private shutdownOperation?: Promise<void>
   private pumping = false
   private lastError?: string
   private maxConcurrent: number
@@ -537,9 +539,40 @@ export class ContestScheduler {
     active.cancelRequested = true
     active.phase = "cancelling"
     active.cancelRetryDelay?.()
-    await active.solver?.abort()
-    if (active.solver) await active.solver.close("cancelled", "由控制面取消")
-    await active.operation?.catch(() => undefined)
+    const failures: unknown[] = []
+    try {
+      await active.solver?.abort()
+    } catch (error) {
+      failures.push(error)
+    }
+    try {
+      if (active.solver) await active.solver.close("cancelled", "由控制面取消")
+    } catch (error) {
+      failures.push(error)
+    }
+    await active.operation?.catch((error: unknown) => failures.push(error))
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `Solver ${challengeId} 资源回收不完整`)
+    }
+    return this.snapshot()
+  }
+
+  /** 调度暂停后，正常停止当前所有 Solver，并等待其 SubAgent、远程环境与 Sandbox 回收。 */
+  async stopAllActive(): Promise<ContestSchedulerSnapshot> {
+    this.assertNotShuttingDown()
+    if (this.autoEnabled) {
+      throw new ContestSchedulerError("auto_enabled", "请先暂停调度，再停止所有 Solver")
+    }
+    const challengeIds = [...this.active.keys()]
+    const settled = await Promise.allSettled(
+      challengeIds.map(async (challengeId) => await this.cancel(challengeId)),
+    )
+    const failures = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason)
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "部分 Solver 资源回收失败")
+    }
     return this.snapshot()
   }
 
@@ -576,14 +609,12 @@ export class ContestScheduler {
   }
 
   async shutdown(): Promise<void> {
-    if (this.shuttingDown) {
-      await Promise.allSettled(
-        [...this.active.values()]
-          .map((item) => item.operation)
-          .filter((operation): operation is Promise<void> => operation !== undefined),
-      )
-      return
-    }
+    if (this.shutdownOperation) return this.shutdownOperation
+    this.shutdownOperation = this.performShutdown()
+    return this.shutdownOperation
+  }
+
+  private async performShutdown(): Promise<void> {
     this.shuttingDown = true
     this.unsubscribeRemoteEnvironmentCapacity()
     this.autoEnabled = false
@@ -593,14 +624,32 @@ export class ContestScheduler {
       item.cancelRequested = true
       item.phase = "cancelling"
       item.cancelRetryDelay?.()
-      await item.solver?.abort()
     }
-    await Promise.allSettled(
+    const settled = await Promise.allSettled(
       active.map(async (item) => {
-        if (item.solver) await item.solver.close("cancelled", "调度控制面关闭")
-        await item.operation
+        const failures: unknown[] = []
+        try {
+          await item.solver?.abort()
+        } catch (error) {
+          failures.push(error)
+        }
+        try {
+          if (item.solver) await item.solver.close("cancelled", "调度控制面关闭")
+        } catch (error) {
+          failures.push(error)
+        }
+        await item.operation?.catch((error: unknown) => failures.push(error))
+        if (failures.length > 0) {
+          throw new AggregateError(failures, `Solver ${item.challenge.id} 资源回收不完整`)
+        }
       }),
     )
+    const failures = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason)
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "调度控制面关闭时部分 Solver 资源回收失败")
+    }
   }
 
   private hasChallenge(challengeId: string): boolean {

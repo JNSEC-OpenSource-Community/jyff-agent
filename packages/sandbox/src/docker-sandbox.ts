@@ -362,6 +362,7 @@ export async function removeManagedContainers(
   const collected = new Set<string>()
   for (const runId of runIds) {
     const listed = await executeCommand(["ps", "-aq", "--filter", `label=ctf-agent.run=${runId}`])
+    if (listed.code !== 0) throw commandFailure("list", listed)
     for (const id of listed.stdout.trim().split(/\s+/).filter(Boolean)) collected.add(id)
   }
   if (collected.size === 0) return

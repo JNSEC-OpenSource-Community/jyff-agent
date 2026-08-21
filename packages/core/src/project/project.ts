@@ -189,7 +189,7 @@ export interface ProjectTelemetryOptions {
 }
 
 export interface ProjectDiagnostic {
-  code: "skill" | "subagent" | "telemetry" | "environment"
+  code: "skill" | "subagent" | "telemetry" | "environment" | "sandbox"
   message: string
   createdAt: string
   path?: string
@@ -339,8 +339,25 @@ export class Project {
       await mkdir(agentDirectory, { recursive: true })
       runStore = await RunStore.open(join(agentDirectory, "runs.sqlite"))
       // Project.open 只可能发生在新进程/新控制面中；遗留活跃记录不可继续信任。
-      runStore.markInterruptedRuns()
+      const interruptedRuns = runStore.markInterruptedRuns()
       runStore.markInterruptedSubagents()
+      const removeManagedSandboxes =
+        options.removeManagedSandboxes ??
+        (options.sandboxFactory === undefined ? removeManagedContainers : undefined)
+      const sandboxDiagnostics: ProjectDiagnostic[] = []
+      if (removeManagedSandboxes && interruptedRuns.length > 0) {
+        try {
+          await removeManagedSandboxes(interruptedRuns.map((run) => run.id))
+        } catch (error) {
+          // SIGKILL/OOM 无法执行进程关闭钩子；保留诊断并允许读取本地记录，
+          // 后续显式重置仍会再次按 run 标签尝试回收这些容器。
+          sandboxDiagnostics.push({
+            code: "sandbox",
+            message: `遗留 Docker Sandbox 回收失败: ${errorText(error)}`,
+            createdAt: new Date().toISOString(),
+          })
+        }
+      }
       const remoteEnvironments = new RemoteEnvironmentCoordinator(
         options.remoteEnvironments?.maxConcurrent ?? 1,
         runStore,
@@ -352,8 +369,7 @@ export class Project {
         agentDirectory,
         platform,
         options.sandboxFactory ?? ((sandboxOptions) => DockerSandbox.create(sandboxOptions)),
-        options.removeManagedSandboxes ??
-          (options.sandboxFactory === undefined ? removeManagedContainers : undefined),
+        removeManagedSandboxes,
         options.clearWorkspace ??
           (options.sandboxFactory === undefined
             ? async ({ image, workspaceMount }) => clearDockerWorkspace({ image, workspaceMount })
@@ -382,6 +398,7 @@ export class Project {
         localOnly,
         [
           ...projectDiagnostics(discovered, discoveredSubagents),
+          ...sandboxDiagnostics,
           ...environmentDiagnostics.map((message) => ({
             code: "environment" as const,
             message,

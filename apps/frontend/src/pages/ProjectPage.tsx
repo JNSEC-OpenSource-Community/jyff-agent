@@ -22,6 +22,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   ErrorNotice,
   Input,
   PageHeader,
@@ -61,11 +62,11 @@ function QueueItem({
       {...attributes}
       {...listeners}
       className={cn(
-        "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm transition-[background-color,border-color]",
+        "flex items-center gap-2 px-4 py-2.5 text-sm transition-colors",
         disabled
           ? "cursor-default opacity-75"
-          : "cursor-grab hover:border-primary/30 hover:cursor-grab active:cursor-grabbing",
-        isDragging && "cursor-grabbing border-dashed border-primary/40 bg-muted opacity-60",
+          : "cursor-grab hover:bg-muted active:cursor-grabbing",
+        isDragging && "cursor-grabbing bg-muted opacity-60",
       )}
     >
       <Icon icon="lucide:grip-vertical" width="14" className="shrink-0 text-muted-foreground" />
@@ -334,6 +335,8 @@ export function ProjectPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [schedulingBusy, setSchedulingBusy] = useState("")
   const [releasingEnvironment, setReleasingEnvironment] = useState("")
+  const [stopAllOpen, setStopAllOpen] = useState(false)
+  const [stoppingAll, setStoppingAll] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -390,6 +393,26 @@ export function ProjectPage() {
       setError(String(e instanceof Error ? e.message : e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function stopAllSolvers() {
+    setStoppingAll(true)
+    setError("")
+    try {
+      const next = await apiMutation<DashboardSnapshot>(
+        projectApi(projectId, "/api/scheduler/active/stop"),
+        "POST",
+      )
+      setSnapshot(next)
+      setQueue(next.scheduler?.queued ?? [])
+      setStopAllOpen(false)
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      await load().catch(() => undefined)
+      setError(message)
+    } finally {
+      setStoppingAll(false)
     }
   }
 
@@ -511,6 +534,7 @@ export function ProjectPage() {
     (!snapshot.controlPlane || snapshot.controlPlane.phase === "ready")
   const contestPending = snapshot.controlPlane?.activation?.state === "pending"
   const scheduledStartAt = snapshot.controlPlane?.activation?.scheduledStartAt
+  const activeSolverCount = snapshot.scheduler?.active?.length ?? 0
 
   const visible = sortChallenges(filterChallenges(snapshot.challenges, { query, statusFilter }))
 
@@ -550,6 +574,18 @@ export function ProjectPage() {
               <Icon icon="lucide:refresh-cw" className={busy ? "animate-spin" : ""} width="14" />
               同步
             </Button>
+            {!snapshot.scheduler?.autoEnabled && activeSolverCount > 0 ? (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={busy || stoppingAll}
+                onClick={() => setStopAllOpen(true)}
+              >
+                <Icon icon="lucide:circle-stop" width="14" />
+                停止全部 Solver
+                <span className="font-mono tabular-nums">{activeSolverCount}</span>
+              </Button>
+            ) : null}
             <Button
               size="sm"
               onClick={() =>
@@ -559,7 +595,7 @@ export function ProjectPage() {
                     : "/api/scheduler/auto/start",
                 )
               }
-              disabled={busy || !snapshot.scheduler?.available}
+              disabled={busy || stoppingAll || !snapshot.scheduler?.available}
             >
               <Icon
                 icon={snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"}
@@ -694,14 +730,14 @@ export function ProjectPage() {
               {snapshot.scheduler?.autoEnabled ? "自动" : "手动"}
             </Badge>
           </div>
-          <div className="flex flex-1 flex-col p-2.5">
+          <div className="flex flex-1 flex-col">
             {queue.length > 0 ? (
               <DndContext sensors={sensors} onDragEnd={(event) => void onDragEnd(event)}>
                 <SortableContext
                   items={queue.map((i) => i.challengeId)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="flex max-h-128 flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
+                  <div className="max-h-128 divide-y divide-border/60 overflow-y-auto overscroll-contain">
                     {queue.map((e) => (
                       <QueueItem
                         key={e.challengeId}
@@ -725,27 +761,16 @@ export function ProjectPage() {
           </div>
         </Card>
 
-        {/* 运行记录默认收起，避免调度日志抢走题目列表的注意力。 */}
-        <details className="surface group min-h-0 overflow-hidden">
-          <summary className="disclosure-summary flex cursor-pointer items-center justify-between gap-3 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+        <Card className="flex min-h-0 flex-col p-0">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 运行记录
               </p>
               <h2 className="mt-0.5 font-semibold">近期 Solver</h2>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-lg font-semibold tabular-nums text-muted-foreground">
-                {snapshot.solverLogs.length}
-              </span>
-              <Icon
-                icon="lucide:chevron-down"
-                width="15"
-                className="text-muted-foreground transition-transform group-open:rotate-180"
-                aria-hidden="true"
-              />
-            </div>
-          </summary>
+            <Badge tone="neutral">{snapshot.solverLogs.length} 条</Badge>
+          </div>
           <div className="max-h-128 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
             {snapshot.solverLogs.length > 0 ? (
               snapshot.solverLogs.map((entry) => (
@@ -785,7 +810,7 @@ export function ProjectPage() {
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">暂无运行记录。</p>
             )}
           </div>
-        </details>
+        </Card>
       </div>
 
       {/* ── All challenges table ── */}
@@ -932,6 +957,17 @@ export function ProjectPage() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={stopAllOpen && activeSolverCount > 0}
+        onOpenChange={setStopAllOpen}
+        title="停止全部正在执行的 Solver？"
+        description={`将正常中止 ${activeSolverCount} 个 Solver，并依次回收其 SubAgent、远程环境和 Docker Sandbox。调度将保持暂停。`}
+        confirmLabel="停止全部 Solver"
+        busy={stoppingAll}
+        busyLabel="正在停止…"
+        onConfirm={() => void stopAllSolvers()}
+      />
     </div>
   )
 }

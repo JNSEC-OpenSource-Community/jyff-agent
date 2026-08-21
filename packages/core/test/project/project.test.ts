@@ -753,6 +753,45 @@ describe("Project", () => {
     }
   })
 
+  it("启动时标记异常中断 Run，并按 run 标签回收其遗留 Docker Sandbox", async () => {
+    const root = await fixture()
+    const store = await RunStore.open(join(root, ".ctf-agent", "runs.sqlite"))
+    store.createRun({
+      id: "orphaned-run",
+      challengeId: "warmup-flag",
+      workspace: join(root, ".ctf-agent", "challenges", "warmup-flag", "workspace"),
+      attempt: 1,
+      source: "auto",
+    })
+    store.updateRun("orphaned-run", {
+      status: "running",
+      startedAt: "2026-08-12T08:00:00.000Z",
+    })
+    store.close()
+
+    const cleanupCalls: string[][] = []
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+      removeManagedSandboxes: async (runIds) => {
+        cleanupCalls.push([...runIds])
+      },
+    })
+    try {
+      expect(cleanupCalls).toEqual([["orphaned-run"]])
+      expect(project.runs()).toEqual([
+        expect.objectContaining({
+          id: "orphaned-run",
+          status: "interrupted",
+          closeReason: "interrupted",
+        }),
+      ])
+    } finally {
+      await project.close()
+    }
+  })
+
   it("重启后可从 interrupted Run 的 session.jsonl 恢复 Solver", async () => {
     const root = await fixture()
     const first = await Project.open({

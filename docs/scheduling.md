@@ -124,7 +124,7 @@ max(remoteCoordinator.occupied, admittedRemoteOnlyRuns) < maxRemoteEnvironments
 - 平台已解、RunStore 已解、人工 `excluded/solved` 的题不自动入队；
 - normal 题处理完后才进入 blocked revival；
 - 队列位置和版本持久化，拖拽通过 `expectedVersion` 拒绝陈旧写入；
-- `pauseAuto()` 清除自动等待意图但不取消活跃 Run；
+- `pauseAuto()` 清除等待队列但不取消活跃 Run；WebUI 暂停后会提供“停止全部 Solver”，并等待各 Run 完成正常资源回收；
 - `suspend()` 在平台或模型配置故障时冻结领取，并保留队列；
 - 重启后遗留非终态 Run 标记为 interrupted，旧进程的容器和内存许可不会被假定仍存在。
 
@@ -148,7 +148,8 @@ Dashboard 数据来自 RunStore 与 `RemoteEnvironmentCoordinator.snapshot()`；
 - 本地题和附件题可以越过暂不可准入的远程题。
 - 一个 Run 同时最多有一个远程申请或租约；并发 start 调用必须 single-flight。
 - 已交付远程租约不因后续高优先级请求被抢占；持有者直到解出、Blocked、取消或主动释放。
-- Scheduler shutdown、Run 取消和终态收尾必须最终关闭 Sandbox 并释放远程租约。
+- Scheduler shutdown、Run 取消和终态收尾必须逐个调用 Solver 正常关闭，最终关闭 Sandbox 并释放远程租约；单个关闭失败不得跳过其余 Solver。
+- 进程无法执行关闭钩子时，下次 Project 打开必须按 interrupted Run 标签回收遗留 Sandbox，并 reconcile 持久化远程租约。
 
 相关实现和行为测试：
 

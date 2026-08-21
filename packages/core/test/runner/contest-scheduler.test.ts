@@ -1159,6 +1159,38 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("仅在暂停调度后停止全部活跃 Solver，并等待 Sandbox 正常回收", async () => {
+    const challenges = [challenge(1), challenge(2)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 2,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id)), 500),
+    })
+
+    try {
+      await scheduler.startAuto()
+      await waitUntil(() => scheduler.snapshot().active.length === 2 && tracker.active === 2)
+      await expect(scheduler.stopAllActive()).rejects.toMatchObject({ code: "auto_enabled" })
+
+      scheduler.pauseAuto()
+      await scheduler.stopAllActive()
+
+      expect(scheduler.snapshot()).toMatchObject({
+        autoEnabled: false,
+        active: [],
+        queued: [],
+      })
+      expect(tracker.active).toBe(0)
+      expect(project.runs().map((run) => run.status)).toEqual(["cancelled", "cancelled"])
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("暂停自主模式会同时清除此前补发的 manual 等待任务", async () => {
     const challenges = [challenge(1), challenge(2), challenge(3)]
     const tracker = new SandboxTracker()

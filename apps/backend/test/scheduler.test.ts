@@ -36,9 +36,22 @@ describe("调度器路由", () => {
       position: 1,
       version: 1,
     })
+    scheduler.value.active.push({
+      challengeId: "pwn-1",
+      runId: "run-pwn-1",
+      attempt: 1,
+      source: "auto",
+      phase: "running",
+      startedAt: "2026-07-29T12:00:00.000Z",
+    })
     expect((await jsonRequest(app, "/api/scheduler/auto/pause", "POST", {})).status).toBe(200)
     expect(scheduler.snapshot().autoEnabled).toBe(false)
     expect(scheduler.snapshot().queued).toEqual([])
+    expect(scheduler.snapshot().active).toHaveLength(1)
+
+    expect((await jsonRequest(app, "/api/scheduler/active/stop", "POST", {})).status).toBe(200)
+    expect(scheduler.stopAllActiveCalls).toBe(1)
+    expect(scheduler.snapshot().active).toEqual([])
 
     const concurrency = await jsonRequest(app, "/api/scheduler/concurrency", "POST", {
       maxConcurrent: 4,

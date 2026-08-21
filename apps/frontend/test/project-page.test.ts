@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { DashboardSnapshot } from "../src/types.ts"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
@@ -78,6 +78,135 @@ describe("ProjectPage", () => {
     expect(exportLink.getAttribute("href")).toBe("/api/projects/demo/writeups/export")
     await user.click(await screen.findByRole("button", { name: "开始比赛" }))
     await waitFor(() => expect(started).toBe(true))
+  })
+
+  it("近期 Solver 永久展开，并与待执行队列使用可滚动分割列表和 badge", async () => {
+    const data = snapshot()
+    if (!data.scheduler) throw new Error("测试快照缺少调度器")
+    data.scheduler.queued = [
+      {
+        challengeId: "web/1",
+        source: "manual",
+        lane: "normal",
+        manualOverride: true,
+        enqueuedAt: "2026-08-12T07:59:00.000Z",
+        position: 1,
+        version: 1,
+      },
+    ]
+    data.solverLogs = [
+      {
+        id: 1,
+        runId: "run-web-1",
+        challengeId: "web/1",
+        challengeTitle: "认证绕过",
+        type: "run_started",
+        summary: "Solver 开始运行",
+        createdAt: "2026-08-12T07:59:00.000Z",
+        tone: "neutral",
+      },
+    ]
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => jsonResponse(data)),
+    )
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/demo"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId",
+            element: createElement(ProjectPage),
+          }),
+        ),
+      ),
+    )
+
+    const recentHeading = await screen.findByRole("heading", { name: "近期 Solver" })
+    const recentCard = recentHeading.closest('[data-slot="card"]') as HTMLElement | null
+    if (!recentCard) throw new Error("近期 Solver 卡片不存在")
+    expect(recentHeading.closest("details")).toBeNull()
+    expect(within(recentCard).getByText("1 条")).toBeTruthy()
+    expect(within(recentCard).getByRole("link", { name: /Solver 开始运行/ })).toBeTruthy()
+    expect(
+      within(recentCard).getByRole("link", { name: /Solver 开始运行/ }).parentElement?.className,
+    ).toContain("divide-y")
+    expect(
+      within(recentCard).getByRole("link", { name: /Solver 开始运行/ }).parentElement?.className,
+    ).toContain("overflow-y-auto")
+
+    const queueHeading = screen.getByRole("heading", { name: "待执行队列" })
+    const queueCard = queueHeading.closest('[data-slot="card"]') as HTMLElement | null
+    if (!queueCard) throw new Error("待执行队列卡片不存在")
+    const queueRow = within(queueCard).getByText("认证绕过").closest('[role="button"]')
+    expect(queueRow?.parentElement?.className).toContain("divide-y")
+    expect(queueRow?.parentElement?.className).toContain("overflow-y-auto")
+  })
+
+  it("调度暂停且仍有活跃任务时可确认停止全部 Solver", async () => {
+    let stopped = false
+    const paused = snapshot()
+    if (!paused.scheduler) throw new Error("测试快照缺少调度器")
+    paused.scheduler.active = [
+      {
+        challengeId: "web/1",
+        runId: "run-web-1",
+        attempt: 1,
+        source: "auto",
+        phase: "running",
+        startedAt: "2026-08-12T07:58:00.000Z",
+      },
+    ]
+    const afterStop = structuredClone(paused)
+    if (!afterStop.scheduler) throw new Error("测试快照缺少调度器")
+    afterStop.scheduler.active = []
+
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        if (url === "/api/projects/demo/scheduler/active/stop" && init?.method === "POST") {
+          stopped = true
+          return jsonResponse(afterStop)
+        }
+        return jsonResponse(paused)
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/demo"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId",
+            element: createElement(ProjectPage),
+          }),
+        ),
+      ),
+    )
+
+    await user.click(await screen.findByRole("button", { name: /停止全部 Solver/ }))
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "停止全部正在执行的 Solver？",
+    })
+    expect(within(dialog).getByText(/回收其 SubAgent、远程环境和 Docker Sandbox/)).toBeTruthy()
+    await user.click(within(dialog).getByRole("button", { name: "停止全部 Solver" }))
+
+    await waitFor(() => expect(stopped).toBe(true))
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /停止全部 Solver/ })).toBeNull(),
+    )
   })
 
   it("使用项目范围的题目链接并为筛选表格提供语义标签", async () => {
