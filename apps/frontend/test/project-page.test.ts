@@ -8,6 +8,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { ProjectPage } from "../src/pages/ProjectPage.tsx"
 
+vi.mock("@iconify/react", () => ({ Icon: () => null }))
+
 class FakeEventSource {
   readonly close = vi.fn()
 
