@@ -8,6 +8,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { ProjectPage } from "../src/pages/ProjectPage.tsx"
 
+// Iconify 通过定时器异步更新图标状态；该页面测试不关心图标内容，
+// 使用静态桩避免 jsdom 环境销毁后仍触发 React state update。
 vi.mock("@iconify/react", () => ({ Icon: () => null }))
 
 class FakeEventSource {

@@ -1,8 +1,44 @@
 # JYFF Agent
 
-JYFF Agent 是面向批量 CTF 解题的控制面。它把比赛平台、模型池、Pi Agent、Docker 工具环境、并行 SubAgent 和持久化运行记录组织在同一个 WebUI 中，目标是让多题并发解题可调度、可恢复、可审计。
+JYFF Agent 是一套 Agent for InfoSec 的解决方案，提供基于 pi agent 的可拓展、可持续化的 CTF 自动解题调度和基于 codex-security 的代码审计。
 
-它不是单一的漏洞扫描器，也不会替代 Solver 的分析过程；它负责提供安全边界、协作状态、平台操作和运行生命周期。
+> [!CAUTION]
+> **免责声明**
+>
+> JYFF Agent 仅用于经授权的安全研究、教学、内部验证和 CTF 环境。不要在未获得明确授权的系统上使用 JYFF Agent。使用者需自行确保遵守适用法律法规、授权范围、测试规则和第三方服务条款。JYFF Agent 的作者和贡献者不对因使用或滥用本项目造成的未授权访问、服务中断、数据丢失、法律后果或其它损害负责。JYFF Agent 可能执行由模型驱动的工具和 shell 命令；请在采取行动前审查目标、命令、输出和生成的 artifacts。
+
+## 截图
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="./.github/readme/chall-list.png" /><br />
+      赛题概览
+    </td>
+    <td align="center">
+      <img src="./.github/readme/config.png" /><br />
+      配置界面
+    </td>
+    <td align="center">
+      <img src="./.github/readme/audit.png" /><br />
+      代码审计
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./.github/readme/event-list.png" /><br />
+      比赛概览
+    </td>
+    <td align="center">
+      <img src="./.github/readme/solver.png" /><br />
+      解题界面
+    </td>
+    <td align="center">
+      <img src="./.github/readme/clanker-father.png" /><br />
+      Clanker Father
+    </td>
+  </tr>
+</table>
 
 ## 功能
 
@@ -70,20 +106,11 @@ vp run webui
 
 `build:sandbox` 创建 `ctf-agent-solver:latest`、`ctf-agent-audit:latest`，并拉取固定 digest 的 LiteLLM Responses bridge 镜像。Solver、Father 和插件验证使用 solver 镜像；代码审计会按 Run 启动隔离的 LiteLLM sidecar。没有这些镜像时 WebUI 仍可能启动，但相关执行操作会被明确阻止。
 
-`vp run webui` 先执行前端构建，再运行 `apps/backend/src/main.ts`。默认监听 `0.0.0.0:3000`，以终端输出的地址访问 WebUI。
-
-首次使用建议按以下顺序操作：
-
-1. 在全局设置中配置模型 Provider、凭据和可用模型。代码审计支持自定义 `openai-responses`、`openai-completions` 和 `anthropic-messages` Provider；后两者经隔离 LiteLLM Responses bridge 转换后供 Codex Security 使用。
-2. 创建 Project，选择 CTFd 或 GZCTF 并测试连接。
-3. 在 Project 设置中绑定 Solver、TLDR、SubAgent 模型和并发参数。
-4. 在 Project 页面同步题目，手动派发单题或开启自动调度。
+`vp run webui` 先执行前端构建，再运行 `apps/backend/src/main.ts`。默认监听 `0.0.0.0:3000`，以终端输出的地址访问 WebUI。部署在公网请务必在全局配置打开账号密码登录鉴权。
 
 没有可用 Solver 模型时，仍可以查看本地快照、历史 Run 和 workspace，但调度、派发及实时解题操作会被禁用。
 
 ### 直接运行后端
-
-`apps/backend/src/main.ts` 手工解析命令行参数；它不读取 `CTF_AGENT_ROOT`、`CTF_AGENT_HOST` 或 `CTF_AGENT_PORT`。需要自定义数据目录或监听参数时：
 
 ```bash
 vp build
@@ -104,8 +131,7 @@ vp run build:sandbox
 docker compose up --build -d
 ```
 
-默认只启动 WebUI，ShellPoop 反弹 Shell 服务是可选功能，不需要准备外部
-`../shellpoop` 仓库。如果需要启用它：
+默认只启动 WebUI，ShellPoop 反弹 Shell 服务是可选功能，不需要准备外部 `../shellpoop` 仓库。如果需要启用它：
 
 ```bash
 docker compose --profile shellpoop up --build -d
@@ -113,18 +139,32 @@ docker compose --profile shellpoop up --build -d
 
 ShellPoop 默认从 `../shellpoop` 构建，也可以通过 `SHELLPOOP_BUILD_CONTEXT` 指定服务仓库路径。
 
-Compose 配置会：
+### ShellPoop 插件配置
 
-- 以 `apps/backend/Dockerfile` 的 `runtime` target 构建 `ctf-agent-webui:latest`。
-- 将宿主 Docker socket 挂载到容器，使控制面能创建 Solver sandbox。
-- 将命名卷 `ctf-agent-data` 挂载到 `/data/.ctf-agent`，保存全局配置和 Project 状态。
-- 在容器内使用 `--root /data`、`--workspace-volume ctf-agent-data` 和 `--port 3000` 启动后端。
-- 默认将 WebUI 映射到 `0.0.0.0:3000`，OAuth 回调端口 `1455` 和 `53692` 仅绑定本机。
-- `shellpoop` Compose 服务属于 `shellpoop` profile；未启用 profile 时不会检查或构建其外部 build context。
+[ShellPoop](https://github.com/fressive/shellpoop) 是可选的反弹 Shell 管理服务，仅用于已获授权的 CTF、渗透测试或红队环境。
 
-Compose 的项目部署参数包括 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 `CTF_AGENT_MAX_SESSION_INTERRUPTIONS`。数据卷必须持久化备份；`secrets.json` 包含平台和模型密钥，必须按密钥文件保护，不能提交到版本库或通过日志暴露。
+准备上游仓库并启动服务：
 
-Docker socket 等价于给予容器较高的宿主机控制能力，生产部署应限制 WebUI 的网络访问和登录权限。启用 Web Access 时还要注意：网络请求在 backend 宿主进程发出，不受 Solver 容器 `networkMode` 限制。ShellPoop 启用后还需在 WebUI 全局设置中填写服务地址，并确保目标主机能回连监听端口。
+```bash
+git clone https://github.com/fressive/shellpoop.git ../shellpoop
+
+# 必须填写目标主机能够访问到的 IP 或域名；公网/NAT 场景不要留空。
+SHELLPOOP_ADVERTISE_HOST=ctf.example.com \
+  docker compose --profile shellpoop up --build -d
+```
+
+需要 API 密钥时，在项目根目录的 `.env`（不要提交）中加入 `SHELLPOOP_API_KEY=<随机长密钥>`，或在启动命令前导出该环境变量。如果仓库不在 `../shellpoop`，通过 `SHELLPOOP_BUILD_CONTEXT=/path/to/shellpoop` 指定构建目录。Compose 默认提供以下网络：
+
+- WebUI 容器访问 ShellPoop：`http://shellpoop:8000`。
+- 宿主机访问 REST API：`http://127.0.0.1:8000`。
+- 反弹 Shell 监听端口：`20000-21000`，目标主机和防火墙必须允许回连这些端口。
+
+在 WebUI 的“全局设置 → ShellPoop”中配置并保存：
+
+- **启用**：打开插件。
+- **服务地址（baseUrl）**：Compose 部署填写 `http://shellpoop:8000`；WebUI 和 ShellPoop 都运行在宿主机时填写 `http://127.0.0.1:8000`。容器内不要将 `127.0.0.1` 误填为 ShellPoop 地址。
+- **请求超时**：单位为毫秒，默认 `15000`，最大 `600000`。
+- **API 密钥**：如果 ShellPoop 设置了 `SHELLPOOP_API_KEY`，这里必须填写同一个值。密钥只保存到 CTF Agent 的 SecretStore，不会显示在配置快照中。
 
 ## 数据目录
 
@@ -150,7 +190,11 @@ Docker socket 等价于给予容器较高的宿主机控制能力，生产部署
 └── extensions/<plugin-id>/        # 已验证插件的 revision 和 active 指针
 ```
 
-新建的非根 Project 使用 `projects/<Project ID 的 SHA-256 前 32 位十六进制字符>`，防止 ID 直接影响目录结构。删除 Project 会删除其状态目录；重置 Solver 只删除 `runs.sqlite`、`runs/` 和 `challenges/`，保留 Project 配置、runtime 配置和平台凭据。独立调用 `Project.open()` 时，项目配置来源为 `<project-root>/.pi/ctf-config.json`；WebUI 使用 ControlPlane 的 Project 注册表。
+新建的非根 Project 使用 `projects/<Project ID 的 SHA-256 前 32 位十六进制字符>`，防止 ID 直接影响目录结构。
+
+删除 Project 会删除其状态目录；重置 Solver 只删除 `runs.sqlite`、`runs/` 和 `challenges/`，保留 Project 配置、runtime 配置和平台凭据。
+
+独立调用 `Project.open()` 时，项目配置来源为 `<project-root>/.pi/ctf-config.json`；WebUI 使用 ControlPlane 的 Project 注册表。
 
 ## 验证与测试
 
@@ -170,7 +214,11 @@ vp test run packages/core/test/runner/contest-runner.test.ts
 vp test run apps/backend/test/projects.test.ts -t "测试名称"
 ```
 
-测试使用 `vite-plus/test`，统一配置位于根目录 `vite.config.ts`，测试文件位于各包的 `test/` 目录。平台 live contract 默认跳过，设置 `CTFD_DEMO_TOKEN` 可运行 CTFd demo 测试，设置 `GZCTF_LIVE=1` 可运行 GZCTF live 测试。修改 Dockerfile 还应执行：
+测试使用 `vite-plus/test`，统一配置位于根目录 `vite.config.ts`，测试文件位于各包的 `test/` 目录。
+
+平台 live contract 默认跳过，设置 `CTFD_DEMO_TOKEN` 可运行 CTFd demo 测试，设置 `GZCTF_LIVE=1` 可运行 GZCTF live 测试。
+
+修改 Dockerfile 还应执行：
 
 ```bash
 docker build --check -f apps/backend/Dockerfile .
@@ -205,14 +253,3 @@ docker build --check -f apps/backend/Dockerfile .
 - [SubAgent 生命周期](docs/subagents.md)
 - [Father 插件开发提示](packages/agents/skills/extension-authoring/SKILL.md)
 - [Web Access 上游固定与边界](packages/web-access/UPSTREAM_PIN.md)
-
-## 常见问题
-
-| 现象                        | 处理方向                                                                                                      |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Solver 无法启动             | 检查 `ctf-agent-solver:latest`、Solver 模型凭据和 Project 是否处于 `ready`；归档或降级 Project 只能读本地记录 |
-| Docker create name conflict | 使用 `docker ps -a --filter name=ctf-solver` 检查当前 Run 的残留容器，不要删除其他 Project 的容器             |
-| Project 变为只读            | 检查平台连接和后端日志；平台恢复后 ControlPlane 会恢复 Scheduler，但不会绕过已持久化状态                      |
-| 模型不可用                  | 检查全局模型池、Provider 凭据、API 类型和自定义 Provider 的 `/models` 发现结果                                |
-| Father 验证失败             | 确认候选目录、`extension.json.setup`、测试配置、内容 hash 和 Father session 没有变化                          |
-| WebUI 没有事件              | 检查浏览器的 SSE 连接、`/api/events` 或 Project 级 `/api/projects/<id>/events`，以及 Project ID 是否正确      |

@@ -52,6 +52,8 @@ services:
       SHELLPOOP_PORT_MAX: "21000"
       # 目标主机回连的对外 IP/域名；公网/NAT 场景请显式设置。
       SHELLPOOP_ADVERTISE_HOST: "${SHELLPOOP_ADVERTISE_HOST:-}"
+      # 可选 API 密钥；同一密钥还需填入 WebUI 的 ShellPoop 设置。
+      SHELLPOOP_API_KEY: "${SHELLPOOP_API_KEY:-}"
     ports:
       # REST API：webui 容器经 compose 网络访问 shellpoop:8000；宿主机也可直接访问。
       - "127.0.0.1:8000:8000"
