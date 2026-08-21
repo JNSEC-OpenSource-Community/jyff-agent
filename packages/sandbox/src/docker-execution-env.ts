@@ -20,9 +20,15 @@ const BASH_CAPTURE_FLUSH_BYTES = 512 * 1024
 const FILE_HELPER_MAX_ATTEMPTS = 3
 const COMMAND_TIMEOUT_MARKER = "__CTF_AGENT_COMMAND_TIMED_OUT__"
 const COMMAND_TIMEOUT_GRACE_MS = 5_000
+// V8 字符串最长 0x1fffffe8（536,870,888）字符，base64 膨胀 4/3：一次性给超过
+// ~384 MiB 的内容做 toString("base64") 会抛 "Cannot create a string longer than
+// 0x1fffffe8 characters"。超过该块大小的内容分多次 helper 调用传输。
+export const FILE_TRANSFER_CHUNK_BYTES = 32 * 1024 * 1024
+// 大附件哈希比对可能要读多个 GB，放宽到 120s。
+const FILE_HASH_TIMEOUT_MS = 120_000
 
 const FILE_HELPER = String.raw`
-import base64, json, os, shutil, stat, sys, uuid
+import base64, hashlib, json, os, shutil, stat, sys, uuid
 from pathlib import Path
 
 def addressed(raw):
@@ -68,6 +74,14 @@ try:
         path = resolved_file(raw)
         if not path.is_file(): raise ValueError('path is not a regular file')
         value = base64.b64encode(path.read_bytes()).decode('ascii')
+    elif op == 'sha256':
+        path = resolved_file(raw)
+        if not path.is_file(): raise ValueError('path is not a regular file')
+        digest = hashlib.sha256()
+        with path.open('rb') as source:
+            for block in iter(lambda: source.read(1024 * 1024), b''):
+                digest.update(block)
+        value = digest.hexdigest()
     elif op in ('write', 'append'):
         path = addressed(raw)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,6 +102,12 @@ try:
             os.replace(temporary, resolved)
         finally:
             temporary.unlink(missing_ok=True)
+        value = None
+    elif op == 'rename':
+        source = addressed(payload['from'])
+        target = addressed(payload['to'])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(source, target)
         value = None
     elif op == 'info':
         value = info(addressed(raw))
@@ -258,7 +278,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
-    return this.fileOperation<void>({ op: "write", path, base64: encoded(content) }, abortSignal)
+    return this.transferBuffered("write", path, content, abortSignal)
   }
 
   /**
@@ -270,7 +290,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
-    return this.fileOperation<void>({ op: "replace", path, base64: encoded(content) }, abortSignal)
+    return this.transferBuffered("replace", path, content, abortSignal)
   }
 
   appendFile(
@@ -278,7 +298,70 @@ export class DockerExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<Result<void, FileError>> {
-    return this.fileOperation<void>({ op: "append", path, base64: encoded(content) }, abortSignal)
+    return this.transferBuffered("append", path, content, abortSignal)
+  }
+
+  /** 容器内文件的 SHA-256（十六进制）。供大文件等价性校验使用，避免整文件读回。 */
+  async readFileHash(path: string, abortSignal?: AbortSignal): Promise<Result<string, FileError>> {
+    return this.fileOperation<string>({ op: "sha256", path }, abortSignal, FILE_HASH_TIMEOUT_MS)
+  }
+
+  /** 小内容走单次 base64 helper 调用；大内容分块，避免触碰 V8 字符串长度上限。 */
+  private async transferBuffered(
+    op: "write" | "replace" | "append",
+    path: string,
+    content: string | Uint8Array,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    const buffer = Buffer.from(content)
+    if (buffer.byteLength <= FILE_TRANSFER_CHUNK_BYTES) {
+      return this.fileOperation<void>({ op, path, base64: buffer.toString("base64") }, abortSignal)
+    }
+    if (op === "replace") return this.replaceLarge(path, buffer, abortSignal)
+    return this.transferChunks(op === "write" ? "write" : "append", path, buffer, abortSignal)
+  }
+
+  private async transferChunks(
+    firstOp: "write" | "append",
+    path: string,
+    buffer: Buffer,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    for (let offset = 0; offset < buffer.byteLength; offset += FILE_TRANSFER_CHUNK_BYTES) {
+      const chunk = buffer.subarray(
+        offset,
+        Math.min(offset + FILE_TRANSFER_CHUNK_BYTES, buffer.byteLength),
+      )
+      const transferred = await this.fileOperation<void>(
+        { op: offset === 0 ? firstOp : "append", path, base64: chunk.toString("base64") },
+        abortSignal,
+      )
+      if (!transferred.ok) return transferred
+    }
+    return ok(undefined)
+  }
+
+  /** 大文件原子替换：分块写入同目录临时文件，再由 rename（os.replace）提交。 */
+  private async replaceLarge(
+    path: string,
+    buffer: Buffer,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<void, FileError>> {
+    const address = this.address(path)
+    if (!address.ok) return address
+    const temporary = posix.join(
+      posix.dirname(address.value),
+      `.${posix.basename(address.value)}.${randomUUID()}.tmp`,
+    )
+    const staged = await this.transferChunks("write", temporary, buffer, abortSignal)
+    const committed = staged.ok
+      ? await this.fileOperation<void>(
+          { op: "rename", path: address.value, from: temporary, to: address.value },
+          abortSignal,
+        )
+      : staged
+    if (!committed.ok) await this.remove(temporary, { force: true })
+    return committed
   }
 
   fileInfo(path: string, abortSignal?: AbortSignal): Promise<Result<FileInfo, FileError>> {
@@ -376,6 +459,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
   private async fileOperation<T>(
     payload: Record<string, unknown>,
     signal?: AbortSignal,
+    timeoutMs = 30_000,
   ): Promise<Result<T, FileError>> {
     const address = this.address(typeof payload.path === "string" ? payload.path : "")
     if (!address.ok) return address
@@ -388,7 +472,7 @@ export class DockerExecutionEnv implements ExecutionEnv {
         execution = await this.sandbox.exec(["python3", "-c", FILE_HELPER], {
           input,
           signal,
-          timeoutMs: 30_000,
+          timeoutMs,
         })
         if (
           execution.code === 0 ||
@@ -548,10 +632,6 @@ function executionCwd(value: string | undefined): string {
   }
   const cwd = posix.resolve(WORKSPACE, value)
   return cwd
-}
-
-function encoded(content: string | Uint8Array): string {
-  return Buffer.from(content).toString("base64")
 }
 
 function safePrefix(value: string): string {

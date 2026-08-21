@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -50,19 +51,35 @@ class SandboxTracker {
           path: string
           base64?: string
         }
-        if (payload.op === "read_binary") {
+        if (payload.op === "info") {
           const content = this.files.get(payload.path)
           return {
             code: 0,
             stdout: JSON.stringify(
               content
-                ? { ok: true, value: content.toString("base64") }
-                : {
-                    ok: false,
-                    code: "not_found",
-                    message: "not found",
-                    path: payload.path,
-                  },
+                ? {
+                    ok: true,
+                    value: {
+                      name: "file",
+                      path: payload.path,
+                      kind: "file",
+                      size: content.byteLength,
+                      mtimeMs: 0,
+                    },
+                  }
+                : { ok: false, code: "not_found", message: "not found", path: payload.path },
+            ),
+            stderr: "",
+          }
+        }
+        if (payload.op === "sha256") {
+          const content = this.files.get(payload.path)
+          return {
+            code: 0,
+            stdout: JSON.stringify(
+              content
+                ? { ok: true, value: createHash("sha256").update(content).digest("hex") }
+                : { ok: false, code: "not_found", message: "not found", path: payload.path },
             ),
             stderr: "",
           }

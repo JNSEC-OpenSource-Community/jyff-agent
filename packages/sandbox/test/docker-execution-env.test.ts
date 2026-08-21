@@ -1,5 +1,12 @@
-import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
-import { DockerBashExecutionEnv, DockerExecutionEnv } from "@ctf-agent/sandbox"
+import { createHash } from "node:crypto"
+import {
+  DockerBashExecutionEnv,
+  DockerExecutionEnv,
+  FILE_TRANSFER_CHUNK_BYTES,
+  type CommandResult,
+  type Sandbox,
+  type SandboxExecOptions,
+} from "@ctf-agent/sandbox"
 import { describe, expect, it } from "vite-plus/test"
 
 class FakeSandbox implements Sandbox {
@@ -21,6 +28,8 @@ class FakeSandbox implements Sandbox {
       op: string
       path: string
       base64?: string
+      from?: string
+      to?: string
     }
     if (payload.op === "write" || payload.op === "replace") {
       this.files.set(payload.path, Buffer.from(payload.base64 ?? "", "base64"))
@@ -32,6 +41,23 @@ class FakeSandbox implements Sandbox {
           Buffer.from(payload.base64 ?? "", "base64"),
         ]),
       )
+    } else if (payload.op === "rename") {
+      const content = this.files.get(payload.from ?? "")
+      if (content && payload.from && payload.to) {
+        this.files.delete(payload.from)
+        this.files.set(payload.to, content)
+      }
+    } else if (payload.op === "sha256") {
+      const content = this.files.get(payload.path)
+      return {
+        code: 0,
+        stdout: JSON.stringify(
+          content
+            ? { ok: true, value: createHash("sha256").update(content).digest("hex") }
+            : { ok: false, code: "not_found", message: "not found", path: payload.path },
+        ),
+        stderr: "",
+      }
     }
     return {
       code: 0,
@@ -106,6 +132,49 @@ describe("DockerExecutionEnv", () => {
     expect(result.ok).toBe(true)
     expect(sandbox.helperOperations("replace")).toBe(1)
     expect(sandbox.files.get("/workspace/attachments/chall")?.toString()).toBe("new payload")
+  })
+
+  it("超过单块上限的内容分块写入，不触碰 V8 字符串长度上限", async () => {
+    const sandbox = new FakeSandbox()
+    const content = Buffer.alloc(FILE_TRANSFER_CHUNK_BYTES + 11, 7)
+    const result = await new DockerExecutionEnv(sandbox).writeFile(
+      "/workspace/attachments/big.bin",
+      content,
+    )
+
+    expect(result.ok).toBe(true)
+    expect(sandbox.helperOperations("write")).toBe(1)
+    expect(sandbox.helperOperations("append")).toBe(1)
+    expect(sandbox.files.get("/workspace/attachments/big.bin")?.equals(content)).toBe(true)
+  })
+
+  it("超过单块上限的替换走临时文件 + rename 保持原子性", async () => {
+    const sandbox = new FakeSandbox()
+    sandbox.files.set("/workspace/attachments/chall", Buffer.from("old"))
+    const content = Buffer.alloc(FILE_TRANSFER_CHUNK_BYTES * 2 + 5, 9)
+    const result = await new DockerExecutionEnv(sandbox).replaceFile(
+      "/workspace/attachments/chall",
+      content,
+    )
+
+    expect(result.ok).toBe(true)
+    expect(sandbox.helperOperations("replace")).toBe(0)
+    expect(sandbox.helperOperations("rename")).toBe(1)
+    expect(sandbox.files.get("/workspace/attachments/chall")?.equals(content)).toBe(true)
+    expect([...sandbox.files.keys()].filter((key) => key.endsWith(".tmp"))).toEqual([])
+  })
+
+  it("readFileHash 返回容器内文件的 SHA-256", async () => {
+    const sandbox = new FakeSandbox()
+    sandbox.files.set("/workspace/attachments/chall", Buffer.from("payload"))
+    const result = await new DockerExecutionEnv(sandbox).readFileHash(
+      "/workspace/attachments/chall",
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value).toBe(createHash("sha256").update("payload").digest("hex"))
+    }
   })
 
   it("将高频 bash 完整输出合并为少量容器写入", async () => {
