@@ -1,4 +1,4 @@
-import { Buffer } from "node:buffer"
+import { createHash } from "node:crypto"
 import { posix } from "node:path"
 import type { Attachment, ChallengeCapability } from "@ctf-agent/platform"
 import { DockerExecutionEnv, type Sandbox } from "@ctf-agent/sandbox"
@@ -51,8 +51,13 @@ export async function downloadChallengeAttachments(options: {
       usedPaths,
     )
     usedPaths.add(path)
-    const existing = await env.readBinaryFile(path)
-    const unchanged = existing.ok && Buffer.from(existing.value).equals(payload.content)
+    // 等价性校验用 size + SHA-256，不整文件读回：readBinaryFile 受 exec 输出上限
+    // 约束，超过上限的附件永远会被判定为已变化而反复重写。
+    const existingInfo = await env.fileInfo(path)
+    const unchanged =
+      existingInfo.ok &&
+      existingInfo.value.size === payload.content.byteLength &&
+      (await unchangedContent(env, path, payload.content))
     const saved = unchanged
       ? ({ ok: true, value: undefined } as const)
       : await env.replaceFile(path, payload.content)
@@ -76,6 +81,15 @@ export async function downloadChallengeAttachments(options: {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+async function unchangedContent(
+  env: DockerExecutionEnv,
+  path: string,
+  content: Uint8Array,
+): Promise<boolean> {
+  const digest = await env.readFileHash(path)
+  return digest.ok && digest.value === createHash("sha256").update(content).digest("hex")
 }
 
 export function challengeAttachmentPath(name: string): string {

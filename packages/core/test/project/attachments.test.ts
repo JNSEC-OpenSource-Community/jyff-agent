@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type { ChallengeCapability } from "@ctf-agent/platform"
 import type { CommandResult, Sandbox, SandboxExecOptions } from "@ctf-agent/sandbox"
 import { describe, expect, it, vi } from "vite-plus/test"
@@ -18,19 +19,34 @@ class AttachmentSandbox implements Sandbox {
       path: string
       base64?: string
     }
-    if (payload.op === "read_binary") {
-      const content = this.files.get(payload.path)
+    const content = this.files.get(payload.path)
+    if (payload.op === "info") {
       return {
         code: 0,
         stdout: JSON.stringify(
           content
-            ? { ok: true, value: content.toString("base64") }
-            : {
-                ok: false,
-                code: "not_found",
-                message: "not found",
-                path: payload.path,
-              },
+            ? {
+                ok: true,
+                value: {
+                  name: "chall",
+                  path: payload.path,
+                  kind: "file",
+                  size: content.byteLength,
+                  mtimeMs: 0,
+                },
+              }
+            : { ok: false, code: "not_found", message: "not found", path: payload.path },
+        ),
+        stderr: "",
+      }
+    }
+    if (payload.op === "sha256") {
+      return {
+        code: 0,
+        stdout: JSON.stringify(
+          content
+            ? { ok: true, value: createHash("sha256").update(content).digest("hex") }
+            : { ok: false, code: "not_found", message: "not found", path: payload.path },
         ),
         stderr: "",
       }
@@ -101,6 +117,21 @@ describe("challenge attachments", () => {
 
     await downloadChallengeAttachments({
       capability: capability(Buffer.from("unchanged")),
+      attachments: [{ id: "chall", name: "chall" }],
+      sandbox,
+    })
+
+    expect(sandbox.replaceCalls).toBe(0)
+  })
+
+  it("超过 exec 输出上限的大附件未变化时也跳过重写", async () => {
+    const sandbox = new AttachmentSandbox()
+    // 9 MiB：超过 file helper 8 MiB 的输出上限，旧的整文件读回比对会失败。
+    const content = Buffer.alloc(9 * 1024 * 1024, 0x5a)
+    sandbox.files.set("/workspace/attachments/chall", content)
+
+    await downloadChallengeAttachments({
+      capability: capability(content),
       attachments: [{ id: "chall", name: "chall" }],
       sandbox,
     })

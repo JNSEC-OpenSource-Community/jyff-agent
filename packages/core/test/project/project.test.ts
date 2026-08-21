@@ -50,6 +50,19 @@ class FakeSandbox implements Sandbox {
       if ((payload.op === "write" || payload.op === "replace") && payload.path && payload.base64) {
         this.writes.set(payload.path, payload.base64)
       }
+      if (payload.op === "info" || payload.op === "sha256") {
+        // 该 fake 不跟踪文件存在性：附件比对一律视为未命中，走 replace 写入。
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: false,
+            code: "not_found",
+            message: "not found",
+            path: payload.path,
+          }),
+          stderr: "",
+        }
+      }
       return {
         code: 0,
         stdout: JSON.stringify({
