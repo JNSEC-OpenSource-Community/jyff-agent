@@ -330,7 +330,8 @@ export function ProjectSettingsPage() {
               ) : null}
               <div className="flex justify-end">
                 <Button onClick={() => void savePlat()} disabled={busy !== null} size="sm">
-                  <Icon icon="lucide:plug-zap" width="13" /> 保存并重连
+                  <Icon icon="lucide:plug-zap" width="13" />
+                  {setup.state.activation?.state === "pending" ? "保存（未开始）" : "保存并重连"}
                 </Button>
               </div>
             </Card>

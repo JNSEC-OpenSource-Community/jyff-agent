@@ -10,7 +10,12 @@ import { AnnouncementPoller } from "../orchestration/announcement-poller.ts"
 import type { ContestScheduler } from "../orchestration/contest-scheduler.ts"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 import { type OpenProjectOptions, Project } from "../project/project.ts"
-import { ProjectConfigStore, projectStorageKey, type StoredProjectConfig } from "./config-store.ts"
+import {
+  ProjectConfigStore,
+  projectStorageKey,
+  type ProjectActivation,
+  type StoredProjectConfig,
+} from "./config-store.ts"
 import { FileSecretStore, type SecretStore } from "./secret-store.ts"
 
 export type ControlPlanePhase =
@@ -30,6 +35,8 @@ export interface ControlPlaneProjectSnapshot {
   createdAt: string
   updatedAt: string
   archived: boolean
+  /** 旧 WebUI 适配器可省略；ControlPlane 实例始终返回此字段。 */
+  activation?: ProjectActivation
 }
 
 export interface ControlPlaneSnapshot {
@@ -41,6 +48,8 @@ export interface ControlPlaneSnapshot {
   lastError: string | null
   updatedAt: string
   selectedProjectId: string | null
+  /** 当前选中 Project 的开始状态；旧适配器可以省略。 */
+  activation?: ProjectActivation
   projects: ControlPlaneProjectSnapshot[]
 }
 
@@ -61,9 +70,26 @@ export interface ControlPlaneSetupSnapshot {
   secrets: Record<string, { configured: boolean; source: "store" | "none" }>
 }
 
+export type ProjectStartOptions =
+  | { mode: "now" }
+  | { mode: "manual" }
+  | { mode: "scheduled"; scheduledStartAt: string }
+
 export interface ApplyControlPlaneSetup {
   config: ProjectConfig
   secrets?: Readonly<Record<string, string | undefined>>
+  /** 省略时，新 Project 立即连接；已有 Project 保留当前开始状态。 */
+  start?: ProjectStartOptions
+}
+
+/** 试图在比赛开始前连接平台时抛出，避免任何意外上游请求。 */
+export class ProjectNotStartedError extends Error {
+  readonly code = "project_not_started"
+
+  constructor(message: string) {
+    super(message)
+    this.name = "ProjectNotStartedError"
+  }
 }
 
 export interface ControlPlaneOptions {
@@ -123,6 +149,7 @@ export class ControlPlane {
   private loadError: string | null = null
   private closing = false
   private transitionTail: Promise<void> = Promise.resolve()
+  private pendingStartTimer?: NodeJS.Timeout
 
   private constructor(options: ControlPlaneOptions, secretStore: SecretStore) {
     this.options = options
@@ -186,6 +213,7 @@ export class ControlPlane {
       lastError: state.lastError,
       updatedAt: state.updatedAt,
       selectedProjectId: this.selectedProjectId ?? null,
+      activation: state.activation,
       projects,
     }
   }
@@ -281,22 +309,59 @@ export class ControlPlane {
   async start(): Promise<ControlPlaneSnapshot> {
     return await this.enqueueTransition(async () => {
       for (const [projectId, runtime] of this.runtimes) {
-        if (runtime.record.archived) {
-          try {
-            await this.performOpenLocal(projectId)
-          } catch (error) {
-            runtime.lastError = `本地记录打开失败: ${errorText(error)}`
+        try {
+          await this.initializeRuntime(projectId)
+        } catch (error) {
+          // 单个 Project 降级不阻塞其他 Project 启动。
+          if (runtime.phase !== "degraded") {
+            runtime.lastError = errorText(error)
             this.setRuntimePhase(runtime, "degraded")
           }
+        }
+      }
+      this.schedulePendingStarts()
+      return this.snapshot()
+    })
+  }
+
+  /** 触发所有已到达计划时间的比赛；可安全由定时器或宿主再次调用。 */
+  async startDueProjects(): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      for (const [projectId, runtime] of this.runtimes) {
+        if (
+          runtime.record.archived ||
+          !isPendingActivation(runtime.record.activation) ||
+          !isActivationDue(runtime.record.activation)
+        ) {
           continue
         }
         try {
-          await this.performConnect(projectId)
+          await this.activateProject(projectId)
         } catch {
-          // 单个 Project 降级不阻塞其他 Project 启动。
+          // performConnect 已保留 degraded 状态和诊断；其他比赛继续开始。
         }
       }
+      this.schedulePendingStarts()
       return this.snapshot()
+    })
+  }
+
+  async startProject(projectId: string): Promise<ControlPlaneSnapshot> {
+    return await this.enqueueTransition(async () => {
+      const runtime = this.runtimes.get(projectId)
+      if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+      if (runtime.record.archived) throw new Error("已归档比赛不能开始")
+      this.selectedProjectId = projectId
+      if (isPendingActivation(runtime.record.activation)) {
+        if (!canActivateProject(runtime.record.activation)) {
+          throw notStartedError(runtime.record.activation)
+        }
+        await this.activateProject(projectId)
+      } else {
+        await this.performConnect(projectId)
+      }
+      this.schedulePendingStarts()
+      return this.snapshot(projectId)
     })
   }
 
@@ -306,17 +371,33 @@ export class ControlPlane {
       if (!id) return this.snapshot()
       this.selectedProjectId = id
       const runtime = this.runtimes.get(id)
-      if (runtime?.record.archived) {
+      if (!runtime) return this.snapshot()
+      if (runtime.record.archived) {
         await this.performOpenLocal(id)
         return this.snapshot(id)
       }
-      await this.performConnect(id)
+      if (isPendingActivation(runtime.record.activation)) {
+        if (!canActivateProject(runtime.record.activation)) {
+          throw notStartedError(runtime.record.activation)
+        }
+        await this.activateProject(id)
+      } else {
+        await this.initializeRuntime(id)
+      }
+      this.schedulePendingStarts()
       return this.snapshot(id)
     })
   }
 
   async testConnection(input: ApplyControlPlaneSetup): Promise<PlatformConnectionTest> {
     const config = this.validateConfig(input.config)
+    const existing = this.runtimes.get(config.project.id)
+    if (
+      isDeferredStart(input.start) ||
+      (!input.start && existing && isPendingActivation(existing.record.activation))
+    ) {
+      throw notStartedError(existing?.record.activation ?? pendingActivation(input.start))
+    }
     const plugin = this.plugin(config.platform.plugin)
     const platform = await plugin.connect({
       project: config.project,
@@ -329,14 +410,17 @@ export class ControlPlane {
   async applySetup(input: ApplyControlPlaneSetup): Promise<ControlPlaneSnapshot> {
     return await this.enqueueTransition(async () => {
       const config = this.validateConfig(input.config)
-      await this.testConnection({ config, secrets: input.secrets })
-      if (this.runtimes.has(config.project.id)) {
-        await this.performDisconnect(config.project.id)
+      const existing = this.runtimes.get(config.project.id)
+      const activation = activationForSetup(existing?.record.activation, input.start)
+      // 尚未开始的比赛只保存本地配置；连接测试本身也会请求平台。
+      if (!isPendingActivation(activation)) {
+        await this.testConnection({ config, secrets: input.secrets, start: { mode: "now" } })
       }
+      if (existing) await this.performDisconnect(config.project.id)
       if (input.secrets) {
         await this.secretStore.set(namespaceProjectSecrets(config.project.id, input.secrets))
       }
-      const record = await this.configStore.saveProject(config)
+      const record = await this.configStore.saveProject(config, activation)
       this.runtimes.set(config.project.id, {
         record,
         phase: "disconnected",
@@ -344,8 +428,8 @@ export class ControlPlane {
         updatedAt: record.updatedAt,
       })
       this.selectedProjectId = config.project.id
-      if (record.archived) await this.performOpenLocal(config.project.id)
-      else await this.performConnect(config.project.id)
+      await this.initializeRuntime(config.project.id)
+      this.schedulePendingStarts()
       return this.snapshot(config.project.id)
     })
   }
@@ -385,6 +469,7 @@ export class ControlPlane {
       if (this.selectedProjectId === projectId) {
         this.selectedProjectId = this.runtimes.keys().next().value
       }
+      this.schedulePendingStarts()
       return this.snapshot()
     })
   }
@@ -394,9 +479,10 @@ export class ControlPlane {
       const runtime = this.runtimes.get(projectId)
       if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
       await this.performDisconnect(projectId)
-      await this.configStore.resetProjectData(projectId)
-      if (runtime.record.archived) await this.performOpenLocal(projectId)
-      else await this.performConnect(projectId)
+      runtime.record = await this.configStore.resetProjectData(projectId)
+      runtime.updatedAt = runtime.record.updatedAt
+      await this.initializeRuntime(projectId)
+      this.schedulePendingStarts()
       return this.snapshot(projectId)
     })
   }
@@ -414,8 +500,9 @@ export class ControlPlane {
           await this.performOpenLocal(projectId)
         }
       } else {
-        await this.performConnect(projectId)
+        await this.initializeRuntime(projectId)
       }
+      this.schedulePendingStarts()
       return this.snapshot(projectId)
     })
   }
@@ -441,6 +528,7 @@ export class ControlPlane {
   async close(): Promise<void> {
     await this.enqueueTransition(async () => {
       this.closing = true
+      this.clearPendingStartTimer()
       const failures: unknown[] = []
       for (const projectId of this.runtimes.keys()) {
         try {
@@ -454,6 +542,73 @@ export class ControlPlane {
       }
       return this.snapshot()
     })
+  }
+
+  /** 根据归档和开始状态构造安全运行时；未到时的 pending 只打开本地数据。 */
+  private async initializeRuntime(projectId: string): Promise<void> {
+    const runtime = this.runtimes.get(projectId)
+    if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+    if (runtime.record.archived) {
+      if (runtime.project && !runtime.localOnly) await this.performDisconnect(projectId)
+      await this.performOpenLocal(projectId)
+      return
+    }
+    if (isPendingActivation(runtime.record.activation)) {
+      if (isActivationDue(runtime.record.activation)) {
+        await this.activateProject(projectId)
+        return
+      }
+      if (runtime.project && !runtime.localOnly) await this.performDisconnect(projectId)
+      await this.performOpenLocal(projectId)
+      return
+    }
+    await this.performConnect(projectId)
+  }
+
+  /** 在持久化 started 状态后才允许任何 live 平台连接。 */
+  private async activateProject(projectId: string): Promise<void> {
+    const runtime = this.runtimes.get(projectId)
+    if (!runtime) throw new Error(`Project 不存在: ${projectId}`)
+    if (!isPendingActivation(runtime.record.activation)) {
+      await this.performConnect(projectId)
+      return
+    }
+    runtime.record = await this.configStore.setActivation(projectId, startedActivation())
+    runtime.updatedAt = runtime.record.updatedAt
+    if (runtime.record.archived) {
+      if (runtime.project && !runtime.localOnly) await this.performDisconnect(projectId)
+      await this.performOpenLocal(projectId)
+      return
+    }
+    await this.performConnect(projectId)
+  }
+
+  private schedulePendingStarts(): void {
+    this.clearPendingStartTimer()
+    if (this.closing) return
+    const nextStartAt = [...this.runtimes.values()]
+      .filter(
+        (runtime) =>
+          !runtime.record.archived &&
+          isPendingActivation(runtime.record.activation) &&
+          runtime.record.activation.scheduledStartAt !== null,
+      )
+      .map((runtime) => Date.parse(runtime.record.activation.scheduledStartAt ?? ""))
+      .filter((timestamp) => Number.isFinite(timestamp))
+      .sort((left, right) => left - right)[0]
+    if (nextStartAt === undefined) return
+    const delay = Math.max(0, Math.min(nextStartAt - Date.now(), MAX_TIMER_DELAY_MS))
+    this.pendingStartTimer = setTimeout(() => {
+      this.pendingStartTimer = undefined
+      void this.startDueProjects().catch(() => undefined)
+    }, delay)
+    this.pendingStartTimer.unref()
+  }
+
+  private clearPendingStartTimer(): void {
+    if (!this.pendingStartTimer) return
+    clearTimeout(this.pendingStartTimer)
+    this.pendingStartTimer = undefined
   }
 
   private async performDisconnect(projectId: string): Promise<void> {
@@ -637,6 +792,7 @@ export class ControlPlane {
       createdAt: runtime.record.createdAt,
       updatedAt: runtime.updatedAt,
       archived: runtime.record.archived,
+      activation: { ...runtime.record.activation },
     }
   }
 
@@ -678,6 +834,63 @@ function namespaceProjectSecrets(
   return Object.fromEntries(
     Object.entries(values).map(([name, value]) => [projectSecretName(projectId, name), value]),
   )
+}
+
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+
+function activationForSetup(
+  existing: ProjectActivation | undefined,
+  start: ProjectStartOptions | undefined,
+): ProjectActivation {
+  if (!start) return existing ? { ...existing } : startedActivation()
+  if (start.mode === "now") return startedActivation()
+  return pendingActivation(start)
+}
+
+function startedActivation(): ProjectActivation {
+  return { state: "started", scheduledStartAt: null }
+}
+
+function pendingActivation(start: ProjectStartOptions | undefined): ProjectActivation {
+  if (start?.mode !== "scheduled") {
+    return { state: "pending", scheduledStartAt: null }
+  }
+  const timestamp = Date.parse(start.scheduledStartAt)
+  if (Number.isNaN(timestamp)) throw new Error("scheduledStartAt 必须是有效时间")
+  return {
+    state: "pending",
+    scheduledStartAt: new Date(timestamp).toISOString(),
+  }
+}
+
+function isDeferredStart(start: ProjectStartOptions | undefined): boolean {
+  return start?.mode === "manual" || start?.mode === "scheduled"
+}
+
+function isPendingActivation(activation: ProjectActivation): boolean {
+  return activation.state === "pending"
+}
+
+/** 仅计划开始的比赛会自动到期；手动比赛只能由 startProject 激活。 */
+function isActivationDue(activation: ProjectActivation): boolean {
+  return (
+    activation.state === "pending" &&
+    activation.scheduledStartAt !== null &&
+    Date.parse(activation.scheduledStartAt) <= Date.now()
+  )
+}
+
+function canActivateProject(activation: ProjectActivation): boolean {
+  return activation.scheduledStartAt === null || isActivationDue(activation)
+}
+
+function notStartedError(activation: ProjectActivation): ProjectNotStartedError {
+  if (activation.scheduledStartAt) {
+    return new ProjectNotStartedError(
+      `比赛将在 ${activation.scheduledStartAt} 开始，开始前不会请求平台`,
+    )
+  }
+  return new ProjectNotStartedError("比赛尚未开始，请使用“开始比赛”后再连接平台")
 }
 
 async function inspectAndClose(platform: PlatformProject): Promise<PlatformConnectionTest> {

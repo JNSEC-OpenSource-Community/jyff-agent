@@ -362,6 +362,23 @@ export function ProjectPage() {
 
   const byId = useMemo(() => new Map(snapshot?.challenges.map((c) => [c.id, c]) ?? []), [snapshot])
 
+  async function startContest() {
+    setBusy(true)
+    setError("")
+    try {
+      const result = await apiMutation<{ snapshot: DashboardSnapshot }>(
+        projectApi(projectId, "/api/start"),
+        "POST",
+      )
+      setSnapshot(result.snapshot)
+      setQueue(result.snapshot.scheduler?.queued ?? [])
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function action(path: string) {
     setBusy(true)
     setError("")
@@ -492,6 +509,8 @@ export function ProjectPage() {
   const operationsAvailable =
     snapshot.scheduler?.available === true &&
     (!snapshot.controlPlane || snapshot.controlPlane.phase === "ready")
+  const contestPending = snapshot.controlPlane?.activation?.state === "pending"
+  const scheduledStartAt = snapshot.controlPlane?.activation?.scheduledStartAt
 
   const visible = sortChallenges(filterChallenges(snapshot.challenges, { query, statusFilter }))
 
@@ -503,6 +522,25 @@ export function ProjectPage() {
         description={`${snapshot.overview.challenges} 题 · ${relativeTime(snapshot.generatedAt)}`}
         actions={
           <>
+            <Button asChild variant="secondary" size="sm">
+              <a
+                href={projectApi(projectId, "/api/writeups/export")}
+                download="challenge-writeups.md"
+              >
+                <Icon icon="lucide:download" width="14" />
+                导出全部 WP
+              </a>
+            </Button>
+            {contestPending && !scheduledStartAt ? (
+              <Button size="sm" onClick={() => void startContest()} disabled={busy}>
+                <Icon
+                  icon={busy ? "lucide:loader-circle" : "lucide:play"}
+                  className={busy ? "animate-spin" : undefined}
+                  width="14"
+                />
+                开始比赛
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               onClick={() => void action("/api/refresh")}
@@ -534,6 +572,22 @@ export function ProjectPage() {
       />
 
       {error ? <ErrorNotice message={error} className="mb-4" /> : null}
+
+      {contestPending ? (
+        <Card className="mb-4 border-amber/30 bg-amber/5">
+          <div className="flex items-start gap-3">
+            <Icon icon="lucide:timer" width="18" className="mt-0.5 shrink-0 text-amber" />
+            <div>
+              <h2 className="font-semibold">比赛尚未开始</h2>
+              <p className="mt-1! text-sm text-muted-foreground">
+                {scheduledStartAt
+                  ? `计划开始时间：${absoluteTime(scheduledStartAt)}。开始前不会请求平台。`
+                  : "点击“开始比赛”后才会连接平台并同步题目。"}
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <ProgressOverview {...snapshot.stats} />
 

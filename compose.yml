@@ -36,9 +36,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
+  # 可选：默认只启动 WebUI，不会读取或构建外部 ShellPoop 仓库。
+  # 启用方式：docker compose --profile shellpoop up --build -d
   shellpoop:
+    profiles: ["shellpoop"]
     build:
-      context: ../shellpoop
+      context: ${SHELLPOOP_BUILD_CONTEXT:-../shellpoop}
     image: shellpoop:latest
     init: true
     environment:

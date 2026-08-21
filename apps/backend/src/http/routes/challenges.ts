@@ -155,6 +155,44 @@ export function challengeRoutes(services: Services): App {
     return c.json({ tldr: project.tldr(c.req.param("challengeId")) ?? null })
   })
 
+  app.get("/writeups/export", async (c) => {
+    const project = services.requireProject(projectIdOf(c))
+    // 导出只读取已持久化的平台快照和本地 Run/workspace，不应因平台临时无权
+    // 或不可用而再次请求 listChallenges；历史题目由 RunStore 补入。
+    const cachedChallenges = project.cachedPlatformView?.().challenges ?? []
+    const metadata = new Map(
+      cachedChallenges.map((challenge) => [
+        challenge.id,
+        { title: challenge.title, category: challenge.category },
+      ]),
+    )
+    for (const run of project.runs()) {
+      if (!metadata.has(run.challengeId)) {
+        metadata.set(run.challengeId, { title: run.challengeId, category: "" })
+      }
+    }
+
+    const entries: WriteupExportEntry[] = []
+    for (const [challengeId, details] of metadata) {
+      const writeup = await project.challengeWriteup(challengeId)
+      if (!writeup.validation.valid || !writeup.content?.trim()) continue
+      entries.push({
+        id: challengeId,
+        title: details.title,
+        category: details.category,
+        content: writeup.content.trimEnd(),
+      })
+    }
+    entries.sort(compareWriteups)
+    const content = formatWriteups(entries)
+    const body = Buffer.from(content, "utf8")
+    c.header("Content-Type", "text/markdown; charset=utf-8")
+    c.header("Content-Disposition", 'attachment; filename="challenge-writeups.md"')
+    c.header("Content-Length", String(body.byteLength))
+    c.header("Cache-Control", "no-store")
+    return c.body(body)
+  })
+
   app.get("/challenges/:challengeId/writeup", async (c) => {
     const project = services.requireProject(projectIdOf(c))
     const challengeId = c.req.param("challengeId")
@@ -289,6 +327,47 @@ function challengeIdFromPath(path: string): string {
 /** Content-Disposition filename 段白名单清洗：平台/run 数据不可信，防 header 注入。 */
 function filenameSafe(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
+}
+
+interface WriteupExportEntry {
+  id: string
+  title: string
+  category: string
+  content: string
+}
+
+function compareWriteups(left: WriteupExportEntry, right: WriteupExportEntry): number {
+  return (
+    compareText(left.category, right.category) ||
+    compareText(left.title, right.title) ||
+    compareText(left.id, right.id)
+  )
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function formatWriteups(entries: readonly WriteupExportEntry[]): string {
+  const sections = entries.map((entry) => {
+    const title = markdownSingleLine(entry.title) || entry.id
+    const id = markdownInline(entry.id)
+    return `## ${title}\n\n> 题目 ID: \`${id}\`\n\n${entry.content}`
+  })
+  const introduction = "# 题目 Writeup 汇总\n\n> 本文仅包含已通过校验的题目 Writeup。\n\n"
+  if (sections.length === 0) return `${introduction}暂无可用的 Writeup。\n`
+  return `${introduction}${sections.join("\n\n---\n\n")}\n`
+}
+
+function markdownSingleLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim()
+}
+
+function markdownInline(value: string): string {
+  return value
+    .replace(/`/g, "\\`")
+    .replace(/[\r\n]+/g, " ")
+    .trim()
 }
 
 async function readWorkspaceFile(

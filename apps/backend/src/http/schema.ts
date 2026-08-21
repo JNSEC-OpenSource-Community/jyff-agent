@@ -1,4 +1,4 @@
-import { parseProjectConfig } from "@ctf-agent/core"
+import { parseProjectConfig, type ProjectStartOptions } from "@ctf-agent/core"
 import type { Context } from "hono"
 import { z } from "zod"
 import type { AppEnv } from "./context.ts"
@@ -326,6 +326,25 @@ export const webUiLoginSchema = z.object({
     .max(1_024, { message: "密码长度不能超过 1024" }),
 })
 
+const projectStartSchema = z.union([
+  z.object({ mode: z.literal("now") }).strict(),
+  z.object({ mode: z.literal("manual") }).strict(),
+  z
+    .object({
+      mode: z.literal("scheduled"),
+      scheduledStartAt: z
+        .string()
+        .trim()
+        .min(1, { message: "scheduledStartAt 不能为空" })
+        .max(128)
+        .refine((value) => !Number.isNaN(Date.parse(value)), {
+          message: "scheduledStartAt 必须是有效时间",
+        })
+        .transform((value) => new Date(Date.parse(value)).toISOString()),
+    })
+    .strict(),
+])
+
 /** 平台连接配置（ProjectConfig + 命名空间凭据）。 */
 export const projectSetupSchema = z.object({
   config: z
@@ -334,11 +353,14 @@ export const projectSetupSchema = z.object({
       message: "config 必须是对象",
     }),
   secrets: z.record(z.string(), z.string(), { message: "secrets 必须是字符串键值对象" }).optional(),
+  /** 省略时保持历史行为：立即测试并连接。 */
+  start: projectStartSchema.optional(),
 })
 
 export interface ProjectSetupInput {
   config: import("@ctf-agent/core").ProjectConfig
   secrets?: Readonly<Record<string, string | undefined>>
+  start?: ProjectStartOptions
 }
 
 /** 解析平台连接配置：ProjectConfig 解析失败 → 400 invalid_project_config。 */
@@ -349,7 +371,8 @@ export function parseProjectSetup(body: Record<string, unknown>): ProjectSetupIn
   } catch (error) {
     throw new HttpError(400, "invalid_project_config", errorText(error))
   }
-  if (body.secrets === undefined) return { config }
+  const start = body.start === undefined ? undefined : parseProjectStart(body.start)
+  if (body.secrets === undefined) return start ? { config, start } : { config }
   if (typeof body.secrets !== "object" || body.secrets === null || Array.isArray(body.secrets)) {
     throw new HttpError(400, "invalid_secrets", "secrets 必须是字符串键值对象")
   }
@@ -360,7 +383,17 @@ export function parseProjectSetup(body: Record<string, unknown>): ProjectSetupIn
     }
     secrets[name] = value.length > 0 ? value : undefined
   }
-  return { config, secrets }
+  return start ? { config, secrets, start } : { config, secrets }
+}
+
+function parseProjectStart(value: unknown): ProjectStartOptions {
+  const result = projectStartSchema.safeParse(value)
+  if (result.success) return result.data
+  throw new HttpError(
+    400,
+    "invalid_project_start",
+    result.error.issues[0]?.message ?? "比赛开始方式不合法",
+  )
 }
 
 /** WebUI 鉴权配置。 */

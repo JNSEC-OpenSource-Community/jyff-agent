@@ -43,6 +43,7 @@ export class FakeDashboardProject implements DashboardProject {
   latestRunEventCalls = 0
   overviewDelayMs = 0
   overviewError?: Error
+  challengesCalls = 0
   overviewValue: ContestOverview = {
     id: "event-1",
     name: "Test CTF",
@@ -271,7 +272,12 @@ export class FakeDashboardProject implements DashboardProject {
     return this.overviewValue
   }
   async challenges(): Promise<ChallengeSummary[]> {
+    this.challengesCalls++
     return this.challengeValues
+  }
+
+  cachedPlatformView() {
+    return { challenges: this.challengeValues }
   }
   async announcements(): Promise<Announcement[]> {
     return this.announcementValues
@@ -445,8 +451,9 @@ export class FakeDashboardProject implements DashboardProject {
     },
     content: null,
   }
-  async challengeWriteup(_challengeId: string) {
-    return structuredClone(this.writeupValue)
+  writeupValues = new Map<string, ChallengeWriteup>()
+  async challengeWriteup(challengeId: string) {
+    return structuredClone(this.writeupValues.get(challengeId) ?? this.writeupValue)
   }
   workspaceFilesValue: WorkspaceArtifactListing = {
     files: [],

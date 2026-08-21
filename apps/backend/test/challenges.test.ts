@@ -402,6 +402,72 @@ describe("题目路由", () => {
     expect((await jsonRequest(app, "/api/challenges/pwn-1/dispatch", "POST", {})).status).toBe(503)
   })
 
+  it("导出所有已通过校验的题目 Writeup，并按分类/标题排序", async () => {
+    const project = new FakeDashboardProject()
+    const baseRun = project.runValues.at(0)
+    if (!baseRun) throw new Error("测试缺少基础 Run")
+    project.runValues.push({
+      ...baseRun,
+      id: "run-old",
+      challengeId: "old-challenge",
+    })
+    project.writeupValues = new Map([
+      [
+        "old-challenge",
+        {
+          validation: {
+            valid: true,
+            path: "/workspace/old/writeup.md",
+            errors: [],
+            size: 16,
+          },
+          content: "# Old Challenge\\n\\n历史题目",
+        },
+      ],
+      [
+        "pwn-1",
+        {
+          validation: {
+            valid: true,
+            path: "/workspace/pwn/writeup.md",
+            errors: [],
+            size: 18,
+          },
+          content: "# Heap Garden\\n\\n分析 pwn",
+        },
+      ],
+      [
+        "web-1",
+        {
+          validation: {
+            valid: true,
+            path: "/workspace/web/writeup.md",
+            errors: [],
+            size: 15,
+          },
+          content: "# Cookie Jar\\n\\n分析 web",
+        },
+      ],
+    ])
+    const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
+
+    const response = await app.request("/api/writeups/export")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/markdown")
+    expect(response.headers.get("content-disposition")).toContain(
+      'filename="challenge-writeups.md"',
+    )
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(project.challengesCalls).toBe(0)
+    const content = await response.text()
+    expect(content).toContain("# 题目 Writeup 汇总")
+    expect(content).toContain("分析 pwn")
+    expect(content).toContain("分析 web")
+    expect(content).toContain("历史题目")
+    expect(content).not.toContain("Signal")
+    expect(content.indexOf("Heap Garden")).toBeLessThan(content.indexOf("Cookie Jar"))
+  })
+
   it.each([
     {
       label: "内容可用时返回 markdown 附件",

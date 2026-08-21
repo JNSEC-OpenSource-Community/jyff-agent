@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { PlatformConnectOptions, PlatformPlugin, PlatformProject } from "@ctf-agent/platform"
-import { afterEach, describe, expect, it } from "vite-plus/test"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { ControlPlane, projectSecretName } from "../../src/control-plane/control-plane.ts"
 import { FileSecretStore } from "../../src/control-plane/secret-store.ts"
 import type { ProjectConfig } from "../../src/project/config.ts"
@@ -116,6 +116,92 @@ describe("ControlPlane", () => {
       phase: "unconfigured",
       configured: false,
     })
+  })
+
+  it("创建未开始比赛时不连接平台，手动开始后才建立连接", async () => {
+    const root = await rootFixture()
+    const plugin = new CredentialPlatform()
+    const control = await ControlPlane.create({ root, platforms: [plugin] })
+
+    const pending = await control.applySetup({
+      config: config("Manual Start", "manual-start"),
+      secrets: { TEST_TOKEN: "secret-token" },
+      start: { mode: "manual" },
+    })
+    expect(plugin.connections).toBe(0)
+    expect(pending).toMatchObject({
+      projectId: "manual-start",
+      activation: { state: "pending", scheduledStartAt: null },
+    })
+    expect(control.currentScheduler("manual-start")).toBeUndefined()
+
+    await control.close()
+    const restartedPlugin = new CredentialPlatform()
+    const restarted = await ControlPlane.create({ root, platforms: [restartedPlugin] })
+    await restarted.start()
+    expect(restartedPlugin.connections).toBe(0)
+    expect(restarted.snapshot("manual-start")).toMatchObject({
+      activation: { state: "pending", scheduledStartAt: null },
+    })
+
+    await restarted.startProject("manual-start")
+    expect(restartedPlugin.connections).toBe(1)
+    expect(restarted.snapshot("manual-start")).toMatchObject({
+      phase: "ready",
+      activation: { state: "started", scheduledStartAt: null },
+    })
+    await restarted.close()
+  })
+
+  it("计划开始的比赛在时间到达前不连接平台", async () => {
+    const root = await rootFixture()
+    const plugin = new CredentialPlatform()
+    const scheduledStartAt = new Date(Date.now() + 60_000).toISOString()
+    const control = await ControlPlane.create({ root, platforms: [plugin] })
+
+    await control.applySetup({
+      config: config("Scheduled Start", "scheduled-start"),
+      secrets: { TEST_TOKEN: "secret-token" },
+      start: { mode: "scheduled", scheduledStartAt },
+    })
+    expect(plugin.connections).toBe(0)
+    expect(control.snapshot("scheduled-start")).toMatchObject({
+      activation: { state: "pending", scheduledStartAt },
+    })
+    await control.startDueProjects()
+    expect(plugin.connections).toBe(0)
+    await control.close()
+  })
+
+  it("计划时间到达后自动开始比赛", async () => {
+    vi.useFakeTimers()
+    const now = new Date("2026-08-12T12:00:00.000Z")
+    vi.setSystemTime(now)
+    let control: ControlPlane | undefined
+    try {
+      const root = await rootFixture()
+      const plugin = new CredentialPlatform()
+      control = await ControlPlane.create({ root, platforms: [plugin] })
+      await control.applySetup({
+        config: config("Automatic Start", "automatic-start"),
+        secrets: { TEST_TOKEN: "secret-token" },
+        start: {
+          mode: "scheduled",
+          scheduledStartAt: new Date(now.getTime() + 1_000).toISOString(),
+        },
+      })
+      expect(plugin.connections).toBe(0)
+
+      vi.setSystemTime(new Date(now.getTime() + 1_100))
+      await control.startDueProjects()
+      expect(plugin.connections).toBe(1)
+      expect(control.snapshot("automatic-start")).toMatchObject({
+        activation: { state: "started" },
+      })
+    } finally {
+      await control?.close()
+      vi.useRealTimers()
+    }
   })
 
   it("平台凭据不从环境变量回退，认证失败进入 degraded", async () => {

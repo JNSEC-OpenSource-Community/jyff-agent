@@ -104,6 +104,15 @@ vp run build:sandbox
 docker compose up --build -d
 ```
 
+默认只启动 WebUI，ShellPoop 反弹 Shell 服务是可选功能，不需要准备外部
+`../shellpoop` 仓库。如果需要启用它：
+
+```bash
+docker compose --profile shellpoop up --build -d
+```
+
+ShellPoop 默认从 `../shellpoop` 构建，也可以通过 `SHELLPOOP_BUILD_CONTEXT` 指定服务仓库路径。
+
 Compose 配置会：
 
 - 以 `apps/backend/Dockerfile` 的 `runtime` target 构建 `ctf-agent-webui:latest`。
@@ -111,10 +120,11 @@ Compose 配置会：
 - 将命名卷 `ctf-agent-data` 挂载到 `/data/.ctf-agent`，保存全局配置和 Project 状态。
 - 在容器内使用 `--root /data`、`--workspace-volume ctf-agent-data` 和 `--port 3000` 启动后端。
 - 默认将 WebUI 映射到 `0.0.0.0:3000`，OAuth 回调端口 `1455` 和 `53692` 仅绑定本机。
+- `shellpoop` Compose 服务属于 `shellpoop` profile；未启用 profile 时不会检查或构建其外部 build context。
 
 Compose 的项目部署参数包括 `CTF_AGENT_WEBUI_PORT`、`CTF_AGENT_CHALLENGE_TIMEOUT_MS` 和 `CTF_AGENT_MAX_SESSION_INTERRUPTIONS`。数据卷必须持久化备份；`secrets.json` 包含平台和模型密钥，必须按密钥文件保护，不能提交到版本库或通过日志暴露。
 
-Docker socket 等价于给予容器较高的宿主机控制能力，生产部署应限制 WebUI 的网络访问和登录权限。启用 Web Access 时还要注意：网络请求在 backend 宿主进程发出，不受 Solver 容器 `networkMode` 限制。
+Docker socket 等价于给予容器较高的宿主机控制能力，生产部署应限制 WebUI 的网络访问和登录权限。启用 Web Access 时还要注意：网络请求在 backend 宿主进程发出，不受 Solver 容器 `networkMode` 限制。ShellPoop 启用后还需在 WebUI 全局设置中填写服务地址，并确保目标主机能回连监听端口。
 
 ## 数据目录
 

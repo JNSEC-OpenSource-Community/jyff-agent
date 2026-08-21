@@ -3,12 +3,20 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { type ProjectConfig, parseProjectConfig } from "../project/config.ts"
 
+export interface ProjectActivation {
+  /** 尚未开始时绝不连接平台；开始状态会在首次连接前落盘。 */
+  state: "pending" | "started"
+  /** null 表示由用户手动开始。 */
+  scheduledStartAt: string | null
+}
+
 interface ProjectRegistryEntry {
   id: string
   directory: string
   createdAt: string
   updatedAt: string
   archived: boolean
+  activation: ProjectActivation
 }
 
 interface ProjectRegistryFile {
@@ -22,6 +30,7 @@ export interface StoredProjectConfig {
   createdAt: string
   updatedAt: string
   archived: boolean
+  activation: ProjectActivation
   rootProject: boolean
 }
 
@@ -63,6 +72,7 @@ export class ProjectConfigStore {
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
         archived: entry.archived,
+        activation: cloneActivation(entry.activation),
         rootProject: entry.directory === ".",
       })
     }
@@ -89,8 +99,12 @@ export class ProjectConfigStore {
     return (await this.saveProject(config)).config
   }
 
-  async saveProject(config: ProjectConfig): Promise<StoredProjectConfig> {
+  async saveProject(
+    config: ProjectConfig,
+    activation?: ProjectActivation,
+  ): Promise<StoredProjectConfig> {
     const validated = parseProjectConfig(config)
+    const normalizedActivation = activation ? parseActivation(activation) : undefined
     const registry = await this.readRegistry()
     const records = await this.list()
     const existing = records.find(
@@ -108,10 +122,14 @@ export class ProjectConfigStore {
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         archived: existing?.archived ?? false,
+        activation: cloneActivation(
+          normalizedActivation ?? existing?.activation ?? startedActivation(),
+        ),
       }
       registry.projects.push(entry)
     } else {
       entry.updatedAt = now
+      if (normalizedActivation) entry.activation = cloneActivation(normalizedActivation)
     }
 
     const stateDirectory = this.resolveStateDirectory(entry.directory)
@@ -123,6 +141,7 @@ export class ProjectConfigStore {
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
       archived: entry.archived,
+      activation: cloneActivation(entry.activation),
       rootProject: entry.directory === ".",
     }
   }
@@ -196,6 +215,28 @@ export class ProjectConfigStore {
     return cloneRecord(record)
   }
 
+  async setActivation(
+    projectId: string,
+    activation: ProjectActivation,
+  ): Promise<StoredProjectConfig> {
+    const registry = await this.readRegistry()
+    const record = (await this.list()).find(
+      (candidate) => candidate.config.project.id === projectId,
+    )
+    if (!record) throw new Error(`Project 不存在: ${projectId}`)
+    const entry = registry.projects.find((candidate) => candidate.id === projectId)
+    if (!entry) throw new Error(`Project 注册项不存在: ${projectId}`)
+    const now = new Date().toISOString()
+    entry.activation = parseActivation(activation)
+    entry.updatedAt = now
+    await writeJsonAtomic(this.registryPath, registry)
+    return {
+      ...record,
+      updatedAt: now,
+      activation: cloneActivation(entry.activation),
+    }
+  }
+
   async setArchived(projectId: string, archived: boolean): Promise<StoredProjectConfig> {
     const registry = await this.readRegistry()
     const record = (await this.list()).find(
@@ -211,6 +252,7 @@ export class ProjectConfigStore {
         createdAt: record.createdAt,
         updatedAt: now,
         archived,
+        activation: cloneActivation(record.activation),
       }
       registry.projects.push(entry)
     } else {
@@ -222,6 +264,7 @@ export class ProjectConfigStore {
       ...record,
       updatedAt: now,
       archived,
+      activation: cloneActivation(entry.activation),
     }
   }
 
@@ -271,7 +314,8 @@ function parseRegistry(value: unknown): ProjectRegistryFile {
     ids.add(id)
     directories.add(directory)
     const archived = candidate.archived === true
-    return { id, directory, createdAt, updatedAt, archived }
+    const activation = parseActivation(candidate.activation)
+    return { id, directory, createdAt, updatedAt, archived, activation }
   })
   return { version: 1, projects }
 }
@@ -293,7 +337,41 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 }
 
 function cloneRecord(record: StoredProjectConfig): StoredProjectConfig {
-  return { ...record, config: structuredClone(record.config) }
+  return {
+    ...record,
+    config: structuredClone(record.config),
+    activation: cloneActivation(record.activation),
+  }
+}
+
+function startedActivation(): ProjectActivation {
+  return { state: "started", scheduledStartAt: null }
+}
+
+function parseActivation(value: unknown): ProjectActivation {
+  // 旧注册表未记录比赛开始状态，升级后按已开始处理以保持原有启动语义。
+  if (value === undefined) return startedActivation()
+  if (!isRecord(value)) throw new Error("Project activation 格式无效")
+  if (value.state !== "pending" && value.state !== "started") {
+    throw new Error("Project activation state 无效")
+  }
+  const scheduledStartAt = optionalTimestamp(value.scheduledStartAt, "activation.scheduledStartAt")
+  if (value.state === "started" && scheduledStartAt !== null) {
+    throw new Error("已开始比赛不能保留 scheduledStartAt")
+  }
+  return { state: value.state, scheduledStartAt }
+}
+
+function cloneActivation(activation: ProjectActivation): ProjectActivation {
+  return { ...activation }
+}
+
+function optionalTimestamp(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) return null
+  const text = requiredText(value, label)
+  const timestamp = Date.parse(text)
+  if (Number.isNaN(timestamp)) throw new Error(`${label} 必须是有效时间`)
+  return new Date(timestamp).toISOString()
 }
 
 function requiredText(value: unknown, label: string): string {

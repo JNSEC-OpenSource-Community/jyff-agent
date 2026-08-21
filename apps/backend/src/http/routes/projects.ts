@@ -15,6 +15,15 @@ import {
 } from "../schema.ts"
 import type { Services } from "../services.ts"
 
+function isProjectNotStarted(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "project_not_started"
+  )
+}
+
 /** 全局项目管理：列表、创建、连接测试。 */
 export function projectsRoutes(services: Services): App {
   const app = new Hono<AppEnv>()
@@ -52,6 +61,9 @@ export function projectsRoutes(services: Services): App {
     try {
       return c.json(await controlPlane.testConnection(input))
     } catch (error) {
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", errorText(error))
+      }
       throw new HttpError(422, "platform_connection_failed", errorText(error))
     }
   })
@@ -65,6 +77,9 @@ export function projectsRoutes(services: Services): App {
     try {
       await controlPlane.applySetup(input)
     } catch (error) {
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", errorText(error))
+      }
       throw new HttpError(422, "platform_setup_failed", errorText(error))
     }
     return c.json(
@@ -134,6 +149,32 @@ export function scopedProjectRoutes(services: Services): App {
     }
   })
 
+  app.post("/start", async (c) => {
+    const projectId = projectIdOf(c)
+    await readJsonBody(c)
+    try {
+      const controlPlaneService = services.requireControlPlane()
+      if (!controlPlaneService.startProject) {
+        throw new HttpError(501, "project_start_unavailable", "当前控制面不支持手动开始比赛")
+      }
+      const controlPlane = await controlPlaneService.startProject(projectId)
+      return c.json({
+        controlPlane,
+        snapshot: await services.sync.refreshProject(projectId),
+      })
+    } catch (error) {
+      if (error instanceof HttpError) throw error
+      const message = errorText(error)
+      if (message.includes("Project 不存在")) {
+        throw new HttpError(404, "project_not_found", message)
+      }
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", message)
+      }
+      throw new HttpError(503, "platform_connection_failed", message)
+    }
+  })
+
   app.post("/reset-solvers", async (c) => {
     const projectId = projectIdOf(c)
     await readJsonBody(c)
@@ -159,9 +200,17 @@ export function scopedProjectRoutes(services: Services): App {
 
   app.post("/control-plane/connect", async (c) => {
     const controlPlane = services.requireControlPlane()
+    const projectId = projectIdOf(c)
     await readJsonBody(c)
-    await controlPlane.connect(projectIdOf(c))
-    return c.json(await services.sync.refreshProject(projectIdOf(c)))
+    try {
+      await controlPlane.connect(projectId)
+    } catch (error) {
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", errorText(error))
+      }
+      throw new HttpError(503, "platform_connection_failed", errorText(error))
+    }
+    return c.json(await services.sync.refreshProject(projectId))
   })
 
   app.get("/runtime-config", (c) => {

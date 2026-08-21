@@ -132,6 +132,33 @@ describe("ProjectConfigStore", () => {
     await expect(store.resetProjectData("missing")).rejects.toThrow("Project 不存在")
   })
 
+  it("持久化比赛开始状态，并让旧注册表默认保持已开始", async () => {
+    const root = await fixture()
+    const store = new ProjectConfigStore(root)
+    await store.saveProject(config("manual"), {
+      state: "pending",
+      scheduledStartAt: null,
+    })
+
+    expect((await store.loadProject("manual"))?.activation).toEqual({
+      state: "pending",
+      scheduledStartAt: null,
+    })
+    await store.setActivation("manual", { state: "started", scheduledStartAt: null })
+    expect((await store.loadProject("manual"))?.activation).toEqual({
+      state: "started",
+      scheduledStartAt: null,
+    })
+
+    const persisted = JSON.parse(await readFile(store.registryPath, "utf8"))
+    delete persisted.projects[0].activation
+    await writeFile(store.registryPath, JSON.stringify(persisted))
+    expect((await store.loadProject("manual"))?.activation).toEqual({
+      state: "started",
+      scheduledStartAt: null,
+    })
+  })
+
   it("在服务端注册表持久化归档状态并兼容旧字段缺失", async () => {
     const root = await fixture()
     const store = new ProjectConfigStore(root)

@@ -1,4 +1,3 @@
-import { parseProjectConfig } from "@ctf-agent/core"
 import { Hono } from "hono"
 import { defaultBuiltInPluginConfigurationView } from "../../domain/built-in-plugin-config.ts"
 import type { App, AppContext, AppEnv, ProjectScope } from "../context.ts"
@@ -12,6 +11,8 @@ import {
 import {
   parseJsonBody,
   builtInPluginStateSchema,
+  parseProjectSetup,
+  projectSetupSchema,
   readJsonBody,
   webUiAuthenticationSchema,
   webUiLoginSchema,
@@ -23,28 +24,13 @@ function authenticationOf(services: Services) {
   return services.authentication?.snapshot() ?? { enabled: false, username: null }
 }
 
-function setupFromBody(body: Record<string, unknown>): {
-  config: import("@ctf-agent/core").ProjectConfig
-  secrets?: Readonly<Record<string, string | undefined>>
-} {
-  let config: import("@ctf-agent/core").ProjectConfig
-  try {
-    config = parseProjectConfig(body.config)
-  } catch (error) {
-    throw new HttpError(400, "invalid_project_config", errorText(error))
-  }
-  if (body.secrets === undefined) return { config }
-  if (typeof body.secrets !== "object" || body.secrets === null || Array.isArray(body.secrets)) {
-    throw new HttpError(400, "invalid_secrets", "secrets 必须是字符串键值对象")
-  }
-  const secrets: Record<string, string | undefined> = {}
-  for (const [name, value] of Object.entries(body.secrets)) {
-    if (typeof value !== "string") {
-      throw new HttpError(400, "invalid_secrets", `密钥 ${name} 必须是字符串`)
-    }
-    secrets[name] = value.length > 0 ? value : undefined
-  }
-  return { config, secrets }
+function isProjectNotStarted(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "project_not_started"
+  )
 }
 
 /** 健康检查（挂载在顶层，不走 /api 前缀）。 */
@@ -169,20 +155,32 @@ export function systemRoutes(services: Services): App {
 
   app.post("/control-plane/test", async (c) => {
     const controlPlane = services.requireControlPlane()
-    const input = setupFromBody(await readJsonBody(c))
+    const body = await parseJsonBody(c, projectSetupSchema, {
+      code: "invalid_project_config",
+    })
+    const input = parseProjectSetup(body)
     try {
       return c.json(await controlPlane.testConnection(input))
     } catch (error) {
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", errorText(error))
+      }
       throw new HttpError(422, "platform_connection_failed", errorText(error))
     }
   })
 
   app.post("/control-plane/apply", async (c) => {
     const controlPlane = services.requireControlPlane()
-    const input = setupFromBody(await readJsonBody(c))
+    const body = await parseJsonBody(c, projectSetupSchema, {
+      code: "invalid_project_config",
+    })
+    const input = parseProjectSetup(body)
     try {
       await controlPlane.applySetup(input)
     } catch (error) {
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", errorText(error))
+      }
       throw new HttpError(422, "platform_setup_failed", errorText(error))
     }
     return c.json({
@@ -196,6 +194,9 @@ export function systemRoutes(services: Services): App {
     try {
       await controlPlane.connect()
     } catch (error) {
+      if (isProjectNotStarted(error)) {
+        throw new HttpError(409, "project_not_started", errorText(error))
+      }
       throw new HttpError(503, "platform_connection_failed", errorText(error))
     }
     return c.json(await services.sync.refresh())

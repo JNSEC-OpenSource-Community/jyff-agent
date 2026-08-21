@@ -231,8 +231,10 @@ export interface DashboardControlPlane {
   applySetup(input: {
     config: ProjectConfig
     secrets?: Readonly<Record<string, string | undefined>>
+    start?: import("@ctf-agent/core").ProjectStartOptions
   }): Promise<ControlPlaneSnapshot>
   connect(projectId?: string): Promise<ControlPlaneSnapshot>
+  startProject?(projectId: string): Promise<ControlPlaneSnapshot>
   deleteProject(projectId: string): Promise<ControlPlaneSnapshot>
   resetProject(projectId: string): Promise<ControlPlaneSnapshot>
   archiveProject(projectId: string, archived: boolean): Promise<ControlPlaneSnapshot>

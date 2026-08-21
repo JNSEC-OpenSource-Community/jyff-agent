@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import type { DashboardSnapshot } from "../src/types.ts"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
@@ -22,6 +23,59 @@ afterEach(() => {
 })
 
 describe("ProjectPage", () => {
+  it("为未开始比赛提供手动开始按钮，并提供项目范围的 Writeup 导出", async () => {
+    let started = false
+    const pending = {
+      ...snapshot(),
+      scheduler: null,
+      controlPlane: {
+        phase: "disconnected",
+        activation: { state: "pending", scheduledStartAt: null },
+      },
+    } as unknown as DashboardSnapshot
+    const ready = {
+      ...pending,
+      controlPlane: {
+        phase: "ready",
+        activation: { state: "started", scheduledStartAt: null },
+      },
+    } as unknown as DashboardSnapshot
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        if (url === "/api/projects/demo/start" && init?.method === "POST") {
+          started = true
+          return jsonResponse({ snapshot: ready })
+        }
+        return jsonResponse(pending)
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/demo"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId",
+            element: createElement(ProjectPage),
+          }),
+        ),
+      ),
+    )
+
+    const exportLink = await screen.findByRole("link", { name: /导出全部 WP/ })
+    expect(exportLink.getAttribute("href")).toBe("/api/projects/demo/writeups/export")
+    await user.click(await screen.findByRole("button", { name: "开始比赛" }))
+    await waitFor(() => expect(started).toBe(true))
+  })
+
   it("使用项目范围的题目链接并为筛选表格提供语义标签", async () => {
     vi.stubGlobal("EventSource", FakeEventSource)
     vi.stubGlobal(

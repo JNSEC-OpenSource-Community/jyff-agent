@@ -46,22 +46,46 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
   let closed = false
   let refreshTimer: NodeJS.Timeout | undefined
   let schedulerReconcileTimer: NodeJS.Timeout | undefined
+  let knownActivations = new Map(
+    options.controlPlane
+      ?.projectSnapshots()
+      .map((project) => [project.id, project.activation?.state ?? "started"]),
+  )
   const heartbeat = setInterval(() => services.sse.ping(), 15_000)
   heartbeat.unref()
 
   const scheduleRefresh = (delayMs: number): void => {
     refreshTimer = setTimeout(async () => {
       try {
-        const selectedProjectId = options.controlPlane?.snapshot().projectId
+        const controlPlane = options.controlPlane
+        await controlPlane?.startDueProjects?.()
+        const projectsAfterStart = controlPlane?.projectSnapshots() ?? []
+        const activatedProjectIds = new Set(
+          projectsAfterStart
+            .filter(
+              (project) =>
+                knownActivations.get(project.id) === "pending" &&
+                project.activation?.state === "started",
+            )
+            .map((project) => project.id),
+        )
+        knownActivations = new Map(
+          projectsAfterStart.map((project) => [project.id, project.activation?.state ?? "started"]),
+        )
+        const selectedProjectId = controlPlane?.snapshot().projectId
         if (
-          !options.controlPlane ||
+          activatedProjectIds.size > 0 ||
+          !controlPlane ||
           !selectedProjectId ||
-          options.controlPlane.shouldPollProject?.(selectedProjectId) !== false
+          controlPlane.shouldPollProject?.(selectedProjectId) !== false
         ) {
           await services.sync.refresh()
         }
         for (const projectId of services.sse.scopedProjectIds()) {
-          if (options.controlPlane?.shouldPollProject?.(projectId) === false) {
+          if (
+            !activatedProjectIds.has(projectId) &&
+            controlPlane?.shouldPollProject?.(projectId) === false
+          ) {
             continue
           }
           try {

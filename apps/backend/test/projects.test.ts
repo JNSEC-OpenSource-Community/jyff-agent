@@ -1,3 +1,4 @@
+import type { ProjectActivation } from "@ctf-agent/core"
 import { describe, expect, it } from "vite-plus/test"
 import {
   type BuiltInPluginConfiguration,
@@ -14,6 +15,7 @@ function createControlPlane(projectName = "Demo CTF") {
   let project: FakeDashboardProject | undefined
   let phase: "unconfigured" | "ready" = "unconfigured"
   let archived = false
+  let activation: ProjectActivation = { state: "started", scheduledStartAt: null }
   let appliedConfig: unknown
   const deletedProjects: string[] = []
   const resetProjects: string[] = []
@@ -26,6 +28,7 @@ function createControlPlane(projectName = "Demo CTF") {
     lastError: null,
     updatedAt: "2026-08-04T00:00:00.000Z",
     selectedProjectId: phase === "ready" ? "demo" : null,
+    activation: phase === "ready" ? activation : undefined,
     projects:
       phase === "ready"
         ? [
@@ -38,6 +41,7 @@ function createControlPlane(projectName = "Demo CTF") {
               createdAt: "2026-08-04T00:00:00.000Z",
               updatedAt: "2026-08-04T00:00:00.000Z",
               archived,
+              activation,
             },
           ]
         : [],
@@ -89,13 +93,23 @@ function createControlPlane(projectName = "Demo CTF") {
         announcements: 1,
       },
     }),
-    applySetup: async ({ config }) => {
+    applySetup: async ({ config, start }) => {
       appliedConfig = config
+      activation =
+        start?.mode === "manual"
+          ? { state: "pending", scheduledStartAt: null }
+          : start?.mode === "scheduled"
+            ? { state: "pending", scheduledStartAt: start.scheduledStartAt }
+            : { state: "started", scheduledStartAt: null }
       project = new FakeDashboardProject()
       phase = "ready"
       return state()
     },
     connect: async () => state(),
+    startProject: async () => {
+      activation = { state: "started", scheduledStartAt: null }
+      return state()
+    },
     archiveProject: async (_projectId, nextArchived) => {
       archived = nextArchived
       return state()
@@ -116,6 +130,7 @@ function createControlPlane(projectName = "Demo CTF") {
     appliedConfig: () => appliedConfig,
     deletedProjects,
     resetProjects,
+    activation: () => activation,
   }
 }
 
@@ -328,6 +343,26 @@ describe("动态控制面与项目管理", () => {
     })
     expect(plane.deletedProjects).toEqual(["demo", "cache:demo"])
     expect((await app.request("/api/projects/demo")).status).toBe(404)
+  })
+
+  it("创建未开始比赛后可通过项目级接口手动开始", async () => {
+    const { app, plane } = appWithControlPlane()
+    const created = await jsonRequest(app, "/api/projects", "POST", {
+      config: DEMO_CONFIG,
+      start: { mode: "manual" },
+    })
+    expect(created.status).toBe(201)
+    expect(plane.activation()).toEqual({ state: "pending", scheduledStartAt: null })
+    expect(await jsonOf(created)).toMatchObject({
+      project: { activation: { state: "pending" } },
+    })
+
+    const started = await jsonRequest(app, "/api/projects/demo/start", "POST", {})
+    expect(started.status).toBe(200)
+    expect(plane.activation()).toEqual({ state: "started", scheduledStartAt: null })
+    expect(await jsonOf(started)).toMatchObject({
+      controlPlane: { activation: { state: "started" } },
+    })
   })
 
   it("全局开关关闭后同步更新项目列表并拒绝 Token 用量接口", async () => {
