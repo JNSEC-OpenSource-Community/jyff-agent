@@ -1,8 +1,21 @@
 name: Verify
 
 on:
+  # PR 由 pull_request 校验；仅在合并到 main 后再运行一次 push 校验，
+  # 避免功能分支的 push 和 PR 事件重复执行同一套检查。
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   quality:
