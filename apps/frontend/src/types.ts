@@ -245,6 +245,8 @@ export interface ModelPoolEntryView {
   provider: string
   modelId: string
   contextWindow: number
+  /** 单次回复输出上限（max_tokens）；缺省时按 min(contextWindow, 32768) 发送。 */
+  maxTokens?: number
   /** 思维链开关(模型级配置,下次创建 solver 生效)。 */
   thinkingEnabled: boolean
   /** 思考强度档位(当前模型支持的档位之一,见 supportedThinkingLevels)。 */
@@ -262,6 +264,7 @@ export interface ModelPoolEntryUpdate {
   provider: string
   modelId: string
   contextWindow: number
+  maxTokens?: number
   thinkingEnabled: boolean
   reasoningEffort: string
   passthroughThinking: boolean

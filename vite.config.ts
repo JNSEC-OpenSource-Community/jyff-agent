@@ -9,6 +9,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   test: {
+    setupFiles: ["./test/setup.ts"],
     include: [
       "../../packages/**/test/**/*.test.ts",
       "../../apps/backend/test/**/*.test.ts",

@@ -41,6 +41,12 @@ import {
 } from "./provider-request-gate.ts"
 
 const MODEL_API_KEY_SECRET_PREFIX = "CTF_MODEL_API_KEY_"
+// 自定义 Provider 没有输出上限的内置知识，而 anthropic-messages 协议必须发送
+// max_tokens、openai-responses 会发送 max_output_tokens。此前直接把 contextWindow
+// 当输出上限发送，大窗口配置（如 1M）会被端点拒绝，例如 GLM 返回
+// 400 [1210][max_tokens参数非法：限制数值范围[1,131072]]。默认输出上限取主流
+// 端点都能接受的值；需要更大输出时按模型显式配置 maxTokens。
+const DEFAULT_CUSTOM_MAX_OUTPUT_TOKENS = 32_768
 const PASSTHROUGH_THINKING_MAP = Object.fromEntries(
   ["minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [level, level]),
 )
@@ -50,6 +56,8 @@ interface StoredModelEntry {
   provider: string
   modelId: string
   contextWindow: number
+  /** 单次回复输出上限（max_tokens）；缺省时钳制为 min(contextWindow, 32768)。 */
+  maxTokens?: number
   thinkingEnabled: boolean
   reasoningEffort: string
   passthroughThinking: boolean
@@ -571,6 +579,7 @@ function storedEntry(value: Record<string, unknown>, index: number): StoredModel
     provider,
     modelId,
     contextWindow,
+    ...(positiveInteger(value.maxTokens) ? { maxTokens: value.maxTokens } : {}),
     thinkingEnabled: value.thinkingEnabled !== false,
     reasoningEffort: stringValue(value.reasoningEffort) ?? DEFAULT_SOLVER_THINKING_LEVEL,
     passthroughThinking: value.passthroughThinking === true,
@@ -731,7 +740,8 @@ function resolveModel(
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow,
-      maxTokens: contextWindow,
+      maxTokens:
+        configuration.maxTokens ?? Math.min(contextWindow, DEFAULT_CUSTOM_MAX_OUTPUT_TOKENS),
       compat:
         customProvider?.api === "openai-completions"
           ? {

@@ -46,6 +46,7 @@ const ed = (m: ModelConfigurationView["models"][number]): EM => ({
   provider: m.provider,
   modelId: m.modelId,
   contextWindow: m.contextWindow,
+  ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
   thinkingEnabled: m.thinkingEnabled,
   reasoningEffort: m.reasoningEffort,
   passthroughThinking: m.passthroughThinking,
@@ -345,6 +346,23 @@ export function ModelPoolEditor({
                       min="1"
                       value={m.contextWindow}
                       onChange={(e) => up(i, { contextWindow: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </Field>
+                  <Field
+                    label="最大输出 Tokens"
+                    description="单次回复上限(max_tokens)，留空默认 32768。端点报 max_tokens 非法时按其允许范围填写。"
+                  >
+                    <Input
+                      type="number"
+                      min="1"
+                      value={m.maxTokens ?? ""}
+                      placeholder="32768"
+                      onChange={(e) =>
+                        up(i, {
+                          maxTokens: e.target.value === "" ? undefined : Number(e.target.value),
+                        })
+                      }
                       className="h-8 text-xs"
                     />
                   </Field>

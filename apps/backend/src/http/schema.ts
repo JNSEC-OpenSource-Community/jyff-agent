@@ -71,6 +71,12 @@ export const modelPoolEntrySchema = z.object({
       message: "Model ID 不能包含控制字符",
     }),
   contextWindow: z.number({ message: "Context Window 必须是整数" }).int().min(1).max(2_000_000),
+  maxTokens: z
+    .number({ message: "Max Tokens 必须是整数" })
+    .int()
+    .min(1, { message: "Max Tokens 不能小于 1" })
+    .max(2_000_000, { message: "Max Tokens 不能超过 2000000" })
+    .optional(),
   thinkingEnabled: z.boolean(),
   passthroughThinking: z.boolean(),
   reasoningEffort: z.enum([...THINKING_LEVELS, "off"], {
@@ -83,6 +89,7 @@ export interface ModelPoolEntryOutput {
   provider: string
   modelId: string
   contextWindow: number
+  maxTokens?: number
   thinkingEnabled: boolean
   passthroughThinking: boolean
   reasoningEffort: string
