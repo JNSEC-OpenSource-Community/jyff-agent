@@ -34,11 +34,25 @@ export interface Announcement {
   rawType?: string
 }
 
+export interface ContestParticipantStats {
+  score: number
+  rank: number | null
+}
+
+export interface ContestOverviewLinks {
+  contest?: string
+  leaderboard?: string
+}
+
 export interface ContestOverview {
   id: string
   name: string
   challenges: number
   announcements: number
+  /** 当前认证参与者在平台上的成绩；平台不支持时省略。 */
+  participant?: ContestParticipantStats
+  /** 平台原生比赛页与排行榜入口；平台不支持时省略。 */
+  links?: ContestOverviewLinks
 }
 
 export interface RemoteEnvironment {

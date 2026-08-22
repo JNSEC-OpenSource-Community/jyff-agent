@@ -640,15 +640,17 @@ export function GlobalSettingsPage() {
                     </div>
                   </div>
                 ) : null}
-                <div className="flex justify-end border-t border-border px-4 py-3">
-                  <Button
-                    type="submit"
-                    disabled={busy || (on && (!uname || (!g.authentication.enabled && !pw)))}
-                  >
-                    <Icon icon="lucide:shield-check" width="14" />
-                    保存
-                  </Button>
-                </div>
+                {on || on !== g.authentication.enabled ? (
+                  <div className="flex justify-end border-t border-border px-4 py-3">
+                    <Button
+                      type="submit"
+                      disabled={busy || (on && (!uname || (!g.authentication.enabled && !pw)))}
+                    >
+                      <Icon icon="lucide:shield-check" width="14" />
+                      保存
+                    </Button>
+                  </div>
+                ) : null}
               </form>
             </Card>
           </SettingsSection>

@@ -302,6 +302,11 @@ interface CTFdNotification {
   date: string
 }
 
+interface CTFdUser {
+  score?: number | string | null
+  place?: number | string | null
+}
+
 interface CTFdAttempt {
   status: string
   message?: string
@@ -380,16 +385,29 @@ class CTFdProject implements PlatformProject {
   }
 
   async getOverview(): Promise<ContestOverview> {
-    const [challenges, announcements] = await Promise.all([
+    const [challenges, announcements, participant] = await Promise.all([
       this.listChallenges(),
       this.listAnnouncements(),
+      this.currentParticipant(),
     ])
     return {
       id: this.project.id,
       name: this.config.name ?? this.project.name,
       challenges: challenges.length,
       announcements: announcements.length,
+      links: {
+        contest: this.client.baseUrl.toString(),
+        leaderboard: new URL("scoreboard", this.client.baseUrl).toString(),
+      },
+      ...(participant ? { participant } : {}),
     }
+  }
+
+  private async currentParticipant(): Promise<{ score: number; rank: number | null } | undefined> {
+    const account =
+      (await this.client.get<CTFdUser>("teams/me").catch(() => undefined)) ??
+      (await this.client.get<CTFdUser>("users/me").catch(() => undefined))
+    return account ? participantStats(account.score, account.place) : undefined
   }
 
   async listChallenges(): Promise<ChallengeSummary[]> {
@@ -485,4 +503,21 @@ function fileName(location: string, index: number): string {
 
 function numericId(id: string): number | string {
   return /^\d+$/.test(id) ? Number(id) : id
+}
+
+function participantStats(
+  score: unknown,
+  rank: unknown,
+): { score: number; rank: number | null } | undefined {
+  const normalizedScore = finiteNumber(score)
+  if (normalizedScore === undefined) return undefined
+  return {
+    score: normalizedScore,
+    rank: finiteNumber(rank) ?? null,
+  }
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  const number = typeof value === "number" || typeof value === "string" ? Number(value) : NaN
+  return Number.isFinite(number) ? Math.trunc(number) : undefined
 }

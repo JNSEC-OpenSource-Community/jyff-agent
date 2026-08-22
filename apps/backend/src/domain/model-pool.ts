@@ -621,10 +621,16 @@ function validateProviderGroups(models: readonly StoredModelEntry[]): void {
   for (const entry of models) {
     if (ids.has(entry.id)) throw new Error(`模型配置 ID 重复: ${entry.id}`)
     ids.add(entry.id)
-    const reference = `${entry.provider}/${entry.modelId}`
-    if (references.has(reference)) throw new Error(`模型重复: ${reference}`)
+    const reference = `${entry.provider}/${entry.modelId}@${effectiveThinkingLevel(entry)}`
+    if (references.has(reference)) throw new Error(`模型与思考强度重复: ${reference}`)
     references.add(reference)
   }
+}
+
+function effectiveThinkingLevel(
+  entry: Pick<StoredModelEntry, "thinkingEnabled" | "reasoningEffort">,
+): string {
+  return entry.thinkingEnabled ? entry.reasoningEffort : "off"
 }
 
 async function persistConfiguration(

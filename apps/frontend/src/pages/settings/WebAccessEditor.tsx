@@ -104,11 +104,16 @@ export function WebAccessEditor({
   const [busy, setBusy] = useState(false)
 
   const configured = new Set(config.providers.filter((p) => p.configured).map((p) => p.id))
+  const isProviderConfigured = (provider: string) =>
+    provider === "nekozuki"
+      ? Boolean(providerConfig.nekozuki?.baseUrl?.trim())
+      : configured.has(provider)
+  const showSave = enabled || enabled !== config.enabled
 
   const providerOptions = WEB_ACCESS_PROVIDERS.filter((p) => !selected.includes(p)).map((p) => ({
     value: p,
     label: providerLabel(p),
-    description: configured.has(p) ? "已配置" : undefined,
+    description: isProviderConfigured(p) ? "已配置" : undefined,
   }))
 
   const summaryModelOptions = (modelConfiguration?.models ?? [])
@@ -219,6 +224,7 @@ export function WebAccessEditor({
               <ul className="mt-3 overflow-hidden rounded-md border border-border">
                 {selected.map((provider) => {
                   const hasKey = configured.has(provider)
+                  const providerConfigured = isProviderConfigured(provider)
                   return (
                     <li
                       key={provider}
@@ -242,8 +248,11 @@ export function WebAccessEditor({
                                   : "搜索 / 抓取 provider"}
                           </p>
                         </div>
-                        <Badge tone={hasKey ? "positive" : "neutral"} className="shrink-0">
-                          {hasKey ? "已配置" : "未配置"}
+                        <Badge
+                          tone={providerConfigured ? "positive" : "neutral"}
+                          className="shrink-0"
+                        >
+                          {providerConfigured ? "已配置" : "未配置"}
                         </Badge>
                       </div>
                       <div className="min-w-0">
@@ -393,12 +402,14 @@ export function WebAccessEditor({
         </div>
       ) : null}
 
-      <div className="flex justify-end border-t border-border pt-4">
-        <Button variant="primary" onClick={() => void saveConfiguration()} disabled={busy}>
-          {busy ? <Spinner className="size-4" /> : null}
-          保存
-        </Button>
-      </div>
+      {showSave ? (
+        <div className="flex justify-end border-t border-border pt-4">
+          <Button variant="primary" onClick={() => void saveConfiguration()} disabled={busy}>
+            {busy ? <Spinner className="size-4" /> : null}
+            保存
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

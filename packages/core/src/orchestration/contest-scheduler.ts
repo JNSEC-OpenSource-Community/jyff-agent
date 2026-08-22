@@ -130,6 +130,8 @@ interface QueueItem {
   requiresAuto: boolean
   enqueuedAt: string
   version: number
+  /** retryAttempt() 的恢复项只存在内存；自动恢复项仍需跟随持久队列。 */
+  persisted?: boolean
   resumeRun?: RunRecord
   retryPrompt?: string
   writeupRetry?: boolean
@@ -155,6 +157,8 @@ interface ActiveItem {
 }
 
 export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const
+
+const RECOVERABLE_SCHEDULER_RUN_SOURCES = new Set<RunSource>(["auto", "manual", "retry", "revival"])
 
 /**
  * 长驻的混合调度控制面：
@@ -347,13 +351,14 @@ export class ContestScheduler {
         this.project.isChallengeSchedulingExcluded(challengeId)
       )
     }
+    const recoverableRuns = latestRecoverableInterruptedRuns(this.project.runs())
 
     for (const items of [this.idleQueue, this.queue]) {
       for (let index = items.length - 1; index >= 0; index--) {
         const item = items[index]
         if (!item || !invalid(item.challenge.id)) continue
         items.splice(index, 1)
-        if (!item.resumeRun) this.project.removeSchedulerChallenge(item.challenge.id)
+        if (item.persisted !== false) this.project.removeSchedulerChallenge(item.challenge.id)
       }
     }
 
@@ -365,6 +370,8 @@ export class ContestScheduler {
         continue
       }
       if (this.hasChallenge(persisted.challengeId)) continue
+      const resumeRun = recoverableRuns.get(persisted.challengeId)
+      if (resumeRun) recoverableRuns.delete(persisted.challengeId)
       const item: QueueItem = {
         challenge,
         source: persisted.source as SchedulerQueueSource,
@@ -374,9 +381,26 @@ export class ContestScheduler {
         requiresAuto: true,
         enqueuedAt: persisted.enqueuedAt,
         version: persisted.version,
+        persisted: true,
+        ...(resumeRun ? { resumeRun } : {}),
       }
       if (persisted.stage === "idle") this.idleQueue.push(item)
       else this.queue.push(item)
+    }
+
+    if (this.mode !== "stopped") {
+      for (const resumeRun of recoverableRuns.values()) {
+        const challenge = byId.get(resumeRun.challengeId)
+        if (
+          !challenge ||
+          invalid(challenge.id) ||
+          this.project.isChallengeBlocked(challenge.id) ||
+          this.hasChallenge(challenge.id)
+        ) {
+          continue
+        }
+        this.enqueueChallenge(challenge, "retry", "execution", "normal", true, true, { resumeRun })
+      }
     }
 
     if (this.mode === "automatic") {
@@ -503,6 +527,7 @@ export class ContestScheduler {
         requiresAuto: true,
         enqueuedAt: record.enqueuedAt,
         version: record.version,
+        persisted: true,
       })
     }
     return this.snapshot()
@@ -655,6 +680,7 @@ export class ContestScheduler {
       requiresAuto: false,
       enqueuedAt: new Date().toISOString(),
       version: 1,
+      persisted: false,
       resumeRun: run,
       ...(prompt ? { retryPrompt: prompt } : {}),
       ...(writeupRetry ? { writeupRetry: true } : {}),
@@ -675,7 +701,7 @@ export class ContestScheduler {
     if (!item) {
       throw new ContestSchedulerError("challenge_not_found", `题目不在调度队列中: ${challengeId}`)
     }
-    if (item.resumeRun) {
+    if (item.resumeRun && item.persisted === false) {
       if (item.version !== options.expectedVersion) {
         throw new ContestSchedulerError(
           "queue_version_conflict",
@@ -728,7 +754,7 @@ export class ContestScheduler {
   ): void {
     const byId = new Map(records.map((record) => [record.challengeId, record]))
     for (const item of [...this.idleQueue, ...this.queue]) {
-      if (item.resumeRun) continue
+      if (item.resumeRun && item.persisted === false) continue
       const record = byId.get(item.challenge.id)
       if (!record) continue
       item.stage = record.stage
@@ -750,7 +776,9 @@ export class ContestScheduler {
     const queueIndex = this.queue.findIndex((item) => item.challenge.id === challengeId)
     if (queueIndex >= 0) {
       const [removed] = this.queue.splice(queueIndex, 1)
-      if (!removed?.resumeRun) this.project.removeSchedulerChallenge(challengeId)
+      if (removed && removed.persisted !== false) {
+        this.project.removeSchedulerChallenge(challengeId)
+      }
       return this.snapshot()
     }
     const active = this.active.get(challengeId)
@@ -903,7 +931,7 @@ export class ContestScheduler {
           source: item.source,
           lane: item.lane,
           requiresAuto: item.requiresAuto,
-          attempt: this.project.nextAttempt(item.challenge.id),
+          attempt: item.resumeRun?.attempt ?? this.project.nextAttempt(item.challenge.id),
           phase: "preparing",
           startedAt: new Date().toISOString(),
           runId: null,
@@ -935,7 +963,7 @@ export class ContestScheduler {
     let failureReason: SolverCloseReason | undefined
     let failureMessage: string | undefined
     let retryableFailure = false
-    let continuation = active.source === "retry"
+    let continuation = active.source === "retry" || active.resumeRun !== undefined
     let solver: CtfSolverAgent | undefined
     let sameRunStops = 0
     let compactRecovery: string | undefined
@@ -1307,9 +1335,16 @@ export class ContestScheduler {
     if (active.cancelRequested || this.shuttingDown) return
 
     const schedulerAttemptsAfter = this.project.schedulerAttemptCount(active.challenge.id)
+    const interruptedRun = latestRecoverableInterruptedRuns(this.project.runs()).get(
+      active.challenge.id,
+    )
+    const resumeRun =
+      active.runId && interruptedRun?.id === active.runId ? interruptedRun : undefined
     if (
       failureReason !== "cancelled" &&
-      (retryableFailure || schedulerAttemptsAfter > schedulerAttemptsBefore) &&
+      (resumeRun !== undefined ||
+        retryableFailure ||
+        schedulerAttemptsAfter > schedulerAttemptsBefore) &&
       !this.shuttingDown &&
       this.availability().available &&
       active.queueGeneration === this.queueGeneration &&
@@ -1345,6 +1380,7 @@ export class ContestScheduler {
           active.lane,
           false,
           active.requiresAuto,
+          resumeRun ? { resumeRun } : undefined,
         )
       }
     } else if (failureMessage && failureReason !== "cancelled") {
@@ -1466,6 +1502,7 @@ export class ContestScheduler {
     lane: "normal" | "blocked",
     manualOverride: boolean,
     requiresAuto: boolean,
+    options: { resumeRun?: RunRecord } = {},
   ): void {
     if (
       this.idleQueue.some((item) => item.challenge.id === challenge.id) ||
@@ -1489,6 +1526,8 @@ export class ContestScheduler {
       requiresAuto,
       enqueuedAt: persisted.enqueuedAt,
       version: persisted.version,
+      persisted: true,
+      ...(options.resumeRun ? { resumeRun: options.resumeRun } : {}),
     }
     const target = stage === "idle" ? this.idleQueue : this.queue
     if (manualOverride) target.unshift(item)
@@ -1633,6 +1672,26 @@ function deduplicate(challenges: readonly ChallengeSummary[]): ChallengeSummary[
   for (const challenge of challenges)
     if (!unique.has(challenge.id)) unique.set(challenge.id, challenge)
   return [...unique.values()]
+}
+
+/**
+ * 进程重启会把 preparing/running Run 标记为 interrupted。调度来源的这类 Run
+ * 仍保留原 attempt 与 JSONL session，下一次进入 execution 时应 reopen，而不是
+ * 消耗新的 attempt 预算。
+ */
+function latestRecoverableInterruptedRuns(runs: readonly RunRecord[]): Map<string, RunRecord> {
+  const candidates = runs
+    .filter(
+      (run) =>
+        run.status === "interrupted" &&
+        run.closeReason !== "blocked" &&
+        RECOVERABLE_SCHEDULER_RUN_SOURCES.has(run.source),
+    )
+    .sort(
+      (left, right) =>
+        left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id),
+    )
+  return new Map(candidates.map((run) => [run.challengeId, run]))
 }
 
 const RETRYABLE_RUN_STATUSES = new Set<RunRecord["status"]>([

@@ -140,6 +140,7 @@ describe("GZCTF platform contract", () => {
           },
           challengeCount: 1,
           rank: { solvedChallenges: [] },
+          scoreboardItem: { score: 500, rank: 3 },
           teamToken: "team",
         })
       }
@@ -200,6 +201,11 @@ describe("GZCTF platform contract", () => {
       name: "Local Finals",
       challenges: 1,
       announcements: 1,
+      participant: { score: 500, rank: 3 },
+      links: {
+        contest: `${baseUrl}/games/9`,
+        leaderboard: `${baseUrl}/games/9/scoreboard`,
+      },
     })
     expect(await project.listChallenges()).toEqual([
       {

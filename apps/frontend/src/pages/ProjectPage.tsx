@@ -1,3 +1,4 @@
+import type { ContestOverview } from "@ctf-agent/core"
 import { Icon } from "@iconify/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useParams } from "react-router-dom"
@@ -6,6 +7,7 @@ import {
   Button,
   Card,
   Checkbox,
+  CompactEmptyState,
   ConfirmDialog,
   ErrorNotice,
   Input,
@@ -95,6 +97,75 @@ function ProgressMetric({ label, value, tone }: { label: string; value: number; 
       <dt className="mt-2 text-[11px] leading-none text-muted-foreground">{label}</dt>
     </div>
   )
+}
+
+function PlatformOverviewCard({ overview }: { overview: ContestOverview }) {
+  const contestUrl = safeExternalUrl(overview.links?.contest)
+  const leaderboardUrl = safeExternalUrl(overview.links?.leaderboard)
+  const participant = overview.participant
+  if (!participant && !contestUrl && !leaderboardUrl) return null
+
+  return (
+    <Card className="mb-4 p-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            比赛平台
+          </p>
+          <h2 className="mt-0.5 font-semibold">{participant ? "当前成绩" : "平台入口"}</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {contestUrl ? (
+            <Button asChild size="sm" variant="secondary">
+              <a href={contestUrl} target="_blank" rel="noreferrer">
+                <Icon icon="lucide:external-link" width="13" aria-hidden="true" />
+                比赛平台
+              </a>
+            </Button>
+          ) : null}
+          {leaderboardUrl ? (
+            <Button asChild size="sm" variant="secondary">
+              <a href={leaderboardUrl} target="_blank" rel="noreferrer">
+                <Icon icon="lucide:chart-no-axes-column" width="13" aria-hidden="true" />
+                排行榜
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {participant ? (
+        <dl className="grid grid-cols-2 divide-x divide-border">
+          <PlatformMetric
+            label="当前分数"
+            value={`${participant.score.toLocaleString("zh-CN")} 分`}
+          />
+          <PlatformMetric
+            label="当前排名"
+            value={participant.rank === null ? "—" : `#${participant.rank}`}
+          />
+        </dl>
+      ) : null}
+    </Card>
+  )
+}
+
+function PlatformMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col justify-center px-4 py-3">
+      <dd className="font-mono text-lg font-semibold leading-none tabular-nums">{value}</dd>
+      <dt className="mt-2 text-[11px] leading-none text-muted-foreground">{label}</dt>
+    </div>
+  )
+}
+
+function safeExternalUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function elapsedTime(from: string | undefined, now: string): string {
@@ -613,7 +684,7 @@ export function ProjectPage() {
       {error ? <ErrorNotice message={error} className="mb-4" /> : null}
 
       {contestPending ? (
-        <Card className="mb-4 border-amber/30 bg-amber/5">
+        <Card className="mb-4 border-amber/30 bg-amber/5 p-4">
           <div className="flex items-start gap-3">
             <Icon icon="lucide:timer" width="18" className="mt-0.5 shrink-0 text-amber" />
             <div>
@@ -629,6 +700,8 @@ export function ProjectPage() {
       ) : null}
 
       <ProgressOverview {...snapshot.stats} />
+
+      <PlatformOverviewCard overview={snapshot.overview} />
 
       <EnvironmentLedger
         snapshot={snapshot}
@@ -780,7 +853,7 @@ export function ProjectPage() {
                 </Link>
               ))
             ) : (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">暂无运行记录。</p>
+              <CompactEmptyState icon="lucide:circle-dashed" label="暂无运行记录。" />
             )}
           </div>
         </Card>

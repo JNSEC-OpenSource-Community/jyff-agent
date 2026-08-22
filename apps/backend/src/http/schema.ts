@@ -169,8 +169,9 @@ export const modelConfigurationUpdateSchema = z
     }
     const references = new Set<string>()
     for (const model of models) {
-      const reference = `${model.provider}/${model.modelId}`
-      if (references.has(reference)) issue(`模型不能重复: ${reference}`)
+      const thinkingLevel = model.thinkingEnabled ? model.reasoningEffort : "off"
+      const reference = `${model.provider}/${model.modelId}@${thinkingLevel}`
+      if (references.has(reference)) issue(`模型与思考强度不能重复: ${reference}`)
       references.add(reference)
     }
   })

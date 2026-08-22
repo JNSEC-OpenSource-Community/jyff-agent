@@ -757,12 +757,7 @@ export class Ret2ShellProject implements PlatformProject {
     const game = await this.fetchGame()
     this.state.game = game
     const { challenges, announcements } = await this.summaryCache()
-    return {
-      id: String(game.id),
-      name: game.name,
-      challenges: challenges.length,
-      announcements: announcements.length,
-    }
+    return this.overviewFrom(game, challenges, announcements)
   }
 
   async getOverview(): Promise<ContestOverview> {
@@ -770,11 +765,32 @@ export class Ret2ShellProject implements PlatformProject {
       return this.refresh()
     }
     const { challenges, announcements } = await this.summaryCache()
+    return this.overviewFrom(this.state.game, challenges, announcements)
+  }
+
+  private overviewFrom(
+    game: R2SGame,
+    challenges: readonly ChallengeSummary[],
+    announcements: readonly Announcement[],
+  ): ContestOverview {
     return {
-      id: String(this.state.game.id),
-      name: this.state.game.name,
+      id: String(game.id),
+      name: game.name,
       challenges: challenges.length,
       announcements: announcements.length,
+      participant: {
+        score: challenges
+          .filter((challenge) => challenge.solved)
+          .reduce((total, challenge) => total + challenge.score, 0),
+        rank: null,
+      },
+      links: {
+        contest: new URL(`games/${game.id}`, `${this.baseUrl.replace(/\/+$/, "")}/`).toString(),
+        leaderboard: new URL(
+          `games/${game.id}/scoreboard`,
+          `${this.baseUrl.replace(/\/+$/, "")}/`,
+        ).toString(),
+      },
     }
   }
 

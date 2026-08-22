@@ -47,7 +47,7 @@ export interface WebAccessProviderView {
   id: string
   /** 是否在 allowlist 中（WebUI 复选框选中状态）。 */
   enabled: boolean
-  /** 该 provider 的密钥是否已配置；绝不返回密钥值。 */
+  /** 该 provider 所需的密钥或连接配置是否已配置；绝不返回密钥值。 */
   configured: boolean
 }
 
@@ -197,12 +197,16 @@ export async function createFileWebAccessConfiguration(options: {
   }
 
   function toView(value: StoredWebAccessConfiguration): WebAccessConfigurationView {
+    const nekozukiBaseUrl = value.providerConfig?.nekozuki?.baseUrl
     return {
       enabled: value.enabled,
       providers: WEB_ACCESS_PROVIDERS.map((provider) => ({
         id: provider,
         enabled: value.providers.includes(provider),
-        configured: options.secretStore.has(webAccessSecretName(provider)),
+        configured:
+          provider === "nekozuki"
+            ? typeof nekozukiBaseUrl === "string" && Boolean(nekozukiBaseUrl.trim())
+            : options.secretStore.has(webAccessSecretName(provider)),
       })),
       workflow: value.workflow,
       ...(value.summaryModel ? { summaryModel: value.summaryModel } : {}),

@@ -77,6 +77,17 @@ describe("ProjectPage", () => {
 
     const exportLink = await screen.findByRole("link", { name: /导出全部 WP/ })
     expect(exportLink.getAttribute("href")).toBe("/api/projects/demo/writeups/export")
+    const schedulerHeading = screen.getByRole("heading", { name: "调度队列" })
+    expect(schedulerHeading.previousElementSibling?.textContent).toBe("调度计划")
+    const recentEmpty = screen.getByText("暂无运行记录。")
+    expect(recentEmpty.parentElement?.parentElement?.getAttribute("data-slot")).toBe(
+      "compact-empty",
+    )
+    expect(recentEmpty.parentElement?.parentElement?.className).toContain("min-h-40")
+    const pendingCard = screen
+      .getByText("点击“开始比赛”后才会连接平台并同步题目。")
+      .closest('[data-slot="card"]')
+    expect(pendingCard?.className).toContain("p-4")
     await user.click(await screen.findByRole("button", { name: "开始比赛" }))
     await waitFor(() => expect(started).toBe(true))
   })
@@ -141,6 +152,20 @@ describe("ProjectPage", () => {
     expect(
       within(recentCard).getByRole("link", { name: /Solver 开始运行/ }).parentElement?.className,
     ).toContain("overflow-y-auto")
+
+    expect(screen.getByRole("heading", { name: "调度队列" })).toBeTruthy()
+    expect(screen.getByText("调度计划")).toBeTruthy()
+    const stageAllButton = screen.getByRole("button", {
+      name: "加入全部 1 道可调度题",
+    })
+    expect(stageAllButton.closest('[data-slot="compact-empty"]')).toBeNull()
+    expect(
+      within(screen.getByRole("region", { name: "空闲队列" })).queryByRole("button", {
+        name: "加入全部 1 道可调度题",
+      }),
+    ).toBeNull()
+    expect(screen.queryByText("启动前可拖动排序")).toBeNull()
+    expect(screen.getAllByRole("img", { name: "可拖动或使用键盘排序" })).toHaveLength(2)
 
     const executionQueue = screen.getByRole("region", { name: "执行队列" })
     const queueHandle = within(executionQueue).getByRole("button", {
@@ -217,7 +242,7 @@ describe("ProjectPage", () => {
     await user.click(screen.getByRole("checkbox", { name: "选择移出空闲队列：认证绕过" }))
     await user.click(screen.getByRole("button", { name: "移出空闲队列" }))
     await waitFor(() => expect(unstagedIds).toEqual(["web/1"]))
-    expect(within(idleQueue).getByText("还没有安排题目")).toBeTruthy()
+    expect(within(idleQueue).getByText("暂无题目")).toBeTruthy()
   })
 
   it("键盘排序遇到版本冲突时恢复服务端顺序并给出反馈", async () => {
@@ -368,7 +393,7 @@ describe("ProjectPage", () => {
     expect(
       within(screen.getByRole("region", { name: "执行队列" })).getByText("认证绕过"),
     ).toBeTruthy()
-    expect(screen.getByText("正在执行")).toBeTruthy()
+    expect(screen.queryByText("运行中")).toBeNull()
     expect(screen.getByRole("button", { name: "暂停调度" })).toBeTruthy()
   })
 
@@ -433,11 +458,17 @@ describe("ProjectPage", () => {
     )
   })
 
-  it("使用项目范围的题目链接并为筛选表格提供语义标签", async () => {
+  it("展示平台成绩、排名和外部比赛入口", async () => {
+    const data = snapshot()
+    data.overview.participant = { score: 1234, rank: 7 }
+    data.overview.links = {
+      contest: "https://ctf.example/game/1",
+      leaderboard: "https://ctf.example/game/1/scoreboard",
+    }
     vi.stubGlobal("EventSource", FakeEventSource)
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>(async () => jsonResponse(snapshot())),
+      vi.fn<typeof fetch>(async () => jsonResponse(data)),
     )
 
     render(
@@ -456,6 +487,15 @@ describe("ProjectPage", () => {
     )
 
     expect(await screen.findByRole("heading", { name: "训练赛" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "当前成绩" })).toBeTruthy()
+    expect(screen.getByText("1,234 分")).toBeTruthy()
+    expect(screen.getByText("#7")).toBeTruthy()
+    const contestLink = screen.getByRole("link", { name: "比赛平台" })
+    expect(contestLink.getAttribute("href")).toBe("https://ctf.example/game/1")
+    expect(contestLink.getAttribute("target")).toBe("_blank")
+    expect(screen.getByRole("link", { name: "排行榜" }).getAttribute("href")).toBe(
+      "https://ctf.example/game/1/scoreboard",
+    )
     expect(screen.getByRole("textbox", { name: "搜索题目" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "题目" }).getAttribute("scope")).toBe("col")
 

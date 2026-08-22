@@ -49,6 +49,52 @@ describe("Ret2Shell platform", () => {
     await project.close()
   })
 
+  it("返回比赛和排行榜链接，并按已解题计算当前分数", async () => {
+    server = createServer((request, response) => {
+      const path = request.url ?? "/"
+      if (path === "/api/game/1") {
+        return json(response, { id: 1, name: "Local Game" })
+      }
+      if (path === "/api/game/1/challenge") {
+        return json(response, [
+          [
+            {
+              id: 7,
+              name: "Evidence",
+              tag: [{ name: "web", primary: true }],
+              score: 100,
+            },
+            {
+              id: 8,
+              name: "Signal",
+              tag: [{ name: "misc", primary: true }],
+              score: 200,
+            },
+          ],
+          2,
+        ])
+      }
+      if (path === "/api/game/1/solve") {
+        return json(response, [{ challenge_id: 7 }])
+      }
+      if (path === "/api/game/1/notification") return json(response, [])
+      return json(response, { error: "not found" }, 404)
+    })
+    const baseUrl = await listen(server)
+    const project = localProject(baseUrl)
+
+    expect(await project.getOverview()).toMatchObject({
+      id: "1",
+      name: "Local Game",
+      participant: { score: 100, rank: null },
+      links: {
+        contest: `${baseUrl}/games/1`,
+        leaderboard: `${baseUrl}/games/1/scoreboard`,
+      },
+    })
+    await project.close()
+  })
+
   it("请求 deadline 覆盖停滞的响应体", async () => {
     server = createServer((_request, response) => {
       response.writeHead(200, { "Content-Type": "application/json" })
@@ -153,6 +199,11 @@ describe("Ret2Shell platform", () => {
     await project.close()
   })
 })
+
+function json(response: import("node:http").ServerResponse, body: unknown, status = 200): void {
+  response.writeHead(status, { "Content-Type": "application/json" })
+  response.end(JSON.stringify(body))
+}
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {

@@ -17,7 +17,13 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Icon } from "@iconify/react"
 import { useEffect, useState } from "react"
-import { Badge, Button, Card } from "../../components/index.ts"
+import {
+  Button,
+  Card,
+  CompactEmptyState,
+  Tooltip,
+  TooltipProvider,
+} from "../../components/index.ts"
 import { ApiError, apiMutation, projectApi } from "../../lib/api.ts"
 import { cn } from "../../lib/utils.ts"
 import type { DashboardChallenge, DashboardSnapshot } from "../../types.ts"
@@ -36,16 +42,121 @@ interface SchedulerWorkbenchProps {
   onError: (message: string) => void
 }
 
-function queueStateLabel(snapshot: DashboardSnapshot): {
-  label: string
-  tone: "neutral" | "positive" | "warning"
-} {
+function queueStateHint(snapshot: DashboardSnapshot): string {
   const scheduler = snapshot.scheduler
-  if (!scheduler) return { label: "未就绪", tone: "neutral" }
-  if (scheduler.state === "suspended") return { label: "系统暂停", tone: "warning" }
-  if (scheduler?.mode === "automatic") return { label: "自动执行", tone: "positive" }
-  if (scheduler?.mode === "manual") return { label: "正在执行", tone: "positive" }
-  return { label: "已暂停", tone: "neutral" }
+  if (!scheduler) return "比赛与 Solver 模型就绪后可编排题目"
+  if (scheduler.state === "suspended") return "系统已停止领取任务；当前顺序会保留到恢复后"
+  if (scheduler.mode === "automatic") return "自动发现并执行可调度题目"
+  if (scheduler.mode === "manual") return "按执行队列顺序创建 Solver；暂停后可重新编排"
+  return "可调整空闲队列与执行顺序"
+}
+
+function QueueLaneHeader({
+  id,
+  icon,
+  title,
+  count,
+  controlIcon,
+  controlLabel,
+  controlBusy = false,
+}: {
+  id: string
+  icon: string
+  title: string
+  count: number
+  controlIcon: string
+  controlLabel: string
+  controlBusy?: boolean
+}) {
+  return (
+    <header className="flex min-h-13 items-center justify-between gap-3 border-b border-border/70 px-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-muted/60 text-muted-foreground">
+          <Icon icon={icon} width="14" aria-hidden="true" />
+        </span>
+        <h3 id={id} className="truncate text-xs font-semibold">
+          {title}
+        </h3>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span
+          className="min-w-6 rounded-sm bg-muted/60 px-1.5 py-0.5 text-center font-mono text-[10px] tabular-nums text-muted-foreground"
+          aria-label={`${title} ${count} 道题`}
+        >
+          {count}
+        </span>
+        <Tooltip label={controlLabel}>
+          <span
+            tabIndex={0}
+            role="img"
+            aria-label={controlLabel}
+            className="flex size-7 items-center justify-center rounded-sm text-quiet outline-none transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <Icon
+              icon={controlIcon}
+              width="13"
+              className={controlBusy ? "animate-spin" : undefined}
+              aria-hidden="true"
+            />
+          </span>
+        </Tooltip>
+      </div>
+    </header>
+  )
+}
+
+function QueueEntryState({ entry }: { entry: SchedulerQueueEntry }) {
+  const visual =
+    entry.lane === "blocked"
+      ? {
+          icon: "lucide:triangle-alert",
+          label: "Blocked 队列",
+          className: "bg-danger/10 text-danger",
+        }
+      : entry.source === "retry"
+        ? {
+            icon: "lucide:rotate-ccw",
+            label: "失败后重试",
+            className: "bg-warning/10 text-warning",
+          }
+        : entry.source === "revival"
+          ? {
+              icon: "lucide:heart-pulse",
+              label: "恢复 Blocked 任务",
+              className: "bg-warning/10 text-warning",
+            }
+          : entry.stage === "idle"
+            ? {
+                icon: "lucide:circle-pause",
+                label: "等待启动",
+                className: "text-quiet",
+              }
+            : entry.source === "auto"
+              ? {
+                  icon: "lucide:repeat-2",
+                  label: "自动入队",
+                  className: "text-quiet",
+                }
+              : {
+                  icon: "lucide:clock-3",
+                  label: "等待 Solver 名额",
+                  className: "text-quiet",
+                }
+  return (
+    <Tooltip label={visual.label}>
+      <span
+        tabIndex={0}
+        role="img"
+        aria-label={visual.label}
+        className={cn(
+          "flex size-7 items-center justify-center rounded-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+          visual.className,
+        )}
+      >
+        <Icon icon={visual.icon} width="13" aria-hidden="true" />
+      </span>
+    </Tooltip>
+  )
 }
 
 function QueueRow({
@@ -67,13 +178,14 @@ function QueueRow({
     id: entry.challengeId,
     disabled,
   })
+  const title = challenge?.title ?? entry.challengeId
   return (
     <div
       ref={setNodeRef}
       data-queue-id={entry.challengeId}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "group grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2.5 px-3 py-2.5 transition-colors",
+        "group grid min-h-14 grid-cols-[2rem_1.5rem_minmax(0,1fr)_2rem] items-center gap-2 px-2.5 transition-colors",
         !disabled && "hover:bg-muted",
         isDragging && "relative z-10 bg-muted opacity-70 shadow-sm",
       )}
@@ -81,93 +193,64 @@ function QueueRow({
       <button
         type="button"
         className={cn(
-          "flex size-7 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+          "flex size-8 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
           disabled
-            ? "cursor-default opacity-35"
+            ? "cursor-default opacity-30"
             : "cursor-grab hover:bg-background active:cursor-grabbing",
         )}
         disabled={disabled}
-        aria-label={`拖动排序：${challenge?.title ?? entry.challengeId}`}
+        aria-label={`拖动排序：${title}`}
+        title={disabled ? "当前队列不可排序" : "拖动排序；键盘按空格后使用方向键"}
         {...attributes}
         {...listeners}
       >
         <Icon icon="lucide:grip-vertical" width="14" aria-hidden="true" />
       </button>
-      <span className="w-5 text-center font-mono text-[10px] tabular-nums text-quiet">
-        {entry.position}
+      <span className="text-center font-mono text-[10px] tabular-nums text-quiet">
+        {String(entry.position).padStart(2, "0")}
       </span>
       <div className="min-w-0">
-        <p className="truncate text-xs font-medium">{challenge?.title ?? entry.challengeId}</p>
-        <p className="truncate text-[10px] text-muted-foreground">
-          {challenge?.category ?? entry.source} · {challenge?.score ?? 0} pts
+        <p className="truncate text-xs font-medium">{title}</p>
+        <p className="mt-0.5! flex items-center gap-1.5 truncate text-[10px] text-muted-foreground">
+          <span className="truncate">{challenge?.category ?? entry.source}</span>
+          {challenge ? (
+            <>
+              <span className="text-quiet" aria-hidden="true">
+                ·
+              </span>
+              <Icon
+                icon="lucide:gem"
+                width="10"
+                className="shrink-0 text-quiet"
+                aria-hidden="true"
+              />
+              <span className="font-mono tabular-nums">{challenge.score}</span>
+            </>
+          ) : null}
         </p>
       </div>
-      {entry.lane === "blocked" ? (
-        <Badge tone="danger" className="text-[9px]">
-          Blocked
-        </Badge>
-      ) : removable ? (
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-7 opacity-70 group-hover:opacity-100"
-          disabled={removing || disabled}
-          aria-label={`从空闲队列移除：${challenge?.title ?? entry.challengeId}`}
-          onClick={onRemove}
-        >
-          <Icon
-            icon={removing ? "lucide:loader-circle" : "lucide:x"}
-            className={removing ? "animate-spin" : undefined}
-            width="13"
-            aria-hidden="true"
-          />
-        </Button>
+      {removable && entry.lane !== "blocked" ? (
+        <Tooltip label="移出空闲队列">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7 opacity-65 group-hover:opacity-100"
+            disabled={removing || disabled}
+            aria-label={`从空闲队列移除：${title}`}
+            onClick={onRemove}
+          >
+            <Icon
+              icon={removing ? "lucide:loader-circle" : "lucide:x"}
+              className={removing ? "animate-spin" : undefined}
+              width="13"
+              aria-hidden="true"
+            />
+          </Button>
+        </Tooltip>
       ) : (
-        <span className="font-mono text-[9px] uppercase tracking-wide text-quiet">
-          {entry.source === "retry" ? "retry" : "ready"}
-        </span>
+        <QueueEntryState entry={entry} />
       )}
-    </div>
-  )
-}
-
-function QueueEmpty({
-  kind,
-  planning,
-  canStageAll,
-  busy,
-  onStageAll,
-}: {
-  kind: "idle" | "execution"
-  planning: boolean
-  canStageAll: boolean
-  busy: boolean
-  onStageAll: () => void
-}) {
-  return (
-    <div className="flex min-h-44 flex-col items-center justify-center px-5 py-8 text-center">
-      <Icon
-        icon={kind === "idle" ? "lucide:rows-3" : "lucide:circle-dashed"}
-        width="20"
-        className="text-quiet"
-        aria-hidden="true"
-      />
-      <p className="mt-3! text-xs font-medium">
-        {kind === "idle" ? "还没有安排题目" : "没有等待执行的题目"}
-      </p>
-      <p className="mt-1! max-w-60 text-[11px] leading-5 text-muted-foreground">
-        {kind === "idle"
-          ? planning
-            ? "从题目列表选择后加入，启动前可以调整顺序。"
-            : "调度运行期间不会改动计划；暂停后可继续安排。"
-          : "启动调度后，空闲队列会按顺序进入这里。"}
-      </p>
-      {kind === "idle" && canStageAll ? (
-        <Button className="mt-3" size="sm" variant="secondary" disabled={busy} onClick={onStageAll}>
-          加入全部可调度题
-        </Button>
-      ) : null}
     </div>
   )
 }
@@ -202,14 +285,14 @@ export function SchedulerWorkbench({
   const planning = scheduler?.mode === "stopped"
   const queueBusy = busy || reordering || removing.length > 0
   const reorderEnabled = operationsAvailable && planning && !queueBusy
-  const state = queueStateLabel(snapshot)
-  const guidance = !scheduler
-    ? "比赛与 Solver 模型就绪后，可在这里编排题目。"
-    : scheduler.state === "suspended"
-      ? "系统暂时停止领取任务；当前顺序已保留，恢复后继续。"
+  const stateHint = queueStateHint(snapshot)
+  const queueControl = queueBusy
+    ? { icon: "lucide:loader-circle", label: "正在更新队列", busy: true }
+    : reorderEnabled
+      ? { icon: "lucide:grip", label: "可拖动或使用键盘排序", busy: false }
       : planning
-        ? "先安排顺序；启动后整批提交，未选择的题目不会运行。"
-        : "执行队列正在按顺序创建 Solver；暂停后才能重新编排。"
+        ? { icon: "lucide:eye", label: "当前为只读状态", busy: false }
+        : { icon: "lucide:lock-keyhole", label: "暂停调度后可排序", busy: false }
 
   async function recoverReorder(cause: unknown) {
     const conflict =
@@ -331,129 +414,119 @@ export function SchedulerWorkbench({
   }
 
   return (
-    <Card className="min-h-0 p-0">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            调度计划
-          </p>
-          <h2 className="mt-0.5 font-semibold">从准备到执行</h2>
-          <p className="mt-1! text-[11px] text-muted-foreground">{guidance}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {snapshot.scheduler?.active?.length ? (
-            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-              {snapshot.scheduler.active.length} 个运行中
-            </span>
-          ) : null}
-          <Badge tone={state.tone}>{state.label}</Badge>
-        </div>
-      </div>
-
-      {notice ? (
-        <div
-          role="status"
-          className="flex items-center gap-2 border-b border-warning/20 bg-warning/5 px-4 py-2 text-[11px] text-warning"
-        >
-          <Icon icon="lucide:info" width="13" className="shrink-0" aria-hidden="true" />
-          {notice}
-        </div>
-      ) : null}
-
-      <div className="grid min-h-0 md:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)]">
-        <section className="min-w-0" aria-labelledby="idle-queue-heading">
-          <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
-            <div>
-              <h3 id="idle-queue-heading" className="text-xs font-semibold">
-                空闲队列
-              </h3>
-              <p className="mt-0.5! text-[10px] text-muted-foreground">
-                {planning ? "启动前可拖动排序" : "暂停后可继续编排"}
-              </p>
-            </div>
-            <Badge tone="neutral">{idle.length}</Badge>
+    <TooltipProvider>
+      <Card className="min-h-0 p-0">
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              调度计划
+            </p>
+            <h2 className="mt-0.5 font-semibold">调度队列</h2>
+            <span className="sr-only">{stateHint}</span>
           </div>
-          {idle.length > 0 ? (
-            <DndContext sensors={sensors} onDragEnd={(event) => void reorderIdle(event)}>
-              <SortableContext
-                items={idle.map((item) => item.challengeId)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="max-h-112 divide-y divide-border/60 overflow-y-auto overscroll-contain">
-                  {idle.map((item) => (
-                    <QueueRow
-                      key={item.challengeId}
-                      entry={item}
-                      challenge={challenges.get(item.challengeId)}
-                      disabled={!reorderEnabled}
-                      removable={planning && operationsAvailable}
-                      removing={removing === item.challengeId}
-                      onRemove={() => void removeIdle(item.challengeId)}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          ) : (
-            <QueueEmpty
-              kind="idle"
-              planning={planning}
-              canStageAll={planning && operationsAvailable && stageableCount > 0}
-              busy={busy}
-              onStageAll={onStageAll}
-            />
-          )}
-        </section>
-
-        <div className="relative hidden items-center justify-center md:flex" aria-hidden="true">
-          <span className="absolute inset-y-0 left-1/2 w-px bg-border/70" />
-          <span className="relative flex size-6 items-center justify-center rounded-full border border-border bg-card font-mono text-[11px] text-muted-foreground">
-            →
-          </span>
-        </div>
-
-        <section
-          className="min-w-0 border-t border-border md:border-t-0"
-          aria-labelledby="execution-queue-heading"
-        >
-          <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
-            <div>
-              <h3 id="execution-queue-heading" className="text-xs font-semibold">
-                执行队列
-              </h3>
-              <p className="mt-0.5! text-[10px] text-muted-foreground">按顺序等待 Solver 名额</p>
-            </div>
-            <Badge tone="neutral">{execution.length}</Badge>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {planning && operationsAvailable && stageableCount > 0 ? (
+              <Tooltip label={`加入全部 ${stageableCount} 道可调度题`}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={queueBusy}
+                  aria-label={`加入全部 ${stageableCount} 道可调度题`}
+                  onClick={onStageAll}
+                >
+                  <Icon icon="lucide:list-plus" width="13" aria-hidden="true" />
+                  批量入队
+                  <span className="font-mono tabular-nums opacity-70">{stageableCount}</span>
+                </Button>
+              </Tooltip>
+            ) : null}
           </div>
-          {execution.length > 0 ? (
-            <DndContext sensors={sensors} onDragEnd={(event) => void reorderExecution(event)}>
-              <SortableContext
-                items={execution.map((item) => item.challengeId)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="max-h-112 divide-y divide-border/60 overflow-y-auto overscroll-contain">
-                  {execution.map((item) => (
-                    <QueueRow
-                      key={item.challengeId}
-                      entry={item}
-                      challenge={challenges.get(item.challengeId)}
-                      disabled={!reorderEnabled || item.lane === "blocked"}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          ) : (
-            <QueueEmpty
-              kind="execution"
-              planning={planning}
-              canStageAll={false}
-              busy={busy}
-              onStageAll={onStageAll}
+        </header>
+
+        {notice ? (
+          <div
+            role="status"
+            className="flex items-center gap-2 border-b border-warning/20 bg-warning/5 px-4 py-2 text-[11px] text-warning"
+          >
+            <Icon icon="lucide:info" width="13" className="shrink-0" aria-hidden="true" />
+            {notice}
+          </div>
+        ) : null}
+
+        <div className="grid min-h-0 md:grid-cols-2 md:divide-x md:divide-border/70">
+          <section className="flex min-w-0 flex-col" aria-labelledby="idle-queue-heading">
+            <QueueLaneHeader
+              id="idle-queue-heading"
+              icon="lucide:inbox"
+              title="空闲队列"
+              count={idle.length}
+              controlIcon={queueControl.icon}
+              controlLabel={queueControl.label}
+              controlBusy={queueControl.busy}
             />
-          )}
-        </section>
-      </div>
-    </Card>
+            {idle.length > 0 ? (
+              <DndContext sensors={sensors} onDragEnd={(event) => void reorderIdle(event)}>
+                <SortableContext
+                  items={idle.map((item) => item.challengeId)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="min-h-full max-h-112 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
+                    {idle.map((item) => (
+                      <QueueRow
+                        key={item.challengeId}
+                        entry={item}
+                        challenge={challenges.get(item.challengeId)}
+                        disabled={!reorderEnabled}
+                        removable={planning && operationsAvailable}
+                        removing={removing === item.challengeId}
+                        onRemove={() => void removeIdle(item.challengeId)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <CompactEmptyState icon="lucide:inbox" label="暂无题目" />
+            )}
+          </section>
+
+          <section
+            className="flex min-w-0 flex-col border-t border-border/60 md:border-t-0"
+            aria-labelledby="execution-queue-heading"
+          >
+            <QueueLaneHeader
+              id="execution-queue-heading"
+              icon="lucide:list-start"
+              title="执行队列"
+              count={execution.length}
+              controlIcon={queueControl.icon}
+              controlLabel={queueControl.label}
+              controlBusy={queueControl.busy}
+            />
+            {execution.length > 0 ? (
+              <DndContext sensors={sensors} onDragEnd={(event) => void reorderExecution(event)}>
+                <SortableContext
+                  items={execution.map((item) => item.challengeId)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="min-h-full max-h-112 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
+                    {execution.map((item) => (
+                      <QueueRow
+                        key={item.challengeId}
+                        entry={item}
+                        challenge={challenges.get(item.challengeId)}
+                        disabled={!reorderEnabled || item.lane === "blocked"}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <CompactEmptyState icon="lucide:circle-dashed" label="无等待项" />
+            )}
+          </section>
+        </div>
+      </Card>
+    </TooltipProvider>
   )
 }

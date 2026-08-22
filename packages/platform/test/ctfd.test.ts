@@ -80,6 +80,13 @@ beforeAll(async () => {
         })
         return
       }
+      if (request.method === "GET" && request.url === "/api/v1/users/me") {
+        json(response, 200, {
+          success: true,
+          data: { score: 1234, place: 7 },
+        })
+        return
+      }
       if (request.method === "GET" && request.url?.startsWith("/files/hash/evidence%20one.bin")) {
         response.writeHead(200, { "Content-Type": "application/octet-stream" })
         response.end(Buffer.from([0, 255, 1]))
@@ -143,6 +150,11 @@ describe("CTFd platform plugin", () => {
       name: "Demo",
       challenges: 1,
       announcements: 1,
+      participant: { score: 1234, rank: 7 },
+      links: {
+        contest: `${baseUrl}/`,
+        leaderboard: `${baseUrl}/scoreboard`,
+      },
     })
     expect(await platform.listChallenges()).toEqual([
       {

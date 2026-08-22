@@ -407,6 +407,50 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("恢复异常中断的调度 attempt 时复用原 Run 并使用默认 continuation prompt", async () => {
+    const item = challenge(104)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const interrupted = await project.createSolver(item.id, {
+      agent: solvingAgent(item),
+      attempt: 1,
+      source: "manual",
+    })
+    await interrupted.close("interrupted", "测试进程重启")
+    project.startScheduler("manual")
+
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: () => solvingAgent(item),
+    })
+
+    try {
+      await scheduler.restore()
+      await waitUntil(
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+      )
+
+      expect(project.runs({ challengeId: item.id })).toEqual([
+        expect.objectContaining({
+          id: interrupted.runId,
+          attempt: 1,
+          status: "solved",
+          closeReason: "submitted",
+        }),
+      ])
+      expect(await readFile(project.runSessionPath(interrupted.runId), "utf8")).toContain(
+        INCOMPLETE_CONTINUATION_PROMPT,
+      )
+      expect(
+        project.runEvents(interrupted.runId).filter((event) => event.type === "run_resumed"),
+      ).toHaveLength(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("拒绝不存在或仍在运行的 Run 重试", async () => {
     const item = challenge(103)
     const tracker = new SandboxTracker()

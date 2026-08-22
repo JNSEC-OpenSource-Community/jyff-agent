@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
 import { createElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { AppProvider } from "../src/app/AppProvider.tsx"
 import { GlobalSettingsPage } from "../src/pages/settings/GlobalSettingsPage.tsx"
+import { ShellPoopEditor } from "../src/pages/settings/ShellPoopEditor.tsx"
+import { WebAccessEditor } from "../src/pages/settings/WebAccessEditor.tsx"
 
 vi.mock("@iconify/react", () => ({ Icon: () => null }))
 
@@ -191,5 +193,113 @@ describe("全局供应商设置", () => {
       "/api/global-config/plugins/token-usage",
       expect.objectContaining({ method: "POST" }),
     )
+  })
+
+  it("Web Access 关闭时隐藏保存按钮，并按 baseUrl 显示 Nekozuki 已配置", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => jsonResponse({})),
+    )
+
+    render(
+      createElement(WebAccessEditor, {
+        config: {
+          enabled: false,
+          providers: [{ id: "nekozuki", enabled: false, configured: false }],
+          workflow: "none",
+          ssrf: { allowRanges: [], trustEnvProxy: false },
+        },
+        modelConfiguration: null,
+        onSaved: vi.fn(),
+      }),
+    )
+
+    expect(screen.queryByRole("button", { name: "保存" })).toBeNull()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("switch", { name: "启用 web-access 插件" }))
+    expect(screen.getByRole("button", { name: "保存" })).toBeTruthy()
+
+    cleanup()
+    render(
+      createElement(WebAccessEditor, {
+        config: {
+          enabled: true,
+          providers: [{ id: "nekozuki", enabled: true, configured: false }],
+          workflow: "none",
+          ssrf: { allowRanges: [], trustEnvProxy: false },
+          providerConfig: { nekozuki: { baseUrl: "http://localhost:8000" } },
+        },
+        modelConfiguration: null,
+        onSaved: vi.fn(),
+      }),
+    )
+    const nekozukiRow = screen.getByText("Nekozuki").closest("li")
+    if (!nekozukiRow) throw new Error("未找到 Nekozuki 配置行")
+    expect(within(nekozukiRow).getByText("已配置")).toBeTruthy()
+    expect(within(nekozukiRow).queryByText("未配置")).toBeNull()
+  })
+
+  it("ShellPoop 关闭时隐藏保存按钮，切换开启后才显示", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => jsonResponse({})),
+    )
+
+    render(
+      createElement(ShellPoopEditor, {
+        config: {
+          enabled: false,
+          baseUrl: "http://127.0.0.1:8000",
+          timeoutMs: 15_000,
+          apiKeyConfigured: false,
+        },
+        onSaved: vi.fn(),
+      }),
+    )
+
+    expect(screen.queryByRole("button", { name: "保存" })).toBeNull()
+    await userEvent.setup().click(screen.getByRole("switch", { name: "启用 shellpoop 插件" }))
+    expect(screen.getByRole("button", { name: "保存" })).toBeTruthy()
+  })
+
+  it("WebUI 登录关闭时隐藏保存按钮，开启后才显示", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (url === "/api/auth") {
+        return jsonResponse({ enabled: false, authenticated: true, username: null })
+      }
+      if (url === "/api/projects") {
+        return jsonResponse({ projects: [], selectedProjectId: null })
+      }
+      if (url === "/api/global-config") {
+        return jsonResponse({
+          authentication: { enabled: false, username: null },
+          modelConfiguration: null,
+          modelAuthentication: null,
+          plugins: { plugins: [] },
+          webAccess: null,
+          shellpoop: null,
+        })
+      }
+      throw new Error(`未处理的请求：${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(createElement(AppProvider, null, createElement(GlobalSettingsPage)))
+    const user = userEvent.setup()
+    await screen.findByText("全局配置")
+    await user.click(screen.getByRole("tab", { name: "登录" }))
+
+    expect(screen.queryByRole("button", { name: "保存" })).toBeNull()
+    await user.click(screen.getByRole("switch", { name: "启用 WebUI 登录" }))
+    expect(screen.getByRole("button", { name: "保存" })).toBeTruthy()
   })
 })

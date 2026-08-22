@@ -23,7 +23,7 @@ interface PlatformPlugin {
 
 平台连接至少提供：
 
-- overview 和刷新
+- overview 和刷新（可选返回当前参与者分数/排名，以及比赛页和排行榜链接）
 - 题目列表及公告列表
 - 绑定题目并读取详情、附件
 - Flag 提交，业务拒绝返回 `rejected`，不把普通错误 Flag 当作异常

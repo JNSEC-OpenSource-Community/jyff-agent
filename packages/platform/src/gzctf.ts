@@ -759,6 +759,10 @@ interface GZCTFGameDetails {
   challenges?: Record<string, GZCTFChallengeSummary[]>
   challengeCount?: number
   rank?: { solvedChallenges?: GZCTFSolvedChallenge[] } | null
+  scoreboardItem?: {
+    score?: number | string | null
+    rank?: number | string | null
+  } | null
 }
 
 interface GZCTFChallengeDetail {
@@ -1058,16 +1062,29 @@ class GZCTFProject implements PlatformProject {
   }
 
   async getOverview(): Promise<ContestOverview> {
-    const [game, challenges, announcements] = await Promise.all([
+    const [game, challenges, announcements, details] = await Promise.all([
       this.game.get(async () => await this.client.get<GZCTFGame>(`game/${this.config.gameId}`)),
       this.listChallenges(),
       this.listAnnouncements(),
+      this.gameDetails(),
     ])
+    const participant = participantStats(
+      details.scoreboardItem?.score,
+      details.scoreboardItem?.rank,
+    )
     return {
       id: this.project.id,
       name: this.config.name ?? game.title ?? this.project.name,
       challenges: challenges.length,
       announcements: announcements.length,
+      links: {
+        contest: new URL(`games/${this.config.gameId}`, this.client.baseUrl).toString(),
+        leaderboard: new URL(
+          `games/${this.config.gameId}/scoreboard`,
+          this.client.baseUrl,
+        ).toString(),
+      },
+      ...(participant ? { participant } : {}),
     }
   }
 
@@ -1218,6 +1235,23 @@ function mapChallengeInfo(detail: GZCTFChallengeDetail, solved: boolean): Challe
     attachments: attachment ? [attachment] : [],
     ...(context?.instanceEntry ? { environmentGuide: context.instanceEntry } : {}),
   }
+}
+
+function participantStats(
+  score: unknown,
+  rank: unknown,
+): { score: number; rank: number | null } | undefined {
+  const normalizedScore = finiteNumber(score)
+  if (normalizedScore === undefined) return undefined
+  return {
+    score: normalizedScore,
+    rank: finiteNumber(rank) ?? null,
+  }
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  const number = typeof value === "number" || typeof value === "string" ? Number(value) : NaN
+  return Number.isFinite(number) ? Math.trunc(number) : undefined
 }
 
 function platformTimestamp(value: number): string {

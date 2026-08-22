@@ -45,6 +45,19 @@ describe("web-access 配置服务", () => {
     expect(secretStore.get(webAccessSecretName("brave"))).toBe("super-secret-token")
   })
 
+  it("Nekozuki 配置 baseUrl 后 snapshot 标记 configured", async () => {
+    const { configuration } = await open()
+    await configuration.update({
+      enabled: true,
+      providers: ["nekozuki"],
+      providerConfig: { nekozuki: { baseUrl: "http://localhost:8000" } },
+    })
+
+    const snapshot = await configuration.snapshot()
+    const nekozuki = snapshot.providers.find((p) => p.id === "nekozuki")
+    expect(nekozuki?.configured).toBe(true)
+  })
+
   it("setProviderKey 空值删除密钥", async () => {
     const { configuration, secretStore } = await open()
     await configuration.setProviderKey("gemini", "k1")

@@ -116,6 +116,31 @@ function EmptyState({
   )
 }
 
+function CompactEmptyState({
+  icon,
+  label,
+  className,
+}: {
+  icon: string
+  label: string
+  className?: string
+}): React.ReactElement {
+  return (
+    <div
+      data-slot="compact-empty"
+      className={cn(
+        "flex min-h-40 flex-col items-center justify-center px-5 py-7 text-center",
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2 text-quiet">
+        <Icon icon={icon} width="17" aria-hidden="true" />
+        <p className="text-[11px] font-medium">{label}</p>
+      </div>
+    </div>
+  )
+}
+
 function PageHeader({
   eyebrow,
   title,
@@ -193,4 +218,12 @@ function SettingsSection({
   )
 }
 
-export { ConfirmDialog, EmptyState, ErrorNotice, MobileSheet, PageHeader, SettingsSection }
+export {
+  CompactEmptyState,
+  ConfirmDialog,
+  EmptyState,
+  ErrorNotice,
+  MobileSheet,
+  PageHeader,
+  SettingsSection,
+}

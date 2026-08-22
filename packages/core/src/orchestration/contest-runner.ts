@@ -231,6 +231,8 @@ export class ContestRunner {
       .filter((run) => countsAgainstAttemptBudget(run.status)).length
     let lastError: string | undefined
     let continuation = false
+    let resumeRunId: string | undefined
+    let resumeAttempt: number | undefined
 
     try {
       if (failures >= maxAttempts) {
@@ -253,8 +255,9 @@ export class ContestRunner {
             runIds,
             error: lastError,
           }
-        attempts++
-        const attempt = this.project.nextAttempt(challenge.id)
+        const resumedRunId = resumeRunId
+        const attempt = resumeAttempt ?? this.project.nextAttempt(challenge.id)
+        if (!resumedRunId) attempts++
         const context = { challenge, attempt }
         let solver: CtfSolverAgent | undefined
         try {
@@ -264,12 +267,17 @@ export class ContestRunner {
             : typeof this.options.prompt === "function"
               ? await this.options.prompt(context)
               : (this.options.prompt ?? "Start solving this CTF challenge.")
-          solver = await this.project.createSolver(challenge.id, {
-            agent,
-            compaction: this.options.compaction,
-            attempt,
-          })
-          runIds.push(solver.runId)
+          solver = resumedRunId
+            ? await this.project.resumeSolver(resumedRunId, {
+                agent,
+                compaction: this.options.compaction,
+              })
+            : await this.project.createSolver(challenge.id, {
+                agent,
+                compaction: this.options.compaction,
+                attempt,
+              })
+          if (!runIds.includes(solver.runId)) runIds.push(solver.runId)
           this.activeSolvers.set(challenge.id, solver)
 
           const promptRunId = solver.runId
@@ -314,6 +322,8 @@ export class ContestRunner {
               error: lastError,
             }
           }
+          resumeRunId = solver.runId
+          resumeAttempt = attempt
           continuation = true
         } catch (error) {
           const reason = closeReason(error, signal)
@@ -324,6 +334,10 @@ export class ContestRunner {
             } catch (cleanupError) {
               lastError = `${lastError}; ${errorText(cleanupError)}`
             }
+          }
+          if (resumedRunId) {
+            resumeRunId = undefined
+            resumeAttempt = undefined
           }
           if (reason === "cancelled") {
             return {

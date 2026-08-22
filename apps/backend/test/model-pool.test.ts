@@ -241,6 +241,61 @@ describe("file model configuration", () => {
     expect(disabledThinking.models[0]?.supportedThinkingLevels).toContain("high")
   })
 
+  it("允许同一模型使用不同思考强度，但拒绝重复的模型与思考强度组合", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-model-thinking-"))
+    roots.push(root)
+    const configuration = await createFileModelConfiguration({
+      storagePath: join(root, "model-config.json"),
+      secretStore: await FileSecretStore.open(join(root, "secrets.json")),
+    })
+
+    await expect(
+      configuration.update({
+        models: [
+          modelEntry({ id: "solver-low", reasoningEffort: "low" }),
+          modelEntry({ id: "solver-high", reasoningEffort: "high" }),
+        ],
+        solverModelId: "solver-low",
+        tldrModelId: "solver-high",
+        subagentModels: {},
+      }),
+    ).resolves.toMatchObject({
+      models: [{ id: "solver-low" }, { id: "solver-high" }],
+    })
+
+    await expect(
+      configuration.update({
+        models: [
+          modelEntry({ id: "duplicate-a", reasoningEffort: "high" }),
+          modelEntry({ id: "duplicate-b", reasoningEffort: "high" }),
+        ],
+        solverModelId: "duplicate-a",
+        tldrModelId: "duplicate-a",
+        subagentModels: {},
+      }),
+    ).rejects.toThrow("模型与思考强度重复: custom-openai/solver-model@high")
+
+    await expect(
+      configuration.update({
+        models: [
+          modelEntry({
+            id: "disabled-a",
+            thinkingEnabled: false,
+            reasoningEffort: "high",
+          }),
+          modelEntry({
+            id: "disabled-b",
+            thinkingEnabled: false,
+            reasoningEffort: "off",
+          }),
+        ],
+        solverModelId: "disabled-a",
+        tldrModelId: "disabled-a",
+        subagentModels: {},
+      }),
+    ).rejects.toThrow("模型与思考强度重复: custom-openai/solver-model@off")
+  })
+
   it("编辑自定义供应商时保留 id 与未替换的 API Key", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-model-provider-edit-"))
     roots.push(root)

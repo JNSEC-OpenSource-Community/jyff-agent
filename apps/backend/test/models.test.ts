@@ -331,6 +331,45 @@ describe("模型配置与模型鉴权路由", () => {
     expect(scheduler.resumeCalls).toBe(1)
   })
 
+  it("模型配置允许同一模型使用不同思考强度", async () => {
+    const project = new FakeDashboardProject()
+    const { app } = createWebUiApp({
+      project,
+      modelConfiguration: new FakeModelConfiguration(),
+      frontendDist: "/nonexistent",
+    })
+    const entry = (id: string, reasoningEffort: string) => ({
+      id,
+      provider: "openai",
+      modelId: "gpt-5.4",
+      contextWindow: 400_000,
+      thinkingEnabled: true,
+      reasoningEffort,
+      passthroughThinking: false,
+    })
+
+    const allowed = await jsonRequest(app, "/api/model-config", "POST", {
+      models: [entry("gpt-low", "low"), entry("gpt-high", "high")],
+      solverModelId: "gpt-low",
+      tldrModelId: "gpt-high",
+      fatherModelId: "gpt-low",
+      subagentModels: {},
+    })
+    expect(allowed.status).toBe(200)
+
+    const rejected = await jsonRequest(app, "/api/model-config", "POST", {
+      models: [entry("duplicate-a", "high"), entry("duplicate-b", "high")],
+      solverModelId: "duplicate-a",
+      tldrModelId: "duplicate-a",
+      fatherModelId: "duplicate-a",
+      subagentModels: {},
+    })
+    expect(rejected.status).toBe(400)
+    expect(await jsonOf(rejected)).toMatchObject({
+      message: expect.stringContaining("模型与思考强度不能重复"),
+    })
+  })
+
   it("模型凭据导入、列出与移除且不泄露原文", async () => {
     const { app, authentication } = await appWithAuth()
 

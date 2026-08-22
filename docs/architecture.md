@@ -169,7 +169,7 @@ Flag 被平台接受后会记录 terminal submission。生产调度会进入 Wri
 - 同一题在 idle/execution/active 阶段互斥；直接派发可以显式 `force` 绕过 solved 或 blocked 检查。
 - `maxConcurrent` 是活跃 Solver/Sandbox 的硬上限；等待远程环境的 Run 仍占一个容器槽。
 - 远程槽满时跳过无附件环境题，但允许纯本地题和有附件可本地分析的题越过它。
-- 历史 Run 参与 attempt 预算；`interrupted` 和 `blocked` 不消耗普通重试预算。
+- 历史 Run 参与 attempt 预算；`interrupted` 和 `blocked` 不消耗普通重试预算。调度来源的 `interrupted` Run 恢复时复用原 attempt/session，并发送默认 continuation prompt，不创建新的 attempt。
 - 网络/限流/服务端错误按可重试分类处理；Session 连续异常超过阈值后将题目设为 blocked。
 - 平台暂不可用时停止领取，但不删除持久化队列和自动调度意图；恢复后继续 reconcile。
 - 空闲整队排序使用 `idleVersion`，执行队列排序校验条目版本；冲突时拒绝陈旧拖拽请求，前端重新读取服务端快照。
@@ -237,7 +237,7 @@ Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queu
 | SubAgent | 角色 frontmatter 或全局角色绑定           | 是                             |
 | Father   | 全局 `fatherModelId`，未配置时回退 Solver | 否                             |
 
-没有配置可用 Solver 模型时，后端会暂停自动调度并在快照中返回原因。自定义 Provider 的模型列表由后端用 SecretStore 请求，浏览器只接收模型 ID；请求失败时保留已有手工输入，不返回上游响应正文。
+没有配置可用 Solver 模型时，后端会暂停自动调度并在快照中返回原因。模型池允许同一个 Provider/Model ID 配置多个思考强度，但不允许同一个模型与同一个有效思考强度（关闭推理时为 `off`）重复配置。自定义 Provider 的模型列表由后端用 SecretStore 请求，浏览器只接收模型 ID；请求失败时保留已有手工输入，不返回上游响应正文。
 
 同一个后端进程创建的 Solver、SubAgent、TLDR、Father 和 Web Access 摘要模型共享按 Provider
 划分的请求门。相同 Provider 的请求起点至少错开 2 秒；任一请求返回可重试的 429 或

@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { INCOMPLETE_CONTINUATION_PROMPT } from "@ctf-agent/prompts"
 import type { CommandResult, DockerSandboxOptions, Sandbox } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import {
@@ -149,7 +150,7 @@ describe("ContestRunner", () => {
         solved: 8,
         failed: 0,
         cancelled: 0,
-        attempts: 10,
+        attempts: 9,
       })
       expect(summary.results.every((result) => result.status === "solved")).toBe(true)
       expect(tracker.maximum).toBeGreaterThan(1)
@@ -165,11 +166,50 @@ describe("ContestRunner", () => {
       expect(diagnostics.instanceDestroys).toBe(diagnostics.instanceStarts)
 
       const runs = project.runs()
-      expect(runs).toHaveLength(10)
+      expect(runs).toHaveLength(9)
       expect(runs.filter((run) => run.status === "solved")).toHaveLength(8)
       expect(runs.filter((run) => run.status === "blocked")).toHaveLength(1)
-      expect(runs.filter((run) => run.status === "interrupted")).toHaveLength(1)
+      expect(runs.filter((run) => run.status === "interrupted")).toHaveLength(0)
       expect(runs.every((run) => !["preparing", "running"].includes(run.status))).toBe(true)
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("异常中断的 attempt 恢复原 Run，并使用默认 continuation prompt", async () => {
+    const item = challenge(200)
+    const tracker = new SandboxTracker()
+    const { project } = await projectFixture([item], tracker)
+    const faux = createFauxCore({ provider: "runner-recovery" })
+    faux.setResponses([
+      fauxAssistantMessage("分析尚未完成。", { stopReason: "stop" }),
+      fauxAssistantMessage(
+        fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: "recovery-submit" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("已提交。"),
+    ])
+    const agent: AgentOptions = {
+      streamFn: faux.streamSimple as AgentOptions["streamFn"],
+      initialState: { model: faux.getModel(), thinkingLevel: "off" },
+    }
+
+    try {
+      const summary = await new ContestRunner(project, {
+        maxConcurrent: 1,
+        maxAttempts: 1,
+        createAgentOptions: async () => agent,
+      }).run()
+
+      expect(summary).toMatchObject({ solved: 1, failed: 0, attempts: 1 })
+      const [run] = project.runs({ challengeId: item.id })
+      expect(run).toEqual(
+        expect.objectContaining({ attempt: 1, status: "solved", closeReason: "submitted" }),
+      )
+      expect(project.runs({ challengeId: item.id })).toHaveLength(1)
+      expect(await readFile(project.runSessionPath(run?.id ?? "missing"), "utf8")).toContain(
+        INCOMPLETE_CONTINUATION_PROMPT,
+      )
     } finally {
       await project.close()
     }

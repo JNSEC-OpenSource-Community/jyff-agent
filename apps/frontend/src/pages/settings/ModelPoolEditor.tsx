@@ -237,7 +237,8 @@ export function ModelPoolEditor({
           <div>
             <h3 className="text-sm font-semibold">模型池</h3>
             <p className="mt-1! text-xs text-muted-foreground">
-              这些模型可供各比赛绑定 Solver、TLDR 与 SubAgent。
+              这些模型可供各比赛绑定 Solver、TLDR 与
+              SubAgent；同一模型可配置多个思考强度，但相同有效强度只能配置一次。
             </p>
           </div>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">

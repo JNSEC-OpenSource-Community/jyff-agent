@@ -113,7 +113,7 @@ export function sessionInterruptionMessage(
   const detail = error ? `: ${error}` : ""
   return blocked
     ? `Session 异常中断 ${count} 次，已超过阈值 ${maximum}，Agent 已设为 blocked（${stopReason}${detail}）`
-    : `Session 异常中断 ${count}/${maximum}（${stopReason}${detail}），将创建全新 Session 继续`
+    : `Session 异常中断 ${count}/${maximum}（${stopReason}${detail}），将在原 Run/Session 中继续`
 }
 
 function errorText(error: unknown): string {

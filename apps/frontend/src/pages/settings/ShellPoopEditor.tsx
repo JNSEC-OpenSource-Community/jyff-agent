@@ -25,6 +25,7 @@ export function ShellPoopEditor({
   const [apiKey, setApiKey] = useState("")
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const showSave = enabled || enabled !== config.enabled
 
   async function saveApiKey(key: string | null) {
     await apiMutation("/api/global-config/shellpoop/key", "POST", { apiKey: key })
@@ -164,12 +165,14 @@ export function ShellPoopEditor({
         </div>
       ) : null}
 
-      <div className="flex justify-end border-t border-border pt-4">
-        <Button variant="primary" onClick={() => void saveConfiguration()} disabled={busy}>
-          {busy ? <Spinner className="size-4" /> : null}
-          保存
-        </Button>
-      </div>
+      {showSave ? (
+        <div className="flex justify-end border-t border-border pt-4">
+          <Button variant="primary" onClick={() => void saveConfiguration()} disabled={busy}>
+            {busy ? <Spinner className="size-4" /> : null}
+            保存
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }
