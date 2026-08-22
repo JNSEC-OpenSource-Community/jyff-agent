@@ -473,6 +473,83 @@ export interface BuiltInPluginConfigurationView {
   plugins: BuiltInPluginView[]
 }
 
+export type SourceUpdateChannel = { kind: "release" } | { kind: "branch"; ref: string }
+export type SourceUpdateRelation = "behind" | "ahead" | "identical" | "diverged" | "unknown"
+export type SourceUpdateOperationStatus =
+  | "checking"
+  | "preparing"
+  | "prepared"
+  | "waiting_for_idle"
+  | "applying"
+  | "verifying"
+  | "succeeded"
+  | "failed"
+  | "rolled_back"
+  | "rollback_failed"
+
+export interface SourceUpdaterConfigurationView {
+  enabled: boolean
+  repository: string
+  channel: SourceUpdateChannel
+  automaticCheck: boolean
+  intervalMinutes: number
+  automaticApply: boolean
+  applyPolicy: "when-idle" | "maintenance-window"
+  githubTokenConfigured: boolean
+}
+
+export interface SourceUpdateCandidateView {
+  version: string | null
+  revision: string
+  ref: string
+  channel: SourceUpdateChannel
+  htmlUrl: string
+  changelog: string | null
+  publishedAt: string | null
+  signatureVerified: boolean
+  verified: boolean
+  relation: SourceUpdateRelation
+  aheadBy: number | null
+  behindBy: number | null
+}
+
+export interface SourceUpdateOperationView {
+  id: string
+  kind: "check" | "prepare" | "apply" | "rollback"
+  status: SourceUpdateOperationStatus
+  currentRevision: string | null
+  targetRevision: string | null
+  message: string
+  startedAt: string
+  updatedAt: string
+  error?: { code: string; message: string }
+}
+
+export interface SourceUpdaterView {
+  id: "github-source-updater"
+  configuration: SourceUpdaterConfigurationView
+  current: {
+    version: string | null
+    revision: string | null
+    repository: string
+    builtAt: string | null
+    dirty: boolean
+    source: "environment" | "git" | "unknown"
+  }
+  candidate: SourceUpdateCandidateView | null
+  executor: {
+    connected: boolean
+    protocolVersion: number | null
+    canPrepare: boolean
+    canApply: boolean
+    reason: string | null
+  }
+  operation: SourceUpdateOperationView | null
+  lastCheckedAt: string | null
+  nextCheckAt: string | null
+  error: { code: string; message: string } | null
+}
+
 export type ModelAuthLoginStatus = "running" | "awaiting_input" | "success" | "error" | "cancelled"
 
 export interface ModelAuthPromptView {

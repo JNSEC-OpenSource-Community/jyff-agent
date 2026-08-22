@@ -103,6 +103,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
     refreshTimer.unref()
   }
   scheduleRefresh(pollIntervalMs)
+  options.sourceUpdater?.start()
 
   const scheduleReconcile = (delayMs: number): void => {
     if (!options.scheduler && !options.controlPlane) return
@@ -139,6 +140,7 @@ export async function startWebUi(options: WebUiOptions): Promise<WebUiServer> {
       if (refreshTimer) clearTimeout(refreshTimer)
       if (schedulerReconcileTimer) clearTimeout(schedulerReconcileTimer)
       clearInterval(heartbeat)
+      options.sourceUpdater?.close()
       services.sse.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))

@@ -16,6 +16,21 @@ export {
   buildEmptyDashboardSnapshot,
 } from "./domain/view.ts"
 export {
+  DEFAULT_SOURCE_REPOSITORY,
+  resolveBuildIdentity,
+  type BuildIdentity,
+} from "./domain/build-identity.ts"
+export {
+  createFileGitHubSourceUpdater,
+  createHttpSourceUpdateExecutor,
+  type GitHubSourceUpdater,
+  type SourceUpdateCandidateView,
+  type SourceUpdateExecutor,
+  type SourceUpdateExecutorView,
+  type SourceUpdateOperationView,
+  type SourceUpdaterView,
+} from "./domain/github-source-updater.ts"
+export {
   createFileWebUiAuthentication,
   type WebUiAuthentication,
   type WebUiAuthenticationView,

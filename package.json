@@ -9,6 +9,7 @@
     "test": "vp test run",
     "test:watch": "vp test",
     "webui": "vp build && node --experimental-transform-types apps/backend/src/main.ts",
+    "update-worker": "node --experimental-transform-types apps/updater/src/main.ts",
     "format": "vp fmt --write",
     "format:check": "vp fmt --check",
     "lint": "vp lint",

@@ -194,6 +194,8 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
 
+  apps/updater: {}
+
   packages/agents:
     dependencies:
       '@ctf-agent/platform':

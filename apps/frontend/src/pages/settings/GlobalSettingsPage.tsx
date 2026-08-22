@@ -27,8 +27,10 @@ import type {
   ModelAuthenticationView,
   ModelConfigurationView,
   ShellPoopConfigurationView,
+  SourceUpdaterView,
   WebAccessConfigurationView,
 } from "../../types.ts"
+import { GitHubSourceUpdaterEditor } from "./GitHubSourceUpdaterEditor.tsx"
 import { ModelPoolEditor } from "./ModelPoolEditor.tsx"
 import { ProviderCredentialCard } from "./ProviderCredentialCard.tsx"
 import { ShellPoopEditor } from "./ShellPoopEditor.tsx"
@@ -41,6 +43,7 @@ interface Cfg {
   plugins?: BuiltInPluginConfigurationView
   webAccess: WebAccessConfigurationView | null
   shellpoop: ShellPoopConfigurationView | null
+  sourceUpdater?: SourceUpdaterView | null
 }
 
 type ProviderSetupMode = "subscription" | "api-key" | "custom"
@@ -586,6 +589,18 @@ export function GlobalSettingsPage() {
                   <ShellPoopEditor config={g.shellpoop} onSaved={load} />
                 ) : (
                   <ErrorNotice message="当前控制面不支持 shellpoop 插件" />
+                )}
+              </div>
+
+              <div className="mt-8 border-t border-border pt-4">
+                {g.sourceUpdater ? (
+                  <GitHubSourceUpdaterEditor
+                    config={g.sourceUpdater}
+                    authenticationEnabled={g.authentication.enabled}
+                    onSaved={load}
+                  />
+                ) : (
+                  <ErrorNotice message="当前控制面未启用 GitHub 源码更新插件" />
                 )}
               </div>
             </div>

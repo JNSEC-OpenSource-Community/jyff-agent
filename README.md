@@ -97,6 +97,22 @@ docker compose --profile shellpoop up --build -d
 
 ShellPoop 默认从 `../shellpoop` 构建，也可以通过 `SHELLPOOP_BUILD_CONTEXT` 指定服务仓库路径。
 
+### GitHub 源码更新 Worker
+
+全局设置中的“GitHub 源码更新”默认只检查版本。要启用本地源码 staging、构建、systemd 重启和健康检查，需要在独立进程中启动 Update Worker，并把相同的随机 Token 配置给 WebUI：
+
+```bash
+CTF_AGENT_UPDATE_ROOT=/opt/ctf-agent \
+CTF_AGENT_REPOSITORY=JNSEC-OpenSource-Community/jyff-agent \
+CTF_AGENT_SERVICE_NAME=ctf-agent.service \
+CTF_AGENT_UPDATE_WORKER_TOKEN='<随机长密钥>' \
+CTF_AGENT_UPDATE_ALLOW_APPLY=1 \
+vp run update-worker
+```
+
+WebUI 进程还需要设置 `CTF_AGENT_UPDATE_WORKER_URL=http://127.0.0.1:5460` 和同名
+`CTF_AGENT_UPDATE_WORKER_TOKEN`。Worker 只接受固定仓库和固定 Git SHA，不接受 shell 或任意 Docker 参数；Compose 部署暂不使用该本地 symlink Worker，详见 [GitHub 源码更新插件设计](docs/github-source-updater.md)。
+
 ### ShellPoop 插件配置
 
 [ShellPoop](https://github.com/fressive/shellpoop) 是可选的反弹 Shell 管理服务，仅用于已获授权的 CTF、渗透测试或红队环境。
@@ -155,3 +171,4 @@ SHELLPOOP_ADVERTISE_HOST=ctf.example.com \
 - [SubAgent 生命周期](docs/subagents.md)
 - [Father 插件开发提示](packages/agents/skills/extension-authoring/SKILL.md)
 - [Web Access 上游固定与边界](packages/web-access/UPSTREAM_PIN.md)
+- [GitHub 源码更新插件设计](docs/github-source-updater.md)

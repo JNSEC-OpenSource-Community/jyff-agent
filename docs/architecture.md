@@ -197,6 +197,7 @@ Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queu
 │   └── challenges/
 ├── model-config.json / auth.json / web-access.json / built-in-plugins.json
 ├── scheduler-config.json / global-config.json / secrets.json
+├── source-updater/                         # GitHub 源码更新配置、操作日志和版本状态
 ├── father/sessions/<session-id>/
 └── extensions/<plugin-id>/revisions/<revision>/
 ```
@@ -264,7 +265,14 @@ Father 会话由 `packages/core/src/father/father-manager.ts` 管理，保留宿
 
 插件候选由 WebUI 和 `PlatformExtensionStore` 管理。候选代码在 Validation Gate 之前不会被主进程导入；Gate 在受限 Docker sandbox 中加载并运行。只有报告与候选 session、content hash、revision 和 setup fingerprint 匹配时，才能复制到 immutable revision 并注册到 `PlatformPluginRegistry`。具体 manifest 和检查项见 [平台插件文档](platform-plugins.md)。
 
-## 8. 安全与资源约束
+## 8. 全局源码更新插件边界
+
+GitHub 源码更新是全局运维能力，不属于 `PlatformPlugin`。当前仓库的设计稿见
+[GitHub 源码更新插件设计](github-source-updater.md)。它必须由独立 Update Worker 执行下载、构建、镜像切换和回滚；WebUI/backend 只负责配置、鉴权、维护排空和持久化操作状态，不能在正在运行的 WebUI 进程内执行 `git pull` 或覆盖当前源码目录。
+
+更新对象是包含 WebUI、Solver 和 Audit 镜像的同一 revision bundle。候选 revision 经过 GitHub allowlist、Compare、digest/provenance 与 staging health check 后才能应用；应用前暂停调度领取并等待 Solver、Father、Audit 空闲，失败则恢复旧 bundle。GitHub Token 只进入 SecretStore，浏览器只获得配置状态。
+
+## 9. 安全与资源约束
 
 - `secrets.json`、模型认证和平台 Secret 不进入 Project 配置、Run 日志、黑板或浏览器响应。
 - Docker sandbox 默认资源为 2 CPU、4 GiB 内存/交换、512 PIDs、20 GiB 可写层；Project 可配置 `privileged` 和 `networkMode`，因此部署者必须明确接受这些权限设置。
@@ -273,7 +281,7 @@ Father 会话由 `packages/core/src/father/father-manager.ts` 管理，保留宿
 - `needsEnv` 未被平台提供时保持 `undefined`，提示层显示为 `unknown`，不会自行启动远程环境。
 - 归档不打断活跃 Solver；它只停止新的自动调度，空闲后转为 local-only。
 
-## 9. 变更导航
+## 10. 变更导航
 
 | 需求                      | 主要代码和测试                                                                                            |
 | ------------------------- | --------------------------------------------------------------------------------------------------------- |

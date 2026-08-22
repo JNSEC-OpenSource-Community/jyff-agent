@@ -1,5 +1,7 @@
 import type { AuditStore, RunSessionExportMetadata } from "@ctf-agent/core"
 import { type Context, Hono } from "hono"
+import type { BuildIdentity } from "../domain/build-identity.ts"
+import type { GitHubSourceUpdater } from "../domain/github-source-updater.ts"
 import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
 import type { ShellPoopConfiguration } from "../domain/shellpoop-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
@@ -28,6 +30,7 @@ import { projectsRoutes, scopedProjectRoutes } from "./routes/projects.ts"
 import { runRoutes } from "./routes/runs.ts"
 import { schedulerRoutes } from "./routes/scheduler.ts"
 import { shellpoopRoutes } from "./routes/shellpoop.ts"
+import { sourceUpdaterRoutes } from "./routes/source-updater.ts"
 import { healthRoutes, scopedSystemRoutes, systemRoutes } from "./routes/system.ts"
 import { webAccessRoutes } from "./routes/web-access.ts"
 import { Services } from "./services.ts"
@@ -51,6 +54,8 @@ export interface WebUiOptions {
   builtInPluginConfiguration?: BuiltInPluginConfiguration
   webAccessConfiguration?: WebAccessConfiguration
   shellpoopConfiguration?: ShellPoopConfiguration
+  sourceUpdater?: GitHubSourceUpdater
+  buildIdentity?: BuildIdentity
   secureCookies?: boolean
   projectRuntimeConfiguration?: (
     projectId: string,
@@ -111,6 +116,12 @@ export function buildRouter(services: Services, options: WebUiOptions): App {
     await next()
   })
   app.use("/api/*", authenticationGate(services))
+  app.use("/api/*", async (c, next) => {
+    const readOnly = c.req.method === "GET" || c.req.method === "HEAD" || c.req.method === "OPTIONS"
+    const sourceUpdaterPath = c.req.path.includes("/global-config/source-updater")
+    if (!readOnly && !sourceUpdaterPath) services.assertNotInMaintenance()
+    await next()
+  })
 
   // 全局 /api 路由。
   const api = new Hono<AppEnv>()
@@ -124,6 +135,7 @@ export function buildRouter(services: Services, options: WebUiOptions): App {
   api.route("/", modelsRoutes(services))
   api.route("/", webAccessRoutes(services))
   api.route("/", shellpoopRoutes(services))
+  api.route("/", sourceUpdaterRoutes(services))
   app.route("/api", api)
 
   // 项目级路由：注入 scope 后挂载到两种路径形态（新式与旧式 /api 后缀）。

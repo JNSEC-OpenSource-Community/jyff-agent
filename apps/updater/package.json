@@ -1,0 +1,9 @@
+{
+  "name": "@ctf-agent/updater",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-transform-types src/main.ts"
+  }
+}

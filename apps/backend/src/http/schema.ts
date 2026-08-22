@@ -25,6 +25,56 @@ export const codeAuditCreateSchema = z
 
 export const builtInPluginStateSchema = z.object({ enabled: z.boolean() })
 
+const sourceUpdateChannelSchema = z.union([
+  z.object({ kind: z.literal("release") }).strict(),
+  z
+    .object({
+      kind: z.literal("branch"),
+      ref: z.string().trim().min(1).max(128),
+    })
+    .strict(),
+])
+
+export const sourceUpdaterConfigurationSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    repository: z.string().trim().min(3).max(256).optional(),
+    channel: sourceUpdateChannelSchema.optional(),
+    automaticCheck: z.boolean().optional(),
+    intervalMinutes: z.number().int().min(15).max(1_440).optional(),
+    automaticApply: z.boolean().optional(),
+    applyPolicy: z.enum(["when-idle", "maintenance-window"]).optional(),
+  })
+  .strict()
+
+export const sourceUpdaterTokenSchema = z
+  .object({ token: z.string().trim().max(16_384).nullable().optional() })
+  .strict()
+
+export const sourceUpdaterPrepareSchema = z
+  .object({
+    expectedTargetRevision: z
+      .string()
+      .regex(/^[a-f0-9]{7,64}$/iu)
+      .optional(),
+  })
+  .strict()
+
+export const sourceUpdaterApplySchema = z
+  .object({
+    operationId: z.string().trim().min(1).max(128),
+    expectedCurrentRevision: z
+      .string()
+      .regex(/^[a-f0-9]{7,64}$/iu)
+      .nullable(),
+    expectedTargetRevision: z.string().regex(/^[a-f0-9]{7,64}$/iu),
+  })
+  .strict()
+
+export const sourceUpdaterRollbackSchema = z
+  .object({ operationId: z.string().trim().min(1).max(128) })
+  .strict()
+
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 function hasControlCharacter(value: string): boolean {

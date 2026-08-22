@@ -5,6 +5,8 @@ import {
   piSessionHasConversation,
   readPiSessionConversation,
 } from "../domain/html-export.ts"
+import type { BuildIdentity } from "../domain/build-identity.ts"
+import type { GitHubSourceUpdater } from "../domain/github-source-updater.ts"
 import type { BuiltInPluginConfiguration } from "../domain/built-in-plugin-config.ts"
 import type { ShellPoopConfiguration } from "../domain/shellpoop-config.ts"
 import type { WebAccessConfiguration } from "../domain/web-access-config.ts"
@@ -40,6 +42,8 @@ export interface ServicesOptions {
   builtInPluginConfiguration?: BuiltInPluginConfiguration
   webAccessConfiguration?: WebAccessConfiguration
   shellpoopConfiguration?: ShellPoopConfiguration
+  sourceUpdater?: GitHubSourceUpdater
+  buildIdentity?: BuildIdentity
   projectRuntimeConfiguration?: (
     projectId: string,
   ) => DashboardProjectRuntimeConfiguration | undefined
@@ -90,7 +94,16 @@ export class Services {
       projectId,
       sse: this.sse,
     })
+    options.sourceUpdater?.setStatusListener((snapshot) => {
+      this.sse.broadcast("source_update_status", JSON.stringify(snapshot))
+    })
+    options.sourceUpdater?.setMaintenanceController({
+      begin: () => this.enterMaintenance(),
+      end: () => this.leaveMaintenance(),
+    })
   }
+
+  private maintenanceReason: string | null = null
 
   get controlPlane(): DashboardControlPlane | undefined {
     return this.options.controlPlane
@@ -114,6 +127,41 @@ export class Services {
 
   get builtInPluginConfiguration(): BuiltInPluginConfiguration | undefined {
     return this.options.builtInPluginConfiguration
+  }
+
+  get sourceUpdater(): GitHubSourceUpdater | undefined {
+    return this.options.sourceUpdater
+  }
+
+  get buildIdentity(): BuildIdentity | undefined {
+    return this.options.buildIdentity
+  }
+
+  get maintenanceActive(): boolean {
+    return this.maintenanceReason !== null
+  }
+
+  get maintenanceMessage(): string | null {
+    return this.maintenanceReason
+  }
+
+  enterMaintenance(reason = "源码更新正在切换版本"): void {
+    if (this.maintenanceReason !== null) return
+    this.maintenanceReason = reason
+    const schedulers = this.options.controlPlane
+      ? this.options.controlPlane.projectSnapshots().map(({ id }) => this.currentScheduler(id))
+      : [this.currentScheduler()]
+    for (const scheduler of schedulers) scheduler?.pauseAuto()
+  }
+
+  leaveMaintenance(): void {
+    this.maintenanceReason = null
+  }
+
+  assertNotInMaintenance(): void {
+    if (this.maintenanceReason !== null) {
+      throw new HttpError(503, "source_update_maintenance", this.maintenanceReason)
+    }
   }
 
   get authentication(): DashboardWebUiAuthentication | undefined {
@@ -374,6 +422,14 @@ export class Services {
       throw new HttpError(404, "shellpoop_unavailable", "当前控制面不支持 shellpoop 插件配置")
     }
     return configuration
+  }
+
+  requireSourceUpdater(): GitHubSourceUpdater {
+    const updater = this.options.sourceUpdater
+    if (!updater) {
+      throw new HttpError(404, "source_updater_unavailable", "当前控制面未启用 GitHub 源码更新插件")
+    }
+    return updater
   }
 
   /** 全局路由（无 project 上下文）的作用域视图。 */

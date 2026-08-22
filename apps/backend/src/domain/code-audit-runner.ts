@@ -36,6 +36,10 @@ export class CodeAuditRunner {
     private readonly execute: DockerCommandExecutor = executeDockerCommand,
   ) {}
 
+  activeCount(): number {
+    return this.active.size
+  }
+
   async preflight(): Promise<void> {
     for (const [image, message] of [
       [IMAGE, "审计镜像未构建；请先运行 vp run build:sandbox"],

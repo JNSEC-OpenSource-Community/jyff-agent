@@ -46,6 +46,7 @@ export function healthRoutes(services: Services): App {
       platformSync: { ...services.sync.health() },
       controlPlane: services.controlPlane?.snapshot() ?? null,
       scheduler: services.currentScheduler()?.snapshot() ?? null,
+      buildIdentity: services.buildIdentity ?? null,
       modelConfiguration: services.modelConfiguration?.snapshot() ?? null,
       modelAuthentication: (await services.modelAuthentication?.snapshot()) ?? null,
       authentication: { ...authentication, authenticated },
@@ -105,6 +106,7 @@ export function systemRoutes(services: Services): App {
       shellpoop: services.shellpoopConfiguration
         ? await services.shellpoopConfiguration.snapshot()
         : null,
+      sourceUpdater: services.sourceUpdater ? await services.sourceUpdater.snapshot() : null,
     })
   })
 

@@ -8,6 +8,7 @@ WORKDIR /app
 COPY --chown=vp:vp package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version* ./
 COPY --chown=vp:vp apps/backend/package.json apps/backend/package.json
 COPY --chown=vp:vp apps/frontend/package.json apps/frontend/package.json
+COPY --chown=vp:vp apps/updater/package.json apps/updater/package.json
 COPY --chown=vp:vp packages/agents/package.json packages/agents/package.json
 COPY --chown=vp:vp packages/core/package.json packages/core/package.json
 COPY --chown=vp:vp packages/platform/package.json packages/platform/package.json
@@ -29,6 +30,7 @@ WORKDIR /app
 COPY --chown=vp:vp package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version* ./
 COPY --chown=vp:vp apps/backend/package.json apps/backend/package.json
 COPY --chown=vp:vp apps/frontend/package.json apps/frontend/package.json
+COPY --chown=vp:vp apps/updater/package.json apps/updater/package.json
 COPY --chown=vp:vp packages/agents/package.json packages/agents/package.json
 COPY --chown=vp:vp packages/core/package.json packages/core/package.json
 COPY --chown=vp:vp packages/platform/package.json packages/platform/package.json
@@ -47,7 +49,15 @@ RUN apt-get update \
 # 运行时镜像不包含 vp；仅保留解析出的 Node.js、应用和生产依赖。
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
+ARG CTF_AGENT_VERSION=0.1.0
+ARG CTF_AGENT_REVISION
+ARG CTF_AGENT_REPOSITORY=JNSEC-OpenSource-Community/jyff-agent
+ARG CTF_AGENT_BUILT_AT
 ENV NODE_ENV=production
+ENV CTF_AGENT_VERSION=${CTF_AGENT_VERSION}
+ENV CTF_AGENT_REVISION=${CTF_AGENT_REVISION}
+ENV CTF_AGENT_REPOSITORY=${CTF_AGENT_REPOSITORY}
+ENV CTF_AGENT_BUILT_AT=${CTF_AGENT_BUILT_AT}
 ENV WEBUI_FRONTEND_DIST=/app/apps/frontend/dist
 
 COPY --from=build /tmp/node /usr/local/bin/node

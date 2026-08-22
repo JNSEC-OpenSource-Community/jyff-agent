@@ -20,6 +20,11 @@ import {
   ret2shellPlatform,
 } from "@ctf-agent/platform"
 import { CodeAuditRunner } from "./domain/code-audit-runner.ts"
+import { resolveBuildIdentity } from "./domain/build-identity.ts"
+import {
+  createFileGitHubSourceUpdater,
+  createHttpSourceUpdateExecutor,
+} from "./domain/github-source-updater.ts"
 import { createFileModelAuthentication } from "./domain/model-auth.ts"
 import { createFileModelConfiguration } from "./domain/model-pool.ts"
 import { createFileProjectRuntimeConfiguration } from "./domain/runtime.ts"
@@ -51,6 +56,8 @@ interface WebUiProcessOptions {
 
 const options = parseOptions(process.argv.slice(2))
 const stateDirectory = join(options.root, ".ctf-agent")
+const applicationRoot = fileURLToPath(new URL("../../../", import.meta.url))
+const buildIdentity = await resolveBuildIdentity({ applicationRoot })
 const secretStore = await FileSecretStore.open(join(stateDirectory, "secrets.json"))
 const modelAuthentication = await createFileModelAuthentication({
   storagePath: join(stateDirectory, "auth.json"),
@@ -72,13 +79,27 @@ const shellpoopConfiguration = await createFileShellPoopConfiguration({
 const builtInPluginConfiguration = await createFileBuiltInPluginConfiguration(
   join(stateDirectory, "built-in-plugins.json"),
 )
+const authentication = await createFileWebUiAuthentication(
+  join(stateDirectory, "global-config.json"),
+)
+const sourceUpdater = await createFileGitHubSourceUpdater({
+  storageDirectory: join(stateDirectory, "source-updater"),
+  secretStore,
+  buildIdentity,
+  automaticApplyAllowed: () => authentication.snapshot().enabled,
+  ...(process.env.CTF_AGENT_UPDATE_WORKER_URL
+    ? {
+        executor: createHttpSourceUpdateExecutor({
+          baseUrl: process.env.CTF_AGENT_UPDATE_WORKER_URL,
+          token: process.env.CTF_AGENT_UPDATE_WORKER_TOKEN,
+        }),
+      }
+    : {}),
+})
 const schedulerConfiguration = await createFileSchedulerConfiguration({
   storagePath: join(stateDirectory, "scheduler-config.json"),
   fallback: options.maxConcurrent,
 })
-const authentication = await createFileWebUiAuthentication(
-  join(stateDirectory, "global-config.json"),
-)
 const projectRuntimeConfigurations = new Map<
   string,
   Awaited<ReturnType<typeof createFileProjectRuntimeConfiguration>>
@@ -118,7 +139,6 @@ const extensions = await PlatformExtensionStore.open({
       : {}),
   },
 })
-const applicationRoot = fileURLToPath(new URL("../../../", import.meta.url))
 const fatherSkills = await discoverProjectSkillsWithDiagnostics(applicationRoot, [
   "packages/agents/skills/extension-authoring",
 ])
@@ -253,6 +273,18 @@ const controlPlane = await ControlPlane.create({
   },
 })
 
+sourceUpdater.setActivityProvider(() => ({
+  activeSolvers: controlPlane
+    .projectSnapshots()
+    .reduce(
+      (total, project) =>
+        total + (controlPlane.currentScheduler(project.id)?.snapshot().active.length ?? 0),
+      0,
+    ),
+  activeFatherTurns: father.list().filter((session) => session.status === "running").length,
+  activeAudits: auditRunner.activeCount(),
+}))
+
 let webui: WebUiServer | undefined
 const processShutdown = createProcessShutdown({
   close: async () => {
@@ -260,6 +292,7 @@ const processShutdown = createProcessShutdown({
     // Father 与 ControlPlane 随后并行关闭，单个清理失败不能阻止其他 Agent 正常回收。
     const operations: Promise<void>[] = []
     if (webui) operations.push(webui.close())
+    sourceUpdater.close()
     operations.push(father.close(), controlPlane.close())
     const settled = await Promise.allSettled(operations)
     const failures = settled
@@ -302,6 +335,8 @@ try {
     fatherValidationConfigs,
     extensions,
     builtInPluginConfiguration,
+    sourceUpdater,
+    buildIdentity,
     webAccessConfiguration,
     shellpoopConfiguration,
     projectRuntimeConfiguration: (projectId) => projectRuntimeConfigurations.get(projectId),
