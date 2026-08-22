@@ -86,6 +86,12 @@ export async function buildDashboardSnapshot(
     const challengeRuns = runsByChallenge.get(challenge.id) ?? []
     const latest = challengeRuns.at(-1)
     const active = [...challengeRuns].reverse().find((run) => ACTIVE.has(run.status))
+    const solvedRun = [...challengeRuns]
+      .reverse()
+      .find((run) => run.status === "solved" && run.finishedAt)
+    const solveDurationMs = solvedRun
+      ? durationBetween(solvedRun.startedAt ?? solvedRun.createdAt, solvedRun.finishedAt)
+      : null
     const idle = idleByChallenge.get(challenge.id)
     const queued = queuedByChallenge.get(challenge.id)
     const schedulerActive = activeByChallenge.get(challenge.id)
@@ -113,6 +119,7 @@ export async function buildDashboardSnapshot(
       attempts: challengeRuns.length,
       latestRunId: latest?.id ?? null,
       latestRunStatus: latest?.status ?? null,
+      solveDurationMs,
       lastActivityAt: lastEvent?.createdAt ?? latest?.updatedAt ?? null,
       progress: progressLabel(status, lastEvent),
       queuePosition: queued?.position ?? idle?.position ?? null,
@@ -362,6 +369,12 @@ function nonNegativeNumber(value: unknown): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function durationBetween(start: string | undefined, end: string | undefined): number | null {
+  if (!start || !end) return null
+  const duration = Date.parse(end) - Date.parse(start)
+  return Number.isFinite(duration) ? Math.max(0, duration) : null
 }
 
 function groupRuns(runs: RunRecord[]): Map<string, RunRecord[]> {

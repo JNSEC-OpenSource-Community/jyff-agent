@@ -169,7 +169,7 @@ Flag 被平台接受后会记录 terminal submission。生产调度会进入 Wri
 - 同一题在 idle/execution/active 阶段互斥；直接派发可以显式 `force` 绕过 solved 或 blocked 检查。
 - `maxConcurrent` 是活跃 Solver/Sandbox 的硬上限；等待远程环境的 Run 仍占一个容器槽。
 - 远程槽满时跳过无附件环境题，但允许纯本地题和有附件可本地分析的题越过它。
-- 历史 Run 参与 attempt 预算；`interrupted` 和 `blocked` 不消耗普通重试预算。调度来源的 `interrupted` Run 恢复时复用原 attempt/session，并发送默认 continuation prompt，不创建新的 attempt。
+- 历史 Run 参与 attempt 预算；`interrupted` 和 `blocked` 不消耗普通重试预算。调度来源的非 `blocked` 终态 Run 恢复时复用原 attempt/session，并发送默认 continuation prompt，不创建新的 attempt。
 - 网络/限流/服务端错误按可重试分类处理；Session 连续异常超过阈值后将题目设为 blocked。
 - 平台暂不可用时停止领取，但不删除持久化队列和自动调度意图；恢复后继续 reconcile。
 - 空闲整队排序使用 `idleVersion`，执行队列排序校验条目版本；冲突时拒绝陈旧拖拽请求，前端重新读取服务端快照。

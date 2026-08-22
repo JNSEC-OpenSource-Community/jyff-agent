@@ -178,6 +178,15 @@ function elapsedTime(from: string | undefined, now: string): string {
   return `${hours} 小时 ${minutes % 60} 分`
 }
 
+function formatDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000))
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分 ${seconds % 60} 秒`
+  const hours = Math.floor(minutes / 60)
+  return `${hours} 小时 ${minutes % 60} 分`
+}
+
 const ENVIRONMENT_PHASE_LABELS = {
   waiting: "等待名额",
   starting: "正在启动",
@@ -1020,8 +1029,8 @@ export function ProjectPage() {
                       >
                         <p className="text-sm font-medium hover:text-primary">{c.title}</p>
                         <p className="text-xs text-muted-foreground">
-                          {c.status === "solved" && c.lastActivityAt
-                            ? `解出于 ${relativeTime(c.lastActivityAt)}`
+                          {c.status === "solved" && c.solveDurationMs !== null
+                            ? `耗时 ${formatDuration(c.solveDurationMs)}`
                             : c.progress}
                         </p>
                       </Link>

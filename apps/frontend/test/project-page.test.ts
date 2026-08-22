@@ -84,6 +84,12 @@ describe("ProjectPage", () => {
       "compact-empty",
     )
     expect(recentEmpty.parentElement?.parentElement?.className).toContain("min-h-40")
+    expect(
+      screen.getByText("暂无题目").closest('[data-slot="compact-empty"]')?.className,
+    ).toContain("flex-1")
+    expect(
+      screen.getByText("无等待项").closest('[data-slot="compact-empty"]')?.className,
+    ).toContain("flex-1")
     const pendingCard = screen
       .getByText("点击“开始比赛”后才会连接平台并同步题目。")
       .closest('[data-slot="card"]')
@@ -174,6 +180,82 @@ describe("ProjectPage", () => {
     const queueList = queueHandle.parentElement?.parentElement
     expect(queueList?.className).toContain("divide-y")
     expect(queueList?.className).toContain("overflow-y-auto")
+  })
+
+  it("执行队列显示当前正在运行的 Solver", async () => {
+    const data = snapshot()
+    if (!data.scheduler) throw new Error("测试快照缺少调度器")
+    data.scheduler.queued = []
+    data.scheduler.active = [
+      {
+        challengeId: "web/1",
+        runId: "run-web-1",
+        attempt: 2,
+        source: "manual",
+        phase: "running",
+        startedAt: "2026-08-12T07:58:00.000Z",
+      },
+    ]
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => jsonResponse(data)),
+    )
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/demo"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId",
+            element: createElement(ProjectPage),
+          }),
+        ),
+      ),
+    )
+
+    const executionQueue = await screen.findByRole("region", { name: "执行队列" })
+    expect(within(executionQueue).getByText("认证绕过")).toBeTruthy()
+    expect(within(executionQueue).getByText("Solver · 执行中 · 第 2 次 attempt")).toBeTruthy()
+    expect(within(executionQueue).getByText("执行中")).toBeTruthy()
+    expect(executionQueue.querySelector('[data-active-solver="web/1"]')).toBeTruthy()
+  })
+
+  it("已解出题目显示解题耗时而不是解出时间", async () => {
+    const data = snapshot()
+    const challenge = data.challenges[0]
+    if (!challenge) throw new Error("测试快照缺少题目")
+    challenge.status = "solved"
+    challenge.solveDurationMs = 65_000
+    challenge.lastActivityAt = "2026-08-12T07:59:00.000Z"
+    data.stats.solved = 1
+    data.stats.pending = 0
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => jsonResponse(data)),
+    )
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ["/projects/demo"] },
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/projects/:projectId",
+            element: createElement(ProjectPage),
+          }),
+        ),
+      ),
+    )
+
+    expect(await screen.findByText("耗时 1 分 5 秒")).toBeTruthy()
+    expect(screen.queryByText(/解出于/)).toBeNull()
   })
 
   it("可从题目表格批量加入和移出空闲队列，并立即同步计划", async () => {
@@ -541,6 +623,7 @@ function snapshot(): DashboardSnapshot {
         attempts: 0,
         latestRunId: null,
         latestRunStatus: null,
+        solveDurationMs: null,
         lastActivityAt: null,
         progress: "等待派发",
         queuePosition: null,

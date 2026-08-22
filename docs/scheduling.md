@@ -75,7 +75,7 @@ Solver 在同一个 Run 和 Sandbox 中持续工作，直到以下任一结果�
 - Supervisor 判定为 Blocked 并完成进度收尾；
 - 人工取消、进程关闭或不可恢复失败。
 
-进程异常退出时，Project 会把遗留的非终态 Run 标记为 `interrupted`。Scheduler 恢复执行队列时，若该 Run 来自调度器且题目尚未 Blocked，会用原 Run 的 attempt 和 JSONL session 调用 `resumeSolver()`，发送默认 continuation prompt，而不是创建新的 attempt；只有无法恢复或题目已进入 Blocked 时才走普通失败收尾。
+进程异常退出时，Project 会把遗留的非终态 Run 标记为 `interrupted`。Scheduler 恢复执行队列时，若该 Run 来自调度器且题目尚未 Blocked，会用原 Run 的 attempt 和 JSONL session 调用 `resumeSolver()`，发送默认 continuation prompt，而不是创建新的 attempt。人工再次派发 `cancelled`、普通失败或超时的题目时也遵循同一规则；只有题目已进入 Blocked 时才不恢复原 Run。
 
 普通 turn 结束、远程环境排队或 transient retry 都不会为了“提高表面并发”创建额外 Sandbox。
 
@@ -137,7 +137,7 @@ max(remoteCoordinator.occupied, admittedRemoteOnlyRuns) < maxRemoteEnvironments
 - status、destroy 和补偿清理默认受 30 秒上限；
 - 明确 `retryable: true` 的启动错误在同一次工具调用内有限退避，不创建新 Run 或新 LLM turn；
 - 取消等待中的 Run 会中止 pending/starting 请求，并走统一 Solver 清理；
-- 网络、429 和 5xx 的普通 Solver 失败仍按 `10s → 60s → 300s` 做同 Run 有限退避。
+- 网络、429 和 5xx 的普通 Solver 失败仍按 `10s → 60s → 300s` 做同 Run 有限退避；退避耗尽后，所有非 `blocked` 的终态重试都会复用原 attempt/session，并发送默认 continuation prompt。
 
 ## 7. 队列、Blocked 与恢复
 
@@ -148,7 +148,7 @@ max(remoteCoordinator.occupied, admittedRemoteOnlyRuns) < maxRemoteEnvironments
 - `pauseAuto()` 保留两条等待队列但不取消活跃 Run；WebUI 暂停后会提供“停止全部 Solver”，并等待各 Run 完成正常资源回收；
 - `suspend()` 在平台或模型配置故障时冻结领取，并保留队列和持久化模式；
 - 创建 Scheduler 后先执行 `restore()`：从 RunStore 恢复两条队列与模式，再 reconcile 平台事实；
-- 重启后遗留非终态 Run 标记为 interrupted，旧进程的容器和内存许可不会被假定仍存在；未被 Blocked 的调度 Run 重新进入 execution 时复用原 attempt/session，并发送默认 continuation prompt。
+- 重启后遗留非终态 Run 标记为 interrupted，旧进程的容器和内存许可不会被假定仍存在；未被 Blocked 的调度 Run 重新进入 execution 时复用原 attempt/session，并发送默认 continuation prompt。历史 `cancelled`、`failed`、`timed_out` 和 `closed` Run 再次派发时同样复用原 attempt；`blocked` Run 不自动恢复。
 
 ## 8. Dashboard 可观察性
 

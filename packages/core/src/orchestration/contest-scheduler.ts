@@ -159,6 +159,13 @@ interface ActiveItem {
 export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const
 
 const RECOVERABLE_SCHEDULER_RUN_SOURCES = new Set<RunSource>(["auto", "manual", "retry", "revival"])
+const RECOVERABLE_TERMINAL_RUN_STATUSES = new Set<RunRecord["status"]>([
+  "failed",
+  "timed_out",
+  "cancelled",
+  "closed",
+  "interrupted",
+])
 
 /**
  * 长驻的混合调度控制面：
@@ -611,6 +618,7 @@ export class ContestScheduler {
         "该题已 blocked；需要人工 force 将其提前到调度队列",
       )
     }
+    const resumeRun = blocked ? undefined : latestRecoverableRun(this.project.runs({ challengeId }))
     this.enqueueChallenge(
       challenge,
       blocked ? "revival" : "manual",
@@ -618,6 +626,7 @@ export class ContestScheduler {
       blocked ? "blocked" : "normal",
       blocked,
       false,
+      resumeRun ? { resumeRun } : undefined,
     )
     this.pump()
     return this.snapshot()
@@ -1161,6 +1170,9 @@ export class ContestScheduler {
           const message = `${classification.kind}: ${classification.detail ?? outcome.stopReason}`
           const retryDelay = transientRetryDelays[transientRetries]
           const retryScheduled = classification.retryable && retryDelay !== undefined
+          const requestAborted = isRequestAborted(
+            classification.detail ?? outcome.error ?? outcome.stopReason,
+          )
           this.project.appendRunEvent(solver.runId, "run_transient_failure", {
             retryable: classification.retryable,
             reason: classification.kind,
@@ -1176,6 +1188,26 @@ export class ContestScheduler {
             const elapsed = await this.waitForRetryDelay(active, retryDelay)
             if (!elapsed) return
             continue
+          }
+          if (requestAborted && classification.retryable) {
+            const interruptionCount = this.project.sessionInterruptionCount(active.challenge.id) + 1
+            const maximum = this.options.maxSessionInterruptions ?? 3
+            const blocked = interruptionCount > maximum
+            const recoveryMessage = sessionInterruptionMessage(
+              "aborted",
+              classification.detail ?? outcome.error,
+              interruptionCount,
+              maximum,
+              blocked,
+            )
+            await solver.close(blocked ? "blocked" : "interrupted", recoveryMessage)
+            solver = undefined
+            active.solver = undefined
+            retryableFailure = false
+            failureReason = blocked ? "blocked" : "interrupted"
+            failureMessage = recoveryMessage
+            if (blocked) this.lastError = `${active.challenge.title}: ${recoveryMessage}`
+            break
           }
           await solver.close("failed", message)
           solver = undefined
@@ -1254,6 +1286,7 @@ export class ContestScheduler {
         ) {
           const retryDelay = transientRetryDelays[transientRetries]
           const retryScheduled = retryDelay !== undefined
+          const requestAborted = isRequestAborted(classification.detail ?? errorText(error))
           this.project.appendRunEvent(solver.runId, "run_transient_failure", {
             retryable: true,
             reason: classification.kind,
@@ -1271,6 +1304,25 @@ export class ContestScheduler {
             const elapsed = await this.waitForRetryDelay(active, retryDelay)
             if (!elapsed) return
             continue
+          }
+          if (requestAborted) {
+            const interruptionCount = this.project.sessionInterruptionCount(active.challenge.id) + 1
+            const maximum = this.options.maxSessionInterruptions ?? 3
+            const blocked = interruptionCount > maximum
+            const recoveryMessage = sessionInterruptionMessage(
+              "aborted",
+              classification.detail ?? errorText(error),
+              interruptionCount,
+              maximum,
+              blocked,
+            )
+            await solver.close(blocked ? "blocked" : "interrupted", recoveryMessage)
+            solver = undefined
+            active.solver = undefined
+            retryableFailure = false
+            failureReason = blocked ? "blocked" : "interrupted"
+            failureMessage = recoveryMessage
+            break
           }
           retryableFailure = false
         }
@@ -1335,22 +1387,22 @@ export class ContestScheduler {
     if (active.cancelRequested || this.shuttingDown) return
 
     const schedulerAttemptsAfter = this.project.schedulerAttemptCount(active.challenge.id)
-    const interruptedRun = latestRecoverableInterruptedRuns(this.project.runs()).get(
-      active.challenge.id,
-    )
+    const recoverableRun = latestRecoverableRuns(this.project.runs()).get(active.challenge.id)
     const resumeRun =
-      active.runId && interruptedRun?.id === active.runId ? interruptedRun : undefined
+      active.runId && recoverableRun?.id === active.runId ? recoverableRun : undefined
+    const canResumeRun = resumeRun !== undefined && !hasRunResumed(this.project, resumeRun.id)
     if (
       failureReason !== "cancelled" &&
-      (resumeRun !== undefined ||
-        retryableFailure ||
-        schedulerAttemptsAfter > schedulerAttemptsBefore) &&
+      failureReason !== "blocked" &&
+      (canResumeRun ||
+        (resumeRun === undefined &&
+          (retryableFailure || schedulerAttemptsAfter > schedulerAttemptsBefore))) &&
       !this.shuttingDown &&
       this.availability().available &&
       active.queueGeneration === this.queueGeneration &&
-      // 瞬时 Provider 故障已经在同一个 Run 内完成有限次退避重试；创建新
-      // Run 仍须受 attempt 预算约束。此前 retryableFailure 会绕过该预算，
-      // 导致余额不足或上游持续故障时无限创建请求。
+      // 瞬时 Provider 故障已经在同一个 Run 内完成有限次退避重试；恢复
+      // 原 Run 同样只占用一次 attempt 预算，且同一个 Run 自动恢复一次后
+      // 不再无限循环。没有可恢复 Run 的创建失败仍受 attempt 预算约束。
       schedulerAttemptsAfter < (this.options.maxAttempts ?? 2) &&
       !this.project.isChallengeSolved(active.challenge.id) &&
       !this.project.isChallengeBlocked(active.challenge.id)
@@ -1674,24 +1726,39 @@ function deduplicate(challenges: readonly ChallengeSummary[]): ChallengeSummary[
   return [...unique.values()]
 }
 
-/**
- * 进程重启会把 preparing/running Run 标记为 interrupted。调度来源的这类 Run
- * 仍保留原 attempt 与 JSONL session，下一次进入 execution 时应 reopen，而不是
- * 消耗新的 attempt 预算。
- */
 function latestRecoverableInterruptedRuns(runs: readonly RunRecord[]): Map<string, RunRecord> {
-  const candidates = runs
-    .filter(
-      (run) =>
-        run.status === "interrupted" &&
-        run.closeReason !== "blocked" &&
-        RECOVERABLE_SCHEDULER_RUN_SOURCES.has(run.source),
-    )
-    .sort(
-      (left, right) =>
-        left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id),
-    )
+  return latestRecoverableRuns(runs.filter((run) => run.status === "interrupted"))
+}
+
+/**
+ * 所有非 blocked 的调度终态都可以沿用原 attempt 与 JSONL session。
+ * 这既覆盖进程退出产生的 interrupted，也覆盖人工取消、超时和普通失败；
+ * blocked 是唯一不自动恢复的终态。
+ */
+function latestRecoverableRun(runs: readonly RunRecord[]): RunRecord | undefined {
+  const latest = [...runs].sort(compareRunOrder).at(-1)
+  return latest && isRecoverableRun(latest) ? latest : undefined
+}
+
+function latestRecoverableRuns(runs: readonly RunRecord[]): Map<string, RunRecord> {
+  const candidates = runs.filter(isRecoverableRun).sort(compareRunOrder)
   return new Map(candidates.map((run) => [run.challengeId, run]))
+}
+
+function isRecoverableRun(run: RunRecord): boolean {
+  return (
+    RECOVERABLE_TERMINAL_RUN_STATUSES.has(run.status) &&
+    run.closeReason !== "blocked" &&
+    RECOVERABLE_SCHEDULER_RUN_SOURCES.has(run.source)
+  )
+}
+
+function compareRunOrder(left: RunRecord, right: RunRecord): number {
+  return left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id)
+}
+
+function hasRunResumed(project: Project, runId: string): boolean {
+  return project.runEvents(runId).some((event) => event.type === "run_resumed")
 }
 
 const RETRYABLE_RUN_STATUSES = new Set<RunRecord["status"]>([
@@ -1709,6 +1776,13 @@ function positiveInteger(value: number, field: string): void {
 
 function nonNegativeInteger(value: number, field: string): void {
   if (!Number.isInteger(value) || value < 0) throw new Error(`${field} 必须是非负整数`)
+}
+
+function isRequestAborted(detail: string | undefined): boolean {
+  return (
+    /\b(?:request|operation)(?: was)? aborted\b/i.test(detail ?? "") ||
+    /^\s*aborted\s*$/i.test(detail ?? "")
+  )
 }
 
 function errorText(error: unknown): string {

@@ -82,6 +82,45 @@ describe("WebUI dashboard model", () => {
     expect(project.runEventsCalls).toBe(0)
   })
 
+  it("为已解出题目计算原始 Run 的解题耗时", async () => {
+    const project = new FakeDashboardProject()
+    project.runValues.push(
+      {
+        id: "run-web-solved",
+        challengeId: "web-1",
+        workspace: "/workspace/run-web-solved",
+        attempt: 1,
+        source: "manual",
+        status: "solved",
+        closeReason: "submitted",
+        createdAt: "2026-07-29T11:00:00.000Z",
+        updatedAt: "2026-07-29T11:01:05.000Z",
+        startedAt: "2026-07-29T11:00:00.000Z",
+        finishedAt: "2026-07-29T11:01:05.000Z",
+      },
+      {
+        id: "run-web-follow-up",
+        challengeId: "web-1",
+        workspace: "/workspace/run-web-follow-up",
+        attempt: 2,
+        source: "manual",
+        status: "failed",
+        closeReason: "failed",
+        createdAt: "2026-07-29T11:02:00.000Z",
+        updatedAt: "2026-07-29T11:02:10.000Z",
+        startedAt: "2026-07-29T11:02:00.000Z",
+        finishedAt: "2026-07-29T11:02:10.000Z",
+      },
+    )
+
+    const snapshot = await buildDashboardSnapshot(project)
+    expect(snapshot.challenges.find((challenge) => challenge.id === "web-1")).toMatchObject({
+      status: "solved",
+      latestRunStatus: "failed",
+      solveDurationMs: 65_000,
+    })
+  })
+
   it("没有在线调度器时仍返回不可操作的持久队列", async () => {
     const project = new FakeDashboardProject()
     project.schedulerQueueValues = [

@@ -131,6 +131,7 @@ export interface DashboardChallenge {
   attempts: number
   latestRunId: string | null
   latestRunStatus: RunRecord["status"] | null
+  solveDurationMs: number | null
   lastActivityAt: string | null
   progress: string
   queuePosition: number | null

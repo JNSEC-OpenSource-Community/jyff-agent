@@ -451,6 +451,50 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it.each(["failed", "timed_out", "cancelled", "interrupted"] as const)(
+    "手动派发 %s Attempt 时复用原 Run，而不是创建新 attempt",
+    async (closeReason) => {
+      const item = challenge(
+        106 + ["failed", "timed_out", "cancelled", "interrupted"].indexOf(closeReason),
+      )
+      const tracker = new SandboxTracker()
+      const project = await fixture([item], tracker)
+      const original = await project.createSolver(item.id, {
+        agent: solvingAgent(item),
+        attempt: 1,
+        source: "manual",
+      })
+      await original.close(closeReason, `测试 ${closeReason}`)
+      const scheduler = new ContestScheduler(project, {
+        maxConcurrent: 1,
+        maxAttempts: 1,
+        createAgentOptions: () => solvingAgent(item),
+      })
+
+      try {
+        await scheduler.dispatch(item.id)
+        await waitUntil(
+          () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+        )
+
+        expect(project.runs({ challengeId: item.id })).toEqual([
+          expect.objectContaining({
+            id: original.runId,
+            attempt: 1,
+            status: "solved",
+            closeReason: "submitted",
+          }),
+        ])
+        expect(
+          project.runEvents(original.runId).filter((event) => event.type === "run_resumed"),
+        ).toHaveLength(1)
+      } finally {
+        await scheduler.shutdown()
+        await project.close()
+      }
+    },
+  )
+
   it("拒绝不存在或仍在运行的 Run 重试", async () => {
     const item = challenge(103)
     const tracker = new SandboxTracker()
@@ -565,6 +609,63 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("Request aborted 耗尽瞬时重试后恢复原 attempt，而不是创建新 attempt", async () => {
+    const item = challenge(105)
+    const tracker = new SandboxTracker()
+    const project = await fixture([item], tracker)
+    const faux = createFauxCore({ provider: "request-aborted-recovery" })
+    faux.setResponses([
+      ...Array.from({ length: 4 }, () =>
+        fauxAssistantMessage("Request aborted", {
+          stopReason: "error",
+          errorMessage: "Request aborted",
+        }),
+      ),
+      fauxAssistantMessage(
+        fauxToolCall("ctf_submit_flag", { flag: item.flag }, { id: "aborted-recovery-submit" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("已提交。"),
+    ])
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      retryDelayMs: 0,
+      infrastructureRetryDelayMs: 0,
+      transientRetryDelaysMs: [0, 0, 0],
+      createAgentOptions: () => ({
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      }),
+    })
+
+    try {
+      await scheduler.dispatch(item.id)
+      await waitUntil(
+        () => project.isChallengeSolved(item.id) && scheduler.snapshot().active.length === 0,
+      )
+
+      const runs = project.runs({ challengeId: item.id })
+      expect(runs).toEqual([
+        expect.objectContaining({
+          attempt: 1,
+          status: "solved",
+          closeReason: "submitted",
+        }),
+      ])
+      expect(faux.state.callCount).toBe(5)
+      expect(project.runEvents(runs[0]?.id ?? "").map((event) => event.type)).toContain(
+        "run_resumed",
+      )
+      expect(await readFile(project.runSessionPath(runs[0]?.id ?? ""), "utf8")).toContain(
+        INCOMPLETE_CONTINUATION_PROMPT,
+      )
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("同一 attempt 对连续 fetch failed 仅提供三次退避重试", async () => {
     expect(DEFAULT_TRANSIENT_RETRY_DELAYS_MS).toEqual([10_000, 60_000, 300_000])
     const item = challenge(96)
@@ -646,7 +747,6 @@ describe("ContestScheduler", () => {
       expect(faux.state.callCount).toBe(8)
       expect(project.runs({ challengeId: item.id })).toEqual([
         expect.objectContaining({ attempt: 1, status: "failed" }),
-        expect.objectContaining({ attempt: 2, status: "failed" }),
       ])
       expect(scheduler.snapshot().queued).toEqual([])
     } finally {
@@ -830,6 +930,10 @@ describe("ContestScheduler", () => {
         blocked: false,
       })
       expect(project.isChallengeBlocked(item.id)).toBe(false)
+      expect(project.runs({ challengeId: item.id })).toEqual([
+        expect.objectContaining({ attempt: 1, status: "blocked" }),
+        expect.objectContaining({ attempt: 2, status: "solved" }),
+      ])
     } finally {
       await scheduler.shutdown()
       await project.close()

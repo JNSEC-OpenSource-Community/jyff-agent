@@ -1,4 +1,4 @@
-import type { SchedulerQueueEntry } from "@ctf-agent/core"
+import type { SchedulerActiveEntry, SchedulerQueueEntry } from "@ctf-agent/core"
 import {
   DndContext,
   type DragEndEvent,
@@ -159,6 +159,43 @@ function QueueEntryState({ entry }: { entry: SchedulerQueueEntry }) {
   )
 }
 
+const ACTIVE_PHASE_LABELS: Record<SchedulerActiveEntry["phase"], string> = {
+  preparing: "准备沙箱",
+  running: "执行中",
+  waiting_environment: "等待环境",
+  cancelling: "正在停止",
+}
+
+function ActiveSolverRow({
+  entry,
+  challenge,
+}: {
+  entry: SchedulerActiveEntry
+  challenge?: DashboardChallenge
+}) {
+  return (
+    <div
+      data-active-solver={entry.challengeId}
+      className="grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 bg-success/[0.035] px-2.5"
+    >
+      <span
+        role="img"
+        aria-label="正在执行的 Solver"
+        className="flex size-8 items-center justify-center rounded-sm bg-success/10 text-success"
+      >
+        <Icon icon="lucide:bot" width="14" aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-xs font-medium">{challenge?.title ?? entry.challengeId}</p>
+        <p className="mt-0.5! truncate text-[10px] text-muted-foreground">
+          Solver · {ACTIVE_PHASE_LABELS[entry.phase]} · 第 {entry.attempt} 次 attempt
+        </p>
+      </div>
+      <span className="font-mono text-[10px] tabular-nums text-success">执行中</span>
+    </div>
+  )
+}
+
 function QueueRow({
   entry,
   challenge,
@@ -269,6 +306,7 @@ export function SchedulerWorkbench({
   onError,
 }: SchedulerWorkbenchProps) {
   const scheduler = snapshot.scheduler
+  const active = scheduler?.active ?? []
   const [idle, setIdle] = useState(scheduler?.idle ?? [])
   const [execution, setExecution] = useState(scheduler?.queued ?? [])
   const [removing, setRemoving] = useState("")
@@ -415,7 +453,7 @@ export function SchedulerWorkbench({
 
   return (
     <TooltipProvider>
-      <Card className="min-h-0 p-0">
+      <Card className="flex h-full min-h-0 flex-col p-0">
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
@@ -453,8 +491,8 @@ export function SchedulerWorkbench({
           </div>
         ) : null}
 
-        <div className="grid min-h-0 md:grid-cols-2 md:divide-x md:divide-border/70">
-          <section className="flex min-w-0 flex-col" aria-labelledby="idle-queue-heading">
+        <div className="grid min-h-0 flex-1 md:grid-cols-2 md:divide-x md:divide-border/70 max-h-130">
+          <section className="flex min-h-0 min-w-0 flex-col" aria-labelledby="idle-queue-heading">
             <QueueLaneHeader
               id="idle-queue-heading"
               icon="lucide:inbox"
@@ -470,7 +508,7 @@ export function SchedulerWorkbench({
                   items={idle.map((item) => item.challengeId)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="min-h-full max-h-112 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
+                  <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
                     {idle.map((item) => (
                       <QueueRow
                         key={item.challengeId}
@@ -486,43 +524,56 @@ export function SchedulerWorkbench({
                 </SortableContext>
               </DndContext>
             ) : (
-              <CompactEmptyState icon="lucide:inbox" label="暂无题目" />
+              <CompactEmptyState className="min-h-40 flex-1" icon="lucide:inbox" label="暂无题目" />
             )}
           </section>
 
           <section
-            className="flex min-w-0 flex-col border-t border-border/60 md:border-t-0"
+            className="flex min-h-0 min-w-0 flex-col border-t border-border/60 md:border-t-0"
             aria-labelledby="execution-queue-heading"
           >
             <QueueLaneHeader
               id="execution-queue-heading"
               icon="lucide:list-start"
               title="执行队列"
-              count={execution.length}
+              count={active.length + execution.length}
               controlIcon={queueControl.icon}
               controlLabel={queueControl.label}
               controlBusy={queueControl.busy}
             />
-            {execution.length > 0 ? (
-              <DndContext sensors={sensors} onDragEnd={(event) => void reorderExecution(event)}>
-                <SortableContext
-                  items={execution.map((item) => item.challengeId)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="min-h-full max-h-112 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
-                    {execution.map((item) => (
-                      <QueueRow
-                        key={item.challengeId}
-                        entry={item}
-                        challenge={challenges.get(item.challengeId)}
-                        disabled={!reorderEnabled || item.lane === "blocked"}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
+            {active.length > 0 || execution.length > 0 ? (
+              <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto overscroll-contain">
+                {active.map((item) => (
+                  <ActiveSolverRow
+                    key={`active-${item.challengeId}`}
+                    entry={item}
+                    challenge={challenges.get(item.challengeId)}
+                  />
+                ))}
+                {execution.length > 0 ? (
+                  <DndContext sensors={sensors} onDragEnd={(event) => void reorderExecution(event)}>
+                    <SortableContext
+                      items={execution.map((item) => item.challengeId)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {execution.map((item) => (
+                        <QueueRow
+                          key={item.challengeId}
+                          entry={item}
+                          challenge={challenges.get(item.challengeId)}
+                          disabled={!reorderEnabled || item.lane === "blocked"}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                ) : null}
+              </div>
             ) : (
-              <CompactEmptyState icon="lucide:circle-dashed" label="无等待项" />
+              <CompactEmptyState
+                className="min-h-40 flex-1"
+                icon="lucide:circle-dashed"
+                label="无等待项"
+              />
             )}
           </section>
         </div>

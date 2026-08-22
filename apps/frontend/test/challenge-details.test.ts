@@ -213,6 +213,7 @@ function details(projectId: string, progress: string) {
       attempts: 0,
       latestRunId: null,
       latestRunStatus: null,
+      solveDurationMs: null,
       lastActivityAt: null,
       progress,
       queuePosition: null,
