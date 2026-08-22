@@ -1,5 +1,6 @@
 export const STATUS_LABELS: Record<string, string> = {
-  queued: "队列中",
+  idle: "空闲队列",
+  queued: "执行队列",
   pending: "未调度",
   preparing: "准备中",
   running: "执行中",

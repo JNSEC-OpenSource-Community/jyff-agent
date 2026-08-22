@@ -85,7 +85,10 @@ import {
   type RunSource,
   type RunStatus,
   RunStore,
+  type SchedulerMode,
   type SchedulerQueueRecord,
+  type SchedulerQueueStage,
+  type SchedulerStateRecord,
   type TldrRecord,
 } from "../persistence/run-store.ts"
 import type {
@@ -993,17 +996,39 @@ export class Project {
     this.tldrRefreshes.delete(challengeId)
     this.challengeSchedulingHints.delete(challengeId)
   }
-  schedulerQueue(): SchedulerQueueRecord[] {
-    return this.runStore.schedulerQueue()
+  schedulerState(): SchedulerStateRecord {
+    return this.runStore.schedulerState()
+  }
+  setSchedulerMode(mode: SchedulerMode): SchedulerStateRecord {
+    return this.runStore.setSchedulerMode(mode)
+  }
+  startScheduler(mode: Exclude<SchedulerMode, "stopped">): SchedulerStateRecord {
+    return this.runStore.startScheduler(mode)
+  }
+  schedulerQueue(stage?: SchedulerQueueStage): SchedulerQueueRecord[] {
+    return this.runStore.schedulerQueue(stage)
   }
   enqueueSchedulerChallenge(input: EnqueueSchedulerChallenge): SchedulerQueueRecord {
     return this.runStore.enqueueSchedulerChallenge(input)
+  }
+  enqueueSchedulerChallenges(inputs: readonly EnqueueSchedulerChallenge[]): SchedulerQueueRecord[] {
+    return this.runStore.enqueueSchedulerChallenges(inputs)
+  }
+  reorderSchedulerStage(
+    stage: SchedulerQueueStage,
+    challengeIds: readonly string[],
+    expectedVersion: number,
+  ): SchedulerQueueRecord[] {
+    return this.runStore.reorderSchedulerStage(stage, challengeIds, expectedVersion)
   }
   moveSchedulerChallenge(input: MoveSchedulerChallenge): SchedulerQueueRecord {
     return this.runStore.moveSchedulerChallenge(input)
   }
   removeSchedulerChallenge(challengeId: string): boolean {
     return this.runStore.removeSchedulerChallenge(challengeId)
+  }
+  removeSchedulerChallenges(challengeIds: readonly string[], stage?: SchedulerQueueStage): number {
+    return this.runStore.removeSchedulerChallenges(challengeIds, stage)
   }
   reviveChallenge(challengeId: string) {
     return this.runStore.reviveChallenge(challengeId)

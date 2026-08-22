@@ -228,7 +228,7 @@ const controlPlane = await ControlPlane.create({
   },
   createScheduler: async (project, context) => {
     const runtime = await projectRuntimeConfiguration(context)
-    return new ContestScheduler(project, {
+    const scheduler = new ContestScheduler(project, {
       maxConcurrent: runtime.snapshot().maxConcurrent,
       maxAttempts: options.maxAttempts,
       maxSessionInterruptions: options.maxSessionInterruptions,
@@ -248,6 +248,8 @@ const controlPlane = await ControlPlane.create({
         await runtime.update({ ...runtime.snapshot(), maxConcurrent })
       },
     })
+    await scheduler.restore()
+    return scheduler
   },
 })
 

@@ -1,11 +1,13 @@
 import { Hono } from "hono"
 import type { App, AppContext, AppEnv } from "../context.ts"
-import { HttpError } from "../errors.ts"
+import { errorText, hasCode, HttpError } from "../errors.ts"
 import {
   parseJsonBody,
   queueMoveSchema,
   readJsonBody,
   schedulerConcurrencySchema,
+  schedulerIdleBatchSchema,
+  schedulerIdleOrderSchema,
 } from "../schema.ts"
 import type { Services } from "../services.ts"
 
@@ -22,6 +24,12 @@ export function schedulerRoutes(services: Services): App {
     const projectId = projectIdOf(c)
     return projectId ? services.sync.refreshProject(projectId) : services.sync.refresh()
   }
+
+  app.post("/scheduler/start", async (c) => {
+    await readJsonBody(c)
+    await services.requireSolverScheduler(projectIdOf(c)).start()
+    return c.json(await refreshFor(c))
+  })
 
   app.post("/scheduler/auto/start", async (c) => {
     await readJsonBody(c)
@@ -61,6 +69,43 @@ export function schedulerRoutes(services: Services): App {
     return c.json(await refreshFor(c))
   })
 
+  app.post("/scheduler/idle", async (c) => {
+    const body = await parseJsonBody(c, schedulerIdleBatchSchema, {
+      code: "invalid_scheduler_idle_batch",
+    })
+    await services.requireSolverScheduler(projectIdOf(c)).stage(body.challengeIds)
+    return c.json(await refreshFor(c))
+  })
+
+  app.delete("/scheduler/idle", async (c) => {
+    const body = await parseJsonBody(c, schedulerIdleBatchSchema, {
+      code: "invalid_scheduler_idle_batch",
+    })
+    services.requireScheduler(projectIdOf(c)).unstage(body.challengeIds)
+    return c.json(await refreshFor(c))
+  })
+
+  app.put("/scheduler/idle/order", async (c) => {
+    const body = await parseJsonBody(c, schedulerIdleOrderSchema, {
+      code: "invalid_scheduler_idle_order",
+      perFieldCodes: { expectedVersion: "invalid_queue_version" },
+    })
+    try {
+      services.requireScheduler(projectIdOf(c)).reorderIdle(body.challengeIds, body.expectedVersion)
+      return c.json(await refreshFor(c))
+    } catch (error) {
+      if (!hasCode(error, "queue_version_conflict")) throw error
+      return c.json(
+        {
+          error: "queue_version_conflict",
+          message: errorText(error),
+          snapshot: await refreshFor(c),
+        },
+        409,
+      )
+    }
+  })
+
   app.patch("/scheduler/queue/:challengeId", async (c) => {
     const body = await parseJsonBody(c, queueMoveSchema, {
       code: "invalid_queue_position",
@@ -68,12 +113,24 @@ export function schedulerRoutes(services: Services): App {
         expectedVersion: "invalid_queue_version",
       },
     })
-    services.requireSolverScheduler(projectIdOf(c)).reorderQueue(c.req.param("challengeId"), {
-      position: body.position,
-      expectedVersion: body.expectedVersion,
-      overrideBlockedLane: body.overrideBlockedLane === true,
-    })
-    return c.json(await refreshFor(c))
+    try {
+      services.requireSolverScheduler(projectIdOf(c)).reorderQueue(c.req.param("challengeId"), {
+        position: body.position,
+        expectedVersion: body.expectedVersion,
+        overrideBlockedLane: body.overrideBlockedLane === true,
+      })
+      return c.json(await refreshFor(c))
+    } catch (error) {
+      if (!hasCode(error, "queue_version_conflict")) throw error
+      return c.json(
+        {
+          error: "queue_version_conflict",
+          message: errorText(error),
+          snapshot: await refreshFor(c),
+        },
+        409,
+      )
+    }
   })
 
   return app

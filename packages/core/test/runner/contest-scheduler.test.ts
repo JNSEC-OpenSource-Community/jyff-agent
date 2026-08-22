@@ -15,7 +15,7 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux"
-import { afterEach, describe, expect, it } from "vite-plus/test"
+import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   ContestScheduler,
   type ContestSchedulerError,
@@ -158,6 +158,16 @@ async function fixture(
     ...(options.clearWorkspace ? { clearWorkspace: options.clearWorkspace } : {}),
   })
   return project
+}
+
+async function reopenFixture(root: string, tracker: SandboxTracker): Promise<Project> {
+  return Project.open({
+    root,
+    platforms: [new TestPlatformPlugin()],
+    sandboxFactory: tracker.create,
+    telemetry: { level: "full" },
+    remoteEnvironments: { maxConcurrent: 1 },
+  })
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -1090,6 +1100,185 @@ describe("ContestScheduler", () => {
     }
   })
 
+  it("恢复暂不可用时仍从持久层快照暴露双队列", async () => {
+    const challenges = [challenge(1), challenge(2)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    project.enqueueSchedulerChallenges([
+      { challengeId: challenges[0]!.id, source: "manual", stage: "idle" },
+      { challengeId: challenges[1]!.id, source: "manual", stage: "execution" },
+    ])
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      availability: () => ({ available: false, unavailableReason: "模型未配置" }),
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id))),
+    })
+
+    try {
+      await scheduler.restore()
+      expect(scheduler.snapshot()).toMatchObject({
+        available: false,
+        unavailableReason: "模型未配置",
+        state: "stopped",
+        idle: [{ challengeId: challenges[0]!.id, stage: "idle" }],
+        queued: [{ challengeId: challenges[1]!.id, stage: "execution" }],
+        active: [],
+      })
+      expect(tracker.active).toBe(0)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("未启动时批量编排空闲队列，启动后按手动顺序提交且不隐式加入其他题", async () => {
+    const challenges = [challenge(1), challenge(2), challenge(3)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id)), 100),
+    })
+
+    try {
+      await scheduler.stage([challenges[0]!.id, challenges[1]!.id])
+      expect(scheduler.snapshot()).toMatchObject({
+        state: "stopped",
+        idle: [{ challengeId: challenges[0]!.id }, { challengeId: challenges[1]!.id }],
+        queued: [],
+        active: [],
+      })
+      expect(project.runs()).toEqual([])
+      expect(tracker.active).toBe(0)
+
+      const version = scheduler.snapshot().idleVersion
+      scheduler.reorderIdle([challenges[1]!.id, challenges[0]!.id], version)
+      await scheduler.start()
+      expect(scheduler.snapshot()).toMatchObject({
+        mode: "manual",
+        idle: [],
+        active: [expect.objectContaining({ challengeId: challenges[1]!.id })],
+        queued: [expect.objectContaining({ challengeId: challenges[0]!.id })],
+      })
+      await expect(scheduler.stage([challenges[2]!.id])).rejects.toMatchObject({
+        code: "scheduler_running",
+      })
+      await expect(scheduler.start()).rejects.toMatchObject({ code: "scheduler_running" })
+
+      await waitUntil(
+        () =>
+          project.isChallengeSolved(challenges[0]!.id) &&
+          project.isChallengeSolved(challenges[1]!.id) &&
+          scheduler.snapshot().active.length === 0,
+      )
+      expect(project.runs({ challengeId: challenges[2]!.id })).toEqual([])
+      expect(tracker.maximum).toBe(1)
+    } finally {
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("批量编排刷新期间并发启动时不会遗留新的空闲项", async () => {
+    const challenges = [challenge(1)]
+    const tracker = new SandboxTracker()
+    const project = await fixture(challenges, tracker)
+    const scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id))),
+    })
+    const refreshGate = deferred()
+    const originalRefresh = project.refresh.bind(project)
+    let refreshCalls = 0
+    vi.spyOn(project, "refresh").mockImplementation(async () => {
+      refreshCalls++
+      if (refreshCalls === 1) await refreshGate.promise
+      return originalRefresh()
+    })
+
+    try {
+      const staging = scheduler.stage([challenges[0]!.id])
+      const stagingRejected = expect(staging).rejects.toMatchObject({
+        code: "scheduler_running",
+      })
+      await waitUntil(() => refreshCalls === 1)
+      await scheduler.start()
+      refreshGate.resolve()
+
+      await stagingRejected
+      expect(scheduler.snapshot()).toMatchObject({
+        mode: "manual",
+        idle: [],
+        queued: [],
+        active: [],
+      })
+      expect(project.schedulerQueue()).toEqual([])
+    } finally {
+      refreshGate.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
+  it("重启后恢复手动模式与执行顺序，暂停时冻结尚未领取的任务", async () => {
+    const challenges = [challenge(1), challenge(2)]
+    const tracker = new SandboxTracker()
+    let project = await fixture(challenges, tracker)
+    let scheduler = new ContestScheduler(project, {
+      maxConcurrent: 1,
+      maxAttempts: 1,
+      createAgentOptions: ({ challenge: summary }) =>
+        solvingAgent(requiredChallenge(challenges.find((item) => item.id === summary.id))),
+    })
+    const gate = deferred()
+
+    try {
+      await scheduler.stage(challenges.map((item) => item.id))
+      project.startScheduler("manual")
+      await scheduler.shutdown()
+      const root = project.root
+      await project.close()
+
+      project = await reopenFixture(root, tracker)
+      scheduler = new ContestScheduler(project, {
+        maxConcurrent: 1,
+        maxAttempts: 1,
+        createAgentOptions: ({ challenge: summary }) =>
+          controlledSolvingAgent(
+            requiredChallenge(challenges.find((item) => item.id === summary.id)),
+            gate.promise,
+          ),
+      })
+      await scheduler.restore()
+      await waitUntil(() => scheduler.snapshot().active.length === 1)
+
+      expect(scheduler.snapshot()).toMatchObject({
+        state: "running",
+        mode: "manual",
+        idle: [],
+        active: [expect.objectContaining({ challengeId: challenges[0]!.id })],
+        queued: [expect.objectContaining({ challengeId: challenges[1]!.id })],
+      })
+
+      scheduler.pauseAuto()
+      gate.resolve()
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(scheduler.snapshot()).toMatchObject({
+        state: "stopped",
+        queued: [expect.objectContaining({ challengeId: challenges[1]!.id })],
+      })
+      expect(project.runs({ challengeId: challenges[1]!.id })).toEqual([])
+    } finally {
+      gate.resolve()
+      await scheduler.shutdown()
+      await project.close()
+    }
+  })
+
   it("自主模式暂停时仍允许人工调度，并可取消活跃题目", async () => {
     const item = challenge(1)
     const tracker = new SandboxTracker()
@@ -1123,7 +1312,7 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("暂停自主模式后清空等待队列，但不取消活跃任务", async () => {
+  it("暂停自主模式后保留并冻结等待队列，且不取消活跃任务", async () => {
     const challenges = [challenge(1), challenge(2)]
     const tracker = new SandboxTracker()
     const project = await fixture(challenges, tracker)
@@ -1147,12 +1336,13 @@ describe("ContestScheduler", () => {
 
       expect(scheduler.snapshot()).toMatchObject({
         autoEnabled: false,
-        queued: [],
+        queued: [expect.objectContaining({ challengeId: queuedId })],
         active: [expect.objectContaining({ challengeId: activeId })],
       })
       expect(project.runs({ challengeId: queuedId })).toHaveLength(0)
       await scheduler.cancel(activeId)
       await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(project.runs({ challengeId: queuedId })).toHaveLength(0)
     } finally {
       await scheduler.shutdown()
       await project.close()
@@ -1191,7 +1381,7 @@ describe("ContestScheduler", () => {
     }
   })
 
-  it("暂停自主模式会同时清除此前补发的 manual 等待任务", async () => {
+  it("暂停自主模式会保留并冻结此前补发的 manual 等待任务", async () => {
     const challenges = [challenge(1), challenge(2), challenge(3)]
     const tracker = new SandboxTracker()
     const project = await fixture(challenges, tracker)
@@ -1213,9 +1403,15 @@ describe("ContestScheduler", () => {
       expect(scheduler.snapshot().queued.map((item) => item.source)).toEqual(["manual", "manual"])
 
       scheduler.pauseAuto()
-      expect(scheduler.snapshot().queued).toEqual([])
+      expect(scheduler.snapshot().queued.map((item) => item.challengeId)).toEqual([
+        second.id,
+        third.id,
+      ])
       const activeId = scheduler.snapshot().active[0]?.challengeId
       if (activeId) await scheduler.cancel(activeId)
+      await waitUntil(() => scheduler.snapshot().active.length === 0)
+      expect(project.runs({ challengeId: second.id })).toHaveLength(0)
+      expect(project.runs({ challengeId: third.id })).toHaveLength(0)
     } finally {
       await scheduler.shutdown()
       await project.close()

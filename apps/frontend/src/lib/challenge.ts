@@ -23,7 +23,7 @@ export function toneForStatus(status: string): StatusTone {
   if (["solved", "completed"].includes(status)) return "positive"
   if (ACTIVE_STATUSES.includes(status as DashboardChallengeStatus)) return "info"
   if (ATTENTION_STATUSES.includes(status as DashboardChallengeStatus)) return "danger"
-  if (["queued", "pending"].includes(status)) return "warning"
+  if (["idle", "queued", "pending"].includes(status)) return "warning"
   if (status === "excluded") return "neutral"
   return "neutral"
 }
@@ -31,7 +31,7 @@ export function toneForStatus(status: string): StatusTone {
 export interface ChallengeFilter {
   /** 标题/分类关键词；空白表示不过滤。 */
   query?: string
-  /** all | active | queued | pending | solved | attention，或具体状态。 */
+  /** all | active | idle | queued | pending | solved | attention，或具体状态。 */
   statusFilter?: string
 }
 

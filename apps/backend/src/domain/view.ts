@@ -68,6 +68,9 @@ export async function buildDashboardSnapshot(
   const announcementCandidates = project.announcementCandidates()
   const environments = settledValue(reads[3]) ?? cached.environments ?? []
   const schedulerSnapshot = scheduler?.snapshot() ?? readOnlySchedulerSnapshot(project)
+  const idleByChallenge = new Map(
+    schedulerSnapshot?.idle.map((item) => [item.challengeId, item]) ?? [],
+  )
   const queuedByChallenge = new Map(
     schedulerSnapshot?.queued.map((item) => [item.challengeId, item]) ?? [],
   )
@@ -83,6 +86,7 @@ export async function buildDashboardSnapshot(
     const challengeRuns = runsByChallenge.get(challenge.id) ?? []
     const latest = challengeRuns.at(-1)
     const active = [...challengeRuns].reverse().find((run) => ACTIVE.has(run.status))
+    const idle = idleByChallenge.get(challenge.id)
     const queued = queuedByChallenge.get(challenge.id)
     const schedulerActive = activeByChallenge.get(challenge.id)
     const lastEvent = latest ? project.latestRunEvent(latest.id) : undefined
@@ -93,6 +97,7 @@ export async function buildDashboardSnapshot(
       schedulingDisposition,
       challengeRuns,
       active,
+      idle !== undefined,
       queued !== undefined,
       schedulerActive?.phase,
     )
@@ -110,8 +115,9 @@ export async function buildDashboardSnapshot(
       latestRunStatus: latest?.status ?? null,
       lastActivityAt: lastEvent?.createdAt ?? latest?.updatedAt ?? null,
       progress: progressLabel(status, lastEvent),
-      queuePosition: queued?.position ?? null,
-      dispatchSource: schedulerActive?.source ?? queued?.source ?? latest?.source ?? null,
+      queuePosition: queued?.position ?? idle?.position ?? null,
+      dispatchSource:
+        schedulerActive?.source ?? queued?.source ?? idle?.source ?? latest?.source ?? null,
       schedulerAttempts: project.schedulerAttemptCount(challenge.id),
       sessionInterruptions: project.sessionInterruptionCount(challenge.id),
       evidence: blackboard?.evidence ?? 0,
@@ -176,28 +182,40 @@ function readOnlySchedulerSnapshot(project: DashboardProject): ContestSchedulerS
     "retry",
     "revival",
   ])
+  const state = project.schedulerState?.() ?? {
+    mode: "stopped" as const,
+    idleVersion: 1,
+    executionVersion: 1,
+  }
+  const entries = (project.schedulerQueue?.() ?? []).flatMap((item) =>
+    validSources.has(item.source as SchedulerQueueEntry["source"])
+      ? [
+          {
+            challengeId: item.challengeId,
+            source: item.source as SchedulerQueueEntry["source"],
+            stage: item.stage,
+            lane: item.lane,
+            manualOverride: item.manualOverride,
+            enqueuedAt: item.enqueuedAt,
+            position: item.position,
+            version: item.version,
+          },
+        ]
+      : [],
+  )
   return {
     available: false,
     unavailableReason: "平台当前不可用，只能查看本地记录",
-    autoEnabled: false,
+    autoEnabled: state.mode !== "stopped",
+    state: state.mode === "stopped" ? "stopped" : "suspended",
+    mode: state.mode,
+    idleVersion: state.idleVersion,
+    executionVersion: state.executionVersion,
     maxConcurrent: 0,
     maxAttempts: 0,
     maxSessionInterruptions: 0,
-    queued: (project.schedulerQueue?.() ?? []).flatMap((item) =>
-      validSources.has(item.source as SchedulerQueueEntry["source"])
-        ? [
-            {
-              challengeId: item.challengeId,
-              source: item.source as SchedulerQueueEntry["source"],
-              lane: item.lane,
-              manualOverride: item.manualOverride,
-              enqueuedAt: item.enqueuedAt,
-              position: item.position,
-              version: item.version,
-            },
-          ]
-        : [],
-    ),
+    idle: entries.filter((item) => item.stage === "idle"),
+    queued: entries.filter((item) => item.stage === "execution"),
     active: [],
   }
 }
@@ -367,6 +385,7 @@ function challengeStatus(
   schedulingDisposition: "excluded" | "solved" | null,
   runs: RunRecord[],
   active: RunRecord | undefined,
+  idle: boolean,
   queued: boolean,
   schedulerPhase: SchedulerPhase | undefined,
 ): DashboardChallengeStatus {
@@ -375,6 +394,7 @@ function challengeStatus(
   if (schedulerPhase) return schedulerPhase === "preparing" ? "preparing" : "running"
   if (active) return active.status
   if (queued) return "queued"
+  if (idle) return "idle"
   if (platformSolved || runs.some((run) => run.status === "solved")) return "solved"
   return runs.at(-1)?.status ?? "pending"
 }
@@ -395,7 +415,9 @@ function dashboardStats(challenges: DashboardChallenge[]): DashboardStats {
       (challenge) => challenge.status === "pending" || challenge.status === "closed",
     ).length,
     attempts: challenges.reduce((sum, challenge) => sum + challenge.attempts, 0),
-    queued: challenges.filter((challenge) => challenge.status === "queued").length,
+    queued: challenges.filter(
+      (challenge) => challenge.status === "idle" || challenge.status === "queued",
+    ).length,
   }
 }
 
@@ -414,6 +436,8 @@ function progressLabel(status: DashboardChallengeStatus, event: RunEvent | undef
   if (event?.type === "thinking_level_update") return "已切换思考强度"
   if (event?.type === "human_message") return "已发送人工消息"
   switch (status) {
+    case "idle":
+      return "已加入空闲队列"
     case "queued":
       return "已进入调度队列"
     case "pending":

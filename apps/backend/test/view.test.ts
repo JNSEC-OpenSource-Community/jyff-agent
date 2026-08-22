@@ -88,6 +88,7 @@ describe("WebUI dashboard model", () => {
       {
         challengeId: "misc-1",
         source: "manual",
+        stage: "execution",
         lane: "normal",
         position: 1,
         manualOverride: true,

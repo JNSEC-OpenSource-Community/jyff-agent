@@ -22,6 +22,7 @@ describe("题目路由", () => {
       {
         challengeId: "pwn-1",
         source: "auto",
+        stage: "execution",
         lane: "normal",
         manualOverride: false,
         enqueuedAt: "2026-07-29T12:00:00.000Z",

@@ -7,7 +7,13 @@ import {
   WRITEUP_PROMPT,
 } from "@ctf-agent/prompts"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
-import type { RunRecord, RunSource, SchedulerQueueRecord } from "../persistence/run-store.ts"
+import type {
+  RunRecord,
+  RunSource,
+  SchedulerMode,
+  SchedulerQueueRecord,
+  SchedulerQueueStage,
+} from "../persistence/run-store.ts"
 import type { CreateSolverOptions, Project } from "../project/project.ts"
 import {
   ChallengeTimeoutError,
@@ -20,6 +26,7 @@ import { validateChallengeWriteup } from "./writeup-validator.ts"
 
 export type SchedulerQueueSource = Extract<RunSource, "auto" | "manual" | "retry" | "revival">
 export type SchedulerPhase = "preparing" | "running" | "waiting_environment" | "cancelling"
+export type SchedulerRuntimeState = "stopped" | "running" | "automatic" | "suspended"
 
 export interface ContestSchedulerOptions {
   maxConcurrent: number
@@ -56,6 +63,7 @@ export interface SchedulerAttemptContext {
 export interface SchedulerQueueEntry {
   challengeId: string
   source: SchedulerQueueSource
+  stage: SchedulerQueueStage
   lane: "normal" | "blocked"
   manualOverride: boolean
   enqueuedAt: string
@@ -75,10 +83,16 @@ export interface SchedulerActiveEntry {
 export interface ContestSchedulerSnapshot {
   available: boolean
   unavailableReason?: string
+  /** 兼容旧客户端；manual/automatic 均为 true。 */
   autoEnabled: boolean
+  state: SchedulerRuntimeState
+  mode: SchedulerMode
+  idleVersion: number
+  executionVersion: number
   maxConcurrent: number
   maxAttempts: number
   maxSessionInterruptions: number
+  idle: SchedulerQueueEntry[]
   queued: SchedulerQueueEntry[]
   active: SchedulerActiveEntry[]
   lastError?: string
@@ -98,6 +112,7 @@ export class ContestSchedulerError extends Error {
       | "blocked"
       | "excluded"
       | "auto_enabled"
+      | "scheduler_running"
       | "queue_version_conflict",
     message: string,
   ) {
@@ -109,6 +124,7 @@ export class ContestSchedulerError extends Error {
 interface QueueItem {
   challenge: ChallengeSummary
   source: SchedulerQueueSource
+  stage: SchedulerQueueStage
   lane: "normal" | "blocked"
   manualOverride: boolean
   requiresAuto: boolean
@@ -142,15 +158,16 @@ export const DEFAULT_TRANSIENT_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as co
 
 /**
  * 长驻的混合调度控制面：
- * - 自动模式把所有未解题目加入队列；
- * - 暂停自动模式会清空全部等待任务，但不会取消已经运行的任务；
- * - 同题在 queued/active 阶段互斥；
+ * - manual 模式只执行用户从空闲队列提交的题目；automatic 模式持续补充全部可调度题；
+ * - 暂停保留空闲/执行队列且不取消已经运行的任务；
+ * - 同题在 idle/execution/active 阶段互斥；
  * - 失败按调度来源计入重试预算，direct/test Run 不消耗预算。
  */
 export class ContestScheduler {
+  private readonly idleQueue: QueueItem[] = []
   private readonly queue: QueueItem[] = []
   private readonly active = new Map<string, ActiveItem>()
-  private autoEnabled = false
+  private mode: SchedulerMode
   private shuttingDown = false
   private shutdownOperation?: Promise<void>
   private pumping = false
@@ -169,6 +186,7 @@ export class ContestScheduler {
     private readonly options: ContestSchedulerOptions,
   ) {
     positiveInteger(options.maxConcurrent, "maxConcurrent")
+    this.mode = project.schedulerState().mode
     this.maxConcurrent = options.maxConcurrent
     positiveInteger(options.maxAttempts ?? 2, "maxAttempts")
     positiveInteger(options.maxSessionInterruptions ?? 3, "maxSessionInterruptions")
@@ -189,24 +207,59 @@ export class ContestScheduler {
   snapshot(): ContestSchedulerSnapshot {
     this.syncPersistedQueueMetadata()
     const availability = this.availability()
+    const state = this.project.schedulerState()
+    const entry = (item: QueueItem, index: number): SchedulerQueueEntry => ({
+      challengeId: item.challenge.id,
+      source: item.source,
+      stage: item.stage,
+      lane: item.lane,
+      manualOverride: item.manualOverride,
+      enqueuedAt: item.enqueuedAt,
+      position: index + 1,
+      version: item.version,
+    })
+    const persistedEntry = (item: SchedulerQueueRecord, index: number): SchedulerQueueEntry => ({
+      challengeId: item.challengeId,
+      source: item.source as SchedulerQueueSource,
+      stage: item.stage,
+      lane: item.lane,
+      manualOverride: item.manualOverride,
+      enqueuedAt: item.enqueuedAt,
+      position: index + 1,
+      version: item.version,
+    })
+    // restore() 可能因模型或平台暂不可用而无法取得 ChallengeSummary；此时快照仍必须
+    // 暴露 RunStore 中的编排意图，避免 Dashboard 把持久队列误报为空。
+    const usePersistedFallback =
+      this.idleQueue.length === 0 && this.queue.length === 0 && this.active.size === 0
+    const idle = usePersistedFallback
+      ? this.project.schedulerQueue("idle").map(persistedEntry)
+      : this.idleQueue.map(entry)
+    const queued = usePersistedFallback
+      ? this.project.schedulerQueue("execution").map(persistedEntry)
+      : this.queue.map(entry)
+    const runtimeState: SchedulerRuntimeState = this.suspensionReason
+      ? "suspended"
+      : this.mode === "automatic"
+        ? "automatic"
+        : this.mode === "manual"
+          ? "running"
+          : "stopped"
     return {
       available: availability.available,
       ...(availability.unavailableReason
         ? { unavailableReason: availability.unavailableReason }
         : {}),
-      autoEnabled: this.autoEnabled,
+      autoEnabled: this.mode !== "stopped",
+      state: runtimeState,
+      mode: this.mode,
+      idleVersion: state.idleVersion,
+      executionVersion: state.executionVersion,
       maxConcurrent: this.maxConcurrent,
       maxAttempts: this.options.maxAttempts ?? 2,
       maxSessionInterruptions: this.options.maxSessionInterruptions ?? 3,
-      queued: this.queue.map((item, index) => ({
-        challengeId: item.challenge.id,
-        source: item.source,
-        lane: item.lane,
-        manualOverride: item.manualOverride,
-        enqueuedAt: item.enqueuedAt,
-        position: index + 1,
-        version: item.version,
-      })),
+      idle,
+      queued,
       active: [...this.active.values()].map((item) => ({
         challengeId: item.challenge.id,
         runId: item.runId,
@@ -219,26 +272,43 @@ export class ContestScheduler {
     }
   }
 
+  /** 恢复持久化调度意图与两阶段队列；生产创建 Scheduler 后调用一次。 */
+  async restore(): Promise<ContestSchedulerSnapshot> {
+    return this.reconcile()
+  }
+
+  /** 用户启动：只提交已经排好顺序的空闲队列，不隐式加入其他赛题。 */
+  async start(): Promise<ContestSchedulerSnapshot> {
+    this.assertAvailable()
+    this.assertNotShuttingDown()
+    this.assertPlanningStopped()
+    this.mode = this.project.startScheduler("manual").mode
+    this.promoteIdleInMemory()
+    await this.reconcile()
+    this.pump()
+    return this.snapshot()
+  }
+
+  /** 自动模式保留给 CLI/显式自动化：持续补充所有可调度题目。 */
   async startAuto(): Promise<ContestSchedulerSnapshot> {
     this.assertAvailable()
     this.assertNotShuttingDown()
-    this.autoEnabled = true
+    this.mode = this.project.startScheduler("automatic").mode
+    this.promoteIdleInMemory()
     await this.reconcile()
     this.pump()
     return this.snapshot()
   }
 
   pauseAuto(): ContestSchedulerSnapshot {
-    this.autoEnabled = false
-    this.queueGeneration += 1
-    for (const item of this.queue) {
-      if (!item.resumeRun) this.project.removeSchedulerChallenge(item.challenge.id)
-    }
-    this.queue.length = 0
+    this.mode = this.project.setSchedulerMode("stopped").mode
+    // 已运行任务可以自然结束，但等待任务及其后续 retry 必须冻结到再次启动。
+    for (const item of this.queue) item.requiresAuto = true
+    for (const item of this.active.values()) item.requiresAuto = true
     return this.snapshot()
   }
 
-  /** 平台暂不可用时冻结领取，不清除持久队列或自动调度意图。 */
+  /** 平台暂不可用时冻结领取，不清除持久队列或调度意图。 */
   suspend(reason: string): ContestSchedulerSnapshot {
     this.suspensionReason = reason
     return this.snapshot()
@@ -264,79 +334,213 @@ export class ContestScheduler {
   }
 
   async reconcile(): Promise<ContestSchedulerSnapshot> {
-    if (!this.autoEnabled || this.shuttingDown || !this.availability().available) {
-      return this.snapshot()
-    }
+    if (this.shuttingDown || !this.availability().available) return this.snapshot()
     await this.project.refresh()
     const challenges = deduplicate(await this.project.challenges())
     const byId = new Map(challenges.map((challenge) => [challenge.id, challenge]))
+    const invalid = (challengeId: string): boolean => {
+      const challenge = byId.get(challengeId)
+      return (
+        !challenge ||
+        challenge.solved ||
+        this.project.isChallengeSolved(challengeId) ||
+        this.project.isChallengeSchedulingExcluded(challengeId)
+      )
+    }
+
+    for (const items of [this.idleQueue, this.queue]) {
+      for (let index = items.length - 1; index >= 0; index--) {
+        const item = items[index]
+        if (!item || !invalid(item.challenge.id)) continue
+        items.splice(index, 1)
+        if (!item.resumeRun) this.project.removeSchedulerChallenge(item.challenge.id)
+      }
+    }
 
     for (const persisted of this.project.schedulerQueue()) {
       if (this.resetting.has(persisted.challengeId)) continue
       const challenge = byId.get(persisted.challengeId)
-      if (
-        !challenge ||
-        challenge.solved ||
-        this.project.isChallengeSolved(persisted.challengeId) ||
-        this.project.isChallengeSchedulingExcluded(persisted.challengeId)
-      ) {
+      if (!challenge || invalid(persisted.challengeId)) {
         this.project.removeSchedulerChallenge(persisted.challengeId)
         continue
       }
       if (this.hasChallenge(persisted.challengeId)) continue
-      this.queue.push({
+      const item: QueueItem = {
         challenge,
         source: persisted.source as SchedulerQueueSource,
+        stage: persisted.stage,
         lane: persisted.lane,
         manualOverride: persisted.manualOverride,
-        requiresAuto: persisted.source !== "manual" && !persisted.manualOverride,
+        requiresAuto: true,
         enqueuedAt: persisted.enqueuedAt,
         version: persisted.version,
-      })
-    }
-
-    for (const challenge of challenges) {
-      if (
-        this.resetting.has(challenge.id) ||
-        challenge.solved ||
-        this.project.isChallengeSolved(challenge.id) ||
-        this.project.isChallengeSchedulingExcluded(challenge.id) ||
-        this.project.isChallengeBlocked(challenge.id) ||
-        this.hasChallenge(challenge.id)
-      ) {
-        continue
       }
-      this.enqueueChallenge(challenge, "auto", "normal", false, true)
+      if (persisted.stage === "idle") this.idleQueue.push(item)
+      else this.queue.push(item)
     }
 
-    const ordinaryOutstanding = challenges.some(
-      (challenge) =>
-        !this.resetting.has(challenge.id) &&
-        !challenge.solved &&
-        !this.project.isChallengeSolved(challenge.id) &&
-        !this.project.isChallengeSchedulingExcluded(challenge.id) &&
-        !this.project.isChallengeBlocked(challenge.id),
-    )
-    if (!ordinaryOutstanding) {
-      const blocked = challenges
-        .filter(
-          (challenge) =>
-            !this.resetting.has(challenge.id) &&
-            !challenge.solved &&
-            !this.project.isChallengeSchedulingExcluded(challenge.id) &&
-            this.project.isChallengeBlocked(challenge.id) &&
-            !this.hasChallenge(challenge.id),
-        )
-        .sort((left, right) => {
-          const leftAt = this.project.challengeRuntimeState(left.id).blockedAt ?? ""
-          const rightAt = this.project.challengeRuntimeState(right.id).blockedAt ?? ""
-          return leftAt.localeCompare(rightAt) || left.id.localeCompare(right.id)
-        })
-      for (const challenge of blocked) {
-        this.enqueueChallenge(challenge, "revival", "blocked", false, true)
+    if (this.mode === "automatic") {
+      for (const challenge of challenges) {
+        if (
+          this.resetting.has(challenge.id) ||
+          challenge.solved ||
+          this.project.isChallengeSolved(challenge.id) ||
+          this.project.isChallengeSchedulingExcluded(challenge.id) ||
+          this.project.isChallengeBlocked(challenge.id) ||
+          this.hasChallenge(challenge.id)
+        ) {
+          continue
+        }
+        this.enqueueChallenge(challenge, "auto", "execution", "normal", false, true)
+      }
+
+      const ordinaryOutstanding = challenges.some(
+        (challenge) =>
+          !this.resetting.has(challenge.id) &&
+          !challenge.solved &&
+          !this.project.isChallengeSolved(challenge.id) &&
+          !this.project.isChallengeSchedulingExcluded(challenge.id) &&
+          !this.project.isChallengeBlocked(challenge.id),
+      )
+      if (!ordinaryOutstanding) {
+        const blocked = challenges
+          .filter(
+            (challenge) =>
+              !this.resetting.has(challenge.id) &&
+              !challenge.solved &&
+              !this.project.isChallengeSchedulingExcluded(challenge.id) &&
+              this.project.isChallengeBlocked(challenge.id) &&
+              !this.hasChallenge(challenge.id),
+          )
+          .sort((left, right) => {
+            const leftAt = this.project.challengeRuntimeState(left.id).blockedAt ?? ""
+            const rightAt = this.project.challengeRuntimeState(right.id).blockedAt ?? ""
+            return leftAt.localeCompare(rightAt) || left.id.localeCompare(right.id)
+          })
+        for (const challenge of blocked) {
+          this.enqueueChallenge(challenge, "revival", "execution", "blocked", false, true)
+        }
       }
     }
     this.pump()
+    return this.snapshot()
+  }
+
+  async stage(challengeIds: readonly string[]): Promise<ContestSchedulerSnapshot> {
+    this.assertAvailable()
+    this.assertNotShuttingDown()
+    this.assertPlanningStopped()
+    const uniqueIds = [...new Set(challengeIds)]
+    if (uniqueIds.length === 0) return this.snapshot()
+    await this.reconcile()
+    const challenges = new Map((await this.project.challenges()).map((item) => [item.id, item]))
+    // refresh/challenges 都会让出事件循环；提交批量写入前必须重新校验，避免并发 start()
+    // 已迁移旧计划后又插入新的 idle 项。
+    this.assertAvailable()
+    this.assertNotShuttingDown()
+    this.assertPlanningStopped()
+    const additions: Array<{ challenge: ChallengeSummary; record: SchedulerQueueRecord }> = []
+    const inputs: Array<{
+      challengeId: string
+      source: "manual"
+      stage: "idle"
+      lane: "normal"
+      manualOverride: false
+    }> = []
+
+    for (const challengeId of uniqueIds) {
+      if (this.active.has(challengeId)) {
+        throw new ContestSchedulerError("already_active", `${challengeId} 已有正在运行的 Agent`)
+      }
+      const existing = [...this.idleQueue, ...this.queue].find(
+        (item) => item.challenge.id === challengeId,
+      )
+      if (existing?.stage === "idle") continue
+      if (existing) {
+        throw new ContestSchedulerError("already_queued", `${challengeId} 已在执行队列中`)
+      }
+      const challenge = challenges.get(challengeId)
+      if (!challenge) {
+        throw new ContestSchedulerError("challenge_not_found", `平台不存在题目: ${challengeId}`)
+      }
+      const disposition = this.project.challengeSchedulingDisposition(challengeId)
+      if (disposition) {
+        throw new ContestSchedulerError(
+          "excluded",
+          disposition === "solved"
+            ? `${challenge.title} 已人工标记为已解出`
+            : `${challenge.title} 已标记为不调度`,
+        )
+      }
+      if (challenge.solved || this.project.isChallengeSolved(challengeId)) {
+        throw new ContestSchedulerError("already_solved", `${challenge.title} 已经解出`)
+      }
+      if (this.project.isChallengeBlocked(challengeId)) {
+        throw new ContestSchedulerError("blocked", `${challenge.title} 已 blocked，不能批量加入`)
+      }
+      inputs.push({
+        challengeId,
+        source: "manual",
+        stage: "idle",
+        lane: "normal",
+        manualOverride: false,
+      })
+    }
+
+    const records = this.project.enqueueSchedulerChallenges(inputs)
+    for (const record of records) {
+      const challenge = challenges.get(record.challengeId)
+      if (challenge) additions.push({ challenge, record })
+    }
+    for (const { challenge, record } of additions) {
+      if (this.hasChallenge(challenge.id)) continue
+      this.idleQueue.push({
+        challenge,
+        source: "manual",
+        stage: "idle",
+        lane: "normal",
+        manualOverride: false,
+        requiresAuto: true,
+        enqueuedAt: record.enqueuedAt,
+        version: record.version,
+      })
+    }
+    return this.snapshot()
+  }
+
+  unstage(challengeIds: readonly string[]): ContestSchedulerSnapshot {
+    this.assertNotShuttingDown()
+    this.assertPlanningStopped()
+    const ids = new Set(challengeIds)
+    this.project.removeSchedulerChallenges([...ids], "idle")
+    for (let index = this.idleQueue.length - 1; index >= 0; index--) {
+      const item = this.idleQueue[index]
+      if (item && ids.has(item.challenge.id)) this.idleQueue.splice(index, 1)
+    }
+    return this.snapshot()
+  }
+
+  reorderIdle(challengeIds: readonly string[], expectedVersion: number): ContestSchedulerSnapshot {
+    this.assertNotShuttingDown()
+    this.assertPlanningStopped()
+    let records: SchedulerQueueRecord[]
+    try {
+      records = this.project.reorderSchedulerStage("idle", challengeIds, expectedVersion)
+    } catch (error) {
+      if (errorText(error).includes("version conflict")) {
+        throw new ContestSchedulerError("queue_version_conflict", errorText(error))
+      }
+      throw error
+    }
+    const byId = new Map(this.idleQueue.map((item) => [item.challenge.id, item]))
+    this.idleQueue.length = 0
+    for (const record of records) {
+      const item = byId.get(record.challengeId)
+      if (!item) continue
+      item.version = record.version
+      item.enqueuedAt = record.enqueuedAt
+      this.idleQueue.push(item)
+    }
     return this.snapshot()
   }
 
@@ -349,7 +553,10 @@ export class ContestScheduler {
     if (this.active.has(challengeId)) {
       throw new ContestSchedulerError("already_active", "该题已有正在运行的 Agent")
     }
-    if (this.queue.some((item) => item.challenge.id === challengeId)) {
+    if (
+      this.queue.some((item) => item.challenge.id === challengeId) ||
+      this.idleQueue.some((item) => item.challenge.id === challengeId)
+    ) {
       throw new ContestSchedulerError("already_queued", "该题已经在调度队列中")
     }
     await this.project.refresh()
@@ -382,6 +589,7 @@ export class ContestScheduler {
     this.enqueueChallenge(
       challenge,
       blocked ? "revival" : "manual",
+      "execution",
       blocked ? "blocked" : "normal",
       blocked,
       false,
@@ -409,7 +617,10 @@ export class ContestScheduler {
     if (this.active.has(run.challengeId)) {
       throw new ContestSchedulerError("already_active", "该题已有正在运行的 Agent")
     }
-    if (this.queue.some((item) => item.challenge.id === run.challengeId)) {
+    if (
+      this.queue.some((item) => item.challenge.id === run.challengeId) ||
+      this.idleQueue.some((item) => item.challenge.id === run.challengeId)
+    ) {
       throw new ContestSchedulerError("already_queued", "该题已经在调度队列中")
     }
     const prompt = options.prompt?.trim()
@@ -438,6 +649,7 @@ export class ContestScheduler {
     this.queue.unshift({
       challenge,
       source: "retry",
+      stage: "execution",
       lane: blocked ? "blocked" : "normal",
       manualOverride: true,
       requiresAuto: false,
@@ -494,7 +706,7 @@ export class ContestScheduler {
     item.manualOverride = moved.manualOverride
     item.version = moved.version
     item.requiresAuto = item.requiresAuto && !moved.manualOverride
-    const persisted = this.project.schedulerQueue()
+    const persisted = this.project.schedulerQueue("execution")
     this.syncPersistedQueueMetadata(persisted)
     const order = new Map(persisted.map((record, index) => [record.challengeId, index]))
     this.queue.sort(
@@ -515,10 +727,11 @@ export class ContestScheduler {
     records: SchedulerQueueRecord[] = this.project.schedulerQueue(),
   ): void {
     const byId = new Map(records.map((record) => [record.challengeId, record]))
-    for (const item of this.queue) {
+    for (const item of [...this.idleQueue, ...this.queue]) {
       if (item.resumeRun) continue
       const record = byId.get(item.challenge.id)
       if (!record) continue
+      item.stage = record.stage
       item.lane = record.lane
       item.manualOverride = record.manualOverride
       item.enqueuedAt = record.enqueuedAt
@@ -528,6 +741,12 @@ export class ContestScheduler {
   }
 
   async cancel(challengeId: string): Promise<ContestSchedulerSnapshot> {
+    const idleIndex = this.idleQueue.findIndex((item) => item.challenge.id === challengeId)
+    if (idleIndex >= 0) {
+      this.idleQueue.splice(idleIndex, 1)
+      this.project.removeSchedulerChallenge(challengeId)
+      return this.snapshot()
+    }
     const queueIndex = this.queue.findIndex((item) => item.challenge.id === challengeId)
     if (queueIndex >= 0) {
       const [removed] = this.queue.splice(queueIndex, 1)
@@ -560,7 +779,7 @@ export class ContestScheduler {
   /** 调度暂停后，正常停止当前所有 Solver，并等待其 SubAgent、远程环境与 Sandbox 回收。 */
   async stopAllActive(): Promise<ContestSchedulerSnapshot> {
     this.assertNotShuttingDown()
-    if (this.autoEnabled) {
+    if (this.mode !== "stopped") {
       throw new ContestSchedulerError("auto_enabled", "请先暂停调度，再停止所有 Solver")
     }
     const challengeIds = [...this.active.keys()]
@@ -581,6 +800,8 @@ export class ContestScheduler {
     this.resetting.add(challengeId)
     try {
       // (a) 摘除内存队列项 + 持久化 scheduler_queue 行（含 resumeRun：其指向的 Run 即将被删）
+      const idleIndex = this.idleQueue.findIndex((item) => item.challenge.id === challengeId)
+      if (idleIndex >= 0) this.idleQueue.splice(idleIndex, 1)
       const queueIndex = this.queue.findIndex((item) => item.challenge.id === challengeId)
       if (queueIndex >= 0) this.queue.splice(queueIndex, 1)
       this.project.removeSchedulerChallenge(challengeId)
@@ -604,7 +825,7 @@ export class ContestScheduler {
 
     // (d) 自动重新入队（reconcile 自判 autoEnabled/availability；晚到的在途 reconcile 经
     //     hasChallenge/去重不会重复入队）
-    if (this.autoEnabled) await this.reconcile()
+    if (this.mode !== "stopped") await this.reconcile()
     return this.snapshot()
   }
 
@@ -617,7 +838,8 @@ export class ContestScheduler {
   private async performShutdown(): Promise<void> {
     this.shuttingDown = true
     this.unsubscribeRemoteEnvironmentCapacity()
-    this.autoEnabled = false
+    this.mode = "stopped"
+    this.idleQueue.length = 0
     this.queue.length = 0
     const active = [...this.active.values()]
     for (const item of active) {
@@ -654,7 +876,9 @@ export class ContestScheduler {
 
   private hasChallenge(challengeId: string): boolean {
     return (
-      this.active.has(challengeId) || this.queue.some((item) => item.challenge.id === challengeId)
+      this.active.has(challengeId) ||
+      this.idleQueue.some((item) => item.challenge.id === challengeId) ||
+      this.queue.some((item) => item.challenge.id === challengeId)
     )
   }
 
@@ -668,7 +892,7 @@ export class ContestScheduler {
         const index = this.queue.findIndex(
           (item) =>
             !this.resetting.has(item.challenge.id) &&
-            (!item.requiresAuto || this.autoEnabled) &&
+            (!item.requiresAuto || this.mode !== "stopped") &&
             this.canAdmit(item),
         )
         if (index < 0) break
@@ -697,7 +921,7 @@ export class ContestScheduler {
           .finally(() => {
             this.active.delete(item.challenge.id)
             this.pump()
-            if (this.autoEnabled) void this.reconcile()
+            if (this.mode !== "stopped") void this.reconcile()
           })
         active.operation = operation
       }
@@ -1114,7 +1338,14 @@ export class ContestScheduler {
         active.queueGeneration === this.queueGeneration &&
         !this.queue.some((item) => item.challenge.id === active.challenge.id)
       ) {
-        this.enqueueChallenge(active.challenge, "retry", active.lane, false, active.requiresAuto)
+        this.enqueueChallenge(
+          active.challenge,
+          "retry",
+          "execution",
+          active.lane,
+          false,
+          active.requiresAuto,
+        )
       }
     } else if (failureMessage && failureReason !== "cancelled") {
       this.lastError = `${active.challenge.title}: ${failureMessage}`
@@ -1231,28 +1462,46 @@ export class ContestScheduler {
   private enqueueChallenge(
     challenge: ChallengeSummary,
     source: SchedulerQueueSource,
+    stage: SchedulerQueueStage,
     lane: "normal" | "blocked",
     manualOverride: boolean,
     requiresAuto: boolean,
   ): void {
-    if (this.queue.some((item) => item.challenge.id === challenge.id)) return
+    if (
+      this.idleQueue.some((item) => item.challenge.id === challenge.id) ||
+      this.queue.some((item) => item.challenge.id === challenge.id)
+    ) {
+      return
+    }
     const persisted = this.project.enqueueSchedulerChallenge({
       challengeId: challenge.id,
       source,
+      stage,
       lane,
       manualOverride,
     })
     const item: QueueItem = {
       challenge,
       source,
+      stage,
       lane,
       manualOverride,
       requiresAuto,
       enqueuedAt: persisted.enqueuedAt,
       version: persisted.version,
     }
-    if (manualOverride) this.queue.unshift(item)
-    else this.queue.push(item)
+    const target = stage === "idle" ? this.idleQueue : this.queue
+    if (manualOverride) target.unshift(item)
+    else target.push(item)
+  }
+
+  private promoteIdleInMemory(): void {
+    for (const item of this.idleQueue.splice(0)) {
+      item.stage = "execution"
+      item.requiresAuto = true
+      this.queue.push(item)
+    }
+    this.syncPersistedQueueMetadata(this.project.schedulerQueue("execution"))
   }
 
   private canAdmit(item: QueueItem): boolean {
@@ -1367,6 +1616,11 @@ export class ContestScheduler {
           : {}),
       }
     )
+  }
+
+  private assertPlanningStopped(): void {
+    if (this.mode === "stopped") return
+    throw new ContestSchedulerError("scheduler_running", "请先暂停调度，再修改空闲队列")
   }
 
   private assertNotShuttingDown(): void {

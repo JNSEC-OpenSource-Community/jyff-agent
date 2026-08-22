@@ -216,10 +216,20 @@ export interface RecordChallengeBlockEvent {
 }
 
 export type SchedulerQueueLane = "normal" | "blocked"
+export type SchedulerQueueStage = "idle" | "execution"
+export type SchedulerMode = "stopped" | "manual" | "automatic"
+
+export interface SchedulerStateRecord {
+  mode: SchedulerMode
+  idleVersion: number
+  executionVersion: number
+  updatedAt: string
+}
 
 export interface SchedulerQueueRecord {
   challengeId: string
   source: RunSource
+  stage: SchedulerQueueStage
   lane: SchedulerQueueLane
   position: number
   manualOverride: boolean
@@ -230,6 +240,7 @@ export interface SchedulerQueueRecord {
 export interface EnqueueSchedulerChallenge {
   challengeId: string
   source: RunSource
+  stage?: SchedulerQueueStage
   lane?: SchedulerQueueLane
   manualOverride?: boolean
   enqueuedAt?: string
@@ -471,6 +482,7 @@ interface ChallengeAnnouncementRow extends ContestAnnouncementRow {
 interface SchedulerQueueRow {
   challenge_id: string
   source: RunSource
+  stage: SchedulerQueueStage
   lane: SchedulerQueueLane
   position: number
   manual_override: number
@@ -612,6 +624,7 @@ function schedulerQueueFromRow(row: SchedulerQueueRow): SchedulerQueueRecord {
   return {
     challengeId: row.challenge_id,
     source: row.source,
+    stage: row.stage,
     lane: row.lane,
     position: row.position,
     manualOverride: row.manual_override === 1,
@@ -969,6 +982,8 @@ export class RunStore {
       CREATE TABLE IF NOT EXISTS scheduler_queue (
         challenge_id TEXT PRIMARY KEY,
         source TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT 'execution'
+          CHECK (stage IN ('idle', 'execution')),
         lane TEXT NOT NULL CHECK (lane IN ('normal', 'blocked')),
         position INTEGER NOT NULL CHECK (position >= 1),
         manual_override INTEGER NOT NULL DEFAULT 0
@@ -979,6 +994,15 @@ export class RunStore {
 
       CREATE INDEX IF NOT EXISTS scheduler_queue_order
         ON scheduler_queue(manual_override DESC, lane, position, enqueued_at);
+
+      CREATE TABLE IF NOT EXISTS scheduler_control (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        mode TEXT NOT NULL DEFAULT 'stopped'
+          CHECK (mode IN ('stopped', 'manual', 'automatic')),
+        idle_version INTEGER NOT NULL DEFAULT 1 CHECK (idle_version >= 1),
+        execution_version INTEGER NOT NULL DEFAULT 1 CHECK (execution_version >= 1),
+        updated_at TEXT NOT NULL
+      ) STRICT;
 
       CREATE TABLE IF NOT EXISTS challenge_scheduling_overrides (
         challenge_id TEXT PRIMARY KEY,
@@ -1056,6 +1080,31 @@ export class RunStore {
         PRIMARY KEY (challenge_id, announcement_key, run_id)
       ) STRICT;
     `)
+    const schedulerQueueColumns = new Set(
+      (
+        database.prepare("PRAGMA table_info(scheduler_queue)").all() as unknown as Array<{
+          name: string
+        }>
+      ).map((column) => column.name),
+    )
+    if (!schedulerQueueColumns.has("stage")) {
+      database.exec(
+        "ALTER TABLE scheduler_queue ADD COLUMN stage TEXT NOT NULL DEFAULT 'execution' CHECK (stage IN ('idle', 'execution'))",
+      )
+    }
+    database.exec(`
+      DROP INDEX IF EXISTS scheduler_queue_order;
+      CREATE INDEX scheduler_queue_order
+        ON scheduler_queue(stage, manual_override DESC, lane, position, enqueued_at);
+    `)
+    database
+      .prepare(`
+        INSERT OR IGNORE INTO scheduler_control (
+          singleton, mode, idle_version, execution_version, updated_at
+        ) VALUES (1, 'stopped', 1, 1, ?)
+      `)
+      .run(new Date().toISOString())
+
     const runColumns = database.prepare("PRAGMA table_info(runs)").all() as unknown as Array<{
       name: string
     }>
@@ -1809,62 +1858,225 @@ export class RunStore {
     return challengeAnnouncementFromRow(row)
   }
 
-  enqueueSchedulerChallenge(input: EnqueueSchedulerChallenge): SchedulerQueueRecord {
+  schedulerState(): SchedulerStateRecord {
     this.assertOpen()
-    const lane = input.lane ?? "normal"
-    const timestamp = input.enqueuedAt ?? new Date().toISOString()
+    const row = this.database
+      .prepare(`
+        SELECT mode, idle_version, execution_version, updated_at
+        FROM scheduler_control WHERE singleton = 1
+      `)
+      .get() as {
+      mode: SchedulerMode
+      idle_version: number
+      execution_version: number
+      updated_at: string
+    }
+    return {
+      mode: row.mode,
+      idleVersion: row.idle_version,
+      executionVersion: row.execution_version,
+      updatedAt: row.updated_at,
+    }
+  }
+
+  setSchedulerMode(mode: SchedulerMode): SchedulerStateRecord {
+    this.assertOpen()
+    const updatedAt = new Date().toISOString()
+    this.database
+      .prepare("UPDATE scheduler_control SET mode = ?, updated_at = ? WHERE singleton = 1")
+      .run(mode, updatedAt)
+    return this.schedulerState()
+  }
+
+  /** 原子开启调度并将空闲队列按各 lane 原顺序追加到执行队列。 */
+  startScheduler(mode: Exclude<SchedulerMode, "stopped">): SchedulerStateRecord {
+    this.assertOpen()
+    const updatedAt = new Date().toISOString()
     this.database.exec("BEGIN IMMEDIATE")
     try {
-      const existing = this.database
-        .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
-        .get(input.challengeId) as unknown as SchedulerQueueRow | undefined
-      if (existing) {
-        this.database.exec("COMMIT")
-        return schedulerQueueFromRow(existing)
+      let promoted = 0
+      for (const lane of ["normal", "blocked"] as const) {
+        const tail = this.database
+          .prepare(`
+            SELECT COALESCE(MAX(position), 0) AS position
+            FROM scheduler_queue WHERE stage = 'execution' AND lane = ?
+          `)
+          .get(lane) as { position: number }
+        const result = this.database
+          .prepare(`
+            UPDATE scheduler_queue
+            SET stage = 'execution', position = position + ?, version = version + 1
+            WHERE stage = 'idle' AND lane = ?
+          `)
+          .run(tail.position, lane)
+        promoted += Number(result.changes)
       }
-      const next = this.database
-        .prepare(`
-          SELECT COALESCE(MAX(position), 0) + 1 AS position
-          FROM scheduler_queue WHERE lane = ?
-        `)
-        .get(lane) as { position: number }
       this.database
         .prepare(`
-          INSERT INTO scheduler_queue (
-            challenge_id, source, lane, position, manual_override,
-            enqueued_at, version
-          ) VALUES (?, ?, ?, ?, ?, ?, 1)
+          UPDATE scheduler_control
+          SET mode = ?,
+              idle_version = idle_version + ?,
+              execution_version = execution_version + ?,
+              updated_at = ?
+          WHERE singleton = 1
         `)
-        .run(
-          input.challengeId,
-          input.source,
-          lane,
-          next.position,
-          input.manualOverride ? 1 : 0,
-          timestamp,
-        )
-      const row = this.database
-        .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
-        .get(input.challengeId) as unknown as SchedulerQueueRow
+        .run(mode, promoted > 0 ? 1 : 0, promoted > 0 ? 1 : 0, updatedAt)
       this.database.exec("COMMIT")
-      return schedulerQueueFromRow(row)
+      return this.schedulerState()
     } catch (error) {
       this.database.exec("ROLLBACK")
       throw error
     }
   }
 
-  schedulerQueue(): SchedulerQueueRecord[] {
+  enqueueSchedulerChallenge(input: EnqueueSchedulerChallenge): SchedulerQueueRecord {
+    const [record] = this.enqueueSchedulerChallenges([input])
+    if (!record) throw new Error("Scheduler queue insert returned no record")
+    return record
+  }
+
+  enqueueSchedulerChallenges(inputs: readonly EnqueueSchedulerChallenge[]): SchedulerQueueRecord[] {
     this.assertOpen()
-    const rows = this.database
-      .prepare(`
-        SELECT * FROM scheduler_queue
-        ORDER BY manual_override DESC,
-          CASE lane WHEN 'normal' THEN 0 ELSE 1 END,
-          position ASC, enqueued_at ASC, challenge_id ASC
-      `)
-      .all() as unknown as SchedulerQueueRow[]
+    if (inputs.length === 0) return []
+    const records: SchedulerQueueRecord[] = []
+    const changed = new Set<SchedulerQueueStage>()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      for (const input of inputs) {
+        const existing = this.database
+          .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
+          .get(input.challengeId) as unknown as SchedulerQueueRow | undefined
+        if (existing) {
+          records.push(schedulerQueueFromRow(existing))
+          continue
+        }
+        const stage = input.stage ?? "execution"
+        const lane = input.lane ?? "normal"
+        const next = this.database
+          .prepare(`
+            SELECT COALESCE(MAX(position), 0) + 1 AS position
+            FROM scheduler_queue WHERE stage = ? AND lane = ?
+          `)
+          .get(stage, lane) as { position: number }
+        this.database
+          .prepare(`
+            INSERT INTO scheduler_queue (
+              challenge_id, source, stage, lane, position, manual_override,
+              enqueued_at, version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+          `)
+          .run(
+            input.challengeId,
+            input.source,
+            stage,
+            lane,
+            next.position,
+            input.manualOverride ? 1 : 0,
+            input.enqueuedAt ?? new Date().toISOString(),
+          )
+        const row = this.database
+          .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
+          .get(input.challengeId) as unknown as SchedulerQueueRow
+        records.push(schedulerQueueFromRow(row))
+        changed.add(stage)
+      }
+      if (changed.size > 0) {
+        this.database
+          .prepare(`
+            UPDATE scheduler_control
+            SET idle_version = idle_version + ?,
+                execution_version = execution_version + ?,
+                updated_at = ?
+            WHERE singleton = 1
+          `)
+          .run(
+            changed.has("idle") ? 1 : 0,
+            changed.has("execution") ? 1 : 0,
+            new Date().toISOString(),
+          )
+      }
+      this.database.exec("COMMIT")
+      return records
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  schedulerQueue(stage?: SchedulerQueueStage): SchedulerQueueRecord[] {
+    this.assertOpen()
+    const rows = (stage
+      ? this.database
+          .prepare(`
+            SELECT * FROM scheduler_queue WHERE stage = ?
+            ORDER BY manual_override DESC,
+              CASE lane WHEN 'normal' THEN 0 ELSE 1 END,
+              position ASC, enqueued_at ASC, challenge_id ASC
+          `)
+          .all(stage)
+      : this.database
+          .prepare(`
+            SELECT * FROM scheduler_queue
+            ORDER BY CASE stage WHEN 'idle' THEN 0 ELSE 1 END,
+              manual_override DESC,
+              CASE lane WHEN 'normal' THEN 0 ELSE 1 END,
+              position ASC, enqueued_at ASC, challenge_id ASC
+          `)
+          .all()) as unknown as SchedulerQueueRow[]
     return rows.map(schedulerQueueFromRow)
+  }
+
+  reorderSchedulerStage(
+    stage: SchedulerQueueStage,
+    challengeIds: readonly string[],
+    expectedVersion: number,
+  ): SchedulerQueueRecord[] {
+    this.assertOpen()
+    if (new Set(challengeIds).size !== challengeIds.length) {
+      throw new Error("Scheduler queue order contains duplicate challenge ids")
+    }
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const state = this.schedulerState()
+      const actualVersion = stage === "idle" ? state.idleVersion : state.executionVersion
+      if (actualVersion !== expectedVersion) {
+        throw new Error(
+          `Scheduler queue version conflict: expected ${expectedVersion}, actual ${actualVersion}`,
+        )
+      }
+      const rows = this.database
+        .prepare("SELECT challenge_id, lane FROM scheduler_queue WHERE stage = ?")
+        .all(stage) as unknown as Array<{ challenge_id: string; lane: SchedulerQueueLane }>
+      if (
+        rows.length !== challengeIds.length ||
+        rows.some((row) => !challengeIds.includes(row.challenge_id))
+      ) {
+        throw new Error("Scheduler queue version conflict: queue membership changed")
+      }
+      if (rows.some((row) => row.lane !== "normal")) {
+        throw new Error("Blocked scheduler lane cannot be batch reordered")
+      }
+      const move = this.database.prepare(`
+        UPDATE scheduler_queue
+        SET position = ?, version = version + 1
+        WHERE challenge_id = ? AND stage = ?
+      `)
+      challengeIds.forEach((challengeId, index) => move.run(index + 1, challengeId, stage))
+      this.database
+        .prepare(`
+          UPDATE scheduler_control
+          SET idle_version = idle_version + ?,
+              execution_version = execution_version + ?,
+              updated_at = ?
+          WHERE singleton = 1
+        `)
+        .run(stage === "idle" ? 1 : 0, stage === "execution" ? 1 : 0, new Date().toISOString())
+      this.database.exec("COMMIT")
+      return this.schedulerQueue(stage)
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
   }
 
   challengeSchedulingDisposition(challengeId: string): ChallengeSchedulingDisposition | null {
@@ -1947,25 +2159,25 @@ export class RunStore {
         )
       }
       const count = this.database
-        .prepare("SELECT COUNT(*) AS count FROM scheduler_queue WHERE lane = ?")
-        .get(row.lane) as { count: number }
+        .prepare("SELECT COUNT(*) AS count FROM scheduler_queue WHERE stage = ? AND lane = ?")
+        .get(row.stage, row.lane) as { count: number }
       const position = Math.min(input.position, count.count)
       if (position < row.position) {
         this.database
           .prepare(`
             UPDATE scheduler_queue
             SET position = position + 1, version = version + 1
-            WHERE lane = ? AND position >= ? AND position < ?
+            WHERE stage = ? AND lane = ? AND position >= ? AND position < ?
           `)
-          .run(row.lane, position, row.position)
+          .run(row.stage, row.lane, position, row.position)
       } else if (position > row.position) {
         this.database
           .prepare(`
             UPDATE scheduler_queue
             SET position = position - 1, version = version + 1
-            WHERE lane = ? AND position > ? AND position <= ?
+            WHERE stage = ? AND lane = ? AND position > ? AND position <= ?
           `)
-          .run(row.lane, row.position, position)
+          .run(row.stage, row.lane, row.position, position)
       }
       this.database
         .prepare(`
@@ -1977,6 +2189,19 @@ export class RunStore {
           position,
           input.overrideBlockedLane && row.lane === "blocked" ? 1 : 0,
           input.challengeId,
+        )
+      this.database
+        .prepare(`
+          UPDATE scheduler_control
+          SET idle_version = idle_version + ?,
+              execution_version = execution_version + ?,
+              updated_at = ?
+          WHERE singleton = 1
+        `)
+        .run(
+          row.stage === "idle" ? 1 : 0,
+          row.stage === "execution" ? 1 : 0,
+          new Date().toISOString(),
         )
       const updated = this.database
         .prepare("SELECT * FROM scheduler_queue WHERE challenge_id = ?")
@@ -1990,23 +2215,51 @@ export class RunStore {
   }
 
   removeSchedulerChallenge(challengeId: string): boolean {
+    return this.removeSchedulerChallenges([challengeId]) > 0
+  }
+
+  removeSchedulerChallenges(challengeIds: readonly string[], stage?: SchedulerQueueStage): number {
     this.assertOpen()
-    const row = this.database
-      .prepare("SELECT lane, position FROM scheduler_queue WHERE challenge_id = ?")
-      .get(challengeId) as { lane: SchedulerQueueLane; position: number } | undefined
-    if (!row) return false
+    if (challengeIds.length === 0) return 0
+    const changed = new Set<SchedulerQueueStage>()
+    let removed = 0
     this.database.exec("BEGIN IMMEDIATE")
     try {
-      this.database.prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?").run(challengeId)
-      this.database
-        .prepare(`
-          UPDATE scheduler_queue
-          SET position = position - 1, version = version + 1
-          WHERE lane = ? AND position > ?
-        `)
-        .run(row.lane, row.position)
+      for (const challengeId of new Set(challengeIds)) {
+        const row = this.database
+          .prepare("SELECT stage, lane, position FROM scheduler_queue WHERE challenge_id = ?")
+          .get(challengeId) as
+          | { stage: SchedulerQueueStage; lane: SchedulerQueueLane; position: number }
+          | undefined
+        if (!row || (stage !== undefined && row.stage !== stage)) continue
+        this.database.prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?").run(challengeId)
+        this.database
+          .prepare(`
+            UPDATE scheduler_queue
+            SET position = position - 1, version = version + 1
+            WHERE stage = ? AND lane = ? AND position > ?
+          `)
+          .run(row.stage, row.lane, row.position)
+        changed.add(row.stage)
+        removed++
+      }
+      if (changed.size > 0) {
+        this.database
+          .prepare(`
+            UPDATE scheduler_control
+            SET idle_version = idle_version + ?,
+                execution_version = execution_version + ?,
+                updated_at = ?
+            WHERE singleton = 1
+          `)
+          .run(
+            changed.has("idle") ? 1 : 0,
+            changed.has("execution") ? 1 : 0,
+            new Date().toISOString(),
+          )
+      }
       this.database.exec("COMMIT")
-      return true
+      return removed
     } catch (error) {
       this.database.exec("ROLLBACK")
       throw error
@@ -2254,19 +2507,34 @@ export class RunStore {
     const runs = this.listRuns({ challengeId })
     this.database.exec("BEGIN IMMEDIATE")
     try {
-      // scheduler_queue：与 removeSchedulerChallenge 相同地重排同 lane 剩余 position
+      // scheduler_queue：与 removeSchedulerChallenge 相同地重排同 stage/lane 剩余 position
       const queued = this.database
-        .prepare("SELECT lane, position FROM scheduler_queue WHERE challenge_id = ?")
-        .get(challengeId) as { lane: SchedulerQueueLane; position: number } | undefined
+        .prepare("SELECT stage, lane, position FROM scheduler_queue WHERE challenge_id = ?")
+        .get(challengeId) as
+        | { stage: SchedulerQueueStage; lane: SchedulerQueueLane; position: number }
+        | undefined
       if (queued) {
         this.database.prepare("DELETE FROM scheduler_queue WHERE challenge_id = ?").run(challengeId)
         this.database
           .prepare(`
             UPDATE scheduler_queue
             SET position = position - 1, version = version + 1
-            WHERE lane = ? AND position > ?
+            WHERE stage = ? AND lane = ? AND position > ?
           `)
-          .run(queued.lane, queued.position)
+          .run(queued.stage, queued.lane, queued.position)
+        this.database
+          .prepare(`
+            UPDATE scheduler_control
+            SET idle_version = idle_version + ?,
+                execution_version = execution_version + ?,
+                updated_at = ?
+            WHERE singleton = 1
+          `)
+          .run(
+            queued.stage === "idle" ? 1 : 0,
+            queued.stage === "execution" ? 1 : 0,
+            new Date().toISOString(),
+          )
       }
       // 级联删除该题全部 Run 的 run_events / run_subagents / challenge_evidence /
       // challenge_opportunities(+sources) / challenge_block_events /

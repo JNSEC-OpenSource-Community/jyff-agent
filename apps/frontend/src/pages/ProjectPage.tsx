@@ -1,20 +1,3 @@
-import type { SchedulerQueueEntry } from "@ctf-agent/core"
-import {
-  DndContext,
-  type DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core"
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
 import { Icon } from "@iconify/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useParams } from "react-router-dom"
@@ -22,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   ConfirmDialog,
   ErrorNotice,
   Input,
@@ -39,54 +23,7 @@ import { STATUS_LABELS } from "../lib/labels.ts"
 import { absoluteTime, relativeTime } from "../lib/time.ts"
 import { cn } from "../lib/utils.ts"
 import type { DashboardChallenge, DashboardSnapshot } from "../types.ts"
-
-/* ── Sortable queue item ── */
-
-function QueueItem({
-  entry,
-  challenge,
-  disabled = false,
-}: {
-  entry: SchedulerQueueEntry
-  challenge?: DashboardChallenge
-  disabled?: boolean
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: entry.challengeId,
-    disabled,
-  })
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      {...attributes}
-      {...listeners}
-      className={cn(
-        "flex items-center gap-2 px-4 py-2.5 text-sm transition-colors",
-        disabled
-          ? "cursor-default opacity-75"
-          : "cursor-grab hover:bg-muted active:cursor-grabbing",
-        isDragging && "cursor-grabbing bg-muted opacity-60",
-      )}
-    >
-      <Icon icon="lucide:grip-vertical" width="14" className="shrink-0 text-muted-foreground" />
-      <span className="w-5 text-center font-mono text-[11px] text-muted-foreground tabular-nums">
-        {entry.position}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{challenge?.title ?? entry.challengeId}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {challenge?.category ?? entry.source} · {challenge?.score ?? 0} pts
-        </p>
-      </div>
-      {entry.lane === "blocked" && (
-        <Badge tone="danger" className="shrink-0 text-[10px]">
-          Blocked
-        </Badge>
-      )}
-    </div>
-  )
-}
+import { SchedulerWorkbench } from "./project/SchedulerWorkbench.tsx"
 
 /* ── 解题进度 ── */
 
@@ -323,12 +260,32 @@ function EnvironmentLedger({
   )
 }
 
+const STAGEABLE_STATUSES = new Set<DashboardChallenge["status"]>([
+  "pending",
+  "failed",
+  "timed_out",
+  "cancelled",
+  "interrupted",
+  "closed",
+])
+
+function canStageChallenge(challenge: DashboardChallenge): boolean {
+  return (
+    STAGEABLE_STATUSES.has(challenge.status) &&
+    challenge.schedulingDisposition === undefined &&
+    !challenge.platformSolved
+  )
+}
+
+function canEditIdleQueue(challenge: DashboardChallenge): boolean {
+  return canStageChallenge(challenge) || challenge.status === "idle"
+}
+
 /* ── Page ── */
 
 export function ProjectPage() {
   const { projectId = "" } = useParams()
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null)
-  const [queue, setQueue] = useState<SchedulerQueueEntry[]>([])
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState("")
@@ -337,19 +294,13 @@ export function ProjectPage() {
   const [releasingEnvironment, setReleasingEnvironment] = useState("")
   const [stopAllOpen, setStopAllOpen] = useState(false)
   const [stoppingAll, setStoppingAll] = useState(false)
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
+  const [queueBusy, setQueueBusy] = useState(false)
+  const [selectedChallengeIds, setSelectedChallengeIds] = useState<string[]>([])
 
   const load = useCallback(async () => {
     setError("")
     const s = await apiRequest<DashboardSnapshot>(projectApi(projectId, "/api/snapshot"))
     setSnapshot(s)
-    setQueue(s.scheduler?.queued ?? [])
   }, [projectId])
 
   useEffect(() => {
@@ -358,7 +309,6 @@ export function ProjectPage() {
     es.addEventListener("snapshot", (ev) => {
       const s = JSON.parse((ev as MessageEvent<string>).data) as DashboardSnapshot
       setSnapshot(s)
-      setQueue(s.scheduler?.queued ?? [])
     })
     return () => es.close()
   }, [load, projectId])
@@ -374,7 +324,6 @@ export function ProjectPage() {
         "POST",
       )
       setSnapshot(result.snapshot)
-      setQueue(result.snapshot.scheduler?.queued ?? [])
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e))
     } finally {
@@ -388,7 +337,7 @@ export function ProjectPage() {
     try {
       const s = await apiMutation<DashboardSnapshot>(projectApi(projectId, path), "POST")
       setSnapshot(s)
-      setQueue(s.scheduler?.queued ?? [])
+      if (path === "/api/scheduler/start") setSelectedChallengeIds([])
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e))
     } finally {
@@ -405,7 +354,6 @@ export function ProjectPage() {
         "POST",
       )
       setSnapshot(next)
-      setQueue(next.scheduler?.queued ?? [])
       setStopAllOpen(false)
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
@@ -413,39 +361,6 @@ export function ProjectPage() {
       setError(message)
     } finally {
       setStoppingAll(false)
-    }
-  }
-
-  async function onDragEnd(event: DragEndEvent) {
-    if (!event.over || event.active.id === event.over.id) return
-    const oi = queue.findIndex((i) => i.challengeId === event.active.id)
-    const ni = queue.findIndex((i) => i.challengeId === event.over?.id)
-    if (oi < 0 || ni < 0) return
-    const m = queue[oi]
-    if (!m) return
-    // 先乐观更新本地顺序，避免拖拽后闪烁
-    setQueue(arrayMove(queue, oi, ni).map((i, idx) => ({ ...i, position: idx + 1 })))
-    try {
-      const s = await apiMutation<DashboardSnapshot>(
-        projectApi(projectId, `/api/scheduler/queue/${encodeURIComponent(m.challengeId)}`),
-        "PATCH",
-        {
-          position: ni + 1,
-          expectedVersion: m.version,
-          overrideBlockedLane: false,
-        },
-      )
-      setSnapshot(s)
-      setQueue(s.scheduler?.queued ?? [])
-    } catch (e) {
-      // version conflict 静默回退到服务端权威状态，不显示错误
-      void load().catch(() => {
-        setQueue(snapshot?.scheduler?.queued ?? [])
-      })
-      const msg = String(e instanceof Error ? e.message : e)
-      if (!msg.includes("version conflict")) {
-        setError(msg)
-      }
     }
   }
 
@@ -483,11 +398,50 @@ export function ProjectPage() {
         "DELETE",
       )
       setSnapshot(next)
-      setQueue(next.scheduler?.queued ?? [])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setReleasingEnvironment("")
+    }
+  }
+
+  async function stageChallenges(challengeIds: readonly string[]) {
+    if (challengeIds.length === 0) return
+    setQueueBusy(true)
+    setError("")
+    try {
+      const next = await apiMutation<DashboardSnapshot>(
+        projectApi(projectId, "/api/scheduler/idle"),
+        "POST",
+        { challengeIds },
+      )
+      setSnapshot(next)
+      const staged = new Set(challengeIds)
+      setSelectedChallengeIds((current) => current.filter((id) => !staged.has(id)))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setQueueBusy(false)
+    }
+  }
+
+  async function unstageChallenges(challengeIds: readonly string[]) {
+    if (challengeIds.length === 0) return
+    setQueueBusy(true)
+    setError("")
+    try {
+      const next = await apiMutation<DashboardSnapshot>(
+        projectApi(projectId, "/api/scheduler/idle"),
+        "DELETE",
+        { challengeIds },
+      )
+      setSnapshot(next)
+      const unstaged = new Set(challengeIds)
+      setSelectedChallengeIds((current) => current.filter((id) => !unstaged.has(id)))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setQueueBusy(false)
     }
   }
 
@@ -504,7 +458,6 @@ export function ProjectPage() {
         { disposition },
       )
       setSnapshot(next)
-      setQueue(next.scheduler?.queued ?? [])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -534,9 +487,48 @@ export function ProjectPage() {
     (!snapshot.controlPlane || snapshot.controlPlane.phase === "ready")
   const contestPending = snapshot.controlPlane?.activation?.state === "pending"
   const scheduledStartAt = snapshot.controlPlane?.activation?.scheduledStartAt
-  const activeSolverCount = snapshot.scheduler?.active?.length ?? 0
+  const scheduler = snapshot.scheduler
+  const schedulerRunning = scheduler?.mode !== undefined && scheduler.mode !== "stopped"
+  const activeSolverCount = scheduler?.active?.length ?? 0
+  const waitingCount = (scheduler?.idle?.length ?? 0) + (scheduler?.queued?.length ?? 0)
 
+  const ordered = sortChallenges(snapshot.challenges)
   const visible = sortChallenges(filterChallenges(snapshot.challenges, { query, statusFilter }))
+  const stageable = ordered.filter(canStageChallenge)
+  const removableFromIdle = ordered.filter((challenge) => challenge.status === "idle")
+  const visibleEditable = visible.filter(canEditIdleQueue)
+  const requestedIds = new Set(selectedChallengeIds)
+  const selectedStageableIds = stageable
+    .filter((challenge) => requestedIds.has(challenge.id))
+    .map((challenge) => challenge.id)
+  const selectedIdleIds = removableFromIdle
+    .filter((challenge) => requestedIds.has(challenge.id))
+    .map((challenge) => challenge.id)
+  const selectedEditableIds = ordered
+    .filter((challenge) => canEditIdleQueue(challenge) && requestedIds.has(challenge.id))
+    .map((challenge) => challenge.id)
+  const selectedIds = new Set(selectedEditableIds)
+  const allVisibleSelected =
+    visibleEditable.length > 0 &&
+    visibleEditable.every((challenge) => selectedIds.has(challenge.id))
+
+  function toggleChallengeSelection(challengeId: string, checked: boolean) {
+    setSelectedChallengeIds((current) =>
+      checked
+        ? current.includes(challengeId)
+          ? current
+          : [...current, challengeId]
+        : current.filter((id) => id !== challengeId),
+    )
+  }
+
+  function toggleVisibleSelection(checked: boolean) {
+    const visibleIds = new Set(visibleEditable.map((challenge) => challenge.id))
+    setSelectedChallengeIds((current) => {
+      if (!checked) return current.filter((id) => !visibleIds.has(id))
+      return [...new Set([...current, ...visibleIds])]
+    })
+  }
 
   return (
     <div className="page-container">
@@ -568,17 +560,17 @@ export function ProjectPage() {
             <Button
               variant="secondary"
               onClick={() => void action("/api/refresh")}
-              disabled={busy || !operationsAvailable}
+              disabled={busy || queueBusy || !operationsAvailable}
               size="sm"
             >
               <Icon icon="lucide:refresh-cw" className={busy ? "animate-spin" : ""} width="14" />
               同步
             </Button>
-            {!snapshot.scheduler?.autoEnabled && activeSolverCount > 0 ? (
+            {!schedulerRunning && activeSolverCount > 0 ? (
               <Button
                 variant="danger"
                 size="sm"
-                disabled={busy || stoppingAll}
+                disabled={busy || queueBusy || stoppingAll}
                 onClick={() => setStopAllOpen(true)}
               >
                 <Icon icon="lucide:circle-stop" width="14" />
@@ -589,19 +581,30 @@ export function ProjectPage() {
             <Button
               size="sm"
               onClick={() =>
-                void action(
-                  snapshot.scheduler?.autoEnabled
-                    ? "/api/scheduler/auto/pause"
-                    : "/api/scheduler/auto/start",
-                )
+                void action(schedulerRunning ? "/api/scheduler/auto/pause" : "/api/scheduler/start")
               }
-              disabled={busy || stoppingAll || !snapshot.scheduler?.available}
+              disabled={
+                busy ||
+                queueBusy ||
+                stoppingAll ||
+                (!schedulerRunning && (!scheduler?.available || waitingCount === 0))
+              }
             >
               <Icon
-                icon={snapshot.scheduler?.autoEnabled ? "lucide:pause" : "lucide:play"}
+                icon={
+                  busy ? "lucide:loader-circle" : schedulerRunning ? "lucide:pause" : "lucide:play"
+                }
+                className={busy ? "animate-spin" : undefined}
                 width="14"
               />
-              {snapshot.scheduler?.autoEnabled ? "暂停调度" : "启动调度"}
+              {schedulerRunning
+                ? "暂停调度"
+                : scheduler?.queued?.length && !scheduler.idle?.length
+                  ? "继续调度"
+                  : "启动调度"}
+              {!schedulerRunning && waitingCount > 0 ? (
+                <span className="font-mono tabular-nums opacity-70">{waitingCount}</span>
+              ) : null}
             </Button>
           </>
         }
@@ -715,51 +718,21 @@ export function ProjectPage() {
         </Card>
       ) : null}
 
-      {/* ── Two columns ── */}
-      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_1.5fr]">
-        {/* Queue */}
-        <Card className="flex min-h-0 flex-col p-0">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                调度队列
-              </p>
-              <h2 className="mt-0.5 font-semibold">待执行队列</h2>
-            </div>
-            <Badge tone={snapshot.scheduler?.autoEnabled ? "positive" : "neutral"}>
-              {snapshot.scheduler?.autoEnabled ? "自动" : "手动"}
-            </Badge>
-          </div>
-          <div className="flex flex-1 flex-col">
-            {queue.length > 0 ? (
-              <DndContext sensors={sensors} onDragEnd={(event) => void onDragEnd(event)}>
-                <SortableContext
-                  items={queue.map((i) => i.challengeId)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="max-h-128 divide-y divide-border/60 overflow-y-auto overscroll-contain">
-                    {queue.map((e) => (
-                      <QueueItem
-                        key={e.challengeId}
-                        entry={e}
-                        challenge={byId.get(e.challengeId)}
-                        disabled={!operationsAvailable}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-                <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted/50">
-                  <Icon icon="lucide:list-checks" width="22" className="text-muted-foreground" />
-                </div>
-                <p className="mt-3! text-sm font-medium text-muted-foreground">队列为空</p>
-                <p className="mt-1! text-xs text-muted-foreground">启动调度或手动派发题目</p>
-              </div>
-            )}
-          </div>
-        </Card>
+      {/* ── Scheduler + recent activity ── */}
+      <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+        <SchedulerWorkbench
+          projectId={projectId}
+          snapshot={snapshot}
+          challenges={byId}
+          operationsAvailable={operationsAvailable}
+          stageableCount={stageable.length}
+          busy={busy || queueBusy}
+          onStageAll={() => void stageChallenges(stageable.map((challenge) => challenge.id))}
+          onSnapshot={setSnapshot}
+          onReload={load}
+          onBusyChange={setQueueBusy}
+          onError={setError}
+        />
 
         <Card className="flex min-h-0 flex-col p-0">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -843,7 +816,8 @@ export function ProjectPage() {
               <SelectContent>
                 <SelectItem value="all">全部</SelectItem>
                 <SelectItem value="active">执行中</SelectItem>
-                <SelectItem value="queued">队列中</SelectItem>
+                <SelectItem value="idle">空闲队列</SelectItem>
+                <SelectItem value="queued">执行队列</SelectItem>
                 <SelectItem value="pending">未调度</SelectItem>
                 <SelectItem value="excluded">不调度</SelectItem>
                 <SelectItem value="solved">已解出</SelectItem>
@@ -852,6 +826,53 @@ export function ProjectPage() {
             </Select>
           </div>
         </div>
+        {!schedulerRunning && selectedEditableIds.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/35 px-4 py-2.5">
+            <p className="text-xs">
+              已选 <strong className="font-mono tabular-nums">{selectedEditableIds.length}</strong>{" "}
+              题
+              <span className="ml-2 text-muted-foreground">
+                可加入 {selectedStageableIds.length} · 可移出 {selectedIdleIds.length}
+              </span>
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={queueBusy}
+                onClick={() => setSelectedChallengeIds([])}
+              >
+                清除选择
+              </Button>
+              {selectedIdleIds.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={queueBusy || !operationsAvailable}
+                  onClick={() => void unstageChallenges(selectedIdleIds)}
+                >
+                  <Icon icon="lucide:list-minus" width="13" aria-hidden="true" />
+                  移出空闲队列
+                </Button>
+              ) : null}
+              {selectedStageableIds.length > 0 ? (
+                <Button
+                  size="sm"
+                  disabled={queueBusy || !operationsAvailable}
+                  onClick={() => void stageChallenges(selectedStageableIds)}
+                >
+                  <Icon
+                    icon={queueBusy ? "lucide:loader-circle" : "lucide:list-plus"}
+                    className={queueBusy ? "animate-spin" : undefined}
+                    width="13"
+                    aria-hidden="true"
+                  />
+                  加入空闲队列
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         {visible.length === 0 ? (
           <div className="flex flex-col items-center py-16 text-center">
             <Icon icon="lucide:search-x" width="28" className="text-muted-foreground/40" />
@@ -862,7 +883,26 @@ export function ProjectPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  <th scope="col" className="py-3 pl-5 pr-3 font-medium">
+                  {!schedulerRunning ? (
+                    <th scope="col" className="w-11 py-3 pl-4 pr-1 font-medium">
+                      <Checkbox
+                        checked={
+                          allVisibleSelected
+                            ? true
+                            : visibleEditable.some((challenge) => selectedIds.has(challenge.id))
+                              ? "indeterminate"
+                              : false
+                        }
+                        disabled={queueBusy || !operationsAvailable || visibleEditable.length === 0}
+                        aria-label="选择当前筛选结果中可调整队列的题目"
+                        onCheckedChange={(checked) => toggleVisibleSelection(checked === true)}
+                      />
+                    </th>
+                  ) : null}
+                  <th
+                    scope="col"
+                    className={cn("py-3 pr-3 font-medium", schedulerRunning ? "pl-5" : "pl-2")}
+                  >
                     题目
                   </th>
                   <th scope="col" className="hidden py-3 px-3 font-medium md:table-cell">
@@ -885,7 +925,22 @@ export function ProjectPage() {
               <tbody className="divide-y divide-border/60">
                 {visible.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-muted">
-                    <td className="py-3 pl-5 pr-3">
+                    {!schedulerRunning ? (
+                      <td className="w-11 py-3 pl-4 pr-1">
+                        <Checkbox
+                          checked={selectedIds.has(c.id)}
+                          disabled={queueBusy || !operationsAvailable || !canEditIdleQueue(c)}
+                          aria-label={`${
+                            c.status === "idle" ? "选择移出空闲队列" : "选择加入空闲队列"
+                          }：${c.title}`}
+                          title={canEditIdleQueue(c) ? undefined : "当前状态不能调整空闲队列"}
+                          onCheckedChange={(checked) =>
+                            toggleChallengeSelection(c.id, checked === true)
+                          }
+                        />
+                      </td>
+                    ) : null}
+                    <td className={cn("py-3 pr-3", schedulerRunning ? "pl-5" : "pl-2")}>
                       <Link
                         to={`/projects/${encodeURIComponent(projectId)}/challenges/${encodeURIComponent(c.id)}`}
                         className="block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -920,7 +975,7 @@ export function ProjectPage() {
                       <div className="flex items-center justify-end gap-1">
                         <Select
                           value={c.schedulingDisposition ?? "default"}
-                          disabled={schedulingBusy === c.id || !operationsAvailable}
+                          disabled={queueBusy || schedulingBusy === c.id || !operationsAvailable}
                           onValueChange={(value) =>
                             void setSchedulingDisposition(
                               c.id,

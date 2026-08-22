@@ -225,6 +225,23 @@ export const queueMoveSchema = z.object({
   overrideBlockedLane: z.boolean().optional(),
 })
 
+const schedulerChallengeIdsSchema = z
+  .array(z.string({ message: "题目 ID 必须是字符串" }).trim().min(1).max(512))
+  .min(1, { message: "至少选择一道题" })
+  .max(1_000, { message: "单次最多操作 1000 道题" })
+  .refine((ids) => new Set(ids).size === ids.length, { message: "题目 ID 不能重复" })
+
+/** 空闲队列批量加入/移除。 */
+export const schedulerIdleBatchSchema = z.object({
+  challengeIds: schedulerChallengeIdsSchema,
+})
+
+/** 空闲队列完整顺序，使用队列级版本拒绝陈旧拖拽。 */
+export const schedulerIdleOrderSchema = z.object({
+  challengeIds: schedulerChallengeIdsSchema,
+  expectedVersion: z.number({ message: "队列版本必须是整数" }).int().min(1),
+})
+
 /** 人工派发/取消。 */
 export const dispatchSchema = z.object({ force: z.boolean().optional() })
 

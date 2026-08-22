@@ -3,6 +3,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly data?: unknown,
   ) {
     super(message)
     this.name = "ApiError"
@@ -20,6 +21,7 @@ export async function apiRequest<T>(url: string, init?: RequestInit): Promise<T>
       response.status,
       data?.error ?? "request_failed",
       data?.message ?? `请求失败（HTTP ${response.status}）`,
+      data,
     )
   }
   return data as T

@@ -269,7 +269,7 @@ export class ControlPlane {
     return this.resolveRuntime(projectId)?.scheduler
   }
 
-  /** 只有活跃 Solver 或未归档的自动调度需要后台访问比赛平台。 */
+  /** 只有活跃 Solver 或未归档且已启动的手动/自动调度需要后台访问比赛平台。 */
   shouldPollProject(projectId?: string): boolean {
     const runtime = this.resolveRuntime(projectId)
     const scheduler = runtime?.scheduler?.snapshot()

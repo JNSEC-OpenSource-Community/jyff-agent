@@ -30,6 +30,7 @@ describe("调度器路由", () => {
     scheduler.value.queued.push({
       challengeId: "misc-1",
       source: "manual",
+      stage: "execution",
       lane: "normal",
       manualOverride: false,
       enqueuedAt: "2026-07-29T12:00:00.000Z",
@@ -46,7 +47,7 @@ describe("调度器路由", () => {
     })
     expect((await jsonRequest(app, "/api/scheduler/auto/pause", "POST", {})).status).toBe(200)
     expect(scheduler.snapshot().autoEnabled).toBe(false)
-    expect(scheduler.snapshot().queued).toEqual([])
+    expect(scheduler.snapshot().queued).toHaveLength(1)
     expect(scheduler.snapshot().active).toHaveLength(1)
 
     expect((await jsonRequest(app, "/api/scheduler/active/stop", "POST", {})).status).toBe(200)
@@ -90,11 +91,73 @@ describe("调度器路由", () => {
     })
   })
 
+  it("批量编排空闲队列，并在启动时按顺序提交到执行队列", async () => {
+    const { app, scheduler } = appWithScheduler()
+
+    const staged = await jsonRequest(app, "/api/scheduler/idle", "POST", {
+      challengeIds: ["misc-1", "pwn-1"],
+    })
+    expect(staged.status).toBe(200)
+    expect(scheduler.snapshot().idle.map((item) => item.challengeId)).toEqual(["misc-1", "pwn-1"])
+
+    const reordered = await jsonRequest(app, "/api/scheduler/idle/order", "PUT", {
+      challengeIds: ["pwn-1", "misc-1"],
+      expectedVersion: scheduler.snapshot().idleVersion,
+    })
+    expect(reordered.status).toBe(200)
+    expect(scheduler.snapshot().idle.map((item) => item.challengeId)).toEqual(["pwn-1", "misc-1"])
+
+    const staleOrder = await jsonRequest(app, "/api/scheduler/idle/order", "PUT", {
+      challengeIds: ["misc-1", "pwn-1"],
+      expectedVersion: scheduler.snapshot().idleVersion - 1,
+    })
+    expect(staleOrder.status).toBe(409)
+    expect(await jsonOf(staleOrder)).toMatchObject({
+      error: "queue_version_conflict",
+      snapshot: {
+        scheduler: {
+          idle: [{ challengeId: "pwn-1" }, { challengeId: "misc-1" }],
+        },
+      },
+    })
+
+    const removed = await jsonRequest(app, "/api/scheduler/idle", "DELETE", {
+      challengeIds: ["misc-1"],
+    })
+    expect(removed.status).toBe(200)
+    expect(scheduler.snapshot().idle.map((item) => item.challengeId)).toEqual(["pwn-1"])
+    expect(
+      (
+        await jsonRequest(app, "/api/scheduler/idle", "POST", {
+          challengeIds: ["misc-1"],
+        })
+      ).status,
+    ).toBe(200)
+
+    expect((await jsonRequest(app, "/api/scheduler/start", "POST", {})).status).toBe(200)
+    expect(scheduler.snapshot()).toMatchObject({
+      state: "running",
+      mode: "manual",
+      idle: [],
+      queued: [
+        { challengeId: "pwn-1", stage: "execution" },
+        { challengeId: "misc-1", stage: "execution" },
+      ],
+    })
+
+    const invalid = await jsonRequest(app, "/api/scheduler/idle", "POST", {
+      challengeIds: [],
+    })
+    expect(invalid.status).toBe(400)
+    expect(await jsonOf(invalid)).toMatchObject({ error: "invalid_scheduler_idle_batch" })
+  })
+
   it("队列重排：position 与 expectedVersion 各自错误码", async () => {
     const { app, scheduler } = appWithScheduler()
     scheduler.value.queued.push({
       challengeId: "misc-1",
       source: "manual",
+      stage: "execution",
       lane: "normal",
       manualOverride: false,
       enqueuedAt: "2026-07-29T12:00:00.000Z",
@@ -111,6 +174,20 @@ describe("调度器路由", () => {
     expect(scheduler.snapshot().queued[0]).toMatchObject({
       challengeId: "misc-1",
       position: 2,
+    })
+
+    const stale = await jsonRequest(app, "/api/scheduler/queue/misc-1", "PATCH", {
+      position: 1,
+      expectedVersion: 1,
+    })
+    expect(stale.status).toBe(409)
+    expect(await jsonOf(stale)).toMatchObject({
+      error: "queue_version_conflict",
+      snapshot: {
+        scheduler: {
+          queued: [{ challengeId: "misc-1", position: 2, version: 2 }],
+        },
+      },
     })
 
     const badPosition = await jsonRequest(app, "/api/scheduler/queue/misc-1", "PATCH", {

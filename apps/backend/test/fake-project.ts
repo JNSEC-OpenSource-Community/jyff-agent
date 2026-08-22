@@ -1,3 +1,4 @@
+import { ContestSchedulerError } from "@ctf-agent/core"
 import type {
   AgentStreamListener,
   AgentStreamTarget,
@@ -15,6 +16,7 @@ import type {
   RunFilter,
   RunRecord,
   SchedulerQueueRecord,
+  SchedulerStateRecord,
   SubagentRecord,
   TldrRecord,
   WorkspaceArtifactListing,
@@ -334,6 +336,15 @@ export class FakeDashboardProject implements DashboardProject {
   }
   async setMaxRemoteEnvironments(_maxConcurrent: number): Promise<void> {}
 
+  schedulerState(): SchedulerStateRecord {
+    return {
+      mode: "stopped",
+      idleVersion: 1,
+      executionVersion: 1,
+      updatedAt: now,
+    }
+  }
+
   schedulerQueue(): SchedulerQueueRecord[] {
     return this.schedulerQueueValues
   }
@@ -507,9 +518,14 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   value: ContestSchedulerSnapshot = {
     available: true,
     autoEnabled: false,
+    state: "stopped",
+    mode: "stopped",
+    idleVersion: 1,
+    executionVersion: 1,
     maxConcurrent: 2,
     maxAttempts: 2,
     maxSessionInterruptions: 3,
+    idle: [],
     queued: [],
     active: [],
   }
@@ -522,14 +538,38 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     return this.snapshot()
   }
 
-  async startAuto(): Promise<ContestSchedulerSnapshot> {
+  async start(): Promise<ContestSchedulerSnapshot> {
     this.value.autoEnabled = true
+    this.value.state = "running"
+    this.value.mode = "manual"
+    if (this.value.idle.length > 0) {
+      const offset = this.value.queued.length
+      this.value.queued.push(
+        ...this.value.idle.map((item, index) => ({
+          ...item,
+          stage: "execution" as const,
+          position: offset + index + 1,
+          version: item.version + 1,
+        })),
+      )
+      this.value.idle = []
+      this.value.idleVersion++
+      this.value.executionVersion++
+    }
+    return this.snapshot()
+  }
+
+  async startAuto(): Promise<ContestSchedulerSnapshot> {
+    await this.start()
+    this.value.state = "automatic"
+    this.value.mode = "automatic"
     return this.snapshot()
   }
 
   pauseAuto(): ContestSchedulerSnapshot {
     this.value.autoEnabled = false
-    this.value.queued = []
+    this.value.state = "stopped"
+    this.value.mode = "stopped"
     return this.snapshot()
   }
 
@@ -554,6 +594,54 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     return this.snapshot()
   }
 
+  async stage(challengeIds: readonly string[]): Promise<ContestSchedulerSnapshot> {
+    for (const challengeId of challengeIds) {
+      if (
+        this.value.idle.some((item) => item.challengeId === challengeId) ||
+        this.value.queued.some((item) => item.challengeId === challengeId)
+      ) {
+        continue
+      }
+      this.value.idle.push({
+        challengeId,
+        source: "manual",
+        stage: "idle",
+        lane: "normal",
+        manualOverride: false,
+        enqueuedAt: now,
+        position: this.value.idle.length + 1,
+        version: 1,
+      })
+    }
+    this.value.idleVersion++
+    return this.snapshot()
+  }
+
+  unstage(challengeIds: readonly string[]): ContestSchedulerSnapshot {
+    const ids = new Set(challengeIds)
+    this.value.idle = this.value.idle
+      .filter((item) => !ids.has(item.challengeId))
+      .map((item, index) => ({ ...item, position: index + 1 }))
+    this.value.idleVersion++
+    return this.snapshot()
+  }
+
+  reorderIdle(challengeIds: readonly string[], expectedVersion: number): ContestSchedulerSnapshot {
+    if (expectedVersion !== this.value.idleVersion) {
+      throw new ContestSchedulerError(
+        "queue_version_conflict",
+        `idle queue version conflict: expected ${expectedVersion}, actual ${this.value.idleVersion}`,
+      )
+    }
+    const byId = new Map(this.value.idle.map((item) => [item.challengeId, item]))
+    this.value.idle = challengeIds.flatMap((challengeId, index) => {
+      const item = byId.get(challengeId)
+      return item ? [{ ...item, position: index + 1, version: item.version + 1 }] : []
+    })
+    this.value.idleVersion++
+    return this.snapshot()
+  }
+
   async dispatch(
     challengeId: string,
     options: { force?: boolean } = {},
@@ -562,6 +650,7 @@ export class FakeDashboardScheduler implements DashboardScheduler {
     this.value.queued.push({
       challengeId,
       source: options.force ? "revival" : "manual",
+      stage: "execution",
       lane: options.force ? "blocked" : "normal",
       manualOverride: options.force === true,
       enqueuedAt: now,
@@ -585,6 +674,12 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   ): ContestSchedulerSnapshot {
     const item = this.value.queued.find((candidate) => candidate.challengeId === challengeId)
     if (!item) return this.snapshot()
+    if (item.version !== options.expectedVersion) {
+      throw new ContestSchedulerError(
+        "queue_version_conflict",
+        `execution queue version conflict: expected ${options.expectedVersion}, actual ${item.version}`,
+      )
+    }
     item.position = options.position
     item.version += 1
     this.value.queued.sort((left, right) => left.position - right.position)
@@ -592,6 +687,9 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   }
 
   async cancel(challengeId: string): Promise<ContestSchedulerSnapshot> {
+    this.value.idle = this.value.idle
+      .filter((item) => item.challengeId !== challengeId)
+      .map((item, index) => ({ ...item, position: index + 1 }))
     this.value.queued = this.value.queued
       .filter((item) => item.challengeId !== challengeId)
       .map((item, index) => ({ ...item, position: index + 1 }))
@@ -601,6 +699,9 @@ export class FakeDashboardScheduler implements DashboardScheduler {
   resetChallengeCalls: string[] = []
   async resetChallenge(challengeId: string): Promise<ContestSchedulerSnapshot> {
     this.resetChallengeCalls.push(challengeId)
+    this.value.idle = this.value.idle
+      .filter((item) => item.challengeId !== challengeId)
+      .map((item, index) => ({ ...item, position: index + 1 }))
     this.value.queued = this.value.queued
       .filter((item) => item.challengeId !== challengeId)
       .map((item, index) => ({ ...item, position: index + 1 }))

@@ -68,7 +68,7 @@ Project 是数据隔离和权限边界。所有 Project 级 API、SSE 和 worksp
 | --------------- | ----------------------------------------------------------------------------- |
 | `system.ts`     | `/health`、WebUI 登录、全局/Project 快照、刷新和 dashboard SSE                |
 | `projects.ts`   | Project 列表、连接测试、创建、归档、删除、重置和 runtime 配置                 |
-| `scheduler.ts`  | 自动调度启停、并发修改和带版本检查的队列排序                                  |
+| `scheduler.ts`  | 手动/自动调度启停、双队列批量编排、并发修改和带版本检查的排序                 |
 | `challenges.ts` | 题目派发/取消、人工消息、thinking level、TLDR、公告审核、workspace 和 Writeup |
 | `runs.ts`       | Run/SubAgent 对话、SSE、steer、cancel、retry 和 HTML 导出                     |
 | `models.ts`     | 全局模型池、Project 模型绑定、自定义 Provider、模型发现和 Provider 登录       |
@@ -77,14 +77,14 @@ Project 是数据隔离和权限边界。所有 Project 级 API、SSE 和 worksp
 
 前端路由定义在 `apps/frontend/src/main.tsx`：
 
-| 路径                                           | 页面                  | 作用                                                   |
-| ---------------------------------------------- | --------------------- | ------------------------------------------------------ |
-| `/`、`/projects/new`                           | `ProjectsPage`        | Project 列表、创建、连接测试、归档和删除               |
-| `/projects/:projectId`                         | `ProjectPage`         | 题目、队列、远程环境占用、全局 Solver 日志与自动调度   |
-| `/projects/:projectId/settings`                | `ProjectSettingsPage` | 平台和 Project runtime 配置                            |
-| `/projects/:projectId/challenges/:challengeId` | `ChallengePage`       | 对话、情报、Attempts、workspace、Writeup 和 Agent 选择 |
-| `/settings`                                    | `GlobalSettingsPage`  | WebUI 鉴权、Provider、模型认证、模型池和 Web Access    |
-| `/father`、`/father/sessions/:sessionId`       | `FatherPage`          | Father 会话、插件工作区、验证和安装                    |
+| 路径                                           | 页面                  | 作用                                                    |
+| ---------------------------------------------- | --------------------- | ------------------------------------------------------- |
+| `/`、`/projects/new`                           | `ProjectsPage`        | Project 列表、创建、连接测试、归档和删除                |
+| `/projects/:projectId`                         | `ProjectPage`         | 题目批量编排、双队列工作台、远程环境、Solver 日志与调度 |
+| `/projects/:projectId/settings`                | `ProjectSettingsPage` | 平台和 Project runtime 配置                             |
+| `/projects/:projectId/challenges/:challengeId` | `ChallengePage`       | 对话、情报、Attempts、workspace、Writeup 和 Agent 选择  |
+| `/settings`                                    | `GlobalSettingsPage`  | WebUI 鉴权、Provider、模型认证、模型池和 Web Access     |
+| `/father`、`/father/sessions/:sessionId`       | `FatherPage`          | Father 会话、插件工作区、验证和安装                     |
 
 ### 2.3 SSE
 
@@ -159,21 +159,23 @@ Flag 被平台接受后会记录 terminal submission。生产调度会进入 Wri
 | 组件               | 入口                   | 使用方式             | 行为                                                                              |
 | ------------------ | ---------------------- | -------------------- | --------------------------------------------------------------------------------- |
 | `ContestRunner`    | `contest-runner.ts`    | 一次性批量任务或测试 | 刷新并去重题目，按 worker pool 并发执行，统计结果，保证 finally 中关闭所有 Solver |
-| `ContestScheduler` | `contest-scheduler.ts` | WebUI 长驻调度       | 维护自动队列、手动队列、blocked lane、重试、revival、暂停/恢复和并发变化          |
+| `ContestScheduler` | `contest-scheduler.ts` | WebUI 长驻调度       | 维护空闲/执行双队列、手动/自动模式、blocked lane、重试、暂停恢复和并发变化        |
 
 调度器的关键规则：
 
+- WebUI 手动计划按 `赛题池 → idle → execution → active` 流转；`start()` 原子迁移全部 idle 项且不会隐式加入未选择题。
+- `stopped | manual | automatic` 模式、两条队列及各自版本均持久化；暂停冻结并保留等待项，不自动取消活跃 Solver。
 - 平台已解、RunStore 已解、人工 `excluded/solved` 的题目不会自动入队。
-- 同一题在 queued/active 阶段互斥；手动派发可以显式 `force` 绕过 solved 或 blocked 检查。
+- 同一题在 idle/execution/active 阶段互斥；直接派发可以显式 `force` 绕过 solved 或 blocked 检查。
 - `maxConcurrent` 是活跃 Solver/Sandbox 的硬上限；等待远程环境的 Run 仍占一个容器槽。
 - 远程槽满时跳过无附件环境题，但允许纯本地题和有附件可本地分析的题越过它。
 - 历史 Run 参与 attempt 预算；`interrupted` 和 `blocked` 不消耗普通重试预算。
 - 网络/限流/服务端错误按可重试分类处理；Session 连续异常超过阈值后将题目设为 blocked。
 - 平台暂不可用时停止领取，但不删除持久化队列和自动调度意图；恢复后继续 reconcile。
-- 队列排序带 `expectedVersion`，版本冲突时拒绝陈旧拖拽请求，前端重新读取服务端快照。
+- 空闲整队排序使用 `idleVersion`，执行队列排序校验条目版本；冲突时拒绝陈旧拖拽请求，前端重新读取服务端快照。
 - `AnnouncementPoller` 定期拉取公告；`announcement-matcher.ts` 按 ID、标题、内容和关键词生成题目候选，候选先由 WebUI 审核，之后才写入 Run 的上下文。
 
-Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queue` 保存跨重启意图；发布快照前会把持久层版本回灌内存，避免 WebUI 使用过期版本。暂停调度不会打断已活跃 Solver；暂停后 WebUI 会提供“停止全部 Solver”，该操作等待每个 Solver 按正常关闭顺序回收 SubAgent、远程实例和 Docker Sandbox。
+Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queue.stage` 与 `scheduler_control` 保存跨重启的两阶段顺序、版本和运行模式；创建 Scheduler 后调用 `restore()`，发布快照前再把持久层版本回灌内存，避免 WebUI 使用过期版本。旧库没有 `stage` 的等待项迁移为 `execution`。暂停调度不会打断或删除已活跃 Solver；暂停后 WebUI 会提供“停止全部 Solver”，该操作等待每个 Solver 按正常关闭顺序回收 SubAgent、远程实例和 Docker Sandbox。
 
 ## 5. 持久化与恢复
 
@@ -211,7 +213,7 @@ Scheduler 的内存队列负责当前进程执行，RunStore 的 `scheduler_queu
 | `run_subagents`                                                               | SubAgent role、状态、session、工具统计、usage 和结果   |
 | `model_token_usage`                                                           | 按 provider/model 记录 Solver、SubAgent、TLDR 逐次用量 |
 | `platform_view_cache`                                                         | overview、题目、公告、远程环境快照                     |
-| `scheduler_queue`、`challenge_scheduling_overrides`                           | 调度来源、lane、位置、版本和人工覆盖                   |
+| `scheduler_queue`、`scheduler_control`、`challenge_scheduling_overrides`      | 双队列阶段/顺序/版本、调度模式和人工覆盖               |
 | `challenge_runtime_state`、`challenge_block_events`                           | blocked 分数、阈值、复活次数和审计事件                 |
 | `remote_environment_leases`                                                   | Project 内远程环境租约和优先级                         |
 | `challenge_evidence`、`challenge_opportunities`                               | 黑板数据                                               |

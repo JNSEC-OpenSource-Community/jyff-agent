@@ -987,6 +987,97 @@ describe("RunStore", () => {
     reopened.close()
   })
 
+  it("持久化空闲/执行双队列、队列级版本与调度模式", async () => {
+    const { path, store } = await storeFixture({ persistent: true })
+    expect(store.schedulerState()).toMatchObject({
+      mode: "stopped",
+      idleVersion: 1,
+      executionVersion: 1,
+    })
+
+    store.enqueueSchedulerChallenges([
+      { challengeId: "idle-1", source: "manual", stage: "idle" },
+      { challengeId: "idle-2", source: "manual", stage: "idle" },
+    ])
+    expect(store.schedulerState().idleVersion).toBe(2)
+    expect(store.schedulerQueue("idle").map((item) => item.challengeId)).toEqual([
+      "idle-1",
+      "idle-2",
+    ])
+
+    store.reorderSchedulerStage("idle", ["idle-2", "idle-1"], 2)
+    expect(store.schedulerState().idleVersion).toBe(3)
+    expect(() => store.reorderSchedulerStage("idle", ["idle-1", "idle-2"], 2)).toThrow(
+      "version conflict",
+    )
+
+    expect(store.startScheduler("manual")).toMatchObject({
+      mode: "manual",
+      idleVersion: 4,
+      executionVersion: 2,
+    })
+    expect(store.schedulerQueue("idle")).toEqual([])
+    expect(store.schedulerQueue("execution").map((item) => item.challengeId)).toEqual([
+      "idle-2",
+      "idle-1",
+    ])
+    store.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.schedulerState().mode).toBe("manual")
+    expect(reopened.schedulerQueue().map((item) => item.stage)).toEqual(["execution", "execution"])
+    reopened.setSchedulerMode("stopped")
+    expect(reopened.schedulerState().mode).toBe("stopped")
+    reopened.close()
+  })
+
+  it("迁移旧 scheduler_queue 时保留顺序并归入执行队列", async () => {
+    const { path, store } = await storeFixture({ persistent: true })
+    store.close()
+
+    const legacy = new DatabaseSync(path)
+    legacy.exec(`
+      DROP INDEX scheduler_queue_order;
+      DROP TABLE scheduler_control;
+      ALTER TABLE scheduler_queue DROP COLUMN stage;
+      INSERT INTO scheduler_queue (
+        challenge_id, source, lane, position, manual_override, enqueued_at, version
+      ) VALUES
+        ('legacy-second', 'auto', 'normal', 2, 0, '2026-01-01T00:00:01.000Z', 4),
+        ('legacy-first', 'manual', 'normal', 1, 1, '2026-01-01T00:00:00.000Z', 3);
+    `)
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    expect(migrated.schedulerState()).toMatchObject({
+      mode: "stopped",
+      idleVersion: 1,
+      executionVersion: 1,
+    })
+    expect(migrated.schedulerQueue()).toEqual([
+      expect.objectContaining({
+        challengeId: "legacy-first",
+        stage: "execution",
+        position: 1,
+        version: 3,
+      }),
+      expect.objectContaining({
+        challengeId: "legacy-second",
+        stage: "execution",
+        position: 2,
+        version: 4,
+      }),
+    ])
+    migrated.close()
+
+    const reopened = await RunStore.open(path)
+    expect(reopened.schedulerQueue("execution").map((item) => item.challengeId)).toEqual([
+      "legacy-first",
+      "legacy-second",
+    ])
+    reopened.close()
+  })
+
   it("blocked 复活保留 score、增加阈值和 lifecycle generation", async () => {
     const { store } = await storeFixture()
     store.createRun({

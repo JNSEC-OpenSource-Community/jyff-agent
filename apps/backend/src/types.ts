@@ -27,6 +27,7 @@ import type {
   RunRecord,
   RunSessionExportMetadata,
   SchedulerQueueRecord,
+  SchedulerStateRecord,
   SubagentRecord,
   TldrRecord,
   WorkspaceArtifactListing,
@@ -102,6 +103,7 @@ export interface DashboardFatherValidationConfigs {
 }
 
 export type DashboardChallengeStatus =
+  | "idle"
   | "queued"
   | "pending"
   | "preparing"
@@ -231,6 +233,7 @@ export interface DashboardProject {
   remoteEnvironmentSnapshot?(): RemoteEnvironmentCoordinatorSnapshot
   recentRunEvents?(limit?: number): RunEvent[]
   cachedPlatformView?(): PlatformViewCache
+  schedulerState?(): SchedulerStateRecord
   schedulerQueue?(): SchedulerQueueRecord[]
   setMaxRemoteEnvironments(maxConcurrent: number): Promise<void>
   runs(filter?: RunFilter): RunRecord[]
@@ -282,6 +285,7 @@ export interface DashboardProject {
 export interface DashboardScheduler {
   snapshot(): ContestSchedulerSnapshot
   reconcile(): Promise<ContestSchedulerSnapshot>
+  start(): Promise<ContestSchedulerSnapshot>
   startAuto(): Promise<ContestSchedulerSnapshot>
   pauseAuto(): ContestSchedulerSnapshot
   stopAllActive(): Promise<ContestSchedulerSnapshot>
@@ -289,6 +293,9 @@ export interface DashboardScheduler {
   setMaxConcurrent(maxConcurrent: number): Promise<ContestSchedulerSnapshot>
   dispatch(challengeId: string, options?: { force?: boolean }): Promise<ContestSchedulerSnapshot>
   retryAttempt(runId: string, options?: { prompt?: string }): Promise<ContestSchedulerSnapshot>
+  stage(challengeIds: readonly string[]): Promise<ContestSchedulerSnapshot>
+  unstage(challengeIds: readonly string[]): ContestSchedulerSnapshot
+  reorderIdle(challengeIds: readonly string[], expectedVersion: number): ContestSchedulerSnapshot
   reorderQueue(
     challengeId: string,
     options: {

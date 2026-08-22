@@ -18,13 +18,20 @@ describe("projectApi", () => {
 })
 
 describe("apiRequest", () => {
-  it("非 2xx 抛出带 code 的 ApiError", async () => {
+  it("非 2xx 抛出带 code 和响应数据的 ApiError", async () => {
     const original = globalThis.fetch
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ error: "model_unavailable", message: "模型未配置" }), {
-        status: 503,
-        headers: { "content-type": "application/json" },
-      })
+      new Response(
+        JSON.stringify({
+          error: "model_unavailable",
+          message: "模型未配置",
+          snapshot: { generatedAt: "2026-01-01T00:00:00.000Z" },
+        }),
+        {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        },
+      )
     try {
       const promise = apiRequest<never>("/x")
       await expect(promise).rejects.toMatchObject({
@@ -32,6 +39,9 @@ describe("apiRequest", () => {
         status: 503,
         code: "model_unavailable",
         message: "模型未配置",
+        data: {
+          snapshot: { generatedAt: "2026-01-01T00:00:00.000Z" },
+        },
       })
     } finally {
       globalThis.fetch = original
