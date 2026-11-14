@@ -6,6 +6,7 @@ import type {
   SchedulerPhase,
   SchedulerQueueEntry,
 } from "@ctf-agent/core"
+import { shortSubagentPage } from "@ctf-agent/core"
 import type {
   AgentCacheStats,
   ChallengeDetails,
@@ -273,12 +274,17 @@ export async function buildChallengeDetails(
   const snapshot = currentSnapshot ?? (await buildDashboardSnapshot(project, scheduler))
   const challenge = snapshot.challenges.find((candidate) => candidate.id === challengeId)
   if (!challenge) return undefined
-  const runs = project.runs({ challengeId }).map((run) => {
+  const runs = [...project.runs({ challengeId })].reverse().map((run, index) => {
     const events = project.runEvents(run.id)
+    const allSubagents = project.subagents(run.id)
+    const page =
+      index === 0
+        ? shortSubagentPage(run.id, allSubagents, { budget: 15 * 1024 })
+        : { agents: [], omittedCount: allSubagents.length, nextCursor: null }
     return {
       ...run,
       events: compactTimelineEvents(events),
-      subagents: project.subagents(run.id).map((subagent) => ({
+      subagents: page.agents.map((subagent) => ({
         ...subagent,
         hasConversation:
           subagent.turns > 0 ||
@@ -286,6 +292,8 @@ export async function buildChallengeDetails(
           subagent.totalTokens > 0 ||
           Boolean(subagent.result),
       })),
+      subagentOmittedCount: page.omittedCount,
+      subagentNextCursor: page.nextCursor,
       cache: agentCacheStats(events),
       hasConversation: events.some((event) =>
         ["agent_message", "agent_usage", "tool_started"].includes(event.type),
@@ -296,7 +304,7 @@ export async function buildChallengeDetails(
     generatedAt: new Date().toISOString(),
     solverAvailable: scheduler !== undefined,
     challenge,
-    runs: [...runs].reverse(),
+    runs,
     blackboard: project.blackboard(challengeId),
     environment:
       snapshot.environments.find(

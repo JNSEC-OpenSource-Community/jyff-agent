@@ -57,7 +57,7 @@ export function challengeAnnouncementsPrompt(
   ].join("\n")
 }
 
-export function activeSubagentsPrompt(records: readonly unknown[]): string {
+export function activeSubagentsPrompt(records: unknown): string {
   const payload = JSON.stringify(records)
     .replaceAll("&", "\\u0026")
     .replaceAll("<", "\\u003c")
@@ -74,12 +74,28 @@ export function subagentCompletionNotificationPrompt(notification: {
   role: string
   status: string
   output: string
+  resultKind?: string
+  resultVersion?: string
+  totalLength?: number
+  nextOffset?: number
 }): string {
   return [
     "<subagent_notification>",
     `  <id>${xml(notification.id)}</id>`,
     `  <role>${xml(notification.role)}</role>`,
     `  <status>${xml(notification.status)}</status>`,
+    ...(notification.resultKind
+      ? [`  <result_kind>${xml(notification.resultKind)}</result_kind>`]
+      : []),
+    ...(notification.resultVersion
+      ? [`  <result_version>${xml(notification.resultVersion)}</result_version>`]
+      : []),
+    ...(notification.totalLength === undefined
+      ? []
+      : [`  <total_length>${notification.totalLength}</total_length>`]),
+    ...(notification.nextOffset === undefined
+      ? []
+      : [`  <next_offset>${notification.nextOffset}</next_offset>`]),
     `  <output>${xml(notification.output)}</output>`,
     "</subagent_notification>",
   ].join("\n")

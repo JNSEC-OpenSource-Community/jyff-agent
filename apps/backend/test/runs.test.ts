@@ -5,6 +5,60 @@ import { FakeDashboardProject } from "./fake-project.ts"
 import { jsonOf, jsonRequest, readSseUntil } from "./helpers.ts"
 
 describe("Run 与 SubAgent 会话路由", () => {
+  it("serves bounded subagent lists and versioned report pages", async () => {
+    const project = new FakeDashboardProject()
+    const template = project.subagents("run-pwn-1")[0]!
+    const report = `${"\u0001".repeat(8_000)}😀TAIL{evidence}`
+    project.subagentValues.set(
+      "run-pwn-1",
+      Array.from({ length: 20 }, (_, index) => ({
+        ...template,
+        id: `worker-${String(index).padStart(2, "0")}`,
+        executionId: `execution-${index}`,
+        status: "completed" as const,
+        resultKind: "assistant_final" as const,
+        result: report,
+      })),
+    )
+    const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })
+    const ids: string[] = []
+    let cursor: string | null = null
+    do {
+      const response = await app.request(
+        `/api/runs/run-pwn-1/subagents${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      )
+      expect(response.status).toBe(200)
+      const text = await response.text()
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(16 * 1024)
+      const page = JSON.parse(text) as {
+        agents: Array<{ id: string; result: string }>
+        nextCursor: string | null
+      }
+      expect(page.agents.length).toBeGreaterThan(0)
+      expect(Array.from(page.agents[0]!.result)).toHaveLength(1_200)
+      ids.push(...page.agents.map((agent) => agent.id))
+      cursor = page.nextCursor
+    } while (cursor)
+    expect(ids).toHaveLength(20)
+    expect(new Set(ids).size).toBe(20)
+
+    const first = await app.request("/api/runs/run-pwn-1/subagents/worker-00/result")
+    const initial = (await jsonOf(first)) as {
+      result: string
+      nextOffset: number
+      resultVersion: string
+    }
+    expect(Array.from(initial.result)).toHaveLength(8_000)
+    const next = await app.request(
+      `/api/runs/run-pwn-1/subagents/worker-00/result?offset=${initial.nextOffset}&expectedResultVersion=${encodeURIComponent(initial.resultVersion)}`,
+    )
+    expect(await jsonOf(next)).toMatchObject({ result: "😀TAIL{evidence}", nextOffset: null })
+    expect(
+      (await app.request("/api/runs/run-pwn-1/subagents/worker-00/result?offset=1")).status,
+    ).toBe(400)
+    expect((await app.request("/api/runs/run-pwn-1/subagents/missing/result")).status).toBe(404)
+  })
+
   it("按 Run 隔离转发实时 Agent 事件", async () => {
     const project = new FakeDashboardProject()
     const { app } = createWebUiApp({ project, frontendDist: "/nonexistent" })

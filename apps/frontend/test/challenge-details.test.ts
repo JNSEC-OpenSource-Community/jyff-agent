@@ -75,6 +75,37 @@ describe("useSse", () => {
 })
 
 describe("useChallengeDetails", () => {
+  it("loads omitted workers through the project-scoped page and keeps them across refresh", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource)
+    const initial = {
+      ...details("one", "ready"),
+      runs: [
+        {
+          id: "run-1",
+          subagents: [{ id: "worker-1" }],
+          subagentOmittedCount: 1,
+          subagentNextCursor: "page-one",
+        },
+      ],
+    }
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (url.includes("/runs/run-1/subagents")) {
+        expect(url).toBe("/api/projects/one/runs/run-1/subagents?cursor=page-one")
+        return jsonResponse({ agents: [{ id: "worker-2" }], omittedCount: 0, nextCursor: null })
+      }
+      return jsonResponse(initial)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(createElement(SubagentPagesProbe))
+    expect(await screen.findByText("worker-1")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "more workers" }))
+    expect(await screen.findByText("worker-1,worker-2")).toBeTruthy()
+    act(() => FakeEventSource.instances[0]?.emit("snapshot", "{}"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(screen.getByText("worker-1,worker-2")).toBeTruthy()
+  })
+
   it("按 Project 隔离详情，并在 snapshot 与派发后重新读取权威状态", async () => {
     vi.stubGlobal("EventSource", FakeEventSource)
     const responses = [
@@ -173,6 +204,24 @@ describe("useChallengeDetails", () => {
     await waitFor(() => expect(dispatchBody).toEqual({ force: true }))
   })
 })
+
+function SubagentPagesProbe() {
+  const { selectedRun, loadMoreSubagents } = useChallengeDetails("one", "web-1")
+  return createElement(
+    "div",
+    null,
+    createElement(
+      "p",
+      null,
+      selectedRun?.subagents.map((agent) => agent.id).join(",") ?? "loading",
+    ),
+    createElement(
+      "button",
+      { type: "button", onClick: () => void loadMoreSubagents() },
+      "more workers",
+    ),
+  )
+}
 
 function SseProbe({ url, onSnapshot }: { url: string; onSnapshot: (value: unknown) => void }) {
   useSse(url, { snapshot: onSnapshot })

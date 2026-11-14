@@ -122,6 +122,8 @@ export interface AgentCacheStats {
 export interface DashboardRun extends RunRecord {
   events: RunEvent[]
   subagents: DashboardSubagent[]
+  subagentOmittedCount?: number
+  subagentNextCursor?: string | null
   cache: AgentCacheStats
   hasConversation: boolean
 }

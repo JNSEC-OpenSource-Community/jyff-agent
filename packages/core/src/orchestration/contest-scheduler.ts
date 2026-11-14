@@ -7,6 +7,7 @@ import {
   WRITEUP_PROMPT,
 } from "@ctf-agent/prompts"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
+import { shortSubagentPage } from "../collaboration/subagent-report.ts"
 import type {
   RunRecord,
   RunSource,
@@ -642,7 +643,11 @@ export class ContestScheduler {
     if (!run) {
       throw new ContestSchedulerError("run_not_found", `Run 不存在: ${runId}`)
     }
-    if (!RETRYABLE_RUN_STATUSES.has(run.status)) {
+    const retryAcceptedWriteup =
+      run.status === "solved" &&
+      this.options.writeup === true &&
+      this.project.runEvents(run.id).some((event) => event.type === "writeup_failed")
+    if (!RETRYABLE_RUN_STATUSES.has(run.status) && !retryAcceptedWriteup) {
       throw new ContestSchedulerError(
         "run_not_retryable",
         `Run ${runId} 当前状态 ${run.status} 不允许重试`,
@@ -1445,8 +1450,8 @@ export class ContestScheduler {
     solver: CtfSolverAgent,
     retryPrompt?: string,
   ): Promise<void> {
-    await this.project.markRunWritingWriteup(solver.runId)
     await solver.prepareWriteup()
+    await this.project.markRunWritingWriteup(solver.runId)
     let prompt = retryPrompt
       ? `${WRITEUP_PROMPT}\n\nAdditional instructions:\n${retryPrompt}`
       : WRITEUP_PROMPT
@@ -1488,8 +1493,7 @@ export class ContestScheduler {
       challengeId: active.challenge.id,
       errors: lastErrors,
     })
-    solver.discardTerminalSubmissionForWriteupFailure()
-    await solver.close("failed", error)
+    await solver.close("submitted", error)
   }
 
   private async finalizeBlockedRun(
@@ -1515,7 +1519,7 @@ export class ContestScheduler {
         // 否则 WebUI 会把整条消息误识别为 active_subagents 卡片。
         prompt: [
           "<blocked_finalization>",
-          activeSubagentsPrompt(records),
+          activeSubagentsPrompt(shortSubagentPage(solver.runId, records)),
           BLOCKED_FINALIZATION_PROMPT,
           "</blocked_finalization>",
         ].join("\n\n"),

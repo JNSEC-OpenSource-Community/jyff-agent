@@ -11,7 +11,11 @@ import type {
 } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux"
+import {
+  createFauxCore,
+  fauxAssistantMessage,
+  fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
@@ -463,6 +467,15 @@ describe("Project", () => {
       if (!submit || !launch) throw new Error("Solver 协作工具未创建")
 
       await submit.execute("accepted", { flag: "TEST{fixture}" })
+      expect(project.runs({ challengeId: "warmup-flag" })).toEqual([
+        expect.objectContaining({ status: "solved", closeReason: "submitted" }),
+      ])
+      expect(project.runEvents(solver.runId)).toContainEqual(
+        expect.objectContaining({
+          type: "run_submission_accepted",
+          data: { status: "accepted", flag: "TEST{fixture}" },
+        }),
+      )
       await solver.prepareWriteup()
 
       expect(solver.submission).toMatchObject({ status: "accepted" })
@@ -478,6 +491,43 @@ describe("Project", () => {
       expect(project.runs({ challengeId: "warmup-flag" })).toEqual([
         expect.objectContaining({ status: "solved", closeReason: "submitted" }),
       ])
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("keeps an accepted flag durable when sandbox cleanup fails", async () => {
+    const root = await fixture()
+    const sandbox = new FakeSandbox()
+    sandbox.close = async () => {
+      throw new Error("sandbox cleanup unavailable")
+    }
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => sandbox,
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: agentOptions,
+        writeup: true,
+      })
+      const submit = solver.state.tools.find((tool) => tool.name === "ctf_submit_flag")!
+      await submit.execute("accepted", { flag: "TEST{fixture}" })
+      await expect(solver.close("failed", "cleanup failed")).rejects.toThrow("关闭时发生错误")
+      expect(project.runs({ challengeId: "warmup-flag" })).toEqual([
+        expect.objectContaining({
+          status: "solved",
+          closeReason: "submitted",
+          cleanupError: expect.stringContaining("sandbox cleanup unavailable"),
+        }),
+      ])
+      expect(project.runEvents(solver.runId)).toContainEqual(
+        expect.objectContaining({
+          type: "run_submission_accepted",
+          data: { status: "accepted", flag: "TEST{fixture}" },
+        }),
+      )
     } finally {
       await project.close()
     }
@@ -556,6 +606,112 @@ describe("Project", () => {
       await solver.close()
     } finally {
       await project.close()
+    }
+  })
+
+  it("assembles a challenge-bound read-only blackboard tool for a real delegated session", async () => {
+    const root = await fixture()
+    const faux = createFauxCore({ provider: "subagent-reader" })
+    let observedTools = ""
+    let observedMessages = ""
+    faux.setResponses([
+      (context) => {
+        observedTools = JSON.stringify(context.tools)
+        return fauxAssistantMessage(
+          fauxToolCall("blackboard_read", { schemaVersion: 2, view: "full" }, { id: "read" }),
+          { stopReason: "toolUse" },
+        )
+      },
+      (context) => {
+        observedMessages = JSON.stringify(context.messages)
+        return fauxAssistantMessage("I found the recorded fact.")
+      },
+    ])
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: {
+          streamFn: faux.streamSimple as AgentOptions["streamFn"],
+          initialState: { model: faux.getModel(), thinkingLevel: "off" },
+        },
+      })
+      const record = solver.state.tools.find((tool) => tool.name === "blackboard_record")
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")
+      if (!record || !launch) throw new Error("collaboration tools missing")
+      await record.execute("record", { evidence: { description: "shared recorded observation" } })
+      await launch.execute("launch", {
+        subagent_type: "general-purpose",
+        prompt: "Read the recorded observation.",
+        description: "Read challenge blackboard",
+      })
+      expect(observedTools).toContain("blackboard_read")
+      expect(observedTools).not.toContain("blackboard_record")
+      expect(observedTools).not.toContain("blackboard_manage")
+      expect(observedMessages).toContain("shared recorded observation")
+      await solver.close()
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("persists a complete delegated report before exposing pages and reloads it after restart", async () => {
+    const root = await fixture()
+    const faux = createFauxCore({ provider: "subagent-report-persistence" })
+    const report = `${"A".repeat(8_010)} FLAG{tail} reproducible evidence`
+    faux.setResponses([fauxAssistantMessage(report)])
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    let runId = ""
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: {
+          streamFn: faux.streamSimple as AgentOptions["streamFn"],
+          initialState: { model: faux.getModel(), thinkingLevel: "off" },
+        },
+      })
+      runId = solver.runId
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")!
+      const first = await launch.execute("report", {
+        subagent_type: "general-purpose",
+        prompt: "investigate",
+        description: "report",
+      })
+      expect(JSON.stringify(first.details)).not.toContain("FLAG{tail}")
+      expect(JSON.stringify(first.content)).not.toContain("FLAG{tail}")
+      expect(project.subagents(runId)).toEqual([
+        expect.objectContaining({
+          status: "completed",
+          result: report,
+          resultKind: "assistant_final",
+          executionId: expect.any(String),
+        }),
+      ])
+      await solver.close("manual")
+    } finally {
+      await project.close()
+    }
+    const reopened = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      expect(reopened.subagents(runId)).toEqual([
+        expect.objectContaining({
+          result: report,
+          resultKind: "assistant_final",
+          executionId: expect.any(String),
+        }),
+      ])
+    } finally {
+      await reopened.close()
     }
   })
 

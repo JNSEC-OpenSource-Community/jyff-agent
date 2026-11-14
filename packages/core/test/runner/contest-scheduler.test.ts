@@ -322,9 +322,17 @@ describe("ContestScheduler", () => {
       await scheduler.dispatch(item.id)
       await waitUntil(() => scheduler.snapshot().active.length === 0)
       const [failedRun] = project.runs({ challengeId: item.id })
-      expect(failedRun).toEqual(expect.objectContaining({ status: "failed" }))
+      expect(failedRun).toEqual(
+        expect.objectContaining({ status: "solved", closeReason: "submitted" }),
+      )
       expect(project.runEvents(failedRun?.id ?? "").map((event) => event.type)).toContain(
         "writeup_failed",
+      )
+      expect(project.runEvents(failedRun?.id ?? "")).toContainEqual(
+        expect.objectContaining({
+          type: "run_submission_accepted",
+          data: expect.objectContaining({ status: "accepted", flag: item.flag }),
+        }),
       )
 
       await writeFile(

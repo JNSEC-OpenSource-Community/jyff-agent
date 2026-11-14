@@ -54,6 +54,7 @@ import type {
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
 import {
   BLACKBOARD_INJECTION_MAX_CHARACTERS,
+  createBlackboardReadTool,
   createBlackboardTools,
   serializeBlackboard,
 } from "../collaboration/blackboard.ts"
@@ -62,6 +63,7 @@ import {
   createSubagentManagerTools,
   type SubagentRecord,
 } from "../collaboration/subagent-manager.ts"
+import { shortSubagentPage } from "../collaboration/subagent-report.ts"
 import {
   announcementRevision,
   classifyAnnouncement,
@@ -888,7 +890,7 @@ export class Project {
         : []),
       ...(blackboard ? [blackboard] : []),
       challengeAnnouncementsPrompt(announcements),
-      activeSubagentsPrompt(subagents),
+      activeSubagentsPrompt(shortSubagentPage(runId, subagents)),
     ].join("\n\n")
   }
   availableSubagents(): SubagentRole[] {
@@ -1043,9 +1045,10 @@ export class Project {
     return this.runStore.challengeBlockEvents(challengeId)
   }
   async markRunWritingWriteup(runId: string): Promise<RunRecord> {
+    const accepted = this.runStore.getRun(runId)?.status === "solved"
     const run = this.runStore.updateRun(
       runId,
-      { status: "writing_writeup", error: null },
+      { status: accepted ? "solved" : "writing_writeup", error: null },
       "run_writing_writeup",
     )
     await this.persistRecord(run, join(this.agentDirectory, "runs", runId))
@@ -1151,7 +1154,14 @@ export class Project {
     const run = this.runStore.getRun(runId)
     if (
       !run ||
-      !["failed", "timed_out", "cancelled", "closed", "interrupted", "blocked"].includes(run.status)
+      (!["failed", "timed_out", "cancelled", "closed", "interrupted", "blocked"].includes(
+        run.status,
+      ) &&
+        !(
+          run.status === "solved" &&
+          options.writeup === true &&
+          this.runStore.events(runId).some((event) => event.type === "writeup_failed")
+        ))
     ) {
       throw new Error(`Run ${runId} 不存在或当前不可恢复`)
     }
@@ -1304,6 +1314,7 @@ export class Project {
         skills,
         webAccessTools,
         shellpoopTools,
+        blackboardReadTool: createBlackboardReadTool({ runStore: this.runStore, challengeId }),
         maxConcurrent: this.subagentRuntime.maxConcurrent,
         onAgentEvent: (subagent, event, model) => {
           this.publishAgentEvent(runId, subagent.id, event)
@@ -1330,9 +1341,17 @@ export class Project {
             }
           }
         },
+        persistExecution: (subagent, operation) => {
+          this.runStore.saveSubagentExecution(subagent, operation)
+        },
+        onPersistenceFailure: (_subagent, error) => {
+          this.recordDiagnostic("subagent", error, runId)
+        },
         onRecord: (subagent, event) => {
           try {
-            this.runStore.upsertSubagent(subagent)
+            if (event === "started" || event === "progress" || event === "steered") {
+              this.runStore.saveSubagentExecution(subagent, { kind: "update" })
+            }
             this.runStore.appendEvent(runId, `subagent_${event}`, {
               subagentId: subagent.id,
               role: subagent.role,
@@ -1392,7 +1411,16 @@ export class Project {
           compaction: options.compaction,
           closeOnSubmission: options.writeup !== true,
         },
-        onTerminalSubmission: () => subagentManager?.close(),
+        onTerminalSubmission: async (submission, flag) => {
+          const accepted = this.runStore.updateRun(
+            runId,
+            { status: "solved", closeReason: "submitted", finishedAt: new Date().toISOString() },
+            "run_submission_accepted",
+            { status: submission.status, flag },
+          )
+          await this.persistRecord(accepted, runDirectory)
+          await subagentManager?.close()
+        },
         onBeforeCleanup: async () => {
           webAccessSignal.abort()
           shellpoopSignal.abort()
@@ -1414,8 +1442,8 @@ export class Project {
           const updated = this.runStore.updateRun(
             runId,
             {
-              status: runStatus(details),
-              closeReason: details.reason,
+              status: resumed?.status === "solved" ? "solved" : runStatus(details),
+              closeReason: resumed?.status === "solved" ? "submitted" : details.reason,
               error: details.error ?? null,
               cleanupError:
                 details.cleanupErrors.length > 0 ? details.cleanupErrors.join("\n") : null,
@@ -1505,11 +1533,11 @@ export class Project {
       const running = this.runStore.updateRun(
         runId,
         {
-          status: "running",
-          closeReason: null,
+          status: resumed?.status === "solved" ? "solved" : "running",
+          closeReason: resumed?.status === "solved" ? "submitted" : null,
           error: null,
           cleanupError: null,
-          finishedAt: null,
+          finishedAt: resumed?.status === "solved" ? (resumed.finishedAt ?? null) : null,
           startedAt: new Date().toISOString(),
         },
         resumed ? "run_resumed" : "run_started",
@@ -1563,8 +1591,10 @@ export class Project {
         const updated = this.runStore.updateRun(
           runId,
           {
-            status: blockImmediately ? "blocked" : "failed",
-            closeReason: blockImmediately ? "blocked" : "failed",
+            status:
+              resumed?.status === "solved" ? "solved" : blockImmediately ? "blocked" : "failed",
+            closeReason:
+              resumed?.status === "solved" ? "submitted" : blockImmediately ? "blocked" : "failed",
             error: errorText(error),
             cleanupError: cleanupErrors.length > 0 ? cleanupErrors.join("\n") : null,
             finishedAt: new Date().toISOString(),

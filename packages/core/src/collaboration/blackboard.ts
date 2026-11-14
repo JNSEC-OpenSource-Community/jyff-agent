@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto"
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
 import {
   BLACKBOARD_DESCRIPTION_MAX_LENGTH,
   BLACKBOARD_SOURCE_MAX_ITEMS,
   type BlackboardSummary,
+  type EvidenceRecord,
+  type OpportunityRecord,
   type RunStore,
 } from "../persistence/run-store.ts"
 
@@ -38,7 +41,7 @@ export function serializeBlackboard(
   const lines: string[] = []
 
   if (summary.evidence.length > 0) {
-    lines.push("## Confirmed Evidence")
+    lines.push("## Recorded Evidence")
     for (const e of summary.evidence) {
       lines.push(`- [e${e.id}] ${JSON.stringify(e.description)}`)
     }
@@ -91,25 +94,262 @@ export interface BlackboardToolOptions {
   runId: string
 }
 
+type ReadKind = "evidence" | "opportunity"
+type ReadView = "index" | "full"
+type ReadRecord = EvidenceRecord | OpportunityRecord
+
+interface ReadPage {
+  schemaVersion: 2
+  kind: ReadKind
+  view: ReadView
+  readAt: string
+  entries: Record<string, unknown>[]
+  missingIds: number[]
+  omittedIds: number[]
+  hasMore: boolean
+  nextAfterId: number | null
+}
+
+const INDEX_BUDGET = 8 * 1024
+const FULL_BUDGET = 64 * 1024
+
+function pageResult(page: ReadPage): AgentToolResult<Record<string, unknown>> {
+  return {
+    content: [{ type: "text", text: JSON.stringify(page) }],
+    details: {
+      schemaVersion: page.schemaVersion,
+      kind: page.kind,
+      view: page.view,
+      hasMore: page.hasMore,
+      nextAfterId: page.nextAfterId,
+      missingIds: page.missingIds,
+      omittedIds: page.omittedIds,
+    },
+  }
+}
+
+function fits(result: AgentToolResult<Record<string, unknown>>, budget: number): boolean {
+  return Buffer.byteLength(JSON.stringify(result), "utf8") <= budget
+}
+
+function safeInteger(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
+    throw new Error(`${field} must be a safe integer between ${min} and ${max}`)
+  }
+  return value
+}
+
+function projectRecord(
+  kind: ReadKind,
+  view: ReadView,
+  record: ReadRecord,
+): Record<string, unknown> {
+  const opportunity = kind === "opportunity" ? (record as OpportunityRecord) : undefined
+  const semantic = {
+    version: 1,
+    kind,
+    id: record.id,
+    description: record.description,
+    status: opportunity?.status ?? "recorded",
+    resolution: opportunity?.resolution ?? null,
+    sourceEvidenceIds: [...(opportunity?.sourceEvidenceIds ?? [])].sort((a, b) => a - b),
+    targetEvidenceId: opportunity?.targetEvidenceId ?? null,
+  }
+  const contentHash = `sha256:${createHash("sha256").update(JSON.stringify(semantic)).digest("hex")}`
+  const common = {
+    id: record.id,
+    status: semantic.status,
+    creatorRunId: record.runId,
+    createdAt: record.createdAt,
+    contentHash,
+  }
+  if (view === "full") {
+    return {
+      ...common,
+      description: record.description,
+      ...(opportunity
+        ? {
+            resolution: semantic.resolution,
+            sourceEvidenceIds: semantic.sourceEvidenceIds,
+            targetEvidenceId: semantic.targetEvidenceId,
+            concludedAt: opportunity.concludedAt,
+          }
+        : {}),
+    }
+  }
+  const points = Array.from(record.description)
+  return {
+    ...common,
+    preview: points.slice(0, 160).join(""),
+    previewComplete: points.length <= 160,
+  }
+}
+
+function legacyResult(summary: BlackboardSummary): AgentToolResult<Record<string, unknown>> {
+  const text = serializeBlackboard(summary, { maxCharacters: Number.MAX_SAFE_INTEGER })
+  const make = (value: string, truncated: boolean): AgentToolResult<Record<string, unknown>> => ({
+    content: [{ type: "text", text: value }],
+    details: { schemaVersion: 1, truncated },
+  })
+  if (fits(make(text, false), FULL_BUDGET)) return make(text, false)
+  const suffix = "\n[Blackboard snapshot truncated. Use schemaVersion 2 to read complete entries.]"
+  const points = Array.from(text)
+  let low = 0
+  let high = points.length
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    if (fits(make(points.slice(0, middle).join("") + suffix, true), FULL_BUDGET)) low = middle
+    else high = middle - 1
+  }
+  return make(points.slice(0, low).join("") + suffix, true)
+}
+
+/** A challenge-bound reader. Empty input retains the legacy Markdown view; explicit queries use v2. */
+export function createBlackboardReadTool(options: {
+  runStore: RunStore
+  challengeId: string
+}): AgentTool {
+  return {
+    name: "blackboard_read",
+    label: "Read Blackboard",
+    description:
+      "Read this challenge's blackboard. Empty input returns the legacy snapshot. " +
+      "Use schemaVersion=2 for a bounded evidence/opportunity index; use view=full and ids for complete entries. " +
+      "Continue lists using nextAfterId, or omittedIds for an ID query.",
+    parameters: Type.Object(
+      {
+        schemaVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
+        kind: Type.Optional(Type.Union([Type.Literal("evidence"), Type.Literal("opportunity")])),
+        view: Type.Optional(Type.Union([Type.Literal("index"), Type.Literal("full")])),
+        afterId: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 16 })),
+        ids: Type.Optional(
+          Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), {
+            minItems: 1,
+            maxItems: 16,
+          }),
+        ),
+      },
+      { additionalProperties: false },
+    ),
+    executionMode: "sequential",
+    async execute(_id, raw) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid query")
+      const input = raw as Record<string, unknown>
+      const allowed = new Set(["schemaVersion", "kind", "view", "afterId", "limit", "ids"])
+      if (Object.keys(input).some((key) => !allowed.has(key)))
+        throw new Error("Unknown query field")
+      if (
+        input.schemaVersion !== undefined &&
+        input.schemaVersion !== 1 &&
+        input.schemaVersion !== 2
+      ) {
+        throw new Error("Unsupported schemaVersion")
+      }
+      const hasQuery = ["kind", "view", "afterId", "limit", "ids"].some(
+        (key) => input[key] !== undefined,
+      )
+      if (input.schemaVersion === 1 && hasQuery)
+        throw new Error("Legacy mode does not accept query fields")
+      if (input.schemaVersion !== 2 && !hasQuery) {
+        return legacyResult(options.runStore.getBlackboardSummary(options.challengeId))
+      }
+
+      const kind = input.kind ?? "evidence"
+      const view = input.view ?? "index"
+      if (kind !== "evidence" && kind !== "opportunity") throw new Error("Invalid kind")
+      if (view !== "index" && view !== "full") throw new Error("Invalid view")
+      if (input.ids !== undefined && (input.afterId !== undefined || input.limit !== undefined)) {
+        throw new Error("ids cannot be combined with afterId or limit")
+      }
+      let ids: number[] | undefined
+      if (input.ids !== undefined) {
+        if (!Array.isArray(input.ids) || input.ids.length < 1 || input.ids.length > 16) {
+          throw new Error("ids must contain 1 to 16 entries")
+        }
+        ids = [...new Set(input.ids.map((id) => safeInteger(id, "id", 1, Number.MAX_SAFE_INTEGER)))]
+      }
+      const afterId = safeInteger(input.afterId ?? 0, "afterId", 0, Number.MAX_SAFE_INTEGER)
+      const limit = safeInteger(input.limit ?? 8, "limit", 1, 16)
+      const records = options.runStore.getBlackboardRecords(options.challengeId)
+      const all: ReadRecord[] = kind === "evidence" ? records.evidence : records.opportunities
+      const budget = view === "index" ? INDEX_BUDGET : FULL_BUDGET
+      const base: Pick<ReadPage, "schemaVersion" | "kind" | "view" | "readAt"> = {
+        schemaVersion: 2,
+        kind,
+        view,
+        readAt: new Date().toISOString(),
+      }
+      const entries: Record<string, unknown>[] = []
+
+      if (ids) {
+        const byId = new Map(all.map((entry) => [entry.id, entry]))
+        const missingIds = ids.filter((id) => !byId.has(id))
+        const present = ids.flatMap((id) => {
+          const entry = byId.get(id)
+          return entry ? [entry] : []
+        })
+        for (const [index, record] of present.entries()) {
+          const omittedIds = present.slice(index + 1).map((entry) => entry.id)
+          const trial: ReadPage = {
+            ...base,
+            entries: [...entries, projectRecord(kind, view, record)],
+            missingIds,
+            omittedIds,
+            hasMore: omittedIds.length > 0,
+            nextAfterId: null,
+          }
+          if (!fits(pageResult(trial), budget)) break
+          entries.push(trial.entries[trial.entries.length - 1]!)
+        }
+        const omittedIds = present.slice(entries.length).map((entry) => entry.id)
+        if (entries.length === 0 && present.length > 0)
+          throw new Error("blackboard entry exceeds response budget")
+        return pageResult({
+          ...base,
+          entries,
+          missingIds,
+          omittedIds,
+          hasMore: omittedIds.length > 0,
+          nextAfterId: null,
+        })
+      }
+
+      const eligible = all.filter((entry) => entry.id > afterId)
+      for (const record of eligible.slice(0, limit)) {
+        const trialEntries = [...entries, projectRecord(kind, view, record)]
+        const hasMore = eligible.length > trialEntries.length
+        const trial: ReadPage = {
+          ...base,
+          entries: trialEntries,
+          missingIds: [],
+          omittedIds: [],
+          hasMore,
+          nextAfterId: hasMore ? record.id : null,
+        }
+        if (!fits(pageResult(trial), budget)) break
+        entries.push(trialEntries[trialEntries.length - 1]!)
+      }
+      if (entries.length === 0 && eligible.length > 0)
+        throw new Error("blackboard entry exceeds response budget")
+      const hasMore = eligible.length > entries.length
+      return pageResult({
+        ...base,
+        entries,
+        missingIds: [],
+        omittedIds: [],
+        hasMore,
+        nextAfterId: hasMore ? (entries[entries.length - 1]?.id as number) : null,
+      })
+    },
+  }
+}
+
 export function createBlackboardTools(options: BlackboardToolOptions): AgentTool[] {
   const { runStore, challengeId, runId } = options
 
   return [
-    {
-      name: "blackboard_read",
-      label: "Read Blackboard",
-      description: "Read the current state of the shared challenge blackboard.",
-      parameters: Type.Object({}),
-      executionMode: "sequential",
-      async execute() {
-        const summary = runStore.getBlackboardSummary(challengeId)
-        const text = serializeBlackboard(summary)
-        return {
-          content: [{ type: "text", text }],
-          details: summary as unknown as Record<string, unknown>,
-        }
-      },
-    },
+    createBlackboardReadTool({ runStore, challengeId }),
     {
       name: "blackboard_record",
       label: "Record to Blackboard",

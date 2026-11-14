@@ -29,7 +29,7 @@ function result(details: object): AgentToolResult<Record<string, unknown>> {
 export interface SolverToolOptions {
   capability: ChallengeCapability
   sandbox: Sandbox
-  onTerminalSubmission(submission: FlagSubmission): void
+  onTerminalSubmission(submission: FlagSubmission, flag: string): void
   submissionRateLimiter?: FlagSubmissionRateLimiter
 }
 
@@ -169,9 +169,10 @@ export function createSolverTools(options: SolverToolOptions): AgentTool[] {
       executionMode: "sequential",
       async execute(_id, params) {
         submissionRateLimiter?.acquire()
-        const submission = await options.capability.submitFlag((params as { flag: string }).flag)
+        const flag = (params as { flag: string }).flag
+        const submission = await options.capability.submitFlag(flag)
         const terminal = submission.status === "accepted" || submission.status === "already_solved"
-        if (terminal) options.onTerminalSubmission(submission)
+        if (terminal) options.onTerminalSubmission(submission, flag)
         return {
           ...result(submission),
           ...(terminal ? { terminate: true } : {}),

@@ -37,7 +37,7 @@ export interface CreateCtfSolverAgentOptions {
   /** Runs before remote-instance and shared-sandbox cleanup (for child workers). */
   onBeforeCleanup?: () => Promise<void> | void
   /** Starts immediately after the first accepted submission, before the writeup turn. */
-  onTerminalSubmission?: (submission: FlagSubmission) => Promise<void> | void
+  onTerminalSubmission?: (submission: FlagSubmission, flag: string) => Promise<void> | void
   onClosed?: (details: SolverCloseDetails) => Promise<void> | void
 }
 
@@ -101,7 +101,10 @@ export class CtfSolverAgent extends BaseAgent {
   private readonly capability: ChallengeCapability
   private readonly onClosed?: (details: SolverCloseDetails) => Promise<void> | void
   private readonly onBeforeCleanup?: () => Promise<void> | void
-  private readonly onTerminalSubmission?: (submission: FlagSubmission) => Promise<void> | void
+  private readonly onTerminalSubmission?: (
+    submission: FlagSubmission,
+    flag: string,
+  ) => Promise<void> | void
   private readonly closeOnSubmission: boolean
   private closeReason: SolverCloseReason = "manual"
   private closed = false
@@ -154,7 +157,7 @@ export class CtfSolverAgent extends BaseAgent {
       ...createSolverTools({
         capability: options.capability,
         sandbox: options.sandbox,
-        onTerminalSubmission: (submission) => solver?.markTerminal(submission),
+        onTerminalSubmission: (submission, flag) => solver?.markTerminal(submission, flag),
       }),
     ]
     const model = options.agent.initialState?.model ?? FALLBACK_MODEL
@@ -197,27 +200,26 @@ export class CtfSolverAgent extends BaseAgent {
     await this.setActiveTools(["read", "write", "edit", "list"])
   }
 
-  /** Writeup 校验失败时关闭不得被 accepted submission 改回 solved。 */
-  discardTerminalSubmissionForWriteupFailure(): void {
-    this.finalSubmission = undefined
-  }
-
   /** Compatibility helper for UIs/runners that need a point-in-time transcript. */
   transcript(): Promise<AgentMessage[]> {
     return this.getMessages()
   }
 
-  private markTerminal(submission: FlagSubmission): void {
+  private markTerminal(submission: FlagSubmission, flag: string): void {
     if (this.finalSubmission) return
     this.finalSubmission = submission
     this.closeReason = "submitted"
-    this.terminalSubmissionCleanup = Promise.resolve()
-      .then(() => this.onTerminalSubmission?.(submission))
-      .catch((error: unknown) => {
-        // Keep the accepted submission authoritative. The cleanup failure is
-        // reported from close(), while writeup waits for this attempt to settle.
-        this.terminalSubmissionCleanupError = error
-      })
+    let cleanup: Promise<void> | void
+    try {
+      cleanup = this.onTerminalSubmission?.(submission, flag)
+    } catch (error) {
+      cleanup = Promise.reject(error)
+    }
+    this.terminalSubmissionCleanup = Promise.resolve(cleanup).catch((error: unknown) => {
+      // Keep the accepted submission authoritative. The cleanup failure is
+      // reported from close(), while writeup waits for this attempt to settle.
+      this.terminalSubmissionCleanupError = error
+    })
   }
 
   async close(reason: SolverCloseReason = this.closeReason, error?: string): Promise<void> {

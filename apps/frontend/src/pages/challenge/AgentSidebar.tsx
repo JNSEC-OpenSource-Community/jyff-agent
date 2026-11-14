@@ -23,11 +23,13 @@ export function AgentSidebar({
   selectedRunId,
   selectedSubagentId,
   onSelectSubagent,
+  onLoadMoreSubagents,
 }: {
   details: ChallengeDetails
   selectedRunId: string
   selectedSubagentId: string | null
   onSelectSubagent: (id: string | null) => void
+  onLoadMoreSubagents?: () => void
 }) {
   const c = details.challenge
   const run = details.runs.find((r) => r.id === selectedRunId) ?? details.runs[0]
@@ -76,7 +78,9 @@ export function AgentSidebar({
             <Icon icon="lucide:network" width="15" />
             辅助 Agent
           </span>
-          <Badge className="text-[10px]">{run?.subagents.length ?? 0}</Badge>
+          <Badge className="text-[10px]">
+            {(run?.subagents.length ?? 0) + (run?.subagentOmittedCount ?? 0)}
+          </Badge>
         </div>
         <div className="flex flex-col gap-0.5 overflow-y-auto p-1.5">
           <AR
@@ -98,6 +102,15 @@ export function AgentSidebar({
               onClick={() => onSelectSubagent(s.id)}
             />
           ))}
+          {run?.subagentOmittedCount && onLoadMoreSubagents ? (
+            <button
+              type="button"
+              className="px-3 py-2 text-left text-xs text-primary"
+              onClick={onLoadMoreSubagents}
+            >
+              加载更多（{run.subagentOmittedCount}）
+            </button>
+          ) : null}
         </div>
       </Card>
     </aside>

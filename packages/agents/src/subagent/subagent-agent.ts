@@ -1,6 +1,6 @@
 import { join } from "node:path"
 import type { ChallengeCapability, ChallengeInfo } from "@ctf-agent/platform"
-import { CTF_COMPACTION_PROMPT, subagentTaskContextPrompt } from "@ctf-agent/prompts"
+import { SUBAGENT_COMPACTION_PROMPT, subagentTaskContextPrompt } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions, AgentTool, Skill } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
@@ -30,6 +30,8 @@ export interface CreateCtfSubagentOptions {
   webAccessTools?: readonly AgentTool[]
   /** 可选注入 ShellPoop 反弹 shell 工具；role.tools 白名单未包含时不会启用。 */
   shellpoopTools?: readonly AgentTool[]
+  /** A host-bound, challenge-scoped blackboard reader. */
+  blackboardReadTool?: AgentTool
   compaction?: boolean
 }
 
@@ -52,7 +54,7 @@ export class CtfSubagent extends BaseAgent {
   private constructor(options: CreateCtfSubagentOptions, prepared: PreparedBaseAgent) {
     super(prepared, {
       compaction: options.compaction !== false,
-      compactionInstructions: CTF_COMPACTION_PROMPT,
+      compactionInstructions: SUBAGENT_COMPACTION_PROMPT,
     })
     this.id = options.subagentId
     this.runId = options.runId
@@ -66,6 +68,7 @@ export class CtfSubagent extends BaseAgent {
     const models = modelsFromAgentOptions(options.agent, fallbackModel)
     const model = resolveRoleModel(models, fallbackModel, options.role.model)
     const allTools = [
+      ...(options.blackboardReadTool ? [options.blackboardReadTool] : []),
       ...(options.webAccessTools ?? []),
       ...(options.shellpoopTools ?? []),
       ...createSubagentTools({
@@ -111,6 +114,9 @@ export class CtfSubagent extends BaseAgent {
       ].join("\n\n"),
       thinkingLevel: options.role.thinkingLevel,
       tools,
+      restoreActiveTools: {
+        add: tools.some((tool) => tool.name === "blackboard_read") ? ["blackboard_read"] : [],
+      },
       skills: piSkills(options.skills ?? []),
       compaction: options.compaction !== false,
     })
