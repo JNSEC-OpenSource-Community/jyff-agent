@@ -20,7 +20,12 @@ import type {
   AgentToolResult,
 } from "@earendil-works/pi-agent-core"
 import { Type } from "typebox"
-import { extractAssistantText } from "../agent/thinking.ts"
+import {
+  collectExecutionReport,
+  EXECUTION_MARKER,
+  reportPage,
+  shortSubagentPage,
+} from "./subagent-report.ts"
 
 export type SubagentStatus =
   | "queued"
@@ -30,6 +35,8 @@ export type SubagentStatus =
   | "cancelled"
   | "aborted"
   | "interrupted"
+
+export type SubagentResultKind = "assistant_final" | "assistant_partial" | "tool_partial" | "legacy"
 
 export interface SubagentRecord {
   id: string
@@ -42,7 +49,9 @@ export interface SubagentRecord {
   prompt: string
   sessionPath: string
   containerCwd: string
+  executionId?: string
   result?: string
+  resultKind?: SubagentResultKind
   error?: string
   activeTool?: string
   turns: number
@@ -84,6 +93,14 @@ export interface SubagentManagerOptions {
   /** Read-only tool already bound by Project to the current challenge. */
   blackboardReadTool?: AgentTool
   maxConcurrent?: number
+  /** Synchronous durable commit for execution boundaries; failures are not telemetry. */
+  persistExecution?: (
+    record: SubagentRecord,
+    operation:
+      | { kind: "begin"; previousExecutionId: string | null | undefined }
+      | { kind: "update" },
+  ) => void
+  onPersistenceFailure?: (record: SubagentRecord, error: unknown) => void
   onRecord?: (record: SubagentRecord, event: SubagentLifecycleEvent) => Promise<void> | void
   /** 将 Pi 的细粒度运行事件转发给控制面，不参与 Agent 生命周期结算。 */
   onAgentEvent?: (
@@ -99,8 +116,12 @@ interface ManagedSubagent {
   agent?: CtfSubagent
   promise: Promise<SubagentRecord>
   resolve: (record: SubagentRecord) => void
+  reject: (error: unknown) => void
   resultConsumed: boolean
   hardAborted: boolean
+  cancelling: boolean
+  restarting: boolean
+  launchSettled?: Promise<void>
 }
 
 interface QueuedRun {
@@ -147,16 +168,23 @@ export class CtfSubagentManager {
       const role = resolveSubagentRole(this.options.roles, record.role)
       if (!role) continue
       let resolve!: (value: SubagentRecord) => void
-      const promise = new Promise<SubagentRecord>((done) => {
+      let reject!: (error: unknown) => void
+      const promise = new Promise<SubagentRecord>((done, fail) => {
         resolve = done
+        reject = fail
       })
+      void promise.catch(() => undefined)
+      resolve(snapshot(record))
       this.records.set(record.id, {
         record: snapshot(record),
         role,
         promise,
         resolve,
+        reject,
         resultConsumed: false,
         hardAborted: false,
+        cancelling: false,
+        restarting: false,
       })
     }
   }
@@ -193,6 +221,7 @@ export class CtfSubagentManager {
       prompt,
       sessionPath: join(this.options.runDirectory, "subagents", id, "session.jsonl"),
       containerCwd: `/workspace/subagents/${id}`,
+      executionId: randomUUID(),
       turns: 0,
       toolUses: 0,
       totalTokens: 0,
@@ -202,17 +231,27 @@ export class CtfSubagentManager {
       createdAt: now,
       updatedAt: now,
     }
-    let resolve!: (value: SubagentRecord) => void
-    const promise = new Promise<SubagentRecord>((done) => {
-      resolve = done
+    this.options.persistExecution?.(snapshot(record), {
+      kind: "begin",
+      previousExecutionId: undefined,
     })
+    let resolve!: (value: SubagentRecord) => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<SubagentRecord>((done, fail) => {
+      resolve = done
+      reject = fail
+    })
+    void promise.catch(() => undefined)
     const managed: ManagedSubagent = {
       record,
       role,
       promise,
       resolve,
+      reject,
       resultConsumed: false,
       hardAborted: false,
+      cancelling: false,
+      restarting: false,
     }
     this.records.set(id, managed)
     this.emit(managed, "created")
@@ -238,29 +277,50 @@ export class CtfSubagentManager {
     bypassQueue = false,
   ): Promise<SubagentRecord> {
     const managed = this.records.get(id)
-    if (!managed || !TERMINAL.has(managed.record.status)) {
+    if (!managed || !TERMINAL.has(managed.record.status) || managed.restarting) {
       throw new Error(`SubAgent ${id} 不存在、尚未完成或会话不可恢复`)
     }
     const nextPrompt = boundedText(prompt, "prompt", 32_000)
-    managed.record.background = background
-    managed.record.status = background ? "queued" : "running"
-    managed.record.prompt = nextPrompt
-    managed.record.result = undefined
-    managed.record.error = undefined
-    managed.record.completedAt = undefined
-    managed.record.updatedAt = new Date().toISOString()
-    managed.resultConsumed = false
-    managed.hardAborted = false
-    let resolve!: (value: SubagentRecord) => void
-    managed.promise = new Promise<SubagentRecord>((done) => {
-      resolve = done
-    })
-    managed.resolve = resolve
-    this.emit(managed, "created")
-    if (!bypassQueue && background && this.runningBackground >= this.maxConcurrent) {
-      this.queue.push({ managed, prompt: nextPrompt })
-    } else {
-      this.launch(managed, nextPrompt, !managed.agent)
+    managed.restarting = true
+    try {
+      await managed.launchSettled
+      await managed.agent?.waitForIdle()
+      const previousExecutionId = managed.record.executionId ?? null
+      const next: SubagentRecord = {
+        ...managed.record,
+        executionId: randomUUID(),
+        background,
+        status: background ? "queued" : "running",
+        prompt: nextPrompt,
+        result: undefined,
+        resultKind: undefined,
+        error: undefined,
+        startedAt: undefined,
+        completedAt: undefined,
+        updatedAt: new Date().toISOString(),
+      }
+      this.options.persistExecution?.(snapshot(next), { kind: "begin", previousExecutionId })
+      managed.record = next
+      managed.resultConsumed = false
+      managed.hardAborted = false
+      managed.cancelling = false
+      let resolve!: (value: SubagentRecord) => void
+      let reject!: (error: unknown) => void
+      managed.promise = new Promise<SubagentRecord>((done, fail) => {
+        resolve = done
+        reject = fail
+      })
+      void managed.promise.catch(() => undefined)
+      managed.resolve = resolve
+      managed.reject = reject
+      this.emit(managed, "created")
+      if (!bypassQueue && background && this.runningBackground >= this.maxConcurrent) {
+        this.queue.push({ managed, prompt: nextPrompt })
+      } else {
+        this.launch(managed, nextPrompt, !managed.agent)
+      }
+    } finally {
+      managed.restarting = false
     }
     return background ? snapshot(managed.record) : await managed.promise
   }
@@ -276,12 +336,18 @@ export class CtfSubagentManager {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }
 
+  listPage(options: { cursor?: string; limit?: number } = {}) {
+    return shortSubagentPage(this.options.runId, this.list(), options)
+  }
+
   async wait(id: string, signal?: AbortSignal): Promise<SubagentRecord> {
     const managed = this.records.get(id)
     if (!managed) throw new Error(`SubAgent 不存在: ${id}`)
+    const executionId = managed.record.executionId
     const result = TERMINAL.has(managed.record.status)
       ? managed.record
       : await abortable(managed.promise, signal)
+    if (managed.record.executionId !== executionId) throw new Error("execution_changed")
     managed.resultConsumed = true
     return snapshot(result)
   }
@@ -359,13 +425,29 @@ export class CtfSubagentManager {
     if (!managed || TERMINAL.has(managed.record.status)) {
       throw new Error(`SubAgent ${id} 不存在或已经结束`)
     }
+    const executionId = managed.record.executionId
+    managed.cancelling = true
+    let report: Awaited<ReturnType<typeof collectExecutionReport>> = undefined
     if (managed.record.status === "queued") {
       const index = this.queue.findIndex((item) => item.managed === managed)
       if (index >= 0) this.queue.splice(index, 1)
     } else {
+      if (!managed.agent) await managed.launchSettled
       await managed.agent?.abort()
+      await managed.agent?.waitForIdle()
+      await managed.launchSettled
+      if (managed.agent && managed.record.startedAt && managed.record.executionId === executionId) {
+        try {
+          report = await this.captureLatestResult(managed, false)
+        } catch (error) {
+          managed.record.error = errorText(error)
+        }
+      }
     }
-    this.finish(managed, "cancelled")
+    this.finish(managed, "cancelled", executionId, report)
+    if (managed.record.error?.startsWith("result_persistence_failed:")) {
+      throw new Error(managed.record.error)
+    }
     return snapshot(managed.record)
   }
 
@@ -379,21 +461,25 @@ export class CtfSubagentManager {
       throw new Error("SubAgent finalization graceMs must be non-negative")
     }
     this.finalizing = true
+    const failures: unknown[] = []
+    const settle = async (promises: Promise<unknown>[]) => {
+      const outcomes = await Promise.allSettled(promises)
+      failures.push(
+        ...outcomes.flatMap((outcome) => (outcome.status === "rejected" ? [outcome.reason] : [])),
+      )
+    }
     const queued = this.list().filter((record) => record.status === "queued")
-    await Promise.allSettled(queued.map((record) => this.cancel(record.id)))
+    await settle(queued.map((record) => this.cancel(record.id)))
 
     const running = this.list().filter((record) => record.status === "running")
-    await Promise.allSettled(
+    await settle(
       running.map(async (record) => {
         const managed = this.records.get(record.id)
-        if (managed) await this.captureLatestResult(managed)
-        await this.cancel(record.id)
+        if (managed && !TERMINAL.has(managed.record.status)) await this.cancel(record.id)
         await managed?.agent?.waitForIdle()
       }),
     )
-    await Promise.allSettled(
-      running.map((record) => this.restart(record.id, reportPrompt, true, true)),
-    )
+    await settle(running.map((record) => this.restart(record.id, reportPrompt, true, true)))
     if (running.length > 0 && graceMs > 0) {
       await settleWithin(
         running.map((record) => this.wait(record.id)),
@@ -404,18 +490,17 @@ export class CtfSubagentManager {
     const unfinished = this.list().filter(
       (record) => record.status === "running" || record.status === "queued",
     )
-    await Promise.allSettled(
-      unfinished.map(async (record) => {
-        const managed = this.records.get(record.id)
-        if (managed) await this.captureLatestResult(managed)
-        await this.cancel(record.id)
-      }),
-    )
-    await Promise.allSettled(
+    await settle(unfinished.map(async (record) => this.cancel(record.id)))
+    await settle(
       unfinished.map(
         (record) => this.records.get(record.id)?.agent?.waitForIdle() ?? Promise.resolve(),
       ),
     )
+    const failedPersistence = this.list().filter((record) =>
+      record.error?.startsWith("result_persistence_failed:"),
+    )
+    failures.push(...failedPersistence.map((record) => new Error(record.error)))
+    if (failures.length > 0) throw new AggregateError(failures, "SubAgent finalization failed")
     return this.list()
   }
 
@@ -428,38 +513,46 @@ export class CtfSubagentManager {
 
   private async stopPending(): Promise<void> {
     const pending = this.list().filter((record) => !TERMINAL.has(record.status))
-    await Promise.allSettled(
+    const outcomes = await Promise.allSettled(
       pending.map(async (record) => {
         const managed = this.records.get(record.id)
         if (!managed) return
         // A winner has already ended the run. Persist the latest usable worker
         // output, but do not inject cancellation notices into the writeup turn.
         managed.resultConsumed = true
-        if (managed.record.status === "running") await this.captureLatestResult(managed)
         if (!TERMINAL.has(managed.record.status)) await this.cancel(record.id)
       }),
     )
-    await Promise.allSettled(
+    const idles = await Promise.allSettled(
       [...this.records.values()].map(({ agent }) => agent?.waitForIdle() ?? Promise.resolve()),
     )
+    const failures = [...outcomes, ...idles].flatMap((outcome) =>
+      outcome.status === "rejected" ? [outcome.reason] : [],
+    )
+    if (failures.length > 0) throw new AggregateError(failures, "SubAgent cleanup failed")
   }
 
   /** Reserve a background slot synchronously, before any async session setup. */
   private launch(managed: ManagedSubagent, prompt: string, initialize: boolean): void {
     const background = managed.record.background
+    const executionId = managed.record.executionId
     if (background) this.runningBackground++
-    void this.executeLaunch(managed, prompt, initialize).finally(() => {
-      if (background) {
-        this.runningBackground = Math.max(0, this.runningBackground - 1)
-      }
-      this.drainQueue()
-    })
+    managed.launchSettled = this.executeLaunch(managed, prompt, initialize, executionId).finally(
+      () => {
+        if (background) {
+          this.runningBackground = Math.max(0, this.runningBackground - 1)
+        }
+        this.drainQueue()
+      },
+    )
+    void managed.launchSettled.catch(() => undefined)
   }
 
   private async executeLaunch(
     managed: ManagedSubagent,
     prompt: string,
     initialize: boolean,
+    executionId: string | undefined,
   ): Promise<void> {
     try {
       if (initialize) {
@@ -486,42 +579,67 @@ export class CtfSubagentManager {
         })
         this.subscribe(managed, managed.agent)
       }
-      if (TERMINAL.has(managed.record.status)) return
-      await this.run(managed, prompt)
+      if (
+        managed.record.executionId !== executionId ||
+        TERMINAL.has(managed.record.status) ||
+        isCancelled(managed)
+      )
+        return
+      await this.run(managed, prompt, executionId)
     } catch (error) {
-      if (!isCancelled(managed)) {
-        await this.captureLatestResult(managed).catch(() => undefined)
+      if (managed.record.executionId === executionId && !isCancelled(managed)) {
+        const report = await this.captureLatestResult(managed, false).catch(() => undefined)
+        if (managed.record.executionId !== executionId || isCancelled(managed)) return
         managed.record.error = errorText(error)
-        this.finish(managed, managed.hardAborted ? "aborted" : "failed")
+        this.finish(managed, managed.hardAborted ? "aborted" : "failed", executionId, report)
       }
     }
   }
 
-  private async run(managed: ManagedSubagent, prompt: string): Promise<void> {
+  private async run(
+    managed: ManagedSubagent,
+    prompt: string,
+    executionId: string | undefined,
+  ): Promise<void> {
+    if (!managed.agent || !executionId) throw new Error("result_boundary_unavailable")
     managed.record.status = "running"
     managed.record.startedAt = new Date().toISOString()
     managed.record.updatedAt = managed.record.startedAt
     this.emit(managed, "started")
-    await managed.agent?.prompt(prompt)
-    if (isCancelled(managed)) return
-    await this.captureLatestResult(managed)
-    this.finish(managed, managed.hardAborted ? "aborted" : "completed")
+    await managed.agent.session.appendCustomEntry(EXECUTION_MARKER, { executionId })
+    if (managed.record.executionId !== executionId || isCancelled(managed)) return
+    const response = await managed.agent.prompt(prompt)
+    if (managed.record.executionId !== executionId || isCancelled(managed)) return
+    const incomplete =
+      response.stopReason === "error" ||
+      response.stopReason === "aborted" ||
+      response.stopReason === "length"
+    const report = await this.captureLatestResult(managed, !incomplete)
+    if (managed.record.executionId !== executionId || isCancelled(managed)) return
+    if (incomplete) managed.record.error = response.errorMessage ?? `Agent ${response.stopReason}`
+    this.finish(
+      managed,
+      managed.hardAborted || response.stopReason === "aborted"
+        ? "aborted"
+        : incomplete
+          ? "failed"
+          : "completed",
+      executionId,
+      report,
+    )
   }
 
-  private async captureLatestResult(managed: ManagedSubagent): Promise<void> {
-    const messages = (await managed.agent?.transcript()) ?? []
-    for (let index = messages.length - 1; index >= 0; index--) {
-      const message = messages[index]
-      const text = extractAssistantText(message) || extractToolResultText(message)
-      if (text) {
-        managed.record.result = text
-        return
-      }
-    }
+  private async captureLatestResult(managed: ManagedSubagent, final: boolean) {
+    const executionId = managed.record.executionId
+    if (!managed.agent || !executionId) return
+    const report = await collectExecutionReport(managed.agent.session, executionId, final)
+    if (managed.record.executionId !== executionId) return
+    return report
   }
 
   private subscribe(managed: ManagedSubagent, agent: CtfSubagent): void {
     agent.subscribe((event) => {
+      if (managed.agent !== agent || TERMINAL.has(managed.record.status)) return
       try {
         const model = managed.agent?.model
         this.options.onAgentEvent?.(
@@ -565,12 +683,50 @@ export class CtfSubagentManager {
     this.emit(managed, "progress")
   }
 
-  private finish(managed: ManagedSubagent, status: SubagentStatus): void {
-    if (TERMINAL.has(managed.record.status)) return
-    managed.record.status = status
-    managed.record.activeTool = undefined
-    managed.record.completedAt = new Date().toISOString()
-    managed.record.updatedAt = managed.record.completedAt
+  private finish(
+    managed: ManagedSubagent,
+    status: SubagentStatus,
+    executionId: string | undefined,
+    report?: Awaited<ReturnType<typeof collectExecutionReport>>,
+  ): void {
+    if (
+      managed.record.executionId !== executionId ||
+      TERMINAL.has(managed.record.status) ||
+      (managed.cancelling && status !== "cancelled")
+    )
+      return
+    const completedAt = new Date().toISOString()
+    const completed: SubagentRecord = {
+      ...managed.record,
+      status,
+      result: report?.result,
+      resultKind: report?.resultKind,
+      activeTool: undefined,
+      completedAt,
+      updatedAt: completedAt,
+    }
+    try {
+      this.options.persistExecution?.(snapshot(completed), { kind: "update" })
+    } catch (error) {
+      managed.record = {
+        ...completed,
+        status: "failed",
+        result: undefined,
+        resultKind: undefined,
+        error: `result_persistence_failed: ${errorText(error)}`,
+      }
+      try {
+        this.options.onPersistenceFailure?.(snapshot(managed.record), error)
+      } catch {
+        // Reporting the persistence failure must not hide it from the caller.
+      }
+      managed.reject(error)
+      if (managed.record.background && !managed.resultConsumed) {
+        void this.notifyParent(snapshot(managed.record)).catch(() => undefined)
+      }
+      return
+    }
+    managed.record = completed
     const event: SubagentLifecycleEvent =
       status === "completed"
         ? "completed"
@@ -582,7 +738,7 @@ export class CtfSubagentManager {
     this.emit(managed, event)
     managed.resolve(snapshot(managed.record))
     if (managed.record.background && !managed.resultConsumed) {
-      void this.notifyParent(managed.record).catch(() => undefined)
+      void this.notifyParent(snapshot(managed.record)).catch(() => undefined)
     }
   }
 
@@ -600,42 +756,36 @@ export class CtfSubagentManager {
   }
 
   private emit(managed: ManagedSubagent, event: SubagentLifecycleEvent): void {
-    void Promise.resolve(this.options.onRecord?.(snapshot(managed.record), event)).catch(
-      () => undefined,
-    )
+    try {
+      void Promise.resolve(this.options.onRecord?.(snapshot(managed.record), event)).catch(
+        () => undefined,
+      )
+    } catch {
+      // Lifecycle telemetry is best effort; execution commits use persistExecution.
+    }
   }
 
   private async notifyParent(record: SubagentRecord): Promise<void> {
     const parent = this.parent
     if (!parent || parent.isClosed) return
+    const page = reportPage(record)
     const notification = {
       id: record.id,
-      role: record.role,
+      role: typeof page.role === "string" ? page.role : "",
       status: record.status,
-      output: (record.result ?? record.error ?? "No output").slice(0, 16_000),
+      output:
+        typeof page.result === "string"
+          ? page.result
+          : typeof page.error === "string"
+            ? page.error
+            : "No output",
+      resultKind: typeof page.resultKind === "string" ? page.resultKind : undefined,
+      resultVersion: typeof page.resultVersion === "string" ? page.resultVersion : undefined,
+      totalLength: typeof page.totalLength === "number" ? page.totalLength : undefined,
+      nextOffset: typeof page.nextOffset === "number" ? page.nextOffset : undefined,
     }
     await parent.promptOrSteer(subagentCompletionNotificationPrompt(notification))
   }
-}
-
-function extractToolResultText(message: unknown): string {
-  if (!message || typeof message !== "object") return ""
-  const candidate = message as {
-    role?: string
-    toolName?: unknown
-    content?: unknown
-  }
-  if (candidate.role !== "toolResult" || !Array.isArray(candidate.content)) return ""
-  const parts = candidate.content.flatMap((block) => {
-    if (!block || typeof block !== "object") return []
-    const value = block as { type?: unknown; text?: unknown }
-    return value.type === "text" && typeof value.text === "string" ? [value.text] : []
-  })
-  if (parts.length === 0) return ""
-  const output = parts.join("\n").trim()
-  if (!output || output === "(no output)") return ""
-  const prefix = typeof candidate.toolName === "string" ? `[${candidate.toolName}] ` : ""
-  return `${prefix}${output}`.slice(0, 8_000)
 }
 
 function settleWithin(promises: Promise<unknown>[], milliseconds: number) {
@@ -677,7 +827,7 @@ export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTo
         const background = params.run_in_background === true
         if (params.resume) {
           const record = await manager.resume(params.resume, params.prompt, background)
-          return toolResult(record)
+          return toolResult(reportPage(record))
         }
         const record = manager.spawn({
           role: params.subagent_type,
@@ -685,7 +835,7 @@ export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTo
           description: params.description,
           background,
         })
-        return toolResult(background ? record : await manager.wait(record.id, signal))
+        return toolResult(reportPage(background ? record : await manager.wait(record.id, signal)))
       },
     },
     {
@@ -697,28 +847,37 @@ export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTo
         agent_id: Type.String(),
         wait: Type.Optional(Type.Boolean()),
         interrupt_on_steer: Type.Optional(Type.Boolean()),
+        offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 8_000 })),
+        expectedResultVersion: Type.Optional(Type.String({ maxLength: 128 })),
       }),
       async execute(_id, raw, signal) {
         const params = raw as {
           agent_id: string
           wait?: boolean
           interrupt_on_steer?: boolean
+          offset?: number
+          limit?: number
+          expectedResultVersion?: string
         }
+        const current = manager.get(params.agent_id)
+        if (!current) throw new Error(`SubAgent 不存在: ${params.agent_id}`)
         if (params.wait) {
           const waited = await manager.waitForTool(
             params.agent_id,
             signal,
             params.interrupt_on_steer !== false,
           )
+          if (manager.get(params.agent_id)?.executionId !== current.executionId) {
+            throw new Error("execution_changed")
+          }
           return toolResult({
-            ...waited.record,
+            ...reportPage(waited.record, params),
             waitInterrupted: waited.waitInterrupted,
             ...(waited.waitInterrupted ? { waitInterruptedReason: "parent_steer_queued" } : {}),
           })
         }
-        const record = manager.get(params.agent_id)
-        if (!record) throw new Error(`SubAgent 不存在: ${params.agent_id}`)
-        return toolResult(record)
+        return toolResult(reportPage(current, params))
       },
     },
     {
@@ -732,7 +891,7 @@ export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTo
       }),
       async execute(_id, raw) {
         const params = raw as { agent_id: string; message: string }
-        return toolResult(await manager.steer(params.agent_id, params.message))
+        return toolResult(reportPage(await manager.steer(params.agent_id, params.message)))
       },
     },
     {
@@ -741,16 +900,20 @@ export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTo
       description: "Cancel a queued or running SubAgent.",
       parameters: Type.Object({ agent_id: Type.String() }),
       async execute(_id, raw) {
-        return toolResult(await manager.cancel((raw as { agent_id: string }).agent_id))
+        return toolResult(reportPage(await manager.cancel((raw as { agent_id: string }).agent_id)))
       },
     },
     {
       name: "list_subagents",
       label: "List SubAgents",
-      description: "List this run's queued, running and completed SubAgents.",
-      parameters: Type.Object({}),
-      async execute() {
-        return toolResult({ agents: manager.list() })
+      description:
+        "List this run's SubAgents with short previews. Follow nextCursor to enumerate every worker; use get_subagent_result for the full report.",
+      parameters: Type.Object({
+        cursor: Type.Optional(Type.String({ maxLength: 2_048 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32 })),
+      }),
+      async execute(_id, raw) {
+        return toolResult(manager.listPage(raw as { cursor?: string; limit?: number }))
       },
     },
   ]
@@ -758,9 +921,12 @@ export function createSubagentManagerTools(manager: CtfSubagentManager): AgentTo
 
 function toolResult(details: object): AgentToolResult<Record<string, unknown>> {
   const value = details as Record<string, unknown>
+  const metadata = { ...value }
+  delete metadata.result
+  delete metadata.agents
   return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    details: value,
+    content: [{ type: "text", text: JSON.stringify(value) }],
+    details: metadata,
   }
 }
 
@@ -780,7 +946,7 @@ function errorText(error: unknown): string {
 }
 
 function isCancelled(managed: ManagedSubagent): boolean {
-  return managed.record.status === "cancelled"
+  return managed.cancelling || managed.record.status === "cancelled"
 }
 
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

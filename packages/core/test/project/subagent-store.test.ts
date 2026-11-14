@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vite-plus/test"
 import type { SubagentRecord } from "../../src/collaboration/subagent-manager.ts"
 import { RunStore } from "../../src/persistence/run-store.ts"
@@ -44,6 +45,56 @@ function record(overrides: Partial<SubagentRecord> = {}): SubagentRecord {
 }
 
 describe("RunStore SubAgent persistence", () => {
+  it("migrates an existing database without losing its legacy report", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-migration-"))
+    roots.push(root)
+    const path = join(root, "runs.sqlite")
+    const original = await RunStore.open(path)
+    original.createRun({ id: "run-1", challengeId: "pwn-1", workspace: "workspace", attempt: 1 })
+    original.upsertSubagent(record({ status: "completed", result: "old persisted report" }))
+    original.close()
+    const legacy = new DatabaseSync(path)
+    legacy.exec("ALTER TABLE run_subagents DROP COLUMN execution_id")
+    legacy.exec("ALTER TABLE run_subagents DROP COLUMN result_kind")
+    legacy.close()
+
+    const migrated = await RunStore.open(path)
+    expect(migrated.subagents("run-1")).toEqual([
+      expect.objectContaining({ result: "old persisted report", resultKind: "legacy" }),
+    ])
+    migrated.close()
+  })
+
+  it("keeps legacy reports and rejects late results from an earlier execution", async () => {
+    const store = await storeFixture()
+    store.createRun({ id: "run-1", challengeId: "pwn-1", workspace: "workspace", attempt: 1 })
+    store.upsertSubagent(record({ id: "legacy", status: "completed", result: "old report" }))
+    expect(store.subagents("run-1").find((entry) => entry.id === "legacy")).toMatchObject({
+      resultKind: "legacy",
+      result: "old report",
+    })
+    const first = record({ executionId: "execution-one", status: "running" })
+    store.saveSubagentExecution(first, { kind: "begin", previousExecutionId: undefined })
+    store.saveSubagentExecution(
+      { ...first, status: "completed", result: "first", resultKind: "assistant_final" },
+      { kind: "update" },
+    )
+    const second = { ...first, executionId: "execution-two", status: "queued" as const }
+    store.saveSubagentExecution(second, { kind: "begin", previousExecutionId: "execution-one" })
+    expect(() =>
+      store.saveSubagentExecution(
+        { ...first, status: "completed", result: "stale" },
+        { kind: "update" },
+      ),
+    ).toThrow("subagent_execution_changed")
+    expect(store.subagents("run-1").find((entry) => entry.id === first.id)).toMatchObject({
+      executionId: "execution-two",
+      status: "queued",
+    })
+    expect(store.subagents("run-1").find((entry) => entry.id === first.id)?.result).toBeUndefined()
+    store.close()
+  })
+
   it("以同一稳定 ID 更新完整 worker 生命周期快照", async () => {
     const store = await storeFixture()
     store.createRun({

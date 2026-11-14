@@ -63,6 +63,358 @@ const challenge: ChallengeInfo = {
 }
 
 describe("CtfSubagentManager", () => {
+  it("treats a provider error as partial output rather than a final report", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-partial-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-partial" })
+    faux.setResponses([
+      fauxAssistantMessage("unfinished evidence", {
+        stopReason: "error",
+        errorMessage: "provider unavailable",
+      }),
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-partial",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+    })
+    const created = manager.spawn({
+      role: "general-purpose",
+      prompt: "investigate",
+      description: "partial",
+      background: true,
+    })
+    expect(await manager.wait(created.id)).toMatchObject({
+      status: "failed",
+      resultKind: "assistant_partial",
+      result: "unfinished evidence",
+      error: "provider unavailable",
+    })
+    await manager.close()
+  })
+
+  it("does not start a worker when its execution cannot be persisted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-begin-failure-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-begin-failure" })
+    const sandbox = new MemorySandbox()
+    const discovered = await discoverSubagentRoles(root)
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-begin-failure",
+      runDirectory: root,
+      challenge,
+      sandbox,
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      persistExecution: () => {
+        throw new Error("cannot persist execution")
+      },
+    })
+    expect(() =>
+      manager.spawn({
+        role: "general-purpose",
+        prompt: "investigate",
+        description: "failure",
+        background: true,
+      }),
+    ).toThrow("cannot persist execution")
+    expect(manager.list()).toEqual([])
+    expect(sandbox.createdDirectories).toEqual([])
+    await manager.close()
+  })
+
+  it("keeps the previous report when a resumed execution cannot be persisted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-resume-failure-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-resume-failure" })
+    faux.setResponses([fauxAssistantMessage("previous report")])
+    const discovered = await discoverSubagentRoles(root)
+    let begins = 0
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-resume-failure",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      persistExecution: (_record, operation) => {
+        if (operation.kind === "begin" && ++begins === 2) throw new Error("resume commit failed")
+      },
+    })
+    const created = manager.spawn({
+      role: "general-purpose",
+      prompt: "investigate",
+      description: "report",
+      background: true,
+    })
+    const completed = await manager.wait(created.id)
+    await expect(manager.resume(created.id, "continue", true)).rejects.toThrow(
+      "resume commit failed",
+    )
+    expect(manager.get(created.id)).toMatchObject({
+      status: "completed",
+      result: "previous report",
+      executionId: completed.executionId,
+    })
+    await manager.close()
+  })
+
+  it("surfaces a failed execution commit during finalization", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-finalize-persist-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-finalize-persist" })
+    let started!: () => void
+    const start = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    faux.setResponses([
+      async (_context, options) => {
+        started()
+        await new Promise<void>((resolve) => {
+          if (options?.signal?.aborted) resolve()
+          else options?.signal?.addEventListener("abort", () => resolve(), { once: true })
+        })
+        return fauxAssistantMessage("partial evidence")
+      },
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    let begins = 0
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-finalize-persist",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      persistExecution: (_record, operation) => {
+        if (operation.kind === "begin" && ++begins === 2)
+          throw new Error("finalization commit failed")
+      },
+    })
+    manager.spawn({
+      role: "general-purpose",
+      prompt: "investigate",
+      description: "running",
+      background: true,
+    })
+    await start
+    await expect(manager.finalize("Report now", 10)).rejects.toThrow("SubAgent finalization failed")
+    await manager.close()
+  }, 30_000)
+
+  it("retains complete reports across versioned Unicode pages and invalidates a resumed execution", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-report-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-report-pages" })
+    const report = `${"a".repeat(7_985)}FLAG{prefix}😀${"\u0001".repeat(9_000)}TAIL{evidence}`
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    faux.setResponses([
+      fauxAssistantMessage(report),
+      async () => {
+        await gate
+        return fauxAssistantMessage(report)
+      },
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-pages",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+    })
+    try {
+      const created = manager.spawn({
+        role: "general-purpose",
+        prompt: "investigate",
+        description: "report",
+        background: true,
+      })
+      const completed = await manager.wait(created.id)
+      expect(completed.result).toBe(report)
+      expect(completed.resultKind).toBe("assistant_final")
+      const tool = createSubagentManagerTools(manager).find(
+        (entry) => entry.name === "get_subagent_result",
+      )!
+      const first = await tool.execute("first", { agent_id: created.id })
+      expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThanOrEqual(96 * 1024)
+      const firstText = first.content[0]
+      if (!firstText || firstText.type !== "text") throw new Error("missing report")
+      const firstPage = JSON.parse(firstText.text) as {
+        result: string
+        resultVersion: string
+        nextOffset: number
+      }
+      expect(firstPage.result).toContain("FLAG{prefix}")
+      expect(JSON.stringify(first.details)).not.toContain("FLAG{prefix}")
+      let combined = firstPage.result
+      let offset: number | null = firstPage.nextOffset
+      while (offset !== null) {
+        const next = await tool.execute("next", {
+          agent_id: created.id,
+          offset,
+          expectedResultVersion: firstPage.resultVersion,
+        })
+        expect(Buffer.byteLength(JSON.stringify(next))).toBeLessThanOrEqual(96 * 1024)
+        const block = next.content[0]
+        if (!block || block.type !== "text") throw new Error("missing report page")
+        const data = JSON.parse(block.text) as { result: string; nextOffset: number | null }
+        combined += data.result
+        offset = data.nextOffset
+      }
+      expect(combined).toBe(report)
+      await manager.resume(created.id, "repeat the investigation", true)
+      const changed = await tool.execute("old-version", {
+        agent_id: created.id,
+        offset: 8_000,
+        expectedResultVersion: firstPage.resultVersion,
+      })
+      expect(changed.details.code).toBe("result_changed")
+      release()
+      const repeated = await manager.wait(created.id)
+      expect(repeated.result).toBe(report)
+      expect(repeated.executionId).not.toBe(completed.executionId)
+      const newPage = await tool.execute("new-version", { agent_id: created.id })
+      expect(newPage.details.resultVersion).not.toBe(firstPage.resultVersion)
+    } finally {
+      release()
+      await manager.close()
+    }
+  }, 30_000)
+
+  it("makes critical persistence failures observable and does not publish an uncommitted report", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-persist-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-persist" })
+    faux.setResponses([fauxAssistantMessage("FLAG{uncommitted}")])
+    const discovered = await discoverSubagentRoles(root)
+    const parent = fakeParent()
+    let visibleDuringCommit: string | undefined
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-persist",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      persistExecution: (record, operation) => {
+        if (operation.kind === "update") {
+          visibleDuringCommit = manager.get(record.id)?.result
+          throw new Error("database unavailable")
+        }
+      },
+    })
+    manager.attachParent(parent.agent)
+    const created = manager.spawn({
+      role: "general-purpose",
+      prompt: "investigate",
+      description: "failure",
+      background: true,
+    })
+    await expect(manager.wait(created.id)).rejects.toThrow("database unavailable")
+    expect(manager.get(created.id)).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("result_persistence_failed"),
+    })
+    expect(manager.get(created.id)?.result).toBeUndefined()
+    expect(visibleDuringCommit).toBeUndefined()
+    expect(JSON.stringify(parent.steered)).not.toContain("FLAG{uncommitted}")
+    await manager.close()
+  })
+
+  it("delivers a candidate in the old first-screen range while another worker remains blocked", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-fast-result-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-fast-result" })
+    let release!: () => void
+    let started!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const blockedStarted = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    faux.setResponses([
+      async () => {
+        started()
+        await gate
+        return fauxAssistantMessage("blocked worker finished")
+      },
+      fauxAssistantMessage(`${"x".repeat(7_970)}FLAG{early_candidate}`),
+    ])
+    const discovered = await discoverSubagentRoles(root)
+    const parent = fakeParent()
+    const manager = new CtfSubagentManager({
+      projectId: "test",
+      runId: "run-fast",
+      runDirectory: root,
+      challenge,
+      sandbox: new MemorySandbox(),
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+      roles: discovered.roles,
+      maxConcurrent: 2,
+    })
+    manager.attachParent(parent.agent)
+    try {
+      const blocked = manager.spawn({
+        role: "general-purpose",
+        prompt: "wait",
+        description: "blocked",
+        background: true,
+      })
+      await blockedStarted
+      manager.spawn({
+        role: "general-purpose",
+        prompt: "find candidate",
+        description: "candidate",
+        background: true,
+      })
+      await waitFor(
+        () => parent.steered.some((message) => message.includes("FLAG{early_candidate}")),
+        10_000,
+      )
+      expect(manager.get(blocked.id)?.status).toBe("running")
+    } finally {
+      release()
+      await manager.close()
+    }
+  }, 30_000)
+
   it("后台完成后立即 steer 结构化通知给主 Solver", async () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-subagent-notify-"))
     roots.push(root)
@@ -373,8 +725,13 @@ describe("CtfSubagentManager", () => {
     const root = await mkdtemp(join(tmpdir(), "ctf-subagent-finalize-"))
     roots.push(root)
     const faux = createFauxCore({ provider: "subagent-finalize" })
+    let workerStarted!: () => void
+    const workerStart = new Promise<void>((resolve) => {
+      workerStarted = resolve
+    })
     faux.setResponses([
       async () => {
+        workerStarted()
         await new Promise((resolve) => setTimeout(resolve, 0))
         return fauxAssistantMessage("initial work")
       },
@@ -400,7 +757,7 @@ describe("CtfSubagentManager", () => {
       description: "running worker",
       background: true,
     })
-    await waitFor(() => manager.get(running.id)?.status === "running")
+    await workerStart
     const queued = manager.spawn({
       role: "general-purpose",
       prompt: "queued investigation",

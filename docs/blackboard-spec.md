@@ -46,11 +46,11 @@ open ── concludeOpportunity ──> concluded
 
 ## 2. Agent 工具
 
-工具由 `packages/core/src/collaboration/blackboard.ts` 的 `createBlackboardTools()` 注入主 Solver。SubAgent 不直接获得黑板工具，只能将调查结果返回主 Solver：
+工具由 `packages/core/src/collaboration/blackboard.ts` 按当前 Project 和题目注入。主 Solver 可读写；SubAgent 可获得只读 `blackboard_read`，调查结果仍返回主 Solver。角色设置了 `tools` 白名单时，必须包含 `blackboard_read` 才能启用；恢复旧会话时会移除当前角色不再允许的工具，并为允许读取的角色启用 reader。
 
 ### `blackboard_read`
 
-读取当前题目的 bounded snapshot，返回 Evidence、open Opportunity 和 concluded Opportunity。序列化函数是 `serializeBlackboard()`，输出以 Markdown 供模型读取，并保留 `e<id>`/`o<id>` 引用。
+无参数或 `schemaVersion: 1` 返回兼容 Markdown 快照；`schemaVersion: 2` 或显式查询字段启用分页 JSON。`kind` 选择 evidence/opportunity，`view` 选择 index/full，列表用 `afterId`、`limit` 和返回的 `nextAfterId` 翻页；也可用 `ids` 指定记录，并按 `omittedIds` 继续读取。索引包含有限预览和稳定内容 hash，全文包含完整描述；跨题或已删除 ID 均作为 missing 返回。`details` 仅保留分页元数据，不重复正文。
 
 ### `blackboard_record`
 
@@ -106,7 +106,7 @@ Solver 的行为约束位于 `packages/prompts/src/solver.ts`；SubAgent 被明�
 2. 创建结果 Evidence。
 3. 写入 `targetEvidenceId`、`resolution`、`concludedAt`，并将 Opportunity 设为 `concluded`。
 
-Evidence、Opportunity 数量分别限制为每题 256 条；描述限制为 4,000 字符，Opportunity source Evidence 最多 32 条。`blackboard_read` 序列化默认最多 64,000 字符；注入 Solver compaction 后上下文的黑板快照最多 16,000 字符，超出时附带截断提示，要求 Agent 再调用 `blackboard_read`。
+Evidence、Opportunity 数量分别限制为每题 256 条；描述限制为 4,000 字符，Opportunity source Evidence 最多 32 条。`blackboard_read` 对整个序列化响应分别限制索引 8 KiB、全文和旧版快照 64 KiB；注入 Solver compaction 后上下文的黑板快照最多 16,000 字符，超出时可调用 V2 查询完整记录。
 
 黑板摘要会进入 `Project` 组装的 challenge prompt，并在 compaction 后重新注入。RunStore 重启恢复黑板，但不会恢复尚未写入 SQLite 的模型临时结论。
 

@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
+import { reportPage, shortSubagentPage } from "@ctf-agent/core"
 import type { App, AppContext, AppEnv } from "../context.ts"
 import { errorText, HttpError, hasCode } from "../errors.ts"
 import { parseJsonBody, retryAttemptSchema, subagentMessageSchema } from "../schema.ts"
@@ -21,7 +22,13 @@ export function runRoutes(services: Services): App {
     })
     try {
       return c.json(
-        await project.steerSubagent(c.req.param("runId"), c.req.param("subagentId"), body.message),
+        reportPage(
+          await project.steerSubagent(
+            c.req.param("runId"),
+            c.req.param("subagentId"),
+            body.message,
+          ),
+        ),
       )
     } catch (error) {
       if (hasCode(error, "subagent_unavailable")) {
@@ -34,12 +41,62 @@ export function runRoutes(services: Services): App {
   app.post("/runs/:runId/subagents/:subagentId/cancel", async (c) => {
     const project = services.requireProject(projectIdOf(c))
     try {
-      return c.json(await project.cancelSubagent(c.req.param("runId"), c.req.param("subagentId")))
+      return c.json(
+        reportPage(await project.cancelSubagent(c.req.param("runId"), c.req.param("subagentId"))),
+      )
     } catch (error) {
       if (hasCode(error, "subagent_unavailable")) {
         throw new HttpError(409, "subagent_unavailable", errorText(error))
       }
       throw error
+    }
+  })
+
+  app.get("/runs/:runId/subagents", (c) => {
+    const project = services.requireProject(projectIdOf(c))
+    const runId = c.req.param("runId")
+    if (!project.runs().some((run) => run.id === runId)) {
+      throw new HttpError(404, "run_not_found", `Run 不存在: ${runId}`)
+    }
+    const limit = c.req.query("limit")
+    try {
+      const page = shortSubagentPage(runId, project.subagents(runId), {
+        cursor: c.req.query("cursor"),
+        ...(limit === undefined ? {} : { limit: Number(limit) }),
+        budget: 15 * 1024,
+      })
+      return c.json({
+        ...page,
+        agents: page.agents.map((agent) => ({
+          ...agent,
+          hasConversation:
+            agent.turns > 0 || agent.toolUses > 0 || agent.totalTokens > 0 || Boolean(agent.result),
+        })),
+      })
+    } catch (error) {
+      throw new HttpError(400, "invalid_subagent_page", errorText(error))
+    }
+  })
+
+  app.get("/runs/:runId/subagents/:subagentId/result", (c) => {
+    const project = services.requireProject(projectIdOf(c))
+    const runId = c.req.param("runId")
+    const subagentId = c.req.param("subagentId")
+    requireRunAndSubagent(project, runId, subagentId)
+    const record = project.subagents(runId).find(({ id }) => id === subagentId)
+    if (!record) throw new HttpError(404, "subagent_not_found", `SubAgent 不存在: ${subagentId}`)
+    const offset = c.req.query("offset")
+    const limit = c.req.query("limit")
+    try {
+      return c.json(
+        reportPage(record, {
+          ...(offset === undefined ? {} : { offset: Number(offset) }),
+          ...(limit === undefined ? {} : { limit: Number(limit) }),
+          expectedResultVersion: c.req.query("expectedResultVersion"),
+        }),
+      )
+    } catch (error) {
+      throw new HttpError(400, "invalid_result_page", errorText(error))
     }
   })
 

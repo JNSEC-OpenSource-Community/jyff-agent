@@ -52,6 +52,7 @@ export function ChallengePage() {
     target,
     selectRun,
     selectSubagent,
+    loadMoreSubagents,
     challengeAction,
     resetChallenge,
     reload,
@@ -312,6 +313,7 @@ export function ChallengePage() {
           selectedRunId={rid}
           selectedSubagentId={selectedSubagent?.id ?? null}
           onSelectSubagent={selectSubagent}
+          onLoadMoreSubagents={() => void loadMoreSubagents()}
         />
       </aside>
 
@@ -364,6 +366,7 @@ export function ChallengePage() {
               details={details}
               selectedRunId={rid}
               selectedSubagentId={selectedSubagent?.id ?? null}
+              onLoadMoreSubagents={() => void loadMoreSubagents()}
               onSelectSubagent={(id) => {
                 selectSubagent(id)
                 setMobileDetailsOpen(false)

@@ -12,6 +12,25 @@ const endpoint =
 afterEach(cleanup)
 
 describe("AgentSidebar", () => {
+  it("offers a way to load omitted workers", () => {
+    const loadMore = vi.fn()
+    const challengeDetails = {
+      ...details,
+      runs: [{ ...details.runs[0]!, subagentOmittedCount: 3, subagentNextCursor: "cursor" }],
+    } as ChallengeDetails
+    render(
+      createElement(AgentSidebar, {
+        details: challengeDetails,
+        selectedRunId: "run-1",
+        selectedSubagentId: null,
+        onSelectSubagent: vi.fn(),
+        onLoadMoreSubagents: loadMore,
+      }),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "加载更多（3）" }))
+    expect(loadMore).toHaveBeenCalledOnce()
+  })
+
   it("根据选中 Agent 按需展示用量详情", () => {
     const { rerender } = renderSidebar("worker-1")
 

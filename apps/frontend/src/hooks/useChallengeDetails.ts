@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { apiMutation, apiRequest, projectApi } from "../lib/api.ts"
 import { errorMessage } from "../lib/format.ts"
 import type { ChallengeDetails, DashboardRun, DashboardSubagent } from "../types.ts"
@@ -27,6 +27,7 @@ export function useChallengeDetails(
   target: ConversationTarget
   selectRun: (runId: string) => void
   selectSubagent: (subagentId: string | null) => void
+  loadMoreSubagents: () => Promise<void>
   challengeAction: (action: "dispatch" | "cancel", options?: { force?: boolean }) => Promise<void>
   resetChallenge: () => Promise<void>
   reload: () => Promise<void>
@@ -36,16 +37,48 @@ export function useChallengeDetails(
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const scope = `${projectId}\u0000${challengeId}`
+  const currentScope = useRef(scope)
+  const loadedScope = useRef("")
+  currentScope.current = scope
 
   const load = useCallback(async (): Promise<void> => {
     const next = await apiRequest<ChallengeDetails>(
       projectApi(projectId, `/api/challenges/${encodeURIComponent(challengeId)}`),
     )
-    setDetails(next)
+    if (currentScope.current !== scope) return
+    const sameScope = loadedScope.current === scope
+    loadedScope.current = scope
+    setDetails((current) => {
+      if (!sameScope || !current || current.challenge.id !== next.challenge.id) return next
+      return {
+        ...next,
+        runs: next.runs.map((run) => {
+          const previous = current.runs.find((candidate) => candidate.id === run.id)
+          if (!previous) return run
+          const currentIds = new Set(run.subagents.map((agent) => agent.id))
+          const extra = previous.subagents.filter((agent) => !currentIds.has(agent.id))
+          if (extra.length === 0) return run
+          const subagents = [...run.subagents, ...extra]
+          const total = Math.max(
+            run.subagents.length + (run.subagentOmittedCount ?? 0),
+            previous.subagents.length + (previous.subagentOmittedCount ?? 0),
+          )
+          const omitted = Math.max(0, total - subagents.length)
+          return {
+            ...run,
+            subagents,
+            subagentOmittedCount: omitted,
+            subagentNextCursor:
+              omitted > 0 ? (previous.subagentNextCursor ?? run.subagentNextCursor) : null,
+          }
+        }),
+      }
+    })
     setSelectedRunId((current) =>
       next.runs.some((run) => run.id === current) ? current : (next.runs[0]?.id ?? ""),
     )
-  }, [challengeId, projectId])
+  }, [challengeId, projectId, scope])
 
   useEffect(() => {
     setDetails(null)
@@ -77,6 +110,47 @@ export function useChallengeDetails(
     () => selectedRun?.subagents.find((subagent) => subagent.id === selectedSubagentId),
     [selectedRun, selectedSubagentId],
   )
+  const loadMoreSubagents = useCallback(async (): Promise<void> => {
+    if (!selectedRun || !(selectedRun.subagentOmittedCount && selectedRun.subagentOmittedCount > 0))
+      return
+    const runId = selectedRun.id
+    const cursor = selectedRun.subagentNextCursor
+    try {
+      const page = await apiRequest<{
+        agents: DashboardSubagent[]
+        omittedCount: number
+        nextCursor: string | null
+      }>(
+        projectApi(
+          projectId,
+          `/api/runs/${encodeURIComponent(runId)}/subagents${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+        ),
+      )
+      if (currentScope.current !== scope) return
+      setDetails((current) =>
+        current
+          ? {
+              ...current,
+              runs: current.runs.map((run) => {
+                if (run.id !== runId) return run
+                const ids = new Set(run.subagents.map((agent) => agent.id))
+                return {
+                  ...run,
+                  subagents: [
+                    ...run.subagents,
+                    ...page.agents.filter((agent) => !ids.has(agent.id)),
+                  ],
+                  subagentOmittedCount: page.omittedCount,
+                  subagentNextCursor: page.nextCursor,
+                }
+              }),
+            }
+          : current,
+      )
+    } catch (cause) {
+      setError(errorMessage(cause))
+    }
+  }, [projectId, scope, selectedRun])
   const target: ConversationTarget = selectedSubagent
     ? { type: "subagent", subagent: selectedSubagent }
     : { type: "solver" }
@@ -130,6 +204,7 @@ export function useChallengeDetails(
     target,
     selectRun,
     selectSubagent,
+    loadMoreSubagents,
     challengeAction,
     resetChallenge,
     reload: load,

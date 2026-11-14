@@ -417,7 +417,9 @@ interface SubagentRow {
   prompt: string
   session_path: string
   container_cwd: string
+  execution_id: string | null
   result: string | null
+  result_kind: SubagentRecord["resultKind"] | null
   error: string | null
   active_tool: string | null
   turns: number
@@ -713,7 +715,13 @@ function subagentFromRow(row: SubagentRow): SubagentRecord {
     prompt: row.prompt,
     sessionPath: row.session_path,
     containerCwd: row.container_cwd,
+    ...(row.execution_id === null ? {} : { executionId: row.execution_id }),
     ...(row.result === null ? {} : { result: row.result }),
+    ...(row.result_kind
+      ? { resultKind: row.result_kind }
+      : row.result !== null && !row.execution_id
+        ? { resultKind: "legacy" as const }
+        : {}),
     ...(row.error === null ? {} : { error: row.error }),
     ...(row.active_tool === null ? {} : { activeTool: row.active_tool }),
     turns: row.turns,
@@ -891,7 +899,9 @@ export class RunStore {
         prompt TEXT NOT NULL,
         session_path TEXT NOT NULL,
         container_cwd TEXT NOT NULL,
+        execution_id TEXT,
         result TEXT,
+        result_kind TEXT,
         error TEXT,
         active_tool TEXT,
         turns INTEGER NOT NULL DEFAULT 0,
@@ -1116,6 +1126,8 @@ export class RunStore {
       ).map((column) => column.name),
     )
     const subagentUsageMigrations = [
+      ["execution_id", "ALTER TABLE run_subagents ADD COLUMN execution_id TEXT"],
+      ["result_kind", "ALTER TABLE run_subagents ADD COLUMN result_kind TEXT"],
       [
         "input_tokens",
         "ALTER TABLE run_subagents ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0)",
@@ -2779,10 +2791,10 @@ export class RunStore {
       .prepare(`
         INSERT INTO run_subagents (
           id, run_id, role, display_name, description, status, background,
-          prompt, session_path, container_cwd, result, error, active_tool,
+          prompt, session_path, container_cwd, execution_id, result, result_kind, error, active_tool,
           turns, tool_uses, total_tokens, input_tokens, cache_read_tokens,
           cache_write_tokens, created_at, updated_at, started_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           role = excluded.role,
           display_name = excluded.display_name,
@@ -2792,7 +2804,9 @@ export class RunStore {
           prompt = excluded.prompt,
           session_path = excluded.session_path,
           container_cwd = excluded.container_cwd,
+          execution_id = excluded.execution_id,
           result = excluded.result,
+          result_kind = excluded.result_kind,
           error = excluded.error,
           active_tool = excluded.active_tool,
           turns = excluded.turns,
@@ -2816,7 +2830,9 @@ export class RunStore {
         record.prompt,
         record.sessionPath,
         record.containerCwd,
+        record.executionId ?? null,
         record.result ?? null,
+        record.resultKind ?? null,
         record.error ?? null,
         record.activeTool ?? null,
         record.turns,
@@ -2831,6 +2847,53 @@ export class RunStore {
         record.completedAt ?? null,
       )
     return { ...record }
+  }
+
+  /** Commit execution transitions atomically and reject late updates from older executions. */
+  saveSubagentExecution(
+    record: SubagentRecord,
+    operation:
+      | { kind: "begin"; previousExecutionId: string | null | undefined }
+      | { kind: "update" },
+  ): void {
+    this.assertOpen()
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const current = this.database
+        .prepare("SELECT run_id, execution_id, status FROM run_subagents WHERE id = ?")
+        .get(record.id) as
+        | { run_id: string; execution_id: string | null; status: string }
+        | undefined
+      if (operation.kind === "begin") {
+        if (operation.previousExecutionId === undefined) {
+          if (current) throw new Error("subagent_execution_changed")
+        } else if (
+          !current ||
+          current.run_id !== record.runId ||
+          current.execution_id !== operation.previousExecutionId ||
+          current.status === "queued" ||
+          current.status === "running"
+        ) {
+          throw new Error("subagent_execution_changed")
+        }
+      } else if (
+        !current ||
+        current.run_id !== record.runId ||
+        current.execution_id !== (record.executionId ?? null) ||
+        current.status === "completed" ||
+        current.status === "failed" ||
+        current.status === "cancelled" ||
+        current.status === "aborted" ||
+        current.status === "interrupted"
+      ) {
+        throw new Error("subagent_execution_changed")
+      }
+      this.upsertSubagent(record)
+      this.database.exec("COMMIT")
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
   }
 
   subagents(runId: string): SubagentRecord[] {
