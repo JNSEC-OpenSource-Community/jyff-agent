@@ -1,6 +1,6 @@
 import { join } from "node:path"
 import type { ChallengeCapability, ChallengeInfo } from "@ctf-agent/platform"
-import { CTF_COMPACTION_PROMPT, subagentTaskContextPrompt } from "@ctf-agent/prompts"
+import { SUBAGENT_COMPACTION_PROMPT, subagentTaskContextPrompt } from "@ctf-agent/prompts"
 import type { Sandbox } from "@ctf-agent/sandbox"
 import type { AgentMessage, AgentOptions, AgentTool, Skill } from "@earendil-works/pi-agent-core"
 import type { Api, Model } from "@earendil-works/pi-ai"
@@ -52,7 +52,7 @@ export class CtfSubagent extends BaseAgent {
   private constructor(options: CreateCtfSubagentOptions, prepared: PreparedBaseAgent) {
     super(prepared, {
       compaction: options.compaction !== false,
-      compactionInstructions: CTF_COMPACTION_PROMPT,
+      compactionInstructions: SUBAGENT_COMPACTION_PROMPT,
     })
     this.id = options.subagentId
     this.runId = options.runId

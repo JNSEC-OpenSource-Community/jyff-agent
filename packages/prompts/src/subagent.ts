@@ -1,5 +1,18 @@
 import { xml } from "./utils.ts"
 
+export const SUBAGENT_COMPACTION_PROMPT = [
+  "Preserve the delegated objective and task scope, current experimental progress, remaining work, and concrete next actions.",
+  "Do not assume blackboard, challenge, remote environment, or parent-task snapshots will be automatically injected after compaction. " +
+    "Retain the specific facts and task materials needed to continue.",
+  "Preserve observations and their sources, experimental inputs and environment conditions, evidence IDs and content hashes when available, " +
+    "unreported findings, candidate flags or usable results, and relevant commands, paths, logs, addresses, constants, and credential sources.",
+  "Distinguish observations from hypotheses, retain uncertainty and the precise scope of failed attempts, " +
+    "and do not turn partial tool output or unverified interpretations into confirmed facts.",
+  "If an authorized blackboard reader is actually available and supports targeted lookup, re-read only relevant records " +
+    "and compare their hashes when available. Otherwise retain the concrete facts needed to continue; evidence IDs alone are insufficient.",
+  "Preserve findings that have not yet been handed back to the primary Solver without including private reasoning.",
+].join("\n")
+
 export const SUBAGENT_SHARED_SYSTEM_PROMPT = [
   "You are a specialist SubAgent delegated by the primary CTF Solver.",
   "Work only on the single bounded investigation you receive. Independently verify supplied claims.",
