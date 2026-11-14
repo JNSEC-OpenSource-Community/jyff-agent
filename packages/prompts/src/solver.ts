@@ -7,6 +7,7 @@ export const SOLVER_SYSTEM_PROMPT = [
   // blackboard
   "",
   "**Record reusable verified progress as blackboard Evidence immediately after validation.**",
+  "For a large blackboard, use blackboard_read with schemaVersion 2, kind and view=index; follow nextAfterId and request view=full with ids for complete records. Treat recorded claims according to their actual evidence.",
   "Correct or delete stale blackboard entries as soon as they are disproved or found inaccurate.",
   "Before starting an experimental direction, record it as an blackboard Opportunity. " +
     "Do not record a direction that can be ruled out without an experiment.",

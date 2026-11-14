@@ -557,10 +557,6 @@ function evidenceRecordFromRow(row: EvidenceRow): EvidenceRecord {
   }
 }
 
-function evidenceToSummary(row: EvidenceRow): BlackboardSummary["evidence"][number] {
-  return { id: row.id, description: row.description, runId: row.run_id }
-}
-
 function tldrFromRow(row: TldrRow): TldrRecord {
   return {
     challengeId: row.challenge_id,
@@ -3192,7 +3188,10 @@ export class RunStore {
     }
   }
 
-  getBlackboardSummary(challengeId: string): BlackboardSummary {
+  getBlackboardRecords(challengeId: string): {
+    evidence: EvidenceRecord[]
+    opportunities: OpportunityRecord[]
+  } {
     this.assertOpen()
     const evidenceRows = this.database
       .prepare(`
@@ -3219,10 +3218,18 @@ export class RunStore {
       else sourcesByOpp.set(row.opportunity_id, [row.evidence_id])
     }
     return {
-      evidence: evidenceRows.map(evidenceToSummary),
+      evidence: evidenceRows.map(evidenceRecordFromRow),
       opportunities: opportunityRows.map((row) =>
         opportunityFromRow(row, sourcesByOpp.get(row.id) ?? []),
       ),
+    }
+  }
+
+  getBlackboardSummary(challengeId: string): BlackboardSummary {
+    const records = this.getBlackboardRecords(challengeId)
+    return {
+      evidence: records.evidence.map(({ id, description, runId }) => ({ id, description, runId })),
+      opportunities: records.opportunities,
     }
   }
 

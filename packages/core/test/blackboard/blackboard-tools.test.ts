@@ -12,7 +12,7 @@ describe("serializeBlackboard", () => {
       evidence: [{ id: 1, description: "发现漏洞", runId: "run-1" }],
       opportunities: [],
     })
-    expect(text).toContain("## Confirmed Evidence")
+    expect(text).toContain("## Recorded Evidence")
     expect(text).not.toContain("## Open Opportunities")
     expect(text).not.toContain("## Concluded Opportunities")
   })
@@ -163,7 +163,7 @@ describe("createBlackboardTools", () => {
     if (!readTool) throw new Error("blackboard_read 工具未创建")
     const result = await readTool.execute("call", {})
     const text = (result.content[0] as { type: string; text: string }).text
-    expect(text).toContain("## Confirmed Evidence")
+    expect(text).toContain("## Recorded Evidence")
     expect(text).toContain('- [e1] "test"')
   })
 

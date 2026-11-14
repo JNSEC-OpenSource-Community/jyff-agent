@@ -11,7 +11,11 @@ import type {
 } from "@ctf-agent/sandbox"
 import type { AgentOptions } from "@earendil-works/pi-agent-core"
 import type { Model } from "@earendil-works/pi-ai"
-import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux"
+import {
+  createFauxCore,
+  fauxAssistantMessage,
+  fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux"
 import { afterEach, describe, expect, it, vi } from "vite-plus/test"
 import { RunStore } from "../../src/persistence/run-store.ts"
 import { Project } from "../../src/project/project.js"
@@ -553,6 +557,55 @@ describe("Project", () => {
       expect(
         project.runEvents(solver.runId).filter((event) => event.type === "agent_usage"),
       ).toEqual([])
+      await solver.close()
+    } finally {
+      await project.close()
+    }
+  })
+
+  it("assembles a challenge-bound read-only blackboard tool for a real delegated session", async () => {
+    const root = await fixture()
+    const faux = createFauxCore({ provider: "subagent-reader" })
+    let observedTools = ""
+    let observedMessages = ""
+    faux.setResponses([
+      (context) => {
+        observedTools = JSON.stringify(context.tools)
+        return fauxAssistantMessage(
+          fauxToolCall("blackboard_read", { schemaVersion: 2, view: "full" }, { id: "read" }),
+          { stopReason: "toolUse" },
+        )
+      },
+      (context) => {
+        observedMessages = JSON.stringify(context.messages)
+        return fauxAssistantMessage("I found the recorded fact.")
+      },
+    ])
+    const project = await Project.open({
+      root,
+      platforms: [testPlatform],
+      sandboxFactory: async () => new FakeSandbox(),
+    })
+    try {
+      const solver = await project.createSolver("warmup-flag", {
+        agent: {
+          streamFn: faux.streamSimple as AgentOptions["streamFn"],
+          initialState: { model: faux.getModel(), thinkingLevel: "off" },
+        },
+      })
+      const record = solver.state.tools.find((tool) => tool.name === "blackboard_record")
+      const launch = solver.state.tools.find((tool) => tool.name === "Agent")
+      if (!record || !launch) throw new Error("collaboration tools missing")
+      await record.execute("record", { evidence: { description: "shared recorded observation" } })
+      await launch.execute("launch", {
+        subagent_type: "general-purpose",
+        prompt: "Read the recorded observation.",
+        description: "Read challenge blackboard",
+      })
+      expect(observedTools).toContain("blackboard_read")
+      expect(observedTools).not.toContain("blackboard_record")
+      expect(observedTools).not.toContain("blackboard_manage")
+      expect(observedMessages).toContain("shared recorded observation")
       await solver.close()
     } finally {
       await project.close()

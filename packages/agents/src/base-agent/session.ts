@@ -24,6 +24,8 @@ export interface OpenAgentSessionOptions {
   thinkingLevel?: ThinkingLevel
   tools: readonly AgentTool[]
   activeToolNames?: readonly string[]
+  /** Reconcile persisted tool names against the current role when restoring a worker. */
+  restoreActiveTools?: { add: readonly string[] }
   initialMessages?: readonly AgentMessage[]
 }
 
@@ -94,9 +96,23 @@ export async function openAgentSession(
       `Session model is unavailable: ${context.model?.provider}/${context.model?.modelId}`,
     )
   }
-  const activeToolNames = context.activeToolNames ?? [
+  let activeToolNames = context.activeToolNames ?? [
     ...(options.activeToolNames ?? options.tools.map((tool) => tool.name)),
   ]
+  if (options.restoreActiveTools) {
+    const allowed = new Set(options.tools.map((tool) => tool.name))
+    const reconciled = activeToolNames.filter((name) => allowed.has(name))
+    for (const name of options.restoreActiveTools.add) {
+      if (allowed.has(name) && !reconciled.includes(name)) reconciled.push(name)
+    }
+    if (
+      reconciled.length !== activeToolNames.length ||
+      reconciled.some((name, index) => name !== activeToolNames[index])
+    ) {
+      await session.appendActiveToolsChange(reconciled)
+    }
+    activeToolNames = reconciled
+  }
   return {
     session,
     model,

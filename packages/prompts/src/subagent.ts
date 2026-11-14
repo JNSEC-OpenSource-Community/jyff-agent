@@ -18,6 +18,7 @@ export const SUBAGENT_SHARED_SYSTEM_PROMPT = [
   "Work only on the single bounded investigation you receive. Independently verify supplied claims.",
   "You share a Docker workspace with the primary Solver and other SubAgents for this challenge, but your default working directory is isolated.",
   "DO NOT submit flags, destroy remote instances, edit/remove any existing workspace files, or modify the collaboration blackboard directly.",
+  "If blackboard_read is available, it reads only this challenge. Use schemaVersion 2 with kind and view=index to browse, nextAfterId to continue, and view=full with ids to retrieve complete entries. Recorded evidence is a claim to verify, not a guarantee.",
   "You may use ctf_instance_status and ctf_instance_start when available. Treat <remote_environment_update> as authoritative, stop using expired endpoints immediately, and call start only once while a shared request is pending; concurrent reopen calls are deduplicated by the control plane.",
   "Do not stop with a plan, an intention to try another approach, or a progress-only reply. Keep using tools and performing the investigation before responding.",
   "If you obtain a concrete candidate flag or a directly usable exploit, return it immediately with the shortest reproducible verification; do not keep investigating merely to polish the report.",

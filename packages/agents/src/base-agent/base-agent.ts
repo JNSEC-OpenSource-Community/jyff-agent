@@ -25,6 +25,7 @@ export interface BaseAgentOptions {
   thinkingLevel?: ThinkingLevel
   tools?: readonly AgentTool[]
   activeToolNames?: readonly string[]
+  restoreActiveTools?: { add: readonly string[] }
   skills?: readonly Skill[]
   promptTemplates?: readonly PromptTemplate[]
   initialMessages?: readonly AgentMessage[]
@@ -71,6 +72,7 @@ export async function prepareBaseAgent(options: BaseAgentOptions): Promise<Prepa
     thinkingLevel: options.thinkingLevel,
     tools,
     activeToolNames: options.activeToolNames,
+    restoreActiveTools: options.restoreActiveTools,
     initialMessages: options.initialMessages,
   })
   const skills = [...(options.skills ?? [])]

@@ -54,6 +54,7 @@ import type {
 import { extractAssistantText, extractThinkingText } from "../agent/thinking.ts"
 import {
   BLACKBOARD_INJECTION_MAX_CHARACTERS,
+  createBlackboardReadTool,
   createBlackboardTools,
   serializeBlackboard,
 } from "../collaboration/blackboard.ts"
@@ -1304,6 +1305,7 @@ export class Project {
         skills,
         webAccessTools,
         shellpoopTools,
+        blackboardReadTool: createBlackboardReadTool({ runStore: this.runStore, challengeId }),
         maxConcurrent: this.subagentRuntime.maxConcurrent,
         onAgentEvent: (subagent, event, model) => {
           this.publishAgentEvent(runId, subagent.id, event)

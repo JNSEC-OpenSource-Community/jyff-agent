@@ -30,6 +30,8 @@ export interface CreateCtfSubagentOptions {
   webAccessTools?: readonly AgentTool[]
   /** 可选注入 ShellPoop 反弹 shell 工具；role.tools 白名单未包含时不会启用。 */
   shellpoopTools?: readonly AgentTool[]
+  /** A host-bound, challenge-scoped blackboard reader. */
+  blackboardReadTool?: AgentTool
   compaction?: boolean
 }
 
@@ -66,6 +68,7 @@ export class CtfSubagent extends BaseAgent {
     const models = modelsFromAgentOptions(options.agent, fallbackModel)
     const model = resolveRoleModel(models, fallbackModel, options.role.model)
     const allTools = [
+      ...(options.blackboardReadTool ? [options.blackboardReadTool] : []),
       ...(options.webAccessTools ?? []),
       ...(options.shellpoopTools ?? []),
       ...createSubagentTools({
@@ -111,6 +114,9 @@ export class CtfSubagent extends BaseAgent {
       ].join("\n\n"),
       thinkingLevel: options.role.thinkingLevel,
       tools,
+      restoreActiveTools: {
+        add: tools.some((tool) => tool.name === "blackboard_read") ? ["blackboard_read"] : [],
+      },
       skills: piSkills(options.skills ?? []),
       compaction: options.compaction !== false,
     })

@@ -37,6 +37,76 @@ const sandbox: Sandbox = {
 }
 
 describe("CtfSubagent compaction and recovery", () => {
+  it("reconciles restored active tools with the current role and persists the allowed reader", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ctf-subagent-permissions-"))
+    roots.push(root)
+    const faux = createFauxCore({ provider: "subagent-permissions" })
+    const tool = (name: string): AgentTool => ({
+      name,
+      label: name,
+      description: name,
+      parameters: Type.Object({}),
+      async execute() {
+        return { content: [{ type: "text", text: name }], details: {} }
+      },
+    })
+    const probe = tool("test_probe")
+    const old = tool("old_tool")
+    const reader = tool("blackboard_read")
+    const role: SubagentRole = {
+      name: "analyst",
+      displayName: "Analyst",
+      description: "Investigate a bounded task",
+      systemPrompt: "Investigate.",
+      tools: ["test_probe", "old_tool"],
+      thinkingLevel: "off",
+      enabled: true,
+      source: "project",
+    }
+    const options = {
+      projectId: "project",
+      runId: "run",
+      runDirectory: root,
+      subagentId: "worker",
+      containerCwd: "/workspace/worker",
+      challenge,
+      sandbox,
+      role,
+      webAccessTools: [probe, old],
+      agent: {
+        streamFn: faux.streamSimple as AgentOptions["streamFn"],
+        initialState: { model: faux.getModel(), thinkingLevel: "off" },
+      },
+    } satisfies Parameters<typeof CtfSubagent.create>[0]
+
+    const original = await CtfSubagent.create(options)
+    await original.close()
+    const restored = await CtfSubagent.create({
+      ...options,
+      role: { ...role, tools: ["test_probe", "blackboard_read"] },
+      blackboardReadTool: reader,
+    })
+    expect(restored.restored).toBe(true)
+    expect(restored.activeTools.map((entry) => entry.name).sort()).toEqual([
+      "blackboard_read",
+      "test_probe",
+    ])
+    expect((await restored.session.buildContext()).activeToolNames?.sort()).toEqual([
+      "blackboard_read",
+      "test_probe",
+    ])
+    await restored.close()
+
+    const restricted = await CtfSubagent.create({
+      ...options,
+      role: { ...role, tools: ["test_probe"] },
+      blackboardReadTool: reader,
+    })
+    expect(restricted.activeTools.map((entry) => entry.name)).toEqual(["test_probe"])
+    expect((await restricted.session.buildContext()).activeToolNames).toEqual(["test_probe"])
+    await restricted.close()
+  })
+
   it.each([false, true])(
     "keeps the delegated facts and permitted tools through a real Pi compaction (reader: %s)",
     async (withReader) => {
